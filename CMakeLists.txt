@@ -15,6 +15,8 @@ env_with_default("QTC_WITH_QMLDESIGNER" ENV_QTC_WITH_QMLDESIGNER ON)
 
 option(BUILD_WITH_PCH "Build with precompiled headers" "${ENV_QTC_BUILD_WITH_PCH}")
 
+set(Qt6_DIR D:/CodeDev/3rdparty/Qt6.7.1/6.7.1/msvc2019_64/lib/cmake/Qt6)
+
 include(FeatureSummary)
 include(QtCreatorIDEBranding RESULT_VARIABLE IDE_BRANDING_FILE)
 include(QtCreatorTranslations)
@@ -170,15 +172,15 @@ endif()
 
 add_subdirectory(src)
 add_subdirectory(share)
-if (NOT BUILD_DESIGNSTUDIO)
-    add_subdirectory(dist)
-endif()
+#if (NOT BUILD_DESIGNSTUDIO)
+#    add_subdirectory(dist)
+#endif()
 
 if (WITH_TESTS)
-  add_subdirectory(tests)
+#  add_subdirectory(tests)
 endif()
 
-add_subdirectory(doc)
+#add_subdirectory(doc)
 
 setup_dependencies_component()
 
