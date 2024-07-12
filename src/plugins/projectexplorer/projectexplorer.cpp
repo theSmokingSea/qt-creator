@@ -1395,6 +1395,7 @@ bool ProjectExplorerPlugin::initialize(const QStringList &arguments, QString *er
     mbuild->addAction(cmd, Constants::G_BUILD_CANCEL);
 
     // run action
+    // TODO by mp5530
     dd->m_runAction = new QAction(runIcon, Tr::tr("Run"), this);
     cmd = ActionManager::registerAction(dd->m_runAction, Constants::RUN);
     cmd->setAttribute(Command::CA_UpdateText);
@@ -1785,7 +1786,9 @@ bool ProjectExplorerPlugin::initialize(const QStringList &arguments, QString *er
         BuildManager::cleanProjects(ProjectManager::projectOrder(), ConfigSelection::All);
     });
     connect(dd->m_runAction, &QAction::triggered,
-            dd, [] { runStartupProject(Constants::NORMAL_RUN_MODE); });
+            dd, [] {    // TODO by mp5530
+                runStartupProject(Constants::NORMAL_RUN_MODE);
+            });
     connect(dd->m_runActionContextMenu, &QAction::triggered,
             dd, [] { dd->runProjectContextMenu(dd->m_defaultRunConfiguration); });
     connect(dd->m_runWithoutDeployAction, &QAction::triggered,
@@ -2967,6 +2970,7 @@ void ProjectExplorerPlugin::runProject(Project *pro, Id mode, const bool forceSk
 
 void ProjectExplorerPlugin::runStartupProject(Id runMode, bool forceSkipDeploy)
 {
+    // TODO by mp5530
     runProject(ProjectManager::startupProject(), runMode, forceSkipDeploy);
 }
 
