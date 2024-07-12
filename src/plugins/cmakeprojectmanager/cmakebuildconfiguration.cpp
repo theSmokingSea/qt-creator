@@ -17,11 +17,11 @@
 #include "presetsmacros.h"
 #include "presetsparser.h"
 
-#include <android/androidconstants.h>
-#include <docker/dockerconstants.h>
-#include <ios/iosconstants.h>
-#include <qnx/qnxconstants.h>
-#include <webassembly/webassemblyconstants.h>
+// #include <android/androidconstants.h>
+// #include <docker/dockerconstants.h>
+// #include <ios/iosconstants.h>
+// #include <qnx/qnxconstants.h>
+// #include <webassembly/webassemblyconstants.h>
 
 #include <coreplugin/fileutils.h>
 #include <coreplugin/find/itemviewfind.h>
@@ -1129,12 +1129,15 @@ bool CMakeBuildSettingsWidget::eventFilter(QObject *target, QEvent *event)
 
 static bool isWebAssembly(const Kit *k)
 {
-    return DeviceTypeKitAspect::deviceTypeId(k) == WebAssembly::Constants::WEBASSEMBLY_DEVICE_TYPE;
+    // return DeviceTypeKitAspect::deviceTypeId(k) == WebAssembly::Constants::WEBASSEMBLY_DEVICE_TYPE;
+    return false;
 }
 
 static bool isQnx(const Kit *k)
 {
-    return DeviceTypeKitAspect::deviceTypeId(k) == Qnx::Constants::QNX_QNX_OS_TYPE;
+    // return DeviceTypeKitAspect::deviceTypeId(k) == Qnx::Constants::QNX_QNX_OS_TYPE;
+    return false;
+
 }
 
 static bool isWindowsARM64(const Kit *k)
@@ -1495,56 +1498,56 @@ CMakeBuildConfiguration::CMakeBuildConfiguration(Target *target, Id id)
         m_buildSystem->setIsMultiConfig(CMakeGeneratorKitAspect::isMultiConfigGenerator(k));
 
         // Android magic:
-        if (DeviceTypeKitAspect::deviceTypeId(k) == Android::Constants::ANDROID_DEVICE_TYPE) {
-            auto addUniqueKeyToCmd = [&cmd] (const QString &prefix, const QString &value) -> bool {
-                const bool isUnique =
-                    !Utils::contains(cmd.splitArguments(), [&prefix] (const QString &arg) {
-                                                               return arg.startsWith(prefix); });
-                if (isUnique)
-                    cmd.addArg(prefix + value);
-                return isUnique;
-            };
-            buildSteps()->appendStep(Android::Constants::ANDROID_BUILD_APK_ID);
-            const auto bs = buildSteps()->steps().constLast();
-            addUniqueKeyToCmd("-DANDROID_PLATFORM:STRING=",
-                              bs->data(Android::Constants::AndroidNdkPlatform).toString());
-            auto ndkLocation = bs->data(Android::Constants::NdkLocation).value<FilePath>();
-            cmd.addArg("-DANDROID_NDK:PATH=" + ndkLocation.path());
-
-            cmd.addArg("-DCMAKE_TOOLCHAIN_FILE:FILEPATH="
-                   + ndkLocation.pathAppended("build/cmake/android.toolchain.cmake").path());
-            cmd.addArg("-DANDROID_USE_LEGACY_TOOLCHAIN_FILE:BOOL=OFF");
-
-            auto androidAbis = bs->data(Android::Constants::AndroidMkSpecAbis).toStringList();
-            QString preferredAbi;
-            if (androidAbis.contains(ProjectExplorer::Constants::ANDROID_ABI_ARMEABI_V7A)) {
-                preferredAbi = ProjectExplorer::Constants::ANDROID_ABI_ARMEABI_V7A;
-            } else if (androidAbis.isEmpty()
-                       || androidAbis.contains(ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A)) {
-                preferredAbi = ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A;
-            } else {
-                preferredAbi = androidAbis.first();
-            }
-            cmd.addArg("-DANDROID_ABI:STRING=" + preferredAbi);
-            cmd.addArg("-DANDROID_STL:STRING=c++_shared");
-            cmd.addArg("-DCMAKE_FIND_ROOT_PATH:PATH=%{Qt:QT_INSTALL_PREFIX}");
-
-            auto sdkLocation = bs->data(Android::Constants::SdkLocation).value<FilePath>();
-
-            if (qt && qt->qtVersion() >= QVersionNumber(6, 0, 0)) {
-                // Don't build apk under ALL target because Qt Creator will handle it
-                if (qt->qtVersion() >= QVersionNumber(6, 1, 0)) {
-                    cmd.addArg("-DQT_NO_GLOBAL_APK_TARGET_PART_OF_ALL:BOOL=ON");
-                    if (qt->qtVersion() >= QVersionNumber(6, 8, 0))
-                        cmd.addArg("-DQT_USE_TARGET_ANDROID_BUILD_DIR:BOOL=ON");
-                }
-
-                cmd.addArg("-DQT_HOST_PATH:PATH=%{Qt:QT_HOST_PREFIX}");
-                cmd.addArg("-DANDROID_SDK_ROOT:PATH=" + sdkLocation.path());
-            } else {
-                cmd.addArg("-DANDROID_SDK:PATH=" + sdkLocation.path());
-            }
-        }
+        // if (DeviceTypeKitAspect::deviceTypeId(k) == Android::Constants::ANDROID_DEVICE_TYPE) {
+        //     auto addUniqueKeyToCmd = [&cmd] (const QString &prefix, const QString &value) -> bool {
+        //         const bool isUnique =
+        //             !Utils::contains(cmd.splitArguments(), [&prefix] (const QString &arg) {
+        //                                                        return arg.startsWith(prefix); });
+        //         if (isUnique)
+        //             cmd.addArg(prefix + value);
+        //         return isUnique;
+        //     };
+        //     buildSteps()->appendStep(Android::Constants::ANDROID_BUILD_APK_ID);
+        //     const auto bs = buildSteps()->steps().constLast();
+        //     addUniqueKeyToCmd("-DANDROID_PLATFORM:STRING=",
+        //                       bs->data(Android::Constants::AndroidNdkPlatform).toString());
+        //     auto ndkLocation = bs->data(Android::Constants::NdkLocation).value<FilePath>();
+        //     cmd.addArg("-DANDROID_NDK:PATH=" + ndkLocation.path());
+        //
+        //     cmd.addArg("-DCMAKE_TOOLCHAIN_FILE:FILEPATH="
+        //            + ndkLocation.pathAppended("build/cmake/android.toolchain.cmake").path());
+        //     cmd.addArg("-DANDROID_USE_LEGACY_TOOLCHAIN_FILE:BOOL=OFF");
+        //
+        //     auto androidAbis = bs->data(Android::Constants::AndroidMkSpecAbis).toStringList();
+        //     QString preferredAbi;
+        //     if (androidAbis.contains(ProjectExplorer::Constants::ANDROID_ABI_ARMEABI_V7A)) {
+        //         preferredAbi = ProjectExplorer::Constants::ANDROID_ABI_ARMEABI_V7A;
+        //     } else if (androidAbis.isEmpty()
+        //                || androidAbis.contains(ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A)) {
+        //         preferredAbi = ProjectExplorer::Constants::ANDROID_ABI_ARM64_V8A;
+        //     } else {
+        //         preferredAbi = androidAbis.first();
+        //     }
+        //     cmd.addArg("-DANDROID_ABI:STRING=" + preferredAbi);
+        //     cmd.addArg("-DANDROID_STL:STRING=c++_shared");
+        //     cmd.addArg("-DCMAKE_FIND_ROOT_PATH:PATH=%{Qt:QT_INSTALL_PREFIX}");
+        //
+        //     auto sdkLocation = bs->data(Android::Constants::SdkLocation).value<FilePath>();
+        //
+        //     if (qt && qt->qtVersion() >= QVersionNumber(6, 0, 0)) {
+        //         // Don't build apk under ALL target because Qt Creator will handle it
+        //         if (qt->qtVersion() >= QVersionNumber(6, 1, 0)) {
+        //             cmd.addArg("-DQT_NO_GLOBAL_APK_TARGET_PART_OF_ALL:BOOL=ON");
+        //             if (qt->qtVersion() >= QVersionNumber(6, 8, 0))
+        //                 cmd.addArg("-DQT_USE_TARGET_ANDROID_BUILD_DIR:BOOL=ON");
+        //         }
+        //
+        //         cmd.addArg("-DQT_HOST_PATH:PATH=%{Qt:QT_HOST_PREFIX}");
+        //         cmd.addArg("-DANDROID_SDK_ROOT:PATH=" + sdkLocation.path());
+        //     } else {
+        //         cmd.addArg("-DANDROID_SDK:PATH=" + sdkLocation.path());
+        //     }
+        // }
 
         const IDevice::ConstPtr device = DeviceKitAspect::device(k);
         if (CMakeBuildConfiguration::isIos(k)) {
@@ -1556,15 +1559,15 @@ CMakeBuildConfiguration::CMakeBuildConfiguration(Target *target, Id id)
                 // https://gitlab.kitware.com/cmake/cmake/-/issues/21276
                 const Id deviceType = DeviceTypeKitAspect::deviceTypeId(k);
                 // TODO the architectures are probably not correct with Apple Silicon in the mix...
-                const QString architecture = deviceType == Ios::Constants::IOS_DEVICE_TYPE
-                                                 ? QLatin1String("arm64")
-                                                 : QLatin1String("x86_64");
-                const QString sysroot = deviceType == Ios::Constants::IOS_DEVICE_TYPE
-                                            ? QLatin1String("iphoneos")
-                                            : QLatin1String("iphonesimulator");
+                // const QString architecture = deviceType == Ios::Constants::IOS_DEVICE_TYPE
+                //                                  ? QLatin1String("arm64")
+                //                                  : QLatin1String("x86_64");
+                // const QString sysroot = deviceType == Ios::Constants::IOS_DEVICE_TYPE
+                //                             ? QLatin1String("iphoneos")
+                //                             : QLatin1String("iphonesimulator");
                 cmd.addArg(CMAKE_QT6_TOOLCHAIN_FILE_ARG);
-                cmd.addArg("-DCMAKE_OSX_ARCHITECTURES:STRING=" + architecture);
-                cmd.addArg("-DCMAKE_OSX_SYSROOT:STRING=" + sysroot);
+                // cmd.addArg("-DCMAKE_OSX_ARCHITECTURES:STRING=" + architecture);
+                // cmd.addArg("-DCMAKE_OSX_SYSROOT:STRING=" + sysroot);
                 cmd.addArg("%{" + QLatin1String(DEVELOPMENT_TEAM_FLAG) + "}");
                 cmd.addArg("%{" + QLatin1String(PROVISIONING_PROFILE_FLAG) + "}");
             }
@@ -1645,8 +1648,9 @@ FilePath CMakeBuildConfiguration::shadowBuildDirectory(const FilePath &projectFi
 bool CMakeBuildConfiguration::isIos(const Kit *k)
 {
     const Id deviceType = DeviceTypeKitAspect::deviceTypeId(k);
-    return deviceType == Ios::Constants::IOS_DEVICE_TYPE
-           || deviceType == Ios::Constants::IOS_SIMULATOR_TYPE;
+    // return deviceType == Ios::Constants::IOS_DEVICE_TYPE
+    //        || deviceType == Ios::Constants::IOS_SIMULATOR_TYPE;
+    return false;
 }
 
 bool CMakeBuildConfiguration::hasQmlDebugging(const CMakeConfig &config)

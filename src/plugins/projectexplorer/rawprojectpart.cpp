@@ -10,7 +10,7 @@
 #include "project.h"
 #include "target.h"
 
-#include <ios/iosconstants.h>
+// #include <ios/iosconstants.h>
 
 #include <utils/algorithm.h>
 
@@ -208,24 +208,24 @@ ProjectUpdateInfo::ProjectUpdateInfo(Project *project,
 void addTargetFlagForIos(QStringList &cFlags, QStringList &cxxFlags, const BuildSystem *bs,
                          const std::function<QString ()> &getDeploymentTarget)
 {
-    const Utils::Id deviceType = DeviceTypeKitAspect::deviceTypeId(bs->target()->kit());
-    if (deviceType != Ios::Constants::IOS_DEVICE_TYPE
-            && deviceType != Ios::Constants::IOS_SIMULATOR_TYPE) {
-        return;
-    }
-    const bool isSim = deviceType == Ios::Constants::IOS_SIMULATOR_TYPE;
-    QString targetTriple(QLatin1String(isSim ? "x86_64" : "arm64"));
-    targetTriple.append("-apple-ios").append(getDeploymentTarget());
-    if (isSim)
-        targetTriple.append("-simulator");
-    const auto addTargetFlag = [&targetTriple](QStringList &flags) {
-        if (!flags.contains("-target") && !Utils::contains(flags,
-                    [](const QString &flag) { return flag.startsWith("--target="); })) {
-            flags << "-target" << targetTriple;
-        }
-    };
-    addTargetFlag(cxxFlags);
-    addTargetFlag(cFlags);
+    // const Utils::Id deviceType = DeviceTypeKitAspect::deviceTypeId(bs->target()->kit());
+    // if (deviceType != Ios::Constants::IOS_DEVICE_TYPE
+    //         && deviceType != Ios::Constants::IOS_SIMULATOR_TYPE) {
+    //     return;
+    // }
+    // const bool isSim = deviceType == Ios::Constants::IOS_SIMULATOR_TYPE;
+    // QString targetTriple(QLatin1String(isSim ? "x86_64" : "arm64"));
+    // targetTriple.append("-apple-ios").append(getDeploymentTarget());
+    // if (isSim)
+    //     targetTriple.append("-simulator");
+    // const auto addTargetFlag = [&targetTriple](QStringList &flags) {
+    //     if (!flags.contains("-target") && !Utils::contains(flags,
+    //                 [](const QString &flag) { return flag.startsWith("--target="); })) {
+    //         flags << "-target" << targetTriple;
+    //     }
+    // };
+    // addTargetFlag(cxxFlags);
+    // addTargetFlag(cFlags);
 }
 
 } // namespace ProjectExplorer

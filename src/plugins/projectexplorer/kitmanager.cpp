@@ -15,10 +15,10 @@
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/progressmanager.h>
 
-#include <android/androidconstants.h>
-#include <baremetal/baremetalconstants.h>
-#include <qnx/qnxconstants.h>
-#include <remotelinux/remotelinux_constants.h>
+// #include <android/androidconstants.h>
+// #include <baremetal/baremetalconstants.h>
+// #include <qnx/qnxconstants.h>
+// #include <remotelinux/remotelinux_constants.h>
 
 #include <utils/environment.h>
 #include <utils/layoutbuilder.h>
@@ -188,17 +188,17 @@ static Id deviceTypeForKit(const Kit *kit)
         const Abi tcAbi = tc->targetAbi();
         switch (tcAbi.os()) {
         case Abi::BareMetalOS:
-            return BareMetal::Constants::BareMetalOsType;
+            // return BareMetal::Constants::BareMetalOsType;
         case Abi::BsdOS:
         case Abi::DarwinOS:
         case Abi::UnixOS:
-            return RemoteLinux::Constants::GenericLinuxOsType;
+            // return RemoteLinux::Constants::GenericLinuxOsType;
         case Abi::LinuxOS:
-            if (tcAbi.osFlavor() == Abi::AndroidLinuxFlavor)
-                return Android::Constants::ANDROID_DEVICE_TYPE;
-            return RemoteLinux::Constants::GenericLinuxOsType;
+            // if (tcAbi.osFlavor() == Abi::AndroidLinuxFlavor)
+            //     return Android::Constants::ANDROID_DEVICE_TYPE;
+            // return RemoteLinux::Constants::GenericLinuxOsType;
         case Abi::QnxOS:
-            return Qnx::Constants::QNX_QNX_OS_TYPE;
+            // return Qnx::Constants::QNX_QNX_OS_TYPE;
         case Abi::VxWorks:
             return "VxWorks.Device.Type";
         default:

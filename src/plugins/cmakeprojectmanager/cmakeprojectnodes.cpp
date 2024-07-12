@@ -7,9 +7,9 @@
 #include "cmakeprojectconstants.h"
 #include "cmakeprojectmanagertr.h"
 
-#include <android/androidconstants.h>
+// #include <android/androidconstants.h>
 
-#include <ios/iosconstants.h>
+// #include <ios/iosconstants.h>
 
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/target.h>
@@ -120,59 +120,59 @@ QVariant CMakeTargetNode::data(Id role) const
     if (role == Constants::BUILD_FOLDER_ROLE)
         return m_buildDirectory.toVariant();
 
-    if (role == Android::Constants::AndroidAbi)
-        return value(Android::Constants::ANDROID_ABI);
-
-    if (role == Android::Constants::AndroidAbis)
-        return value(Android::Constants::ANDROID_ABIS);
-
-    // TODO: Concerns the variables below. Qt 6 uses target properties which cannot be read
-    // by the current mechanism, and the variables start with "Qt_" prefix.
-
-    if (role == Android::Constants::AndroidPackageSourceDir)
-        return value(Android::Constants::ANDROID_PACKAGE_SOURCE_DIR);
-
-    if (role == Android::Constants::AndroidExtraLibs)
-        return value(Android::Constants::ANDROID_EXTRA_LIBS);
-
-    if (role == Android::Constants::AndroidDeploySettingsFile)
-        return value(Android::Constants::ANDROID_DEPLOYMENT_SETTINGS_FILE);
-
-    if (role == Android::Constants::AndroidApplicationArgs)
-        return value(Android::Constants::ANDROID_APPLICATION_ARGUMENTS);
-
-    if (role == Android::Constants::ANDROID_ABIS)
-        return value(Android::Constants::ANDROID_ABIS);
-
-    if (role == Android::Constants::AndroidSoLibPath)
-        return values(Android::Constants::ANDROID_SO_LIBS_PATHS);
-
-    if (role == Android::Constants::AndroidTargets)
-        return values("TARGETS_BUILD_PATH");
-
-    if (role == Android::Constants::AndroidApk)
-        return {};
-
-    if (role == Ios::Constants::IosTarget) {
-        // For some reason the artifact is e.g. "Debug/untitled.app/untitled" which is wrong.
-        // It actually is e.g. "Debug-iphonesimulator/untitled.app/untitled".
-        // Anyway, the iOS plugin is only interested in the app bundle name without .app.
-        return m_artifact.fileName();
-    }
-
-    if (role == Ios::Constants::IosBuildDir) {
-        // This is a path relative to root build directory.
-        // When generating Xcode project, CMake may put here a "${EFFECTIVE_PLATFORM_NAME}" macro,
-        // which is expanded by Xcode at build time.
-        // To get an actual executable path, iOS plugin replaces this macro with either "-iphoneos"
-        // or "-iphonesimulator" depending on the device type (which is unavailable here).
-
-        // dir/target.app/target -> dir
-        return m_artifact.parentDir().parentDir().toString();
-    }
-
-    if (role == Ios::Constants::IosCmakeGenerator)
-        return value("CMAKE_GENERATOR");
+    // if (role == Android::Constants::AndroidAbi)
+    //     return value(Android::Constants::ANDROID_ABI);
+    //
+    // if (role == Android::Constants::AndroidAbis)
+    //     return value(Android::Constants::ANDROID_ABIS);
+    //
+    // // TODO: Concerns the variables below. Qt 6 uses target properties which cannot be read
+    // // by the current mechanism, and the variables start with "Qt_" prefix.
+    //
+    // if (role == Android::Constants::AndroidPackageSourceDir)
+    //     return value(Android::Constants::ANDROID_PACKAGE_SOURCE_DIR);
+    //
+    // if (role == Android::Constants::AndroidExtraLibs)
+    //     return value(Android::Constants::ANDROID_EXTRA_LIBS);
+    //
+    // if (role == Android::Constants::AndroidDeploySettingsFile)
+    //     return value(Android::Constants::ANDROID_DEPLOYMENT_SETTINGS_FILE);
+    //
+    // if (role == Android::Constants::AndroidApplicationArgs)
+    //     return value(Android::Constants::ANDROID_APPLICATION_ARGUMENTS);
+    //
+    // if (role == Android::Constants::ANDROID_ABIS)
+    //     return value(Android::Constants::ANDROID_ABIS);
+    //
+    // if (role == Android::Constants::AndroidSoLibPath)
+    //     return values(Android::Constants::ANDROID_SO_LIBS_PATHS);
+    //
+    // if (role == Android::Constants::AndroidTargets)
+    //     return values("TARGETS_BUILD_PATH");
+    //
+    // if (role == Android::Constants::AndroidApk)
+    //     return {};
+    //
+    // if (role == Ios::Constants::IosTarget) {
+    //     // For some reason the artifact is e.g. "Debug/untitled.app/untitled" which is wrong.
+    //     // It actually is e.g. "Debug-iphonesimulator/untitled.app/untitled".
+    //     // Anyway, the iOS plugin is only interested in the app bundle name without .app.
+    //     return m_artifact.fileName();
+    // }
+    //
+    // if (role == Ios::Constants::IosBuildDir) {
+    //     // This is a path relative to root build directory.
+    //     // When generating Xcode project, CMake may put here a "${EFFECTIVE_PLATFORM_NAME}" macro,
+    //     // which is expanded by Xcode at build time.
+    //     // To get an actual executable path, iOS plugin replaces this macro with either "-iphoneos"
+    //     // or "-iphonesimulator" depending on the device type (which is unavailable here).
+    //
+    //     // dir/target.app/target -> dir
+    //     return m_artifact.parentDir().parentDir().toString();
+    // }
+    //
+    // if (role == Ios::Constants::IosCmakeGenerator)
+    //     return value("CMAKE_GENERATOR");
 
     if (role == ProjectExplorer::Constants::QT_KEYWORDS_ENABLED) // FIXME handle correctly
         return value(role.toString().toUtf8());

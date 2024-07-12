@@ -11,7 +11,7 @@
 #include "qtversionfactory.h"
 #include "qtversionmanager.h"
 
-#include <android/androidconstants.h>
+// #include <android/androidconstants.h>
 
 #include <coreplugin/icore.h>
 #include <coreplugin/progressmanager/progressmanager.h>
@@ -841,7 +841,8 @@ Abis QtVersion::qtAbis() const
 {
     if (!d->m_data.qtAbis
         // QTCREATORBUG-30568 give AndroidQtVersion a "second chance" to detect Qt Abis
-        || (d->m_type == Android::Constants::ANDROID_QT_TYPE && d->m_data.qtAbis->isEmpty())) {
+        // || (d->m_type == Android::Constants::ANDROID_QT_TYPE && d->m_data.qtAbis->isEmpty())
+        ) {
         d->m_data.qtAbis = detectQtAbis();
     }
 

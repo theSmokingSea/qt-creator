@@ -18,8 +18,8 @@
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 
-#include <android/androidconstants.h>
-#include <ios/iosconstants.h>
+// #include <android/androidconstants.h>
+// #include <ios/iosconstants.h>
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -342,49 +342,49 @@ QStringList QmakeProFileNode::targetApplications() const
 
 QVariant QmakeProFileNode::data(Id role) const
 {
-    if (role == Android::Constants::AndroidAbis)
-        return variableValue(Variable::AndroidAbis);
-    if (role == Android::Constants::AndroidAbi)
-        return singleVariableValue(Variable::AndroidAbi);
-    if (role == Android::Constants::AndroidExtraLibs)
-        return variableValue(Variable::AndroidExtraLibs);
-    if (role == Android::Constants::AndroidPackageSourceDir)
-        return singleVariableValue(Variable::AndroidPackageSourceDir);
-    if (role == Android::Constants::AndroidDeploySettingsFile)
-        return singleVariableValue(Variable::AndroidDeploySettingsFile);
-    if (role == Android::Constants::AndroidSoLibPath) {
-        TargetInformation info = targetInformation();
-        QStringList res = {info.buildDir.toString()};
-        FilePath destDir = info.destDir;
-        if (!destDir.isEmpty()) {
-            destDir = info.buildDir.resolvePath(destDir.path());
-            res.append(destDir.toString());
-        }
-        res.removeDuplicates();
-        return res;
-    }
+    // if (role == Android::Constants::AndroidAbis)
+    //     return variableValue(Variable::AndroidAbis);
+    // if (role == Android::Constants::AndroidAbi)
+    //     return singleVariableValue(Variable::AndroidAbi);
+    // if (role == Android::Constants::AndroidExtraLibs)
+    //     return variableValue(Variable::AndroidExtraLibs);
+    // if (role == Android::Constants::AndroidPackageSourceDir)
+    //     return singleVariableValue(Variable::AndroidPackageSourceDir);
+    // if (role == Android::Constants::AndroidDeploySettingsFile)
+    //     return singleVariableValue(Variable::AndroidDeploySettingsFile);
+    // if (role == Android::Constants::AndroidSoLibPath) {
+    //     TargetInformation info = targetInformation();
+    //     QStringList res = {info.buildDir.toString()};
+    //     FilePath destDir = info.destDir;
+    //     if (!destDir.isEmpty()) {
+    //         destDir = info.buildDir.resolvePath(destDir.path());
+    //         res.append(destDir.toString());
+    //     }
+    //     res.removeDuplicates();
+    //     return res;
+    // }
 
-    if (role == Android::Constants::AndroidTargets)
-        return {};
-    if (role == Android::Constants::AndroidApk)
-        return {};
-
-    if (role == Ios::Constants::IosTarget) {
-        const TargetInformation info = targetInformation();
-        if (info.valid)
-            return info.target;
-    }
-
-    if (role == Ios::Constants::IosBuildDir) {
-        const TargetInformation info = targetInformation();
-        if (info.valid)
-            return info.buildDir.toString();
-    }
-
-    if (role == Ios::Constants::IosCmakeGenerator) {
-        // qmake is not CMake, so return empty value
-        return {};
-    }
+    // if (role == Android::Constants::AndroidTargets)
+    //     return {};
+    // if (role == Android::Constants::AndroidApk)
+    //     return {};
+    //
+    // if (role == Ios::Constants::IosTarget) {
+    //     const TargetInformation info = targetInformation();
+    //     if (info.valid)
+    //         return info.target;
+    // }
+    //
+    // if (role == Ios::Constants::IosBuildDir) {
+    //     const TargetInformation info = targetInformation();
+    //     if (info.valid)
+    //         return info.buildDir.toString();
+    // }
+    //
+    // if (role == Ios::Constants::IosCmakeGenerator) {
+    //     // qmake is not CMake, so return empty value
+    //     return {};
+    // }
 
     if (role == ProjectExplorer::Constants::QT_KEYWORDS_ENABLED)
         return !proFile()->variableValue(Variable::Config).contains("no_keywords");
@@ -404,21 +404,21 @@ bool QmakeProFileNode::setData(Id role, const QVariant &value) const
         QtSupport::QtVersion *version = QtSupport::QtKitAspect::qtVersion(target->kit());
         if (version && !version->supportsMultipleQtAbis()) {
             const QString arch = pro->singleVariableValue(Variable::AndroidAbi);
-            scope = QString("contains(%1,%2)").arg(Android::Constants::ANDROID_TARGET_ARCH)
-                                              .arg(arch);
+            // scope = QString("contains(%1,%2)").arg(Android::Constants::ANDROID_TARGET_ARCH)
+            //                                   .arg(arch);
             flags |= QmakeProjectManager::Internal::ProWriter::MultiLine;
         }
     }
-
-    if (role == Android::Constants::AndroidExtraLibs)
-        return pro->setProVariable(QLatin1String(Android::Constants::ANDROID_EXTRA_LIBS),
-                                   value.toStringList(), scope, flags);
-    if (role == Android::Constants::AndroidPackageSourceDir)
-        return pro->setProVariable(QLatin1String(Android::Constants::ANDROID_PACKAGE_SOURCE_DIR),
-                                   {value.toString()}, scope, flags);
-    if (role == Android::Constants::AndroidApplicationArgs)
-        return pro->setProVariable(QLatin1String(Android::Constants::ANDROID_APPLICATION_ARGUMENTS),
-                                   {value.toString()}, scope, flags);
+    //
+    // if (role == Android::Constants::AndroidExtraLibs)
+    //     return pro->setProVariable(QLatin1String(Android::Constants::ANDROID_EXTRA_LIBS),
+    //                                value.toStringList(), scope, flags);
+    // if (role == Android::Constants::AndroidPackageSourceDir)
+    //     return pro->setProVariable(QLatin1String(Android::Constants::ANDROID_PACKAGE_SOURCE_DIR),
+    //                                {value.toString()}, scope, flags);
+    // if (role == Android::Constants::AndroidApplicationArgs)
+    //     return pro->setProVariable(QLatin1String(Android::Constants::ANDROID_APPLICATION_ARGUMENTS),
+    //                                {value.toString()}, scope, flags);
 
     return false;
 }

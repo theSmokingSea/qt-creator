@@ -30,7 +30,7 @@
 #include <projectexplorer/taskhub.h>
 #include <projectexplorer/toolchain.h>
 
-#include <remotelinux/remotelinux_constants.h>
+// #include <remotelinux/remotelinux_constants.h>
 
 #include <utils/algorithm.h>
 #include <utils/checkablemessagebox.h>
@@ -1072,10 +1072,10 @@ DebugServerRunner::DebugServerRunner(RunControl *runControl, DebugServerPortsGat
                 const auto port = portsGatherer->gdbServer().port();
                 cmd.addArg(QString(":%1").arg(port));
 
-                if (runControl->device()->extraData(RemoteLinux::Constants::SshForwardDebugServerPort).toBool()) {
-                    addExtraData(RemoteLinux::Constants::SshForwardPort, port);
-                    addExtraData(RemoteLinux::Constants::DisableSharing, true);
-                }
+                // if (runControl->device()->extraData(RemoteLinux::Constants::SshForwardDebugServerPort).toBool()) {
+                //     addExtraData(RemoteLinux::Constants::SshForwardPort, port);
+                //     addExtraData(RemoteLinux::Constants::DisableSharing, true);
+                // }
 
                 if (m_pid.isValid())
                     cmd.addArg(QString::number(m_pid.pid()));

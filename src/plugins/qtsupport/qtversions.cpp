@@ -11,7 +11,7 @@
 #include <projectexplorer/abi.h>
 #include <projectexplorer/projectexplorerconstants.h>
 
-#include <remotelinux/remotelinux_constants.h>
+// #include <remotelinux/remotelinux_constants.h>
 
 #include <coreplugin/featureprovider.h>
 
@@ -60,8 +60,8 @@ QSet<Utils::Id> DesktopQtVersion::availableFeatures() const
 QSet<Utils::Id> DesktopQtVersion::targetDeviceTypes() const
 {
     QSet<Utils::Id> result = {ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE};
-    if (Utils::contains(qtAbis(), [](const ProjectExplorer::Abi a) { return a.os() == ProjectExplorer::Abi::LinuxOS; }))
-        result.insert(RemoteLinux::Constants::GenericLinuxOsType);
+    // if (Utils::contains(qtAbis(), [](const ProjectExplorer::Abi a) { return a.os() == ProjectExplorer::Abi::LinuxOS; }))
+    //     result.insert(RemoteLinux::Constants::GenericLinuxOsType);
     return result;
 }
 
@@ -100,7 +100,9 @@ public:
 
     QSet<Utils::Id> targetDeviceTypes() const final
     {
-        return {RemoteLinux::Constants::GenericLinuxOsType};
+        return {
+            // RemoteLinux::Constants::GenericLinuxOsType
+        };
     }
 };
 

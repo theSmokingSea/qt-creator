@@ -16,7 +16,7 @@
 #include "cmaketoolmanager.h"
 #include "projecttreehelper.h"
 
-#include <android/androidconstants.h>
+// #include <android/androidconstants.h>
 
 #include <coreplugin/icore.h>
 #include <coreplugin/documentmanager.h>
@@ -38,7 +38,7 @@
 
 #include <qmljs/qmljsmodelmanagerinterface.h>
 
-#include <qtapplicationmanager/appmanagerconstants.h>
+// #include <qtapplicationmanager/appmanagerconstants.h>
 
 #include <qtsupport/qtcppkitinfo.h>
 #include <qtsupport/qtsupportconstants.h>
@@ -1316,7 +1316,7 @@ void CMakeBuildSystem::updateProjectData()
         }
         {
             CMakeConfigItem paths;
-            paths.key = Android::Constants::ANDROID_SO_LIBS_PATHS;
+            // paths.key = Android::Constants::ANDROID_SO_LIBS_PATHS;
             paths.values = Utils::toList(res);
             patchedConfig.append(paths);
         }
@@ -1522,10 +1522,10 @@ void CMakeBuildSystem::updateCMakeConfiguration(QString &errorMessage)
         = CMakeConfigItem::toBool(cmakeConfig.stringValueOf("QT_USE_TARGET_ANDROID_BUILD_DIR"))
               .value_or(false);
 
-    project()->setExtraData(Android::Constants::AndroidBuildTargetDirSupport,
-                            QVariant::fromValue(hasAndroidTargetBuildDirSupport));
-    project()->setExtraData(Android::Constants::UseAndroidBuildTargetDir,
-                            QVariant::fromValue(useAndroidTargetBuildDir));
+    // project()->setExtraData(Android::Constants::AndroidBuildTargetDirSupport,
+    //                         QVariant::fromValue(hasAndroidTargetBuildDirSupport));
+    // project()->setExtraData(Android::Constants::UseAndroidBuildTargetDir,
+    //                         QVariant::fromValue(useAndroidTargetBuildDir));
 
     QVariantList packageTargets;
     for (const CMakeBuildTarget &buildTarget : buildTargets()) {
@@ -1556,7 +1556,7 @@ void CMakeBuildSystem::updateCMakeConfiguration(QString &errorMessage)
         }
         packageTargets.append(packageTarget);
     }
-    project()->setExtraData(AppManager::Constants::APPMAN_PACKAGE_TARGETS, packageTargets);
+    // project()->setExtraData(AppManager::Constants::APPMAN_PACKAGE_TARGETS, packageTargets);
 
     setConfigurationFromCMake(cmakeConfig);
 }
@@ -2007,8 +2007,9 @@ const QList<BuildTargetInfo> CMakeBuildSystem::appTargets() const
     QString emulator = cm.stringValueOf("CMAKE_CROSSCOMPILING_EMULATOR");
 
     QList<BuildTargetInfo> appTargetList;
-    const bool forAndroid = DeviceTypeKitAspect::deviceTypeId(kit())
-                            == Android::Constants::ANDROID_DEVICE_TYPE;
+    const bool forAndroid =false;
+        // DeviceTypeKitAspect::deviceTypeId(kit())
+        //                     == Android::Constants::ANDROID_DEVICE_TYPE;
     for (const CMakeBuildTarget &ct : m_buildTargets) {
         if (CMakeBuildSystem::filteredOutTarget(ct))
             continue;

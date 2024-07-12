@@ -12,7 +12,7 @@
 #include "qmakeprojectmanagertr.h"
 #include "qmakesettings.h"
 
-#include <android/androidconstants.h>
+// #include <android/androidconstants.h>
 
 #include <projectexplorer/buildmanager.h>
 #include <projectexplorer/buildsteplist.h>
@@ -31,7 +31,7 @@
 #include <qtsupport/qtversionmanager.h>
 #include <qtsupport/qtsupportconstants.h>
 
-#include <ios/iosconstants.h>
+// #include <ios/iosconstants.h>
 
 #include <utils/algorithm.h>
 #include <utils/hostosinfo.h>
@@ -524,9 +524,10 @@ void QMakeStep::separateDebugInfoChanged()
 
 static bool isIos(const Kit *k)
 {
-    const Id deviceType = DeviceTypeKitAspect::deviceTypeId(k);
-    return deviceType == Ios::Constants::IOS_DEVICE_TYPE
-           || deviceType == Ios::Constants::IOS_SIMULATOR_TYPE;
+    // const Id deviceType = DeviceTypeKitAspect::deviceTypeId(k);
+    // return deviceType == Ios::Constants::IOS_DEVICE_TYPE
+    //        || deviceType == Ios::Constants::IOS_SIMULATOR_TYPE;
+    return false;
 }
 
 void QMakeStep::abisChanged()
@@ -540,18 +541,18 @@ void QMakeStep::abisChanged()
 
     if (QtVersion *qtVersion = QtKitAspect::qtVersion(target()->kit())) {
         if (qtVersion->hasAbi(Abi::LinuxOS, Abi::AndroidLinuxFlavor)) {
-            const QString prefix = QString("%1=").arg(Android::Constants::ANDROID_ABIS);
-            QStringList args = m_extraArgs;
-            for (auto it = args.begin(); it != args.end(); ++it) {
-                if (it->startsWith(prefix)) {
-                    args.erase(it);
-                    break;
-                }
-            }
-            if (!m_selectedAbis.isEmpty())
-                args << prefix + '"' + m_selectedAbis.join(' ') + '"';
-            setExtraArguments(args);
-            buildSystem()->setProperty(Android::Constants::AndroidAbis, m_selectedAbis);
+            // const QString prefix = QString("%1=").arg(Android::Constants::ANDROID_ABIS);
+            // QStringList args = m_extraArgs;
+            // for (auto it = args.begin(); it != args.end(); ++it) {
+            //     if (it->startsWith(prefix)) {
+            //         args.erase(it);
+            //         break;
+            //     }
+            // }
+            // if (!m_selectedAbis.isEmpty())
+            //     args << prefix + '"' + m_selectedAbis.join(' ') + '"';
+            // setExtraArguments(args);
+            // buildSystem()->setProperty(Android::Constants::AndroidAbis, m_selectedAbis);
         } else if (qtVersion->hasAbi(Abi::DarwinOS) && !isIos(target()->kit())) {
             const QString prefix = "QMAKE_APPLE_DEVICE_ARCHS=";
             QStringList args = m_extraArgs;

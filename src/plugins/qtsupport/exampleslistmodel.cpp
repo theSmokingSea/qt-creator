@@ -12,8 +12,8 @@
 #include <QPixmapCache>
 #include <QUrl>
 
-#include <android/androidconstants.h>
-#include <ios/iosconstants.h>
+// #include <android/androidconstants.h>
+// #include <ios/iosconstants.h>
 #include <coreplugin/helpmanager.h>
 #include <coreplugin/icore.h>
 
@@ -430,14 +430,14 @@ void ExamplesViewController::updateExamples()
     items = filtered(items, isValidExampleOrDemo(instructionalsModules));
 
     if (m_isExamples) {
-        if (m_exampleSetModel->selectedQtSupports(Android::Constants::ANDROID_DEVICE_TYPE)) {
-            items = Utils::filtered(items, [](ExampleItem *item) {
-                return item->tags.contains("android");
-            });
-        } else if (m_exampleSetModel->selectedQtSupports(Ios::Constants::IOS_DEVICE_TYPE)) {
-            items = Utils::filtered(items,
-                                    [](ExampleItem *item) { return item->tags.contains("ios"); });
-        }
+        // if (m_exampleSetModel->selectedQtSupports(Android::Constants::ANDROID_DEVICE_TYPE)) {
+        //     items = Utils::filtered(items, [](ExampleItem *item) {
+        //         return item->tags.contains("android");
+        //     });
+        // } else if (m_exampleSetModel->selectedQtSupports(Ios::Constants::IOS_DEVICE_TYPE)) {
+        //     items = Utils::filtered(items,
+        //                             [](ExampleItem *item) { return item->tags.contains("ios"); });
+        // }
     }
 
     const bool sortIntoCategories = !m_isExamples || qtVersion >= *minQtVersionForCategories;

@@ -13,7 +13,7 @@
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectmacro.h>
 
-#include <qnx/qnxconstants.h>
+// #include <qnx/qnxconstants.h>
 
 #include <utils/algorithm.h>
 #include <utils/cpplanguage_details.h>
@@ -419,7 +419,7 @@ void CompilerOptionsBuilder::addProjectMacros()
     const int useMacros = qtcEnvironmentVariableIntValue("QTC_CLANG_USE_TOOLCHAIN_MACROS");
 
     if (m_projectPart.toolchainType == ProjectExplorer::Constants::CUSTOM_TOOLCHAIN_TYPEID
-        || m_projectPart.toolchainType == Qnx::Constants::QNX_TOOLCHAIN_ID
+        // || m_projectPart.toolchainType == Qnx::Constants::QNX_TOOLCHAIN_ID
         || m_projectPart.toolchainType.name().contains("BareMetal") || useMacros) {
         addMacros(m_projectPart.toolchainMacros);
     }
@@ -801,8 +801,8 @@ void CompilerOptionsBuilder::addDefineFunctionMacrosQnx()
     //
     // In our case we have only Clang and need to instruct LIBCPP that it doesn't
     // have these operators. This makes the code model happy and doesn't produce errors.
-    if (m_projectPart.toolchainType == Qnx::Constants::QNX_TOOLCHAIN_ID)
-        addMacros({{"_LIBCPP_HAS_NO_BUILTIN_OPERATOR_NEW_DELETE"}});
+    // if (m_projectPart.toolchainType == Qnx::Constants::QNX_TOOLCHAIN_ID)
+    //     addMacros({{"_LIBCPP_HAS_NO_BUILTIN_OPERATOR_NEW_DELETE"}});
 }
 
 void CompilerOptionsBuilder::addQtMacros()

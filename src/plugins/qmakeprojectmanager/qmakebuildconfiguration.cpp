@@ -14,7 +14,7 @@
 #include "qmakesettings.h"
 #include "qmakestep.h"
 
-#include <android/androidconstants.h>
+// #include <android/androidconstants.h>
 
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/icore.h>
@@ -123,11 +123,11 @@ QmakeBuildConfiguration::QmakeBuildConfiguration(Target *target, Id id)
 
         setBuildDirectory(directory);
 
-        if (DeviceTypeKitAspect::deviceTypeId(target->kit())
-                        == Android::Constants::ANDROID_DEVICE_TYPE) {
-            buildSteps()->appendStep(Android::Constants::ANDROID_PACKAGE_INSTALL_STEP_ID);
-            buildSteps()->appendStep(Android::Constants::ANDROID_BUILD_APK_ID);
-        }
+        // if (DeviceTypeKitAspect::deviceTypeId(target->kit())
+        //                 == Android::Constants::ANDROID_DEVICE_TYPE) {
+        //     buildSteps()->appendStep(Android::Constants::ANDROID_PACKAGE_INSTALL_STEP_ID);
+        //     buildSteps()->appendStep(Android::Constants::ANDROID_BUILD_APK_ID);
+        // }
 
         updateCacheAndEmitEnvironmentChanged();
     });

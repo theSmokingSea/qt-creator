@@ -25,8 +25,8 @@
 
 // for opening the respective coding style preferences
 #include <cppeditor/cppeditorconstants.h>
-#include <qmljseditor/qmljseditorconstants.h>
-#include <qmljstools/qmljstoolsconstants.h>
+// #include <qmljseditor/qmljseditorconstants.h>
+// #include <qmljstools/qmljstoolsconstants.h>
 
 #include <QGridLayout>
 #include <QSpacerItem>
@@ -92,7 +92,7 @@ public:
                 Core::ICore::showOptionsDialog(CppEditor::Constants::CPP_CODE_STYLE_SETTINGS_ID);
                 break;
             case TabSettingsWidget::QtQuickLink:
-                Core::ICore::showOptionsDialog(QmlJSTools::Constants::QML_JS_CODE_STYLE_SETTINGS_ID);
+                //  Core::ICore::showOptionsDialog(QmlJSTools::Constants::QML_JS_CODE_STYLE_SETTINGS_ID);
                 break;
             }
         });

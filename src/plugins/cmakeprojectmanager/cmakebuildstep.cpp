@@ -13,13 +13,13 @@
 #include "cmaketool.h"
 #include "cmaketoolmanager.h"
 
-#include <android/androidconstants.h>
+// #include <android/androidconstants.h>
 
-#include <baremetal/baremetalconstants.h>
+// #include <baremetal/baremetalconstants.h>
 
-#include <ios/iosconstants.h>
+// #include <ios/iosconstants.h>
 
-#include <webassembly/webassemblyconstants.h>
+// #include <webassembly/webassemblyconstants.h>
 
 #include <coreplugin/find/itemviewfind.h>
 #include <projectexplorer/buildsteplist.h>
@@ -205,12 +205,12 @@ static bool supportsStageForInstallation(const Kit *kit)
     IDeviceConstPtr buildDevice = BuildDeviceKitAspect::device(kit);
     QTC_ASSERT(runDeviceType.isValid(), return false);
     QTC_ASSERT(buildDevice, return false);
-    return (!runDevice || runDevice->id() != buildDevice->id())
-           && runDeviceType != Android::Constants::ANDROID_DEVICE_TYPE
-           && runDeviceType != Ios::Constants::IOS_DEVICE_TYPE
-           && runDeviceType != Ios::Constants::IOS_SIMULATOR_TYPE
-           && runDeviceType != BareMetal::Constants::BareMetalOsType
-           && runDeviceType != WebAssembly::Constants::WEBASSEMBLY_DEVICE_TYPE;
+    return (!runDevice || runDevice->id() != buildDevice->id());
+           // && runDeviceType != Android::Constants::ANDROID_DEVICE_TYPE
+           // && runDeviceType != Ios::Constants::IOS_DEVICE_TYPE
+           // && runDeviceType != Ios::Constants::IOS_SIMULATOR_TYPE
+           // && runDeviceType != BareMetal::Constants::BareMetalOsType
+           // && runDeviceType != WebAssembly::Constants::WEBASSEMBLY_DEVICE_TYPE;
 }
 
 CMakeBuildStep::CMakeBuildStep(BuildStepList *bsl, Id id) :

@@ -12,7 +12,7 @@
 
 #include <coreplugin/icore.h>
 
-#include <ios/iosconstants.h>
+// #include <ios/iosconstants.h>
 
 #include <projectexplorer/devicesupport/idevice.h>
 #include <projectexplorer/kitaspects.h>
@@ -52,9 +52,10 @@ namespace CMakeProjectManager {
 
 static bool isIos(const Kit *k)
 {
-    const Id deviceType = DeviceTypeKitAspect::deviceTypeId(k);
-    return deviceType == Ios::Constants::IOS_DEVICE_TYPE
-           || deviceType == Ios::Constants::IOS_SIMULATOR_TYPE;
+//     const Id deviceType = DeviceTypeKitAspect::deviceTypeId(k);
+//     return deviceType == Ios::Constants::IOS_DEVICE_TYPE
+//            || deviceType == Ios::Constants::IOS_SIMULATOR_TYPE;
+    return false;
 }
 
 static Id defaultCMakeToolId()

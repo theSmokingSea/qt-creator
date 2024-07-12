@@ -28,7 +28,7 @@
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/projecttree.h>
 
-#include <qmljseditor/qmljseditorconstants.h>
+// #include <qmljseditor/qmljseditorconstants.h>
 #include <qmljs/qmljsmodelmanagerinterface.h>
 #include <qmldebug/qmldebugconnection.h>
 #include <qmldebug/qpacketprotocol.h>
@@ -463,14 +463,14 @@ void QmlEngine::gotoLocation(const Location &location)
                 return;
             }
         }
-        IEditor *editor = EditorManager::openEditorWithContents(
-                    QmlJSEditor::Constants::C_QMLJSEDITOR_ID, &titlePattern);
-        if (editor) {
-            editor->document()->setProperty(Constants::OPENED_BY_DEBUGGER, true);
-            if (auto plainTextEdit = qobject_cast<QPlainTextEdit *>(editor->widget()))
-                plainTextEdit->setReadOnly(true);
-            updateDocument(editor->document(), d->sourceDocuments.value(fileName));
-        }
+        // IEditor *editor = EditorManager::openEditorWithContents(
+        //             QmlJSEditor::Constants::C_QMLJSEDITOR_ID, &titlePattern);
+        // if (editor) {
+        //     editor->document()->setProperty(Constants::OPENED_BY_DEBUGGER, true);
+        //     if (auto plainTextEdit = qobject_cast<QPlainTextEdit *>(editor->widget()))
+        //         plainTextEdit->setReadOnly(true);
+        //     updateDocument(editor->document(), d->sourceDocuments.value(fileName));
+        // }
     } else {
         DebuggerEngine::gotoLocation(location);
     }

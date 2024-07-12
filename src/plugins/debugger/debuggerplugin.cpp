@@ -50,7 +50,7 @@
 #include <extensionsystem/pluginmanager.h>
 
 #include <cppeditor/cppeditorconstants.h>
-#include <qmljseditor/qmljseditorconstants.h>
+// #include <qmljseditor/qmljseditorconstants.h>
 
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/buildmanager.h>
@@ -2042,7 +2042,7 @@ void DebuggerPluginPrivate::extensionsInitialized()
 
     // If the CppEditor or QmlJS editor plugin is there, we want to add something to
     // the editor context menu.
-    for (Id menuId : { CppEditor::Constants::M_CONTEXT, QmlJSEditor::Constants::M_CONTEXT }) {
+    for (Id menuId : { CppEditor::Constants::M_CONTEXT /* ,QmlJSEditor::Constants::M_CONTEXT */}) {
         if (ActionContainer *editorContextMenu = ActionManager::actionContainer(menuId)) {
             auto cmd = editorContextMenu->addSeparator(m_watchCommand->context());
             cmd->setAttribute(Command::CA_Hide);
