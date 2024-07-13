@@ -1,3 +1,0 @@
-HEADERS = theheader.h \
-    theclass.h
-SOURCES = thesource.cpp

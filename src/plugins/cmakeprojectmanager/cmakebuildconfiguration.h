@@ -1,16 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "cmake_global.h"
 #include "cmakeconfigitem.h"
+#include "configmodel.h"
 
 #include <projectexplorer/buildaspects.h>
 #include <projectexplorer/buildconfiguration.h>
-#include <projectexplorer/environmentaspect.h>
-
-#include <qtsupport/qtbuildaspects.h>
 
 namespace CMakeProjectManager {
 class CMakeProject;
@@ -20,33 +40,6 @@ namespace Internal {
 class CMakeBuildSystem;
 class CMakeBuildSettingsWidget;
 class CMakeProjectImporter;
-
-class InitialCMakeArgumentsAspect final : public Utils::StringAspect
-{
-public:
-    InitialCMakeArgumentsAspect(Utils::AspectContainer *container);
-
-    const CMakeConfig &cmakeConfiguration() const;
-    const QStringList allValues() const;
-    void setAllValues(const QString &values, QStringList &additionalArguments);
-    void setCMakeConfiguration(const CMakeConfig &config);
-
-    void fromMap(const Utils::Store &map) final;
-    void toMap(Utils::Store &map) const final;
-
-private:
-    CMakeConfig m_cmakeConfiguration;
-};
-
-class ConfigureEnvironmentAspect final: public ProjectExplorer::EnvironmentAspect
-{
-public:
-    ConfigureEnvironmentAspect(Utils::AspectContainer *container,
-                               ProjectExplorer::BuildConfiguration *buildConfig);
-
-    void fromMap(const Utils::Store &map) override;
-    void toMap(Utils::Store &map) const override;
-};
 
 } // namespace Internal
 
@@ -68,38 +61,24 @@ public:
     void buildTarget(const QString &buildTarget);
     ProjectExplorer::BuildSystem *buildSystem() const final;
 
+    void setSourceDirectory(const Utils::FilePath& path);
+    Utils::FilePath sourceDirectory() const;
+
     void addToEnvironment(Utils::Environment &env) const override;
-
-    Utils::Environment configureEnvironment() const;
-    Internal::CMakeBuildSystem *cmakeBuildSystem() const;
-
-    QStringList additionalCMakeArguments() const;
-    void setAdditionalCMakeArguments(const QStringList &args);
-
-    void setInitialCMakeArguments(const QStringList &args);
-    void setCMakeBuildType(const QString &cmakeBuildType, bool quiet = false);
-
-    Internal::InitialCMakeArgumentsAspect initialCMakeArguments{this};
-    Utils::StringAspect additionalCMakeOptions{this};
-    Utils::FilePathAspect sourceDirectory{this};
-    Utils::StringAspect buildTypeAspect{this};
-    QtSupport::QmlDebuggingAspect qmlDebugging{this};
-    Internal::ConfigureEnvironmentAspect configureEnv{this, this};
 
 signals:
     void signingFlagsChanged();
-    void configureEnvironmentChanged();
+
+protected:
+    bool fromMap(const QVariantMap &map) override;
 
 private:
+    QVariantMap toMap() const override;
     BuildType buildType() const override;
 
     ProjectExplorer::NamedWidget *createConfigWidget() override;
 
     virtual CMakeConfig signingFlags() const;
-
-    void setInitialBuildAndCleanSteps(const ProjectExplorer::Target *target);
-    void setBuildPresetToBuildSteps(const ProjectExplorer::Target *target);
-    void filterConfigArgumentsFromAdditionalCMakeArguments();
 
     Internal::CMakeBuildSystem *m_buildSystem = nullptr;
 
@@ -131,6 +110,49 @@ private:
     friend class Internal::CMakeProjectImporter;
 };
 
-namespace Internal { void setupCMakeBuildConfiguration(); }
+namespace Internal {
 
+class InitialCMakeArgumentsAspect final : public Utils::StringAspect
+{
+    Q_OBJECT
+
+    CMakeConfig m_cmakeConfiguration;
+public:
+    InitialCMakeArgumentsAspect();
+
+    const CMakeConfig &cmakeConfiguration() const;
+    const QStringList allValues() const;
+    void setAllValues(const QString &values, QStringList &additionalArguments);
+    void setCMakeConfiguration(const CMakeConfig &config);
+
+    void fromMap(const QVariantMap &map) final;
+    void toMap(QVariantMap &map) const final;
+};
+
+class AdditionalCMakeOptionsAspect final : public Utils::StringAspect
+{
+    Q_OBJECT
+
+public:
+    AdditionalCMakeOptionsAspect();
+};
+
+class SourceDirectoryAspect final : public Utils::StringAspect
+{
+    Q_OBJECT
+
+public:
+    SourceDirectoryAspect();
+};
+
+class BuildTypeAspect final : public Utils::StringAspect
+{
+    Q_OBJECT
+
+public:
+    BuildTypeAspect();
+    using Utils::StringAspect::update;
+};
+
+} // namespace Internal
 } // namespace CMakeProjectManager

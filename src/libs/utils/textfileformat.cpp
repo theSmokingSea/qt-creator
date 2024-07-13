@@ -1,11 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "textfileformat.h"
 
 #include "fileutils.h"
 #include "qtcassert.h"
-#include "utilstr.h"
 
 #include <QDebug>
 #include <QTextCodec>
@@ -33,7 +54,6 @@ QDebug operator<<(QDebug d, const TextFileFormat &format)
 
 /*!
     \class Utils::TextFileFormat
-    \inmodule QtCreator
 
     \brief The TextFileFormat class describes the format of a text file and
     provides autodetection.
@@ -52,7 +72,7 @@ QDebug operator<<(QDebug d, const TextFileFormat &format)
 TextFileFormat::TextFileFormat() = default;
 
 /*!
-    Detects the format of text \a data.
+    Detects the format of text data.
 */
 
 TextFileFormat TextFileFormat::detect(const QByteArray &data)
@@ -85,8 +105,7 @@ TextFileFormat TextFileFormat::detect(const QByteArray &data)
 }
 
 /*!
-    Returns a piece of text specified by \a data suitable as display for
-    an encoding error.
+    Returns a piece of text suitable as display for a encoding error.
 */
 
 QByteArray TextFileFormat::decodingErrorSample(const QByteArray &data)
@@ -154,7 +173,7 @@ bool decodeTextFileContent(const QByteArray &dataBA,
 }
 
 /*!
-    Returns \a data decoded to a plain string, \a target.
+    Decodes data to a plain string.
 */
 
 bool TextFileFormat::decode(const QByteArray &data, QString *target) const
@@ -164,7 +183,7 @@ bool TextFileFormat::decode(const QByteArray &data, QString *target) const
 }
 
 /*!
-    Returns \a data decoded to a list of strings, \a target.
+    Decodes data to a list of strings.
 
     Intended for use with progress bars loading large files.
 */
@@ -193,7 +212,7 @@ TextFileFormat::ReadResult readTextFile(const FilePath &filePath, const QTextCod
             return TextFileFormat::ReadIOError;
         data = reader.data();
     } catch (const std::bad_alloc &) {
-        *errorString = Tr::tr("Out of memory.");
+        *errorString = QCoreApplication::translate("Utils::TextFileFormat", "Out of memory.");
         return TextFileFormat::ReadMemoryAllocationError;
     }
 
@@ -204,7 +223,7 @@ TextFileFormat::ReadResult readTextFile(const FilePath &filePath, const QTextCod
         format->codec = defaultCodec ? defaultCodec : QTextCodec::codecForLocale();
 
     if (!format->decode(data, target)) {
-        *errorString = Tr::tr("An encoding error was encountered.");
+        *errorString = QCoreApplication::translate("Utils::TextFileFormat", "An encoding error was encountered.");
         if (decodingErrorSampleIn)
             *decodingErrorSampleIn = TextFileFormat::decodingErrorSample(data);
         return TextFileFormat::ReadEncodingError;
@@ -213,12 +232,7 @@ TextFileFormat::ReadResult readTextFile(const FilePath &filePath, const QTextCod
 }
 
 /*!
-    Reads a text file from \a filePath into a list of strings, \a plainTextList
-    using \a defaultCodec and text file format \a format.
-
-    Returns whether decoding was possible without errors. If errors occur,
-    returns an error message, \a errorString and a sample error,
-    \a decodingErrorSample.
+    Reads a text file into a list of strings.
 */
 
 TextFileFormat::ReadResult
@@ -236,11 +250,7 @@ TextFileFormat::ReadResult
 }
 
 /*!
-    Reads a text file from \a filePath into a string, \a plainText using
-    \a defaultCodec and text file format \a format.
-
-    Returns whether decoding was possible without errors.
-
+    Reads a text file into a string.
 */
 
 TextFileFormat::ReadResult
@@ -268,7 +278,7 @@ TextFileFormat::ReadResult TextFileFormat::readFileUTF8(const FilePath &filePath
             return TextFileFormat::ReadIOError;
         data = reader.data();
     } catch (const std::bad_alloc &) {
-        *errorString = Tr::tr("Out of memory.");
+        *errorString = QCoreApplication::translate("Utils::TextFileFormat", "Out of memory.");
         return TextFileFormat::ReadMemoryAllocationError;
     }
 
@@ -288,24 +298,8 @@ TextFileFormat::ReadResult TextFileFormat::readFileUTF8(const FilePath &filePath
     return TextFileFormat::ReadSuccess;
 }
 
-tl::expected<QString, std::pair<TextFileFormat::ReadResult, QString>>
-TextFileFormat::readFile(const FilePath &filePath, const QTextCodec *defaultCodec)
-{
-    QString plainText;
-    TextFileFormat format;
-    QString errorString;
-    const TextFileFormat::ReadResult result =
-        readTextFile(filePath, defaultCodec, &plainText, &format, &errorString, nullptr);
-    if (result != TextFileFormat::ReadSuccess)
-        return tl::unexpected(std::make_pair(result, errorString));
-    return plainText;
-}
-
 /*!
-    Writes out a text file to \a filePath into a string, \a plainText.
-
-    Returns whether decoding was possible without errors. If errors occur,
-    returns an error message, \a errorString.
+    Writes out a text file.
 */
 
 bool TextFileFormat::writeFile(const FilePath &filePath, QString plainText, QString *errorString) const

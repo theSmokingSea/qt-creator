@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "geometryutilities.h"
 
@@ -121,20 +143,21 @@ bool GeometryUtilities::placeRectAtLine(const QRectF &rect, const QLineF &line, 
 {
     QMT_ASSERT(placement, return false);
 
-    const QList<Candidate> candidates{
-        {QVector2D(rect.topRight() - rect.topLeft()), QPointF(0.0, 0.0), SideTop},
-        {QVector2D(rect.topLeft() - rect.topRight()), rect.topRight() - rect.topLeft(), SideTop},
-        {QVector2D(rect.bottomLeft() - rect.topLeft()), QPointF(0.0, 0.0), SideLeft},
-        {QVector2D(rect.topLeft() - rect.bottomLeft()), rect.bottomLeft() - rect.topLeft(), SideLeft},
-        {QVector2D(rect.bottomRight() - rect.bottomLeft()), rect.bottomLeft() - rect.topLeft(), SideBottom},
-        {QVector2D(rect.bottomLeft() - rect.bottomRight()), rect.bottomRight() - rect.topLeft(), SideBottom},
-        {QVector2D(rect.bottomRight() - rect.topRight()), rect.topRight() - rect.topLeft(), SideRight},
-        {QVector2D(rect.topRight() - rect.bottomRight()), rect.bottomRight() - rect.topLeft(), SideRight}};
+    QList<Candidate> candidates;
+    candidates << Candidate(QVector2D(rect.topRight() - rect.topLeft()), QPointF(0.0, 0.0), SideTop)
+               << Candidate(QVector2D(rect.topLeft() - rect.topRight()), rect.topRight() - rect.topLeft(), SideTop)
+               << Candidate(QVector2D(rect.bottomLeft() - rect.topLeft()), QPointF(0.0, 0.0), SideLeft)
+               << Candidate(QVector2D(rect.topLeft() - rect.bottomLeft()), rect.bottomLeft() - rect.topLeft(), SideLeft)
+               << Candidate(QVector2D(rect.bottomRight() - rect.bottomLeft()), rect.bottomLeft() - rect.topLeft(), SideBottom)
+               << Candidate(QVector2D(rect.bottomLeft() - rect.bottomRight()), rect.bottomRight() - rect.topLeft(), SideBottom)
+               << Candidate(QVector2D(rect.bottomRight() - rect.topRight()), rect.topRight() - rect.topLeft(), SideRight)
+               << Candidate(QVector2D(rect.topRight() - rect.bottomRight()), rect.bottomRight() - rect.topLeft(), SideRight);
 
-    const QVector<QVector2D> rectEdgeVectors{{QVector2D(rect.topLeft() - rect.topLeft())},
-                                             {QVector2D(rect.topRight() - rect.topLeft())},
-                                             {QVector2D(rect.bottomLeft() - rect.topLeft())},
-                                             {QVector2D(rect.bottomRight() - rect.topLeft())}};
+    QVector<QVector2D> rectEdgeVectors;
+    rectEdgeVectors << QVector2D(rect.topLeft() - rect.topLeft())
+                    << QVector2D(rect.topRight() - rect.topLeft())
+                    << QVector2D(rect.bottomLeft() - rect.topLeft())
+                    << QVector2D(rect.bottomRight() -rect.topLeft());
 
     QVector2D directionVector(line.p2() - line.p1());
     directionVector.normalize();
@@ -154,7 +177,7 @@ bool GeometryUtilities::placeRectAtLine(const QRectF &rect, const QLineF &line, 
     Side side = SideUnspecified;
     int bestSign = 0;
 
-    for (const Candidate &candidate : candidates) {
+    foreach (const Candidate &candidate, candidates) {
         // solve equation a * directionVector + candidate.first = b * intersectionVector to find smallest a
         double r = directionVector.x() * intersectionVector.y() - directionVector.y() * intersectionVector.x();
         if (r <= -1e-5 || r >= 1e-5) {
@@ -165,7 +188,7 @@ bool GeometryUtilities::placeRectAtLine(const QRectF &rect, const QLineF &line, 
                 bool ok = true;
                 int sign = 0;
                 QVector2D rectOriginVector = directionVector * a - QVector2D(candidate.second);
-                for (const QVector2D &rectEdgeVector : rectEdgeVectors) {
+                foreach (const QVector2D &rectEdgeVector, rectEdgeVectors) {
                     QVector2D edgeVector = rectOriginVector + rectEdgeVector;
                     double aa = QVector2D::dotProduct(outsideVector, edgeVector);
                     if (aa < 0.0) {
@@ -218,7 +241,7 @@ double GeometryUtilities::calcAngle(const QLineF &line)
 {
     QVector2D directionVector(line.p2() - line.p1());
     directionVector.normalize();
-    double angle = qAcos(directionVector.x()) * 180.0 / M_PI;
+    double angle = qAcos(directionVector.x()) * 180.0 / 3.1415926535;
     if (directionVector.y() > 0.0)
         angle = -angle;
     return angle;

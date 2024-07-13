@@ -1,30 +1,68 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "core_global.h"
+#include "ioutputpane.h"
 
-#include <QStringList>
+#include <QMetaType>
+#include <QObject>
 
 QT_BEGIN_NAMESPACE
 class QFont;
 QT_END_NAMESPACE
 
-namespace Core::MessageManager {
+namespace Core {
 
-CORE_EXPORT void setFont(const QFont &font);
-CORE_EXPORT void setWheelZoomEnabled(bool enabled);
+namespace Internal { class MainWindow; }
 
-CORE_EXPORT void writeSilently(const QString &message);
-CORE_EXPORT void writeFlashing(const QString &message);
-CORE_EXPORT void writeDisrupting(const QString &message);
+class CORE_EXPORT MessageManager : public QObject
+{
+    Q_OBJECT
 
-CORE_EXPORT void writeSilently(const QStringList &messages);
-CORE_EXPORT void writeFlashing(const QStringList &messages);
-CORE_EXPORT void writeDisrupting(const QStringList &messages);
+public:
+    static MessageManager *instance();
 
-void init();
-void destroy();
+    static void setFont(const QFont &font);
+    static void setWheelZoomEnabled(bool enabled);
 
-} // namespace Core::MessageManager
+    static void writeSilently(const QString &message);
+    static void writeFlashing(const QString &message);
+    static void writeDisrupting(const QString &message);
+
+    static void writeSilently(const QStringList &messages);
+    static void writeFlashing(const QStringList &messages);
+    static void writeDisrupting(const QStringList &messages);
+
+private:
+    MessageManager();
+    ~MessageManager() override;
+
+    static void init();
+    friend class Core::Internal::MainWindow;
+};
+
+} // namespace Core

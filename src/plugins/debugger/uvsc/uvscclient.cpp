@@ -1,10 +1,30 @@
-// Copyright (C) 2020 Denis Shienkov <denis.shienkov@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2020 Denis Shienkov <denis.shienkov@gmail.com>
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "uvscclient.h"
-
 #include "uvscutils.h"
-#include "../debuggertr.h"
 
 #include <QMutexLocker>
 
@@ -13,7 +33,8 @@
 
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 constexpr int kMaximumAflmapSize = 65536;
 constexpr int kMaximumTaskEnumsCount = 512;
@@ -134,8 +155,8 @@ void UvscClient::version(QString &uvscVersion, QString &uvsockVersion)
     quint32 uvsc = 0;
     quint32 uvsock = 0;
     ::UVSC_Version(&uvsc, &uvsock);
-    uvscVersion = Tr::tr("%1.%2").arg(uvsc / 100).arg(uvsc % 100);
-    uvsockVersion = Tr::tr("%1.%2").arg(uvsock / 100).arg(uvsock % 100);
+    uvscVersion = tr("%1.%2").arg(uvsc / 100).arg(uvsc % 100);
+    uvsockVersion = tr("%1.%2").arg(uvsock / 100).arg(uvsock % 100);
 }
 
 bool UvscClient::connectSession(qint32 uvscPort)
@@ -551,7 +572,7 @@ bool UvscClient::inspectLocal(const QStringList &expandedLocalINames,
     }
 
     if (localIName == "local") {
-        for (const GdbMi &child : std::as_const(children))
+        for (const GdbMi &child : qAsConst(children))
             data.addChild(child);
     } else {
         const GdbMi childrenEntry = UvscUtils::buildChildrenEntry(children);
@@ -1066,7 +1087,7 @@ void UvscClient::setError(UvscError error, const QString &errorString)
                                                    reinterpret_cast<qint8 *>(buffer.data()),
                                                    buffer.size());
         m_errorString = (st == UVSC_STATUS_SUCCESS)
-                ? QString::fromLocal8Bit(buffer) : Tr::tr("Unknown error.");
+                ? QString::fromLocal8Bit(buffer) : tr("Unknown error.");
     } else {
         m_errorString = errorString;
     }
@@ -1095,7 +1116,7 @@ void UvscClient::customEvent(QEvent *event)
 bool UvscClient::checkConnection()
 {
     if (m_descriptor == -1) {
-        setError(ConfigurationError, Tr::tr("Connection is not open."));
+        setError(ConfigurationError, tr("Connection is not open."));
         return false;
     }
     return true;
@@ -1209,4 +1230,5 @@ bool UvscClient::executeCommand(const QString &cmd, QString &output)
     return true;
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

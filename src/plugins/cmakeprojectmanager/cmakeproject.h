@@ -1,11 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "cmake_global.h"
-#include "cmakespecificsettings.h"
-#include "presetsparser.h"
 
 #include <projectexplorer/project.h>
 
@@ -29,31 +49,15 @@ public:
     void addIssue(IssueType type, const QString &text);
     void clearIssues();
 
-    Internal::PresetsData presetsData() const;
-    void readPresets();
-
-    void setOldPresetKits(const QList<ProjectExplorer::Kit *> &presetKits) const;
-    QList<ProjectExplorer::Kit *> oldPresetKits() const;
-
-    Internal::CMakeSpecificSettings &settings();
-
 protected:
     bool setupTarget(ProjectExplorer::Target *t) final;
 
 private:
     ProjectExplorer::DeploymentKnowledge deploymentKnowledge() const override;
-    void configureAsExampleProject(ProjectExplorer::Kit *kit) override;
-
-    Internal::PresetsData combinePresets(Internal::PresetsData &cmakePresetsData,
-                                         Internal::PresetsData &cmakeUserPresetsData);
-    void setupBuildPresets(Internal::PresetsData &presetsData);
 
     mutable Internal::CMakeProjectImporter *m_projectImporter = nullptr;
-    mutable QList<ProjectExplorer::Kit*> m_oldPresetKits;
 
     ProjectExplorer::Tasks m_issues;
-    Internal::PresetsData m_presetsData;
-    Internal::CMakeSpecificSettings m_settings;
 };
 
 } // namespace CMakeProjectManager

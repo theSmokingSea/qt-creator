@@ -1,11 +1,31 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "processreaper.h"
-
-#include "processhelper.h"
+#include "processutils.h"
 #include "qtcassert.h"
-#include "threadutils.h"
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -15,8 +35,6 @@
 #include <QWaitCondition>
 
 using namespace Utils;
-
-using namespace std::chrono;
 
 namespace Utils {
 namespace Internal {
@@ -36,7 +54,7 @@ never ending running process:
 
    It looks like when you call terminate() for the adb.exe, it won't stop, never, even after
    default 30 seconds timeout. The same happens for blocking processes tested in
-   tst_Process::killBlockingProcess(). It's hard to say whether any process on Windows can
+   tst_QtcProcess::killBlockingProcess(). It's hard to say whether any process on Windows can
    be finished by a call to terminate(). Until now, no such a process has been found.
 
    Further call to kill() (after a call to terminate()) finishes the process quickly.
@@ -68,7 +86,7 @@ static QString execWithArguments(QProcess *process)
 struct ReaperSetup
 {
     QProcess *m_process = nullptr;
-    milliseconds m_timeoutMs;
+    int m_timeoutMs;
 };
 
 class Reaper : public QObject
@@ -81,9 +99,14 @@ public:
     void reap()
     {
         m_timer.start();
-        connect(m_reaperSetup.m_process, &QProcess::finished, this, &Reaper::handleFinished);
+
+        connect(m_reaperSetup.m_process,
+                QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                this, &Reaper::handleFinished);
+
         if (emitFinished())
             return;
+
         terminate();
     }
 
@@ -120,9 +143,8 @@ private:
     void handleFinished()
     {
         // In case the process is still running - wait until it has finished
-        const bool isFinished = emitFinished();
-        QTC_ASSERT(isFinished, QTimer::singleShot(m_reaperSetup.m_timeoutMs,
-                                                  this, &Reaper::handleFinished));
+        QTC_ASSERT(emitFinished(), QTimer::singleShot(m_reaperSetup.m_timeoutMs,
+                                                      this, &Reaper::handleFinished));
     }
 
     void handleTerminateTimeout()
@@ -170,7 +192,9 @@ private:
     QList<ReaperSetup> takeReaperSetupList()
     {
         QMutexLocker locker(&m_mutex);
-        return std::exchange(m_reaperSetupList, {});
+        const QList<ReaperSetup> reaperSetupList = m_reaperSetupList;
+        m_reaperSetupList.clear();
+        return reaperSetupList;
     }
 
     void flush()
@@ -189,8 +213,7 @@ private:
         Reaper *reaper = new Reaper(reaperSetup);
         connect(reaper, &Reaper::finished, this, [this, reaper, process = reaperSetup.m_process] {
             QMutexLocker locker(&m_mutex);
-            const bool isRemoved = m_reaperList.removeOne(reaper);
-            QTC_CHECK(isRemoved);
+            QTC_CHECK(m_reaperList.removeOne(reaper));
             delete reaper;
             delete process;
             if (m_reaperList.isEmpty())
@@ -228,14 +251,14 @@ ProcessReaper::ProcessReaper()
 
 ProcessReaper::~ProcessReaper()
 {
-    QTC_CHECK(isMainThread());
+    QTC_CHECK(QThread::currentThread() == qApp->thread());
     QMutexLocker locker(&s_instanceMutex);
     instance()->m_private->waitForFinished();
     m_thread.quit();
     m_thread.wait();
 }
 
-void ProcessReaper::reap(QProcess *process, milliseconds timeout)
+void ProcessReaper::reap(QProcess *process, int timeoutMs)
 {
     if (!process)
         return;
@@ -256,7 +279,7 @@ void ProcessReaper::reap(QProcess *process, milliseconds timeout)
     ProcessReaperPrivate *priv = instance()->m_private;
 
     process->moveToThread(priv->thread());
-    ReaperSetup reaperSetup{process, timeout};
+    ReaperSetup reaperSetup {process, timeoutMs};
     priv->scheduleReap(reaperSetup);
 }
 

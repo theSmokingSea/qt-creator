@@ -1,23 +1,42 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "console.h"
-
 #include "consoleview.h"
 #include "consoleproxymodel.h"
 #include "consoleitemdelegate.h"
-#include "../debuggertr.h"
 
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/findplaceholder.h>
 #include <coreplugin/icore.h>
-
 #include <utils/utilsicons.h>
-
 #include <aggregation/aggregate.h>
 #include <coreplugin/find/itemviewfind.h>
 
 #include <QAction>
+#include <QCoreApplication>
 #include <QToolButton>
 #include <QLabel>
 #include <QVBoxLayout>
@@ -27,9 +46,8 @@ const char SHOW_LOG[] = "showLog";
 const char SHOW_WARNING[] = "showWarning";
 const char SHOW_ERROR[] = "showError";
 
-using namespace Utils;
-
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 /////////////////////////////////////////////////////////////////////
 //
@@ -39,10 +57,6 @@ namespace Debugger::Internal {
 
 Console::Console()
 {
-    setId("QMLDebuggerConsole");
-    setDisplayName(Tr::tr("QML Debugger Console"));
-    setPriorityInStatusBar(-40);
-
     m_consoleItemModel = new ConsoleItemModel(this);
 
     m_consoleWidget = new QWidget;
@@ -89,36 +103,36 @@ Console::Console()
 
     m_showDebug.setDefaultValue(true);
     m_showDebug.setSettingsKey(CONSOLE, SHOW_LOG);
-    m_showDebug.setLabelText(Tr::tr("Show debug, log, and info messages."));
-    m_showDebug.setToolTip(Tr::tr("Show debug, log, and info messages."));
+    m_showDebug.setLabelText(tr("Show debug, log, and info messages."));
+    m_showDebug.setToolTip(tr("Show debug, log, and info messages."));
     m_showDebug.setValue(true);
-    m_showDebug.setIcon(Icons::INFO_TOOLBAR.icon());
-    connect(&m_showDebug, &BoolAspect::changed,
-            proxyModel, [this, proxyModel] { proxyModel->setShowLogs(m_showDebug()); });
+    m_showDebug.action()->setIcon(Utils::Icons::INFO_TOOLBAR.icon());
+    connect(&m_showDebug, &Utils::BoolAspect::valueChanged,
+            proxyModel, &ConsoleProxyModel::setShowLogs);
     m_showDebugButton->setDefaultAction(m_showDebug.action());
 
     m_showWarningButton = new QToolButton(m_consoleWidget);
 
     m_showWarning.setDefaultValue(true);
     m_showWarning.setSettingsKey(CONSOLE, SHOW_WARNING);
-    m_showWarning.setLabelText(Tr::tr("Show warning messages."));
-    m_showWarning.setToolTip(Tr::tr("Show warning messages."));
+    m_showWarning.setLabelText(tr("Show warning messages."));
+    m_showWarning.setToolTip(tr("Show warning messages."));
     m_showWarning.setValue(true);
-    m_showWarning.setIcon(Icons::WARNING_TOOLBAR.icon());
-    connect(&m_showWarning, &BoolAspect::changed,
-            proxyModel, [this, proxyModel] { proxyModel->setShowWarnings(m_showWarning()); });
+    m_showWarning.action()->setIcon(Utils::Icons::WARNING_TOOLBAR.icon());
+    connect(m_showWarning.action(), &QAction::toggled,
+            proxyModel, &ConsoleProxyModel::setShowWarnings);
     m_showWarningButton->setDefaultAction(m_showWarning.action());
 
     m_showErrorButton = new QToolButton(m_consoleWidget);
 
     m_showError.setDefaultValue(true);
     m_showError.setSettingsKey(CONSOLE, SHOW_ERROR);
-    m_showError.setLabelText(Tr::tr("Show error messages."));
-    m_showError.setToolTip(Tr::tr("Show error messages."));
+    m_showError.setLabelText(tr("Show error messages."));
+    m_showError.setToolTip(tr("Show error messages."));
     m_showError.setValue(true);
-    m_showError.setIcon(Icons::CRITICAL_TOOLBAR.icon());
-    connect(&m_showError, &BoolAspect::changed,
-            proxyModel, [this, proxyModel] { proxyModel->setShowErrors(m_showError()); });
+    m_showError.action()->setIcon(Utils::Icons::CRITICAL_TOOLBAR.icon());
+    connect(m_showError.action(), &QAction::toggled,
+            proxyModel, &ConsoleProxyModel::setShowErrors);
     m_showErrorButton->setDefaultAction(m_showError.action());
 
     m_spacer = new QWidget(m_consoleWidget);
@@ -146,6 +160,11 @@ QList<QWidget *> Console::toolBarWidgets() const
 {
      return {m_showDebugButton, m_showWarningButton, m_showErrorButton,
              m_spacer, m_statusLabel};
+}
+
+int Console::priorityInStatusBar() const
+{
+    return 20;
 }
 
 void Console::clearContents()
@@ -198,9 +217,10 @@ bool Console::canNavigate() const
 
 void Console::readSettings()
 {
-    m_showDebug.readSettings();
-    m_showWarning.readSettings();
-    m_showError.readSettings();
+    QSettings *settings = Core::ICore::settings();
+    m_showDebug.readSettings(settings);
+    m_showWarning.readSettings(settings);
+    m_showError.readSettings(settings);
 }
 
 void Console::setContext(const QString &context)
@@ -210,9 +230,10 @@ void Console::setContext(const QString &context)
 
 void Console::writeSettings() const
 {
-    m_showDebug.writeSettings();
-    m_showWarning.writeSettings();
-    m_showError.writeSettings();
+    QSettings *settings = Core::ICore::settings();
+    m_showDebug.writeSettings(settings);
+    m_showWarning.writeSettings(settings);
+    m_showError.writeSettings(settings);
 }
 
 void Console::setScriptEvaluator(const ScriptEvaluator &evaluator)
@@ -248,11 +269,14 @@ void Console::evaluate(const QString &expression)
         m_consoleItemModel->shiftEditableRow();
         m_scriptEvaluator(expression);
     } else {
-        auto item = new ConsoleItem(
-            ConsoleItem::ErrorType, Tr::tr("Can only evaluate during a debug session."));
+        auto item = new ConsoleItem(ConsoleItem::ErrorType,
+               QCoreApplication::translate(
+                        "Debugger::Internal::Console",
+                        "Can only evaluate during a debug session."));
         m_consoleItemModel->shiftEditableRow();
         printItem(item);
     }
 }
 
-} // Debugger::Internal
+} // Internal
+} // Debugger

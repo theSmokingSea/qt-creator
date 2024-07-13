@@ -1,19 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "qtsupport_global.h"
 
-#include <utils/aspects.h>
+QT_FORWARD_DECLARE_CLASS(QSettings)
 
 namespace QtSupport {
 
-class QTSUPPORT_EXPORT CodeGenSettings : public Utils::AspectContainer
+class QTSUPPORT_EXPORT CodeGenSettings
 {
 public:
-    CodeGenSettings();
-
     // How to embed the Ui::Form class.
     enum UiClassEmbedding
     {
@@ -22,12 +42,19 @@ public:
         InheritedUiClass          // "...private Ui::Form..."
     };
 
-    Utils::SelectionAspect embedding{this};
-    Utils::BoolAspect retranslationSupport{this}; // Add handling for language change events
-    Utils::BoolAspect includeQtModule{this}; // Include "<QtGui/[Class]>" or just "<[Class]>"
-    Utils::BoolAspect addQtVersionCheck{this}; // Include #ifdef when using "#include <QtGui/..."
-};
+    CodeGenSettings();
+    bool equals(const CodeGenSettings &rhs) const;
 
-QTSUPPORT_EXPORT CodeGenSettings &codeGenSettings();
+    void fromSettings(const QSettings *settings);
+    void toSettings(QSettings *settings) const;
+
+    friend bool operator==(const CodeGenSettings &p1, const CodeGenSettings &p2) { return p1.equals(p2); }
+    friend bool operator!=(const CodeGenSettings &p1, const CodeGenSettings &p2) { return !p1.equals(p2); }
+
+    UiClassEmbedding embedding;
+    bool retranslationSupport; // Add handling for language change events
+    bool includeQtModule; // Include "<QtGui/[Class]>" or just "<[Class]>"
+    bool addQtVersionCheck; // Include #ifdef when using "#include <QtGui/..."
+};
 
 } // namespace QtSupport

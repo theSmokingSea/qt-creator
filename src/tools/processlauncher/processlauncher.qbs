@@ -7,11 +7,11 @@ QtcTool {
     Depends { name: "Qt.network" }
 
     cpp.defines: base.concat("UTILS_STATIC_LIBRARY")
-    cpp.includePaths: base.concat(pathToLibs)
+    cpp.includePaths: base.concat(pathToUtils)
 
     Properties {
         condition: qbs.targetOS.contains("windows")
-        cpp.dynamicLibraries: qbs.toolchain.contains("msvc") ? ["user32", "dbghelp"] : ["user32"]
+        cpp.dynamicLibraries: "user32"
     }
 
     files: [
@@ -22,7 +22,6 @@ QtcTool {
         "processlauncher-main.cpp",
     ]
 
-    property string pathToLibs: sourceDirectory + "/../../libs"
     property string pathToUtils: sourceDirectory + "/../../libs/utils"
     Group {
         name: "protocol sources"
@@ -31,16 +30,14 @@ QtcTool {
             "launcherpackets.cpp",
             "launcherpackets.h",
             "processenums.h",
-            "processhelper.cpp",
-            "processhelper.h",
             "processreaper.cpp",
             "processreaper.h",
+            "processutils.cpp",
+            "processutils.h",
             "qtcassert.cpp",
             "qtcassert.h",
             "singleton.cpp",
             "singleton.h",
-            "threadutils.cpp",
-            "threadutils.h",
         ]
     }
 }

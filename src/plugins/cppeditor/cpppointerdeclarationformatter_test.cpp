@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cpppointerdeclarationformatter_test.h"
 
@@ -24,7 +46,6 @@
 #include <QtTest>
 
 using namespace CPlusPlus;
-using namespace Utils;
 
 Q_DECLARE_METATYPE(CppEditor::Internal::Overview)
 
@@ -54,8 +75,8 @@ public:
 
         // Find cursor position and remove cursor marker '@'
         int cursorPosition = 0;
-        QByteArray sourceWithoutCursorMarker = source;
-        const int pos = sourceWithoutCursorMarker.indexOf('@');
+        QString sourceWithoutCursorMarker = QLatin1String(source);
+        const int pos = sourceWithoutCursorMarker.indexOf(QLatin1Char('@'));
         if (pos != -1) {
             sourceWithoutCursorMarker.remove(pos, 1);
             cursorPosition = pos;
@@ -64,11 +85,12 @@ public:
         // Write source to temprorary file
         CppEditor::Tests::TemporaryDir temporaryDir;
         QVERIFY(temporaryDir.isValid());
-        const FilePath filePath = temporaryDir.createFile("file.h", sourceWithoutCursorMarker);
+        const QString filePath = temporaryDir.createFile("file.h",
+                                                         sourceWithoutCursorMarker.toUtf8());
         QVERIFY(!filePath.isEmpty());
 
         // Preprocess source
-        CPlusPlus::Environment env;
+        Environment env;
         Preprocessor preprocess(nullptr, &env);
         const QByteArray preprocessedSource = preprocess.run(filePath, sourceWithoutCursorMarker);
 
@@ -81,9 +103,12 @@ public:
         QVERIFY(ast);
 
         // Open file
-        QScopedPointer<TextEditor::BaseTextEditor> editor(TextEditor::createPlainTextEditor());
+        QScopedPointer<TextEditor::BaseTextEditor> editor(
+                    TextEditor::PlainTextEditorFactory::createPlainTextEditor());
         QString error;
-        editor->document()->open(&error, document->filePath(), document->filePath());
+        editor->document()->open(&error,
+                                 Utils::FilePath::fromString(document->fileName()),
+                                 Utils::FilePath::fromString(document->fileName()));
         QVERIFY(error.isEmpty());
 
         // Set cursor position
@@ -106,7 +131,8 @@ public:
         Utils::ChangeSet change = formatter.format(ast); // ChangeSet may be empty.
 
         // Apply change
-        change.apply(qtextDocument);
+        QTextCursor changeCursor(qtextDocument);
+        change.apply(&changeCursor);
 
         // Compare
         QCOMPARE(qtextDocument->toPlainText(), expectedSource);

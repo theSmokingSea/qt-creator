@@ -1,5 +1,27 @@
-// Copyright (C) 2020 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2020 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "overlaywidget.h"
 
@@ -8,34 +30,16 @@
 #include <QEvent>
 #include <QPainter>
 
-namespace Utils::Internal {
-class OverlayWidgetPrivate
-{
-public:
-    OverlayWidget::PaintFunction m_paint;
-    OverlayWidget::ResizeFunction m_resize;
-};
-} // namespace Utils::Internal
-
 Utils::OverlayWidget::OverlayWidget(QWidget *parent)
-    : d(new Internal::OverlayWidgetPrivate)
 {
     setAttribute(Qt::WA_TransparentForMouseEvents);
     if (parent)
         attachToWidget(parent);
-    d->m_resize = [](QWidget *w, const QSize &size) { w->setGeometry(QRect(QPoint(0, 0), size)); };
 }
-
-Utils::OverlayWidget::~OverlayWidget() = default;
 
 void Utils::OverlayWidget::setPaintFunction(const Utils::OverlayWidget::PaintFunction &paint)
 {
-    d->m_paint = paint;
-}
-
-void Utils::OverlayWidget::setResizeFunction(const ResizeFunction &resize)
-{
-    d->m_resize = resize;
+    m_paint = paint;
 }
 
 bool Utils::OverlayWidget::eventFilter(QObject *obj, QEvent *ev)
@@ -47,9 +51,9 @@ bool Utils::OverlayWidget::eventFilter(QObject *obj, QEvent *ev)
 
 void Utils::OverlayWidget::paintEvent(QPaintEvent *ev)
 {
-    if (d->m_paint) {
+    if (m_paint) {
         QPainter p(this);
-        d->m_paint(this, p, ev);
+        m_paint(this, p, ev);
     }
 }
 
@@ -68,6 +72,5 @@ void Utils::OverlayWidget::attachToWidget(QWidget *parent)
 void Utils::OverlayWidget::resizeToParent()
 {
     QTC_ASSERT(parentWidget(), return );
-    if (d->m_resize)
-        d->m_resize(this, parentWidget()->size());
+    setGeometry(QRect(QPoint(0, 0), parentWidget()->size()));
 }

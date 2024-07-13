@@ -18,10 +18,14 @@
 
 using namespace KSyntaxHighlighting;
 
+ThemeData *ThemeData::get(const Theme &theme)
+{
+    return theme.m_data.data();
+}
+
 ThemeData::ThemeData()
 {
     memset(m_editorColors, 0, sizeof(m_editorColors));
-    m_textStyles.resize(QMetaEnum::fromType<Theme::TextStyle>().keyCount());
 }
 
 /**
@@ -82,18 +86,9 @@ bool ThemeData::load(const QString &filePath)
         return false;
     }
     const QByteArray jsonData = loadFile.readAll();
-    // look for metadata object
-    int metaDataStart = jsonData.indexOf("\"metadata\"");
-    int start = jsonData.indexOf('{', metaDataStart);
-    int end = jsonData.indexOf("}", metaDataStart);
-    if (start < 0 || end < 0) {
-        qCWarning(Log) << "Failed to parse theme file" << filePath << ":"
-                       << "no metadata object found";
-        return false;
-    }
 
     QJsonParseError parseError;
-    QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonData.mid(start, (end + 1) - start), &parseError);
+    QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonData, &parseError);
     if (parseError.error != QJsonParseError::NoError) {
         qCWarning(Log) << "Failed to parse theme file" << filePath << ":" << parseError.errorString();
         return false;
@@ -101,36 +96,17 @@ bool ThemeData::load(const QString &filePath)
 
     m_filePath = filePath;
 
+    QJsonObject obj = jsonDoc.object();
+
     // read metadata
-    QJsonObject metadata = jsonDoc.object();
+    const QJsonObject metadata = obj.value(QLatin1String("metadata")).toObject();
     m_name = metadata.value(QLatin1String("name")).toString();
     m_revision = metadata.value(QLatin1String("revision")).toInt();
-    return true;
-}
 
-void ThemeData::loadComplete()
-{
-    if (m_completelyLoaded) {
-        return;
-    }
-    m_completelyLoaded = true;
-
-    QFile loadFile(m_filePath);
-    if (!loadFile.open(QIODevice::ReadOnly)) {
-        return;
-    }
-    const QByteArray jsonData = loadFile.readAll();
-
-    QJsonParseError parseError;
-    QJsonDocument jsonDoc = QJsonDocument::fromJson(jsonData, &parseError);
-    if (parseError.error != QJsonParseError::NoError) {
-        qCWarning(Log) << "Failed to parse theme file" << m_filePath << ":" << parseError.errorString();
-        return;
-    }
-
-    QJsonObject obj = jsonDoc.object();
     // read text styles
-    const auto metaEnumStyle = QMetaEnum::fromType<Theme::TextStyle>();
+    static const auto styleIdx = Theme::staticMetaObject.indexOfEnumerator("TextStyle");
+    Q_ASSERT(styleIdx >= 0);
+    const auto metaEnumStyle = Theme::staticMetaObject.enumerator(styleIdx);
     const QJsonObject textStyles = obj.value(QLatin1String("text-styles")).toObject();
     for (int i = 0; i < metaEnumStyle.keyCount(); ++i) {
         Q_ASSERT(i == metaEnumStyle.value(i));
@@ -138,7 +114,9 @@ void ThemeData::loadComplete()
     }
 
     // read editor colors
-    const auto metaEnumColor = QMetaEnum::fromType<Theme::EditorColorRole>();
+    static const auto colorIdx = Theme::staticMetaObject.indexOfEnumerator("EditorColorRole");
+    Q_ASSERT(colorIdx >= 0);
+    const auto metaEnumColor = Theme::staticMetaObject.enumerator(colorIdx);
     const QJsonObject editorColors = obj.value(QLatin1String("editor-colors")).toObject();
     for (int i = 0; i < metaEnumColor.keyCount(); ++i) {
         Q_ASSERT(i == metaEnumColor.value(i));
@@ -187,7 +165,7 @@ void ThemeData::loadComplete()
         }
     }
 
-    return;
+    return true;
 }
 
 QString ThemeData::name() const
@@ -210,71 +188,61 @@ QString ThemeData::filePath() const
     return m_filePath;
 }
 
-TextStyleData ThemeData::textStyle(Theme::TextStyle style) const
-{
-    if (!m_completelyLoaded) {
-        const_cast<ThemeData *>(this)->loadComplete();
-    }
-    return m_textStyles[style];
-}
-
 QRgb ThemeData::textColor(Theme::TextStyle style) const
 {
-    return textStyle(style).textColor;
+    Q_ASSERT(static_cast<int>(style) >= 0 && static_cast<int>(style) <= static_cast<int>(Theme::Others));
+    return m_textStyles[style].textColor;
 }
 
 QRgb ThemeData::selectedTextColor(Theme::TextStyle style) const
 {
-    return textStyle(style).selectedTextColor;
+    Q_ASSERT(static_cast<int>(style) >= 0 && static_cast<int>(style) <= static_cast<int>(Theme::Others));
+    return m_textStyles[style].selectedTextColor;
 }
 
 QRgb ThemeData::backgroundColor(Theme::TextStyle style) const
 {
-    return textStyle(style).backgroundColor;
+    Q_ASSERT(static_cast<int>(style) >= 0 && static_cast<int>(style) <= static_cast<int>(Theme::Others));
+    return m_textStyles[style].backgroundColor;
 }
 
 QRgb ThemeData::selectedBackgroundColor(Theme::TextStyle style) const
 {
-    return textStyle(style).selectedBackgroundColor;
+    Q_ASSERT(static_cast<int>(style) >= 0 && static_cast<int>(style) <= static_cast<int>(Theme::Others));
+    return m_textStyles[style].selectedBackgroundColor;
 }
 
 bool ThemeData::isBold(Theme::TextStyle style) const
 {
-    return textStyle(style).bold;
+    Q_ASSERT(static_cast<int>(style) >= 0 && static_cast<int>(style) <= static_cast<int>(Theme::Others));
+    return m_textStyles[style].bold;
 }
 
 bool ThemeData::isItalic(Theme::TextStyle style) const
 {
-    return textStyle(style).italic;
+    Q_ASSERT(static_cast<int>(style) >= 0 && static_cast<int>(style) <= static_cast<int>(Theme::Others));
+    return m_textStyles[style].italic;
 }
 
 bool ThemeData::isUnderline(Theme::TextStyle style) const
 {
-    return textStyle(style).underline;
+    Q_ASSERT(static_cast<int>(style) >= 0 && static_cast<int>(style) <= static_cast<int>(Theme::Others));
+    return m_textStyles[style].underline;
 }
 
 bool ThemeData::isStrikeThrough(Theme::TextStyle style) const
 {
-    return textStyle(style).strikeThrough;
+    Q_ASSERT(static_cast<int>(style) >= 0 && static_cast<int>(style) <= static_cast<int>(Theme::Others));
+    return m_textStyles[style].strikeThrough;
 }
 
 QRgb ThemeData::editorColor(Theme::EditorColorRole role) const
 {
-    if (!m_completelyLoaded) {
-        const_cast<ThemeData *>(this)->loadComplete();
-    }
     Q_ASSERT(static_cast<int>(role) >= 0 && static_cast<int>(role) <= static_cast<int>(Theme::TemplateReadOnlyPlaceholder));
     return m_editorColors[role];
 }
 
 TextStyleData ThemeData::textStyleOverride(const QString &definitionName, const QString &attributeName) const
 {
-    if (!m_completelyLoaded) {
-        const_cast<ThemeData *>(this)->loadComplete();
-    }
-    auto it = m_textStyleOverrides.find(definitionName);
-    if (it != m_textStyleOverrides.end()) {
-        return it->value(attributeName);
-    }
-    return TextStyleData();
+    return m_textStyleOverrides.value(definitionName).value(attributeName);
 }

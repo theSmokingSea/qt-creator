@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "assistproposalitem.h"
 
@@ -105,35 +127,33 @@ bool AssistProposalItem::prematurelyApplies(const QChar &c) const
     return false;
 }
 
-void AssistProposalItem::apply(TextEditorWidget *editorWidget, int basePosition) const
+void AssistProposalItem::apply(TextDocumentManipulatorInterface &manipulator, int basePosition) const
 {
-    QTC_ASSERT(editorWidget, return);
     if (data().canConvert<QString>()) {
-        applySnippet(editorWidget, basePosition);
+        applySnippet(manipulator, basePosition);
     } else if (data().canConvert<QuickFixOperation::Ptr>()) {
-        applyQuickFix(editorWidget, basePosition);
+        applyQuickFix(manipulator, basePosition);
     } else {
-        applyContextualContent(editorWidget, basePosition);
-        editorWidget->encourageApply();
+        applyContextualContent(manipulator, basePosition);
+        manipulator.encourageApply();
     }
 }
 
-void AssistProposalItem::applyContextualContent(TextEditorWidget *editorWidget, int basePosition) const
+void AssistProposalItem::applyContextualContent(TextDocumentManipulatorInterface &manipulator, int basePosition) const
 {
-    QTC_ASSERT(editorWidget, return);
-    const int currentPosition = editorWidget->position();
-    editorWidget->replace(basePosition, currentPosition - basePosition, text());
+    const int currentPosition = manipulator.currentPosition();
+    manipulator.replace(basePosition, currentPosition - basePosition, text());
+
 }
 
-void AssistProposalItem::applySnippet(TextEditorWidget *editorWidget, int basePosition) const
+void AssistProposalItem::applySnippet(TextDocumentManipulatorInterface &manipulator, int basePosition) const
 {
-    QTC_ASSERT(editorWidget, return);
-    editorWidget->insertCodeSnippet(basePosition, data().toString(), &Snippet::parse);
+    manipulator.insertCodeSnippet(basePosition, data().toString(), &Snippet::parse);
 }
 
-void AssistProposalItem::applyQuickFix(TextEditorWidget *editorWidget, int basePosition) const
+void AssistProposalItem::applyQuickFix(TextDocumentManipulatorInterface &manipulator, int basePosition) const
 {
-    Q_UNUSED(editorWidget)
+    Q_UNUSED(manipulator)
     Q_UNUSED(basePosition)
 
     QuickFixOperation::Ptr op = data().value<QuickFixOperation::Ptr>();

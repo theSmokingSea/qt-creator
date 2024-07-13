@@ -28,10 +28,6 @@
 #include <unordered_map>
 #include <vector>
 
-QT_BEGIN_NAMESPACE
-class QTextDocument;
-QT_END_NAMESPACE
-
 namespace CPlusPlus {
 
 class CPLUSPLUS_EXPORT TranslationUnit
@@ -64,9 +60,6 @@ public:
 
     int commentCount() const;
     const Token &commentAt(int index) const;
-
-    // Including comments.
-    std::vector<Token> allTokens() const;
 
     int matchingBrace(int index) const;
     const Identifier *identifier(int index) const;
@@ -113,27 +106,23 @@ public:
     void resetAST();
     void release();
 
-    void getTokenPosition(int index, int *line,
-                          int *column = nullptr,
-                          const StringLiteral **fileName = nullptr) const;
+    void getTokenStartPosition(int index, int *line,
+                               int *column = nullptr,
+                               const StringLiteral **fileName = nullptr) const;
+
     void getTokenEndPosition(int index, int *line,
                              int *column = nullptr,
                              const StringLiteral **fileName = nullptr) const;
+
     void getPosition(int utf16charOffset,
                      int *line,
                      int *column = nullptr,
                      const StringLiteral **fileName = nullptr) const;
 
-    int getTokenPositionInDocument(int index, const QTextDocument *doc) const;
-    int getTokenEndPositionInDocument(int index, const QTextDocument *doc) const;
-
-    void getTokenPosition(const Token &token, int *line, int *column = nullptr,
+    void getTokenPosition(int index,
+                          int *line,
+                          int *column = nullptr,
                           const StringLiteral **fileName = nullptr) const;
-    void getTokenEndPosition(const Token &token, int *line, int *column = nullptr,
-                             const StringLiteral **fileName = nullptr) const;
-    int getTokenPositionInDocument(const Token token, const QTextDocument *doc) const;
-    int getTokenEndPositionInDocument(const Token &token, const QTextDocument *doc) const;
-    std::pair<int, int> getExpansionPosition(int tokenIndex) const;
 
     void pushLineOffset(int offset);
     void pushPreprocessorLine(int utf16charOffset,
@@ -184,11 +173,6 @@ private:
     std::vector<Token> *_comments;
     std::vector<int> _lineOffsets;
     std::vector<PPLine> _ppLines;
-
-    // Offset and length. Note that in contrast to token offsets, this is a raw file offset
-    // with no preprocessor prefix.
-    std::unordered_map<int, std::pair<int, int>> _expansionPositions;
-
     typedef std::unordered_map<unsigned, std::pair<int, int> > TokenLineColumn;
     TokenLineColumn _expandedLineColumn;
     MemoryPool *_pool;

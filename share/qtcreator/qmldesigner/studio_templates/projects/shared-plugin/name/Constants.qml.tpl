@@ -21,12 +21,12 @@ QtObject {
                                                   pixelSize: Qt.application.font.pixelSize * 1.6
                                               })
 
-    readonly property color backgroundColor: "#EAEAEA"
+    readonly property color backgroundColor: "#c2c2c2"
 
 
 @if %{IsQt6Project}
     property StudioApplication application: StudioApplication {
-        fontPath: Qt.resolvedUrl("../../%{ContentDir}/" + relativeFontDirectory)
+        fontPath: Qt.resolvedUrl("../../content/" + relativeFontDirectory)
     }
 @else
     property DirectoryFontLoader directoryFontLoader: DirectoryFontLoader {

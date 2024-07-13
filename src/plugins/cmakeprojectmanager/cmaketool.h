@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -7,34 +29,15 @@
 
 #include <texteditor/codeassist/keywordscompletionassist.h>
 
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/id.h>
-#include <utils/store.h>
+#include <utils/optional.h>
 
-#include <optional>
-
-namespace Utils { class Process; }
+namespace Utils { class QtcProcess; }
 
 namespace CMakeProjectManager {
 
 namespace Internal {  class IntrospectionData;  }
-
-struct CMAKE_EXPORT CMakeKeywords
-{
-    QMap<QString, Utils::FilePath> variables;
-    QMap<QString, Utils::FilePath> functions;
-    QMap<QString, Utils::FilePath> properties;
-    QSet<QString> generatorExpressions;
-    QMap<QString, Utils::FilePath> environmentVariables;
-    QMap<QString, Utils::FilePath> directoryProperties;
-    QMap<QString, Utils::FilePath> sourceProperties;
-    QMap<QString, Utils::FilePath> targetProperties;
-    QMap<QString, Utils::FilePath> testProperties;
-    QMap<QString, Utils::FilePath> includeStandardModules;
-    QMap<QString, Utils::FilePath> findModules;
-    QMap<QString, Utils::FilePath> policies;
-    QMap<QString, QStringList> functionArgs;
-};
 
 class CMAKE_EXPORT CMakeTool
 {
@@ -63,13 +66,13 @@ public:
         bool supportsPlatform = true;
         bool supportsToolset = true;
 
-        bool matches(const QString &n) const;
+        bool matches(const QString &n, const QString &ex = QString()) const;
     };
 
     using PathMapper = std::function<Utils::FilePath (const Utils::FilePath &)>;
 
     explicit CMakeTool(Detection d, const Utils::Id &id);
-    explicit CMakeTool(const Utils::Store &map, bool fromSdk);
+    explicit CMakeTool(const QVariantMap &map, bool fromSdk);
     ~CMakeTool();
 
     static Utils::Id createId();
@@ -77,7 +80,9 @@ public:
     bool isValid() const;
 
     Utils::Id id() const { return m_id; }
-    Utils::Store toMap () const;
+    QVariantMap toMap () const;
+
+    void setAutorun(bool autoRun);
 
     void setFilePath(const Utils::FilePath &executable);
     Utils::FilePath filePath() const;
@@ -88,7 +93,7 @@ public:
     bool isAutoRun() const;
     bool autoCreateBuildDirectory() const;
     QList<Generator> supportedGenerators() const;
-    CMakeKeywords keywords();
+    TextEditor::Keywords keywords();
     bool hasFileApi() const;
     Version version() const;
     QString versionDisplay() const;
@@ -100,7 +105,7 @@ public:
     void setPathMapper(const PathMapper &includePathMapper);
     PathMapper pathMapper() const;
 
-    std::optional<ReaderType> readerType() const;
+    Utils::optional<ReaderType> readerType() const;
 
     static Utils::FilePath searchQchFile(const Utils::FilePath &executable);
 
@@ -113,10 +118,9 @@ public:
 private:
     void readInformation() const;
 
-    void runCMake(Utils::Process &proc, const QStringList &args, int timeoutS = 1) const;
+    void runCMake(Utils::QtcProcess &proc, const QStringList &args, int timeoutS = 1) const;
     void parseFunctionDetailsOutput(const QString &output);
     QStringList parseVariableOutput(const QString &output);
-    QStringList parseSyntaxHighlightingXml();
 
     void fetchFromCapabilities() const;
     void parseFromCapabilities(const QString &input) const;
@@ -128,11 +132,12 @@ private:
     Utils::FilePath m_executable;
     Utils::FilePath m_qchFilePath;
 
+    bool m_isAutoRun = true;
     bool m_isAutoDetected = false;
     QString m_detectionSource;
     bool m_autoCreateBuildDirectory = false;
 
-    std::optional<ReaderType> m_readerType;
+    Utils::optional<ReaderType> m_readerType;
 
     std::unique_ptr<Internal::IntrospectionData> m_introspection;
 

@@ -1,9 +1,29 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cmakeconfigitem.h"
-
-#include "cmakeprojectmanagertr.h"
 
 #include <projectexplorer/kit.h>
 
@@ -168,7 +188,7 @@ QString CMakeConfigItem::typeToTypeString(const CMakeConfigItem::Type t)
     return {};
 }
 
-std::optional<bool> CMakeConfigItem::toBool(const QString &value)
+Utils::optional<bool> CMakeConfigItem::toBool(const QString &value)
 {
     // Taken from CMakes if(<constant>) documentation:
     // "Named boolean constants are case-insensitive."
@@ -194,17 +214,7 @@ QString CMakeConfigItem::expandedValue(const ProjectExplorer::Kit *k) const
 
 QString CMakeConfigItem::expandedValue(const Utils::MacroExpander *expander) const
 {
-    QString expandedValue = expander ? expander->expand(QString::fromUtf8(value))
-                                     : QString::fromUtf8(value);
-
-    // Make sure we have CMake paths using / instead of \\ on Windows
-    // %{buildDir} returns \\ on Windows
-    if (type == CMakeConfigItem::FILEPATH || type == CMakeConfigItem::PATH) {
-        const FilePaths paths = transform(expandedValue.split(";"), &FilePath::fromUserInput);
-        expandedValue = transform(paths, &FilePath::path).join(";");
-    }
-
-    return expandedValue;
+    return expander ? expander->expand(QString::fromUtf8(value)) : QString::fromUtf8(value);
 }
 
 bool CMakeConfigItem::less(const CMakeConfigItem &a, const CMakeConfigItem &b)
@@ -215,13 +225,13 @@ bool CMakeConfigItem::less(const CMakeConfigItem &a, const CMakeConfigItem &b)
 CMakeConfigItem CMakeConfigItem::fromString(const QString &s)
 {
     // Strip comments (only at start of line!):
-    int commentStart = s.size();
-    for (int i = 0; i < s.size(); ++i) {
+    int commentStart = s.count();
+    for (int i = 0; i < s.count(); ++i) {
         const QChar c = s.at(i);
         if (c == ' ' || c == '\t')
             continue;
         else if ((c == '#')
-                 || (c == '/' && i < s.size() - 1 && s.at(i + 1) == '/')) {
+                 || (c == '/' && i < s.count() - 1 && s.at(i + 1) == '/')) {
             commentStart = i;
             break;
         } else {
@@ -234,7 +244,7 @@ CMakeConfigItem CMakeConfigItem::fromString(const QString &s)
     int firstPos = -1;
     int colonPos = -1;
     int equalPos = -1;
-    for (int i = 0; i < line.size(); ++i) {
+    for (int i = 0; i < line.count(); ++i) {
         const QChar c = s.at(i);
         if (firstPos < 0 && !c.isSpace()) {
             firstPos = i;
@@ -272,10 +282,10 @@ CMakeConfigItem CMakeConfigItem::fromString(const QString &s)
 
 static QByteArray trimCMakeCacheLine(const QByteArray &in) {
     int start = 0;
-    while (start < in.size() && (in.at(start) == ' ' || in.at(start) == '\t'))
+    while (start < in.count() && (in.at(start) == ' ' || in.at(start) == '\t'))
         ++start;
 
-    return in.mid(start, in.size() - start - 1);
+    return in.mid(start, in.count() - start - 1);
 }
 
 static QByteArrayList splitCMakeCacheLine(const QByteArray &line) {
@@ -349,7 +359,8 @@ CMakeConfig CMakeConfig::fromFile(const Utils::FilePath &cacheFile, QString *err
     QFile cache(cacheFile.toString());
     if (!cache.open(QIODevice::ReadOnly | QIODevice::Text)) {
         if (errorMessage)
-            *errorMessage = Tr::tr("Failed to open %1 for reading.").arg(cacheFile.toUserOutput());
+            *errorMessage = QCoreApplication::translate("CMakeProjectManager::CMakeConfigItem", "Failed to open %1 for reading.")
+                .arg(cacheFile.toUserOutput());
         return CMakeConfig();
     }
 
@@ -371,15 +382,15 @@ CMakeConfig CMakeConfig::fromFile(const Utils::FilePath &cacheFile, QString *err
         if (pieces.isEmpty())
             continue;
 
-        QTC_ASSERT(pieces.size() == 3, continue);
-        const QByteArray &key = pieces.at(0);
-        const QByteArray &type = pieces.at(1);
-        const QByteArray &value = pieces.at(2);
+        QTC_ASSERT(pieces.count() == 3, continue);
+        const QByteArray key = pieces.at(0);
+        const QByteArray type = pieces.at(1);
+        const QByteArray value = pieces.at(2);
 
         if (key.endsWith("-ADVANCED") && value == "1") {
-            advancedSet.insert(key.left(key.size() - 9 /* "-ADVANCED" */));
+            advancedSet.insert(key.left(key.count() - 9 /* "-ADVANCED" */));
         } else if (key.endsWith("-STRINGS") && CMakeConfigItem::typeStringToType(type) == CMakeConfigItem::INTERNAL) {
-            valuesMap[key.left(key.size() - 8) /* "-STRINGS" */] = value;
+            valuesMap[key.left(key.count() - 8) /* "-STRINGS" */] = value;
         } else {
             CMakeConfigItem::Type t = CMakeConfigItem::typeStringToType(type);
             result << CMakeConfigItem(key, t, documentation, value);
@@ -387,7 +398,7 @@ CMakeConfig CMakeConfig::fromFile(const Utils::FilePath &cacheFile, QString *err
     }
 
     // Set advanced flags:
-    for (int i = 0; i < result.size(); ++i) {
+    for (int i = 0; i < result.count(); ++i) {
         CMakeConfigItem &item = result[i];
         item.isAdvanced = advancedSet.contains(item.key);
 
@@ -399,7 +410,9 @@ CMakeConfig CMakeConfig::fromFile(const Utils::FilePath &cacheFile, QString *err
         }
     }
 
-    return Utils::sorted(std::move(result), &CMakeConfigItem::less);
+    Utils::sort(result, &CMakeConfigItem::less);
+
+    return result;
 }
 
 QString CMakeConfigItem::toString(const Utils::MacroExpander *expander) const
@@ -434,7 +447,9 @@ QString CMakeConfigItem::toString(const Utils::MacroExpander *expander) const
         break;
     }
 
-    return QString("%1:%2=%3").arg(QString::fromUtf8(key), typeStr, expandedValue(expander));
+    const QString expandedValue
+            = expander ? expander->expand(QString::fromUtf8(value)) : QString::fromUtf8(value);
+    return QString::fromUtf8(key) + QLatin1Char(':') + typeStr + QLatin1Char('=') + expandedValue;
 }
 
 QString CMakeConfigItem::toArgument() const
@@ -467,29 +482,23 @@ bool CMakeConfigItem::operator==(const CMakeConfigItem &o) const
     return o.key == key && o.value == value && o.isUnset == isUnset && o.isInitial == isInitial;
 }
 
-size_t qHash(const CMakeConfigItem &it)
+Utils::QHashValueType qHash(const CMakeConfigItem &it)
 {
     return ::qHash(it.key) ^ ::qHash(it.value) ^ ::qHash(it.isUnset) ^ ::qHash(it.isInitial);
 }
 
+#if WITH_TESTS
+
 } // namespace CMakeProjectManager
 
-#if WITH_TESTS
+#include "cmakeprojectplugin.h"
 
 #include <QTest>
 
-namespace CMakeProjectManager::Internal {
+namespace CMakeProjectManager {
+namespace Internal {
 
-class CMakeConfigTest final : public QObject
-{
-    Q_OBJECT
-
-private slots:
-    void testCMakeSplitValue_data();
-    void testCMakeSplitValue();
-};
-
-void CMakeConfigTest::testCMakeSplitValue_data()
+void CMakeProjectPlugin::testCMakeSplitValue_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<bool>("keepEmpty");
@@ -532,7 +541,7 @@ void CMakeConfigTest::testCMakeSplitValue_data()
             << "C:/something;;/second/path" << true << QStringList({"C:/something", "", "/second/path"});
 }
 
-void CMakeConfigTest::testCMakeSplitValue()
+void CMakeProjectPlugin::testCMakeSplitValue()
 {
     QFETCH(QString, input);
     QFETCH(bool, keepEmpty);
@@ -543,13 +552,7 @@ void CMakeConfigTest::testCMakeSplitValue()
     QCOMPARE(expectedOutput, realOutput);
 }
 
-QObject *createCMakeConfigTest()
-{
-    return new CMakeConfigTest();
-}
-
-} // CMakeProjectManager::Internal
-
+} // namespace Internal
 #endif
 
-#include "cmakeconfigitem.moc"
+} // namespace CMakeProjectManager

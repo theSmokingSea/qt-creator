@@ -1,5 +1,27 @@
-// Copyright (C) 2020 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2020 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sqlitesessionchangeset.h"
 #include "sqliteexception.h"
@@ -26,13 +48,15 @@ void checkSessionChangeSetCreation(int resultCode)
 void checkIteratorCreation(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw Sqlite::CannotCreateChangeSetIterator{};
+        throw Sqlite::CannotCreateChangeSetIterator{
+            "SessionChangeSet: Cannot create iterator from blob."};
 }
 
 void checkIteratorOperation(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw Sqlite::CannotGetChangeSetOperation{};
+        throw Sqlite::CannotGetChangeSetOperation{
+            "SessionChangeSet: Cannot create iterator from blob."};
 }
 
 void checkChangeSetValue(int resultCode)
@@ -41,12 +65,14 @@ void checkChangeSetValue(int resultCode)
     case SQLITE_OK:
         return;
     case SQLITE_RANGE:
-        throw Sqlite::ChangeSetTupleIsOutOfRange{};
+        throw Sqlite::ChangeSetTupleIsOutOfRange{
+            "SessionChangeSet: You tried to access a non existing column."};
     case SQLITE_MISUSE:
-        throw Sqlite::ChangeSetIsMisused{};
+        throw Sqlite::ChangeSetIsMisused{
+            "SessionChangeSet: Some misuse happened as you tried to access."};
     }
 
-    throw Sqlite::UnknownError{};
+    throw Sqlite::UnknownError{"SessionChangeSet: Some unknown error happened."};
 }
 
 ValueView convertSqliteValue(sqlite3_value *value)

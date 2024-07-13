@@ -1,83 +1,104 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
-#include "../core_global.h"
+#include <coreplugin/core_global.h>
 
-#include <utils/aspects.h>
+#include <utils/icon.h>
 #include <utils/id.h>
 
+#include <QObject>
+#include <QPointer>
+#include <QStringList>
+#include <QWidget>
+
 #include <functional>
-#include <memory>
+
+namespace Utils { class AspectContainer; };
 
 namespace Core {
-
-namespace Internal {
-class IOptionsPageWidgetPrivate;
-class IOptionsPagePrivate;
-class IOptionsPageProviderPrivate;
-} // namespace Internal
 
 class CORE_EXPORT IOptionsPageWidget : public QWidget
 {
     Q_OBJECT
-
 public:
-    IOptionsPageWidget();
-    ~IOptionsPageWidget();
-    void setOnApply(const std::function<void()> &func);
-    void setOnCancel(const std::function<void()> &func);
-    void setOnFinish(const std::function<void()> &func);
-
-protected:
-    friend class IOptionsPage;
-    virtual void apply();
-    virtual void cancel();
-    virtual void finish();
-
-private:
-    std::unique_ptr<Internal::IOptionsPageWidgetPrivate> d;
+    virtual void apply() = 0;
+    virtual void finish() {}
 };
 
-class CORE_EXPORT IOptionsPage
+class CORE_EXPORT IOptionsPage : public QObject
 {
-    Q_DISABLE_COPY_MOVE(IOptionsPage)
+    Q_OBJECT
 
 public:
-    explicit IOptionsPage(bool registerGlobally = true);
-    virtual ~IOptionsPage();
+    IOptionsPage(QObject *parent = nullptr, bool registerGlobally = true);
+    ~IOptionsPage() override;
 
     static const QList<IOptionsPage *> allOptionsPages();
 
-    Utils::Id id() const;
-    QString displayName() const;
-    Utils::Id category() const;
-    QString displayCategory() const;
-    Utils::FilePath categoryIconPath() const;
+    Utils::Id id() const { return m_id; }
+    QString displayName() const { return m_displayName; }
+    Utils::Id category() const { return m_category; }
+    QString displayCategory() const { return m_displayCategory; }
+    QIcon categoryIcon() const;
 
     using WidgetCreator = std::function<IOptionsPageWidget *()>;
     void setWidgetCreator(const WidgetCreator &widgetCreator);
 
+    virtual bool matches(const QRegularExpression &regexp) const;
     virtual QWidget *widget();
     virtual void apply();
-    virtual void cancel();
     virtual void finish();
 
-    virtual bool matches(const QRegularExpression &regexp) const;
-
 protected:
-    virtual QStringList keywords() const;
-
-    void setId(Utils::Id id);
-    void setDisplayName(const QString &displayName);
-    void setCategory(Utils::Id category);
-    void setDisplayCategory(const QString &displayCategory);
+    void setId(Utils::Id id) { m_id = id; }
+    void setDisplayName(const QString &displayName) { m_displayName = displayName; }
+    void setCategory(Utils::Id category) { m_category = category; }
+    void setDisplayCategory(const QString &displayCategory) { m_displayCategory = displayCategory; }
+    void setCategoryIcon(const Utils::Icon &categoryIcon) { m_categoryIcon = categoryIcon; }
     void setCategoryIconPath(const Utils::FilePath &categoryIconPath);
-    void setSettingsProvider(const std::function<Utils::AspectContainer *()> &provider);
+    void setSettings(Utils::AspectContainer *settings);
+    void setLayouter(const std::function<void(QWidget *w)> &layouter);
+
+    // Used in FontSettingsPage. FIXME?
+    QPointer<QWidget> m_widget; // Used in conjunction with m_widgetCreator
 
 private:
-    std::unique_ptr<Internal::IOptionsPagePrivate> d;
+    Utils::Id m_id;
+    Utils::Id m_category;
+    QString m_displayName;
+    QString m_displayCategory;
+    Utils::Icon m_categoryIcon;
+    WidgetCreator m_widgetCreator;
+
+    mutable bool m_keywordsInitialized = false;
+    mutable QStringList m_keywords;
+
+    Utils::AspectContainer *m_settings = nullptr;
+    std::function<void(QWidget *w)> m_layouter;
 };
 
 /*
@@ -88,34 +109,31 @@ private:
     before the options pages get available.)
 */
 
-class CORE_EXPORT IOptionsPageProvider
+class CORE_EXPORT IOptionsPageProvider : public QObject
 {
-    Q_DISABLE_COPY_MOVE(IOptionsPageProvider)
+    Q_OBJECT
 
 public:
-    IOptionsPageProvider();
-    virtual ~IOptionsPageProvider();
+    IOptionsPageProvider(QObject *parent = nullptr);
+    ~IOptionsPageProvider() override;
 
     static const QList<IOptionsPageProvider *> allOptionsPagesProviders();
 
-    Utils::Id category() const;
-    QString displayCategory() const;
-    Utils::FilePath categoryIconPath() const;
+    Utils::Id category() const { return m_category; }
+    QString displayCategory() const { return m_displayCategory; }
+    QIcon categoryIcon() const;
 
     virtual QList<IOptionsPage *> pages() const = 0;
     virtual bool matches(const QRegularExpression &regexp) const = 0;
 
 protected:
-    void setCategory(Utils::Id category);
-    void setDisplayCategory(const QString &displayCategory);
-    void setCategoryIconPath(const Utils::FilePath &iconPath);
+    void setCategory(Utils::Id category) { m_category = category; }
+    void setDisplayCategory(const QString &displayCategory) { m_displayCategory = displayCategory; }
+    void setCategoryIcon(const Utils::Icon &categoryIcon) { m_categoryIcon = categoryIcon; }
 
-    std::unique_ptr<Internal::IOptionsPageProviderPrivate> d;
+    Utils::Id m_category;
+    QString m_displayCategory;
+    Utils::Icon m_categoryIcon;
 };
-
-// Which part of the settings page to pre-select, if applicable. In practice, this will
-// usually be an item in some sort of (list) view.
-void CORE_EXPORT setPreselectedOptionsPageItem(Utils::Id page, Utils::Id item);
-Utils::Id CORE_EXPORT preselectedOptionsPageItem(Utils::Id page);
 
 } // namespace Core

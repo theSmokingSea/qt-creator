@@ -8,7 +8,7 @@ Item {
     height: Constants.height
 
     SwipeView {
-        id: stackView
+        id: stackLayout
         width: 100
         anchors.top: tabBar.bottom
         anchors.right: parent.right
@@ -16,7 +16,7 @@ Item {
         anchors.bottom: parent.bottom
         currentIndex: tabBar.currentIndex
 
-        onCurrentIndexChanged: tabBar.currentIndex = stackView.currentIndex
+        onCurrentIndexChanged: tabBar.currentIndex = stackLayout.currentIndex
 
         Item {
             Label {
@@ -47,8 +47,8 @@ Item {
         id: tabBar
         currentIndex: 0
         anchors.top: parent.top
-        anchors.right: stackView.right
-        anchors.left: stackView.left
+        anchors.right: stackLayout.right
+        anchors.left: stackLayout.left
 
         TabButton {
             text: qsTr("Tab 1")

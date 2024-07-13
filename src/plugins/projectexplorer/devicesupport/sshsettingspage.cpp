@@ -1,13 +1,33 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sshsettingspage.h"
-
 #include "sshsettings.h"
-#include "../projectexplorerconstants.h"
-#include "../projectexplorertr.h"
 
 #include <coreplugin/icore.h>
+#include <projectexplorer/projectexplorerconstants.h>
 #include <utils/hostosinfo.h>
 #include <utils/pathchooser.h>
 
@@ -23,6 +43,8 @@ namespace Internal {
 
 class SshSettingsWidget : public Core::IOptionsPageWidget
 {
+    Q_DECLARE_TR_FUNCTIONS(ProjectExplorer::Internal::SshSettingsWidget)
+
 public:
     SshSettingsWidget();
     void saveSettings();
@@ -55,9 +77,9 @@ private:
 SshSettingsPage::SshSettingsPage()
 {
     setId(Constants::SSH_SETTINGS_PAGE_ID);
-    setDisplayName(Tr::tr("SSH"));
+    setDisplayName(SshSettingsWidget::tr("SSH"));
     setCategory(Constants::DEVICE_SETTINGS_CATEGORY);
-    setDisplayCategory(Tr::tr("SSH"));
+    setDisplayCategory(QCoreApplication::translate("ProjectExplorer", "SSH"));
     setCategoryIconPath(":/projectexplorer/images/settingscategory_devices.png");
     setWidgetCreator([] { return new SshSettingsWidget; });
 }
@@ -71,12 +93,12 @@ SshSettingsWidget::SshSettingsWidget()
     setupAskpassPathChooser();
     setupKeygenPathChooser();
     auto * const layout = new QFormLayout(this);
-    layout->addRow(Tr::tr("Enable connection sharing:"), &m_connectionSharingCheckBox);
-    layout->addRow(Tr::tr("Connection sharing timeout:"), &m_connectionSharingSpinBox);
-    layout->addRow(Tr::tr("Path to ssh executable:"), &m_sshChooser);
-    layout->addRow(Tr::tr("Path to sftp executable:"), &m_sftpChooser);
-    layout->addRow(Tr::tr("Path to ssh-askpass executable:"), &m_askpassChooser);
-    layout->addRow(Tr::tr("Path to ssh-keygen executable:"), &m_keygenChooser);
+    layout->addRow(tr("Enable connection sharing:"), &m_connectionSharingCheckBox);
+    layout->addRow(tr("Connection sharing timeout:"), &m_connectionSharingSpinBox);
+    layout->addRow(tr("Path to ssh executable:"), &m_sshChooser);
+    layout->addRow(tr("Path to sftp executable:"), &m_sftpChooser);
+    layout->addRow(tr("Path to ssh-askpass executable:"), &m_askpassChooser);
+    layout->addRow(tr("Path to ssh-keygen executable:"), &m_keygenChooser);
     updateCheckboxEnabled();
     updateSpinboxEnabled();
 }
@@ -107,7 +129,7 @@ void SshSettingsWidget::setupConnectionSharingSpinBox()
 {
     m_connectionSharingSpinBox.setMinimum(1);
     m_connectionSharingSpinBox.setValue(SshSettings::connectionSharingTimeout());
-    m_connectionSharingSpinBox.setSuffix(Tr::tr(" minutes"));
+    m_connectionSharingSpinBox.setSuffix(tr(" minutes"));
 }
 
 void SshSettingsWidget::setupSshPathChooser()
@@ -135,7 +157,7 @@ void SshSettingsWidget::setupPathChooser(PathChooser &chooser, const FilePath &i
 {
     chooser.setExpectedKind(PathChooser::ExistingCommand);
     chooser.setFilePath(initialPath);
-    connect(&chooser, &PathChooser::textChanged, [&changedFlag] { changedFlag = true; });
+    connect(&chooser, &PathChooser::pathChanged, [&changedFlag] { changedFlag = true; });
 }
 
 void SshSettingsWidget::updateCheckboxEnabled()

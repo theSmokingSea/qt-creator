@@ -8,6 +8,7 @@ QtcPlugin {
 
     Depends { name: "Core" }
     Depends { name: "ProjectExplorer" }
+    Depends { name: "CppEditor" }
     Depends { name: "QtSupport" }
 
     files: [
@@ -20,8 +21,8 @@ QtcPlugin {
         "autotoolsbuildsystem.cpp",
         "autotoolsbuildsystem.h",
         "autotoolsprojectconstants.h",
-        "autotoolsprojectmanagertr.h",
         "autotoolsprojectplugin.cpp",
+        "autotoolsprojectplugin.h",
         "configurestep.cpp",
         "configurestep.h",
         "makefileparser.cpp",

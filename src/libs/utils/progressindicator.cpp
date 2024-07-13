@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "progressindicator.h"
 
@@ -72,7 +94,7 @@ static FilePath imageFileNameForIndicatorSize(ProgressIndicatorSize size)
 ProgressIndicatorPainter::ProgressIndicatorPainter(ProgressIndicatorSize size)
 {
     m_timer.setSingleShot(false);
-    QObject::connect(&m_timer, &QTimer::timeout, &m_timer, [this] {
+    QObject::connect(&m_timer, &QTimer::timeout, [this]() {
         nextAnimationStep();
         if (m_callback)
             m_callback();
@@ -185,7 +207,11 @@ void ProgressIndicatorPainter::nextAnimationStep()
 /*!
     Constructs a ProgressIndicator of the size \a size and with the parent \a parent.
 
-    \sa setIndicatorSize()
+    Use \l attachToWidget to make the progress indicator automatically resize and center on the
+    parent widget.
+
+    \sa attachToWidget
+    \sa setIndicatorSize
 */
 ProgressIndicator::ProgressIndicator(ProgressIndicatorSize size, QWidget *parent)
     : OverlayWidget(parent)
@@ -193,14 +219,14 @@ ProgressIndicator::ProgressIndicator(ProgressIndicatorSize size, QWidget *parent
 {
     setPaintFunction(
         [this](QWidget *w, QPainter &p, QPaintEvent *) { m_paint.paint(p, w->rect()); });
-    m_paint.setUpdateCallback([this] { update(); });
+    m_paint.setUpdateCallback([this]() { update(); });
     updateGeometry();
 }
 
 /*!
     Changes the size of the progress indicator to \a size.
 
-    \sa ProgressIndicatorPainter::indicatorSize()
+    \sa indicatorSize
 */
 void ProgressIndicator::setIndicatorSize(ProgressIndicatorSize size)
 {
@@ -211,7 +237,7 @@ void ProgressIndicator::setIndicatorSize(ProgressIndicatorSize size)
 /*!
     Returns the size of the indicator in device independent pixels.
 
-    \sa ProgressIndicatorPainter::indicatorSize()
+    \sa indicatorSize
 */
 QSize ProgressIndicator::sizeHint() const
 {

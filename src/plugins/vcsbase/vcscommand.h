@@ -1,108 +1,66 @@
-// Copyright (C) 2016 Brian McGillion and Hugues Delorme
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Brian McGillion and Hugues Delorme
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "vcsbase_global.h"
-#include "vcsenums.h"
 
-#include <coreplugin/progressmanager/processprogress.h>
-
-#include <utils/filepath.h>
-#include <utils/processenums.h>
-
-#include <QObject>
-
-QT_BEGIN_NAMESPACE
-class QTextCodec;
-QT_END_NAMESPACE
-
-namespace Utils {
-class CommandLine;
-class Environment;
-class Process;
-}
+#include <coreplugin/shellcommand.h>
 
 namespace VcsBase {
 
-namespace Internal { class VcsCommandPrivate; }
+class VcsOutputWindow;
 
-class VcsCommand;
-
-using ExitCodeInterpreter = std::function<Utils::ProcessResult(int /*exitCode*/)>;
-
-class VCSBASE_EXPORT CommandResult
-{
-public:
-    CommandResult() = default;
-    CommandResult(const Utils::Process &process);
-    CommandResult(const VcsCommand &command);
-    CommandResult(Utils::ProcessResult result, const QString &exitMessage)
-        : m_result(result), m_exitMessage(exitMessage) {}
-
-    Utils::ProcessResult result() const { return m_result; }
-    int exitCode() const { return m_exitCode; }
-    QString exitMessage() const { return m_exitMessage; }
-
-    QString cleanedStdOut() const { return m_cleanedStdOut; }
-    QString cleanedStdErr() const { return m_cleanedStdErr; }
-
-    QByteArray rawStdOut() const { return m_rawStdOut; }
-
-private:
-    Utils::ProcessResult m_result = Utils::ProcessResult::StartFailed;
-    int m_exitCode = 0;
-    QString m_exitMessage;
-
-    QString m_cleanedStdOut;
-    QString m_cleanedStdErr;
-
-    QByteArray m_rawStdOut;
-};
-
-class VCSBASE_EXPORT VcsCommand final : public QObject
+class VCSBASE_EXPORT VcsCommand : public Core::ShellCommand
 {
     Q_OBJECT
 
 public:
-    // TODO: For master, make c'tor private and make it a friend to VcsBaseClientImpl.
-    VcsCommand(const Utils::FilePath &workingDirectory, const Utils::Environment &environment);
-    ~VcsCommand() override;
+    enum VcsRunFlags {
+        SshPasswordPrompt = 0x1000, // Disable terminal on UNIX to force graphical prompt.
+        ExpectRepoChanges = 0x2000, // Expect changes in repository by the command
+    };
 
-    void setDisplayName(const QString &name);
+    VcsCommand(const Utils::FilePath &defaultWorkingDirectory, const Utils::Environment &environment);
 
-    void addJob(const Utils::CommandLine &command, int timeoutS,
-                const Utils::FilePath &workingDirectory = {},
-                const ExitCodeInterpreter &interpreter = {});
-    void start();
+    const Utils::Environment processEnvironment() const override;
 
-    void addFlags(RunFlags f);
+    void runCommand(Utils::QtcProcess &process,
+                    const Utils::CommandLine &command,
+                    const Utils::FilePath &workDirectory = {}) override;
 
-    void setCodec(QTextCodec *codec);
-
-    void setProgressParser(const Core::ProgressParser &parser);
-
-    static CommandResult runBlocking(const Utils::FilePath &workingDirectory,
-                                     const Utils::Environment &environment,
-                                     const Utils::CommandLine &command,
-                                     RunFlags flags,
-                                     int timeoutS,
-                                     QTextCodec *codec);
-    void cancel();
-
-    QString cleanedStdOut() const;
-    QString cleanedStdErr() const;
-    Utils::ProcessResult result() const;
-
-signals:
-    void stdOutText(const QString &);
-    void stdErrText(const QString &);
-    void done();
+protected:
+    void addTask(QFuture<void> &future) override;
 
 private:
-    CommandResult runBlockingHelper(const Utils::CommandLine &command, int timeoutS);
+    void emitRepositoryChanged(const Utils::FilePath &workingDirectory);
 
-    class Internal::VcsCommandPrivate *const d;
+    void coreAboutToClose() override;
+
+    QString m_sshPrompt;
+    bool m_preventRepositoryChanged;
 };
 
-} // namespace Utils
+} // namespace VcsBase

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Axonian LLC.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Axonian LLC.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -8,11 +30,10 @@
 #include <projectexplorer/ioutputparser.h>
 #include <projectexplorer/task.h>
 
-#include <utils/filepath.h>
+#include <utils/optional.h>
 
+#include <QDir>
 #include <QRegularExpression>
-
-#include <optional>
 
 namespace CMakeProjectManager {
 
@@ -22,39 +43,24 @@ class CMAKE_EXPORT CMakeParser : public ProjectExplorer::OutputTaskParser
 
 public:
     explicit CMakeParser();
-    void setSourceDirectory(const Utils::FilePath &sourceDir);
+    void setSourceDirectory(const QString &sourceDir);
 
 private:
     Result handleLine(const QString &line, Utils::OutputFormat type) override;
     void flush() override;
-    Utils::FilePath resolvePath(const QString &path) const;
 
     enum TripleLineError { NONE, LINE_LOCATION, LINE_DESCRIPTION, LINE_DESCRIPTION2 };
 
     TripleLineError m_expectTripleLineErrorData = NONE;
 
-    std::optional<Utils::FilePath> m_sourceDirectory;
+    Utils::optional<QDir> m_sourceDirectory;
     ProjectExplorer::Task m_lastTask;
     QRegularExpression m_commonError;
     QRegularExpression m_nextSubError;
     QRegularExpression m_commonWarning;
     QRegularExpression m_locationLine;
-    QRegularExpression m_sourceLineAndFunction;
     bool m_skippedFirstEmptyLine = false;
     int m_lines = 0;
-
-    struct CallStackLine
-    {
-        Utils::FilePath file;
-        int line = -1;
-        QString function;
-    };
-    std::optional<QList<CallStackLine>> m_callStack;
-    CallStackLine m_errorOrWarningLine;
 };
 
-#ifdef WITH_TESTS
-namespace Internal { QObject *createCMakeParserTest(); }
-#endif
-
-} // CMakeProjectManager
+} // namespace CMakeProjectManager

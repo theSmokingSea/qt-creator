@@ -16,12 +16,6 @@ WordDelimiters::WordDelimiters()
     }
 }
 
-WordDelimiters::WordDelimiters(QStringView str)
-    : asciiDelimiters{}
-{
-    append(str);
-}
-
 bool WordDelimiters::contains(QChar c) const
 {
     if (c.unicode() < 128) {

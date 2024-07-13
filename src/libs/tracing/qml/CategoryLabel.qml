@@ -1,28 +1,47 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Controls
+import QtQuick 2.1
+import QtQuick.Controls 2.2
 
-import QtCreator.Tracing
+import QtCreator.Tracing 1.0
 
 Item {
     id: labelContainer
 
-    property TimelineModel model
+    property QtObject model
     property QtObject notesModel
     property string text: model ? model.displayName : ""
     property bool expanded: model && model.expanded
     property var labels: (expanded && model) ? model.labels : []
 
-    property bool isDragging
+    property bool dragging
     property int visualIndex
     property int dragOffset
     property Item draggerParent
-    property real contentY: 0
-    property real contentHeight: draggerParent.height
-    property real visibleHeight: contentHeight
-    property int contentBottom: contentY + visibleHeight - dragOffset
+    property int contentBottom: draggerParent.contentY + draggerParent.height - dragOffset
 
     signal dragStarted;
     signal dragStopped;
@@ -38,14 +57,13 @@ Item {
         id: dragArea
         anchors.fill: txt
         drag.target: dragger
-        cursorShape: labelContainer.isDragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor
-        // Account for parent change below
-        drag.minimumY: labelContainer.isDragging ? 0 : -labelContainer.dragOffset
-        drag.maximumY: labelContainer.visibleHeight - (labelContainer.isDragging ? 0 : labelContainer.dragOffset)
+        cursorShape: dragging ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+        drag.minimumY: dragging ? 0 : -dragOffset // Account for parent change below
+        drag.maximumY: draggerParent.height - (dragging ? 0 : dragOffset)
         drag.axis: Drag.YAxis
         hoverEnabled: true
         ToolTip {
-            text: labelContainer.model.tooltip || labelContainer.text
+            text: model.tooltip || labelContainer.text
             visible: enabled && parent.containsMouse
             delay: 1000
         }
@@ -77,30 +95,31 @@ Item {
 
         text: labelContainer.text
         color: Theme.color(Theme.PanelTextColorLight)
-        height: labelContainer.model ? labelContainer.model.defaultRowHeight : 0
+        height: model ? model.defaultRowHeight : 0
         verticalAlignment: Text.AlignVCenter
         elide: Text.ElideRight
     }
 
     Column {
         id: labelsArea
-        property QtObject parentModel: labelContainer.model
+        property QtObject parentModel: model
         anchors.top: txt.bottom
-        visible: labelContainer.expanded
+        visible: expanded
         Repeater {
-            model: labelContainer.expanded ? labelContainer.labels.length : 0
+            model: expanded ? labels.length : 0
             Loader {
                 id: loader
 
                 // Initially y == 0 for all the items. Don't enable them until they have been moved
                 // into place.
-                property int offset: (index === 0 || y > 0) ? (y + txt.height) : contentHeight
-                active: labelContainer.contentBottom > offset
+                property int offset: (index === 0 || y > 0) ? (y + txt.height)
+                                                            : draggerParent.contentHeight
+                active: contentBottom > offset
                 width: labelContainer.width
                 height: labelsArea.parentModel ? labelsArea.parentModel.rowHeight(index + 1) : 0
 
                 sourceComponent: RowLabel {
-                    label: labelContainer.labels[index];
+                    label: labels[index];
                     onSelectBySelectionId: {
                         if (labelContainer.model.hasMixedTypesInExpandedState)
                             return;
@@ -128,12 +147,11 @@ Item {
         property var texts: []
         property int currentNote: -1
         Connections {
-            target: labelContainer.notesModel
+            target: notesModel
             function onChanged(typeId, modelId, timelineIndex) {
                 // This will only be called if notesModel != null.
-                if (modelId === -1 || modelId === labelContainer.model.modelId) {
-                    var notes =
-                            labelContainer.notesModel.byTimelineModel(labelContainer.model.modelId);
+                if (modelId === -1 || modelId === model.modelId) {
+                    var notes = notesModel.byTimelineModel(model.modelId);
                     var newTexts = [];
                     var newEventIds = [];
                     for (var i in notes) {
@@ -163,21 +181,19 @@ Item {
         anchors.verticalCenter: txt.verticalCenter
         anchors.right: parent.right
         implicitHeight: txt.height - 1
-        enabled: labelContainer.expanded || (labelContainer.model && !labelContainer.model.empty)
-        imageSource: labelContainer.expanded ? "image://icons/close_split" : "image://icons/split"
-        ToolTip.text: labelContainer.expanded ? qsTranslate("QtC::Tracing", "Collapse category")
-                                              : qsTranslate("QtC::Tracing", "Expand category")
-        onClicked: labelContainer.model.expanded = !labelContainer.expanded
+        enabled: expanded || (model && !model.empty)
+        imageSource: expanded ? "image://icons/close_split" : "image://icons/split"
+        ToolTip.text: expanded ? qsTr("Collapse category") : qsTr("Expand category")
+        onClicked: model.expanded = !expanded
     }
 
     Rectangle {
         id: dragger
         property int visualIndex: labelContainer.visualIndex
         width: labelContainer.width
-        height: labelContainer.height
+        height: 0
         color: Theme.color(Theme.PanelStatusBarBackgroundColor)
         opacity: 0.5
-        visible: Drag.active
         anchors.left: parent.left
 
         // anchor to top so that it reliably snaps back after dragging
@@ -185,13 +201,16 @@ Item {
 
         Drag.active: dragArea.drag.active
         Drag.onActiveChanged: {
-            // We don't want text to be changed when reordering occurs, so we don't make
-            // it a property
+            // We don't want height or text to be changed when reordering occurs, so we don't make
+            // them properties.
             draggerText.text = txt.text;
-            if (Drag.active)
+            if (Drag.active) {
+                height = labelContainer.height;
                 labelContainer.dragStarted();
-            else
+            } else {
+                height = 0;
                 labelContainer.dragStopped();
+            }
         }
 
         states: [
@@ -199,7 +218,7 @@ Item {
                 when: dragger.Drag.active
                 ParentChange {
                     target: dragger
-                    parent: labelContainer.draggerParent
+                    parent: draggerParent
                 }
                 PropertyChanges {
                     target: dragger
@@ -221,7 +240,7 @@ Item {
 
     MouseArea {
         anchors.top: dragArea.bottom
-        anchors.bottom: labelContainer.isDragging ? labelContainer.bottom : dragArea.bottom
+        anchors.bottom: labelContainer.dragging ? labelContainer.bottom : dragArea.bottom
         anchors.left: labelContainer.left
         anchors.right: labelContainer.right
         cursorShape: dragArea.cursorShape

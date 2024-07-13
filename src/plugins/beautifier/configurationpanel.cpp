@@ -1,47 +1,53 @@
-// Copyright (C) 2016 Lorenz Haas
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Lorenz Haas
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "configurationpanel.h"
+#include "ui_configurationpanel.h"
 
-#include "beautifiertool.h"
-#include "beautifiertr.h"
+#include "abstractsettings.h"
 #include "configurationdialog.h"
 
-#include <utils/layoutbuilder.h>
+namespace Beautifier {
+namespace Internal {
 
-#include <QComboBox>
-#include <QPushButton>
-
-namespace Beautifier::Internal {
-
-ConfigurationPanel::ConfigurationPanel(QWidget *parent)
-    : QWidget(parent)
+ConfigurationPanel::ConfigurationPanel(QWidget *parent) :
+    QWidget(parent),
+    ui(new Ui::ConfigurationPanel)
 {
-    m_configurations = new QComboBox;
-    m_configurations->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-
-    m_edit = new QPushButton(Tr::tr("Edit"));
-    m_remove = new QPushButton(Tr::tr("Remove"));
-    auto add = new QPushButton(Tr::tr("Add"));
-
-    using namespace Layouting;
-
-    Row {
-        m_configurations,
-        m_edit,
-        m_remove,
-        add,
-        noMargin,
-    }.attachTo(this);
-
-    connect(add, &QPushButton::clicked, this, &ConfigurationPanel::add);
-    connect(m_edit, &QPushButton::clicked, this, &ConfigurationPanel::edit);
-    connect(m_remove, &QPushButton::clicked, this, &ConfigurationPanel::remove);
-    connect(m_configurations, &QComboBox::currentIndexChanged,
+    ui->setupUi(this);
+    connect(ui->add, &QPushButton::clicked, this, &ConfigurationPanel::add);
+    connect(ui->edit, &QPushButton::clicked, this, &ConfigurationPanel::edit);
+    connect(ui->remove, &QPushButton::clicked, this, &ConfigurationPanel::remove);
+    connect(ui->configurations, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &ConfigurationPanel::updateButtons);
 }
 
-ConfigurationPanel::~ConfigurationPanel() = default;
+ConfigurationPanel::~ConfigurationPanel()
+{
+    delete ui;
+}
 
 void ConfigurationPanel::setSettings(AbstractSettings *settings)
 {
@@ -51,26 +57,26 @@ void ConfigurationPanel::setSettings(AbstractSettings *settings)
 
 void ConfigurationPanel::setCurrentConfiguration(const QString &text)
 {
-    const int textIndex = m_configurations->findText(text);
+    const int textIndex = ui->configurations->findText(text);
     if (textIndex != -1)
-        m_configurations->setCurrentIndex(textIndex);
+        ui->configurations->setCurrentIndex(textIndex);
 }
 
 QString ConfigurationPanel::currentConfiguration() const
 {
-    return m_configurations->currentText();
+    return ui->configurations->currentText();
 }
 
 void ConfigurationPanel::remove()
 {
-    m_settings->removeStyle(m_configurations->currentText());
+    m_settings->removeStyle(ui->configurations->currentText());
     populateConfigurations();
 }
 
 void ConfigurationPanel::add()
 {
     ConfigurationDialog dialog;
-    dialog.setWindowTitle(Tr::tr("Add Configuration"));
+    dialog.setWindowTitle(tr("Add Configuration"));
     dialog.setSettings(m_settings);
     if (dialog.exec() == QDialog::Accepted) {
         const QString key = dialog.key();
@@ -81,9 +87,9 @@ void ConfigurationPanel::add()
 
 void ConfigurationPanel::edit()
 {
-    const QString key = m_configurations->currentText();
+    const QString key = ui->configurations->currentText();
     ConfigurationDialog dialog;
-    dialog.setWindowTitle(Tr::tr("Edit Configuration"));
+    dialog.setWindowTitle(tr("Edit Configuration"));
     dialog.setSettings(m_settings);
     dialog.setKey(key);
     if (dialog.exec() == QDialog::Accepted) {
@@ -92,29 +98,30 @@ void ConfigurationPanel::edit()
             m_settings->setStyle(key, dialog.value());
         } else {
             m_settings->replaceStyle(key, newKey, dialog.value());
-            m_configurations->setItemText(m_configurations->currentIndex(), newKey);
+            ui->configurations->setItemText(ui->configurations->currentIndex(), newKey);
         }
     }
 }
 
 void ConfigurationPanel::populateConfigurations(const QString &key)
 {
-    QSignalBlocker blocker(m_configurations);
-    const QString currentText = (!key.isEmpty()) ? key : m_configurations->currentText();
-    m_configurations->clear();
-    m_configurations->addItems(m_settings->styles());
-    const int textIndex = m_configurations->findText(currentText);
+    QSignalBlocker blocker(ui->configurations);
+    const QString currentText = (!key.isEmpty()) ? key : ui->configurations->currentText();
+    ui->configurations->clear();
+    ui->configurations->addItems(m_settings->styles());
+    const int textIndex = ui->configurations->findText(currentText);
     if (textIndex != -1)
-        m_configurations->setCurrentIndex(textIndex);
+        ui->configurations->setCurrentIndex(textIndex);
     updateButtons();
 }
 
 void ConfigurationPanel::updateButtons()
 {
-    const bool enabled = (m_configurations->count() > 0)
-            && !m_settings->styleIsReadOnly(m_configurations->currentText());
-    m_remove->setEnabled(enabled);
-    m_edit->setEnabled(enabled);
+    const bool enabled = (ui->configurations->count() > 0)
+            && !m_settings->styleIsReadOnly(ui->configurations->currentText());
+    ui->remove->setEnabled(enabled);
+    ui->edit->setEnabled(enabled);
 }
 
-} // Beautifier::Internal
+} // namespace Internal
+} // namespace Beautifier

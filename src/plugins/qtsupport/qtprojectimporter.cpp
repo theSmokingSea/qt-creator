@@ -1,9 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qtprojectimporter.h"
 
-#include "qtkitaspect.h"
+#include "qtkitinformation.h"
 #include "qtversionfactory.h"
 #include "qtversionmanager.h"
 
@@ -16,6 +38,7 @@
 #include <utils/qtcassert.h>
 #include <utils/temporarydirectory.h>
 
+#include <QFileInfo>
 #include <QList>
 
 using namespace ProjectExplorer;
@@ -67,7 +90,6 @@ Kit *QtProjectImporter::createTemporaryKit(const QtVersionData &versionData,
         }
 
         additionalSetup(k);
-        k->fix();
     });
 }
 
@@ -104,9 +126,11 @@ void QtProjectImporter::persistTemporaryQt(Kit *k, const QVariantList &vl)
         QtVersionManager::removeVersion(tmpVersion);
 }
 
+#if WITH_TESTS
 } // namespace QtSupport
 
-#if WITH_TESTS
+#include "qtsupportplugin.h"
+#include "qtversions.h"
 
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/buildinfo.h>
@@ -115,7 +139,8 @@ void QtProjectImporter::persistTemporaryQt(Kit *k, const QVariantList &vl)
 
 #include <QTest>
 
-namespace QtSupport::Internal {
+namespace QtSupport {
+namespace Internal {
 
 struct DirectoryData {
     DirectoryData(const QString &ip,
@@ -149,7 +174,7 @@ public:
         m_testData(testData)
     { }
 
-    FilePaths importCandidates() override { return {}; }
+    QStringList importCandidates() override;
 
     bool allDeleted() const { return m_deletedTestData.count() == m_testData.count();}
 
@@ -168,6 +193,11 @@ private:
 
     QList<Kit *> m_deletedKits;
 };
+
+QStringList TestQtProjectImporter::importCandidates()
+{
+    return QStringList();
+}
 
 QList<void *> TestQtProjectImporter::examineDirectory(const Utils::FilePath &importPath,
                                                       QString *warningMessage) const
@@ -244,22 +274,19 @@ void TestQtProjectImporter::deleteDirectoryData(void *directoryData) const
 static QStringList additionalFilesToCopy(const QtVersion *qt)
 {
     // This is a hack and only works with local, "standard" installations of Qt
-    const int major = qt->qtVersion().majorVersion();
+    const int major = qt->qtVersion().majorVersion;
     if (major >= 6) {
         if (HostOsInfo::isMacHost()) {
             return {"lib/QtCore.framework/Versions/A/QtCore"};
         } else if (HostOsInfo::isWindowsHost()) {
             const QString release = QString("bin/Qt%1Core.dll").arg(major);
             const QString debug = QString("bin/Qt%1Cored.dll").arg(major);
-            const QString mingwGcc("bin/libgcc_s_seh-1.dll");
-            const QString mingwStd("bin/libstdc++-6.dll");
-            const QString mingwPthread("bin/libwinpthread-1.dll");
             const FilePath base = qt->qmakeFilePath().parentDir().parentDir();
-            const QStringList allFiles = {release, debug, mingwGcc, mingwStd, mingwPthread};
-            const QStringList existingFiles = Utils::filtered(allFiles, [&base](const QString &f) {
-                return base.pathAppended(f).exists();
-            });
-            return !existingFiles.empty() ? existingFiles : QStringList(release);
+            if (base.pathAppended(release).exists())
+                return {release};
+            if (base.pathAppended(debug).exists())
+                return {debug};
+            return {release};
         } else if (HostOsInfo::isLinuxHost()) {
             const QString core = QString("lib/libQt%1Core.so.%1").arg(major);
             const QDir base(qt->qmakeFilePath().parentDir().parentDir().pathAppended("lib").toString());
@@ -291,16 +318,7 @@ static Utils::FilePath setupQmake(const QtVersion *qt, const QString &path)
     return target.pathAppended(qmakeFile);
 }
 
-class QtProjectImporterTest final : public QObject
-{
-    Q_OBJECT
-
-private slots:
-    void testQtProjectImporter_oneProject_data();
-    void testQtProjectImporter_oneProject();
-};
-
-void QtProjectImporterTest::testQtProjectImporter_oneProject_data()
+void QtSupportPlugin::testQtProjectImporter_oneProject_data()
 {
     // In the next two lists: 0 is the defaultKit/Qt, anything > 0 is a new kit/Qt
     QTest::addColumn<QList<int>>("kitIndexList"); // List of indices from the kitTemplate below.
@@ -375,7 +393,7 @@ void QtProjectImporterTest::testQtProjectImporter_oneProject_data()
             << QList<bool>({true, true}) << QList<bool>({true, true});
 }
 
-void QtProjectImporterTest::testQtProjectImporter_oneProject()
+void QtSupportPlugin::testQtProjectImporter_oneProject()
 {
     // --------------------------------------------------------------------
     // Setup:
@@ -619,7 +637,7 @@ void QtProjectImporterTest::testQtProjectImporter_oneProject()
 
     qDeleteAll(testData);
 
-    for (Kit *k : std::as_const(toUnregisterLater))
+    foreach (Kit *k, toUnregisterLater)
         KitManager::deregisterKit(k);
 
     // Delete kit templates:
@@ -627,13 +645,7 @@ void QtProjectImporterTest::testQtProjectImporter_oneProject()
     qDeleteAll(kitTemplates);
 }
 
-QObject *createQtProjectImporterTest()
-{
-    return new QtProjectImporterTest;
-}
-
-} // QtSupport::Internal
-
-#include "qtprojectimporter.moc"
-
+} // namespace Internal
 #endif // WITH_TESTS
+
+} // namespace QtSupport

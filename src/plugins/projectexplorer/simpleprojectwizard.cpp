@@ -1,10 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "simpleprojectwizard.h"
 
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
+
+#include <app/app_version.h>
 
 #include <coreplugin/basefilewizard.h>
 #include <coreplugin/icore.h>
@@ -19,7 +42,6 @@
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
 #include <utils/filewizardpage.h>
-#include <utils/mimeconstants.h>
 #include <utils/mimeutils.h>
 #include <utils/wizard.h>
 
@@ -102,7 +124,7 @@ FilesSelectionWizardPage::FilesSelectionWizardPage(SimpleProjectWizardDialog *si
     connect(m_filesWidget, &SelectableFilesWidget::selectedFilesChanged,
             this, &FilesSelectionWizardPage::completeChanged);
 
-    setProperty(Utils::SHORT_TITLE_PROPERTY, Tr::tr("Files"));
+    setProperty(Utils::SHORT_TITLE_PROPERTY, tr("Files"));
 }
 
 class SimpleProjectWizardDialog : public BaseFileWizard
@@ -113,16 +135,16 @@ public:
     SimpleProjectWizardDialog(const BaseFileWizardFactory *factory, QWidget *parent)
         : BaseFileWizard(factory, QVariantMap(), parent)
     {
-        setWindowTitle(Tr::tr("Import Existing Project"));
+        setWindowTitle(tr("Import Existing Project"));
 
         m_firstPage = new FileWizardPage;
-        m_firstPage->setTitle(Tr::tr("Project Name and Location"));
-        m_firstPage->setFileNameLabel(Tr::tr("Project name:"));
-        m_firstPage->setPathLabel(Tr::tr("Location:"));
+        m_firstPage->setTitle(tr("Project Name and Location"));
+        m_firstPage->setFileNameLabel(tr("Project name:"));
+        m_firstPage->setPathLabel(tr("Location:"));
         addPage(m_firstPage);
 
         m_secondPage = new FilesSelectionWizardPage(this);
-        m_secondPage->setTitle(Tr::tr("File Selection"));
+        m_secondPage->setTitle(tr("File Selection"));
         addPage(m_secondPage);
     }
 
@@ -148,17 +170,15 @@ SimpleProjectWizard::SimpleProjectWizard()
     setSupportedProjectTypes({QmakeProjectManager::Constants::QMAKEPROJECT_ID,
                               CMakeProjectManager::Constants::CMAKE_PROJECT_ID});
     setIcon(ProjectExplorer::Icons::WIZARD_IMPORT_AS_PROJECT.icon());
-    setDisplayName(Tr::tr("Import as qmake or CMake Project (Limited Functionality)"));
+    setDisplayName(tr("Import as qmake or CMake Project (Limited Functionality)"));
     setId("Z.DummyProFile");
-    setDescription(
-        Tr::tr(
-            "Imports existing projects that do not use qmake, CMake, Qbs, Meson, or Autotools.<p>"
-            "This creates a project file that allows you to use %1 as a code editor "
-            "and as a launcher for debugging and analyzing tools. "
-            "If you want to build the project, you might need to edit the generated project file.")
-            .arg(QGuiApplication::applicationDisplayName()));
+    setDescription(tr("Imports existing projects that do not use qmake, CMake, Qbs, Meson, or Autotools.<p>"
+                      "This creates a project file that allows you to use %1 as a code editor "
+                      "and as a launcher for debugging and analyzing tools. "
+                      "If you want to build the project, you might need to edit the generated project file.")
+                   .arg(Core::Constants::IDE_DISPLAY_NAME));
     setCategory(ProjectExplorer::Constants::IMPORT_WIZARD_CATEGORY);
-    setDisplayCategory(Tr::tr(ProjectExplorer::Constants::IMPORT_WIZARD_CATEGORY_DISPLAY));
+    setDisplayCategory(ProjectExplorer::Constants::IMPORT_WIZARD_CATEGORY_DISPLAY);
     setFlags(IWizardFactory::PlatformIndependent);
 }
 
@@ -184,7 +204,7 @@ GeneratedFiles generateQmakeFiles(const SimpleProjectWizardDialog *wizard,
     const FilePath proFileName = Utils::FilePath::fromString(QFileInfo(dir, projectName + ".pro").absoluteFilePath());
     const QStringList paths = Utils::transform(wizard->selectedPaths(), &FilePath::toString);
 
-    MimeType headerType = Utils::mimeTypeForName(Utils::Constants::C_HEADER_MIMETYPE);
+    MimeType headerType = Utils::mimeTypeForName("text/x-chdr");
 
     QStringList nameFilters = headerType.globPatterns();
 
@@ -205,8 +225,7 @@ GeneratedFiles generateQmakeFiles(const SimpleProjectWizardDialog *wizard,
     for (const FilePath &fileName : wizard->selectedFiles()) {
         QString source = dir.relativeFilePath(fileName.toString());
         MimeType mimeType = Utils::mimeTypeForFile(fileName);
-        if (mimeType.matchesName(Utils::Constants::C_HEADER_MIMETYPE)
-            || mimeType.matchesName(Utils::Constants::CPP_HEADER_MIMETYPE))
+        if (mimeType.matchesName("text/x-chdr") || mimeType.matchesName("text/x-c++hdr"))
             proHeaders += "   $$PWD/" + source + " \\\n";
         else
             proSources += "   $$PWD/" + source + " \\\n";
@@ -219,16 +238,16 @@ GeneratedFiles generateQmakeFiles(const SimpleProjectWizardDialog *wizard,
     GeneratedFile generatedProFile(proFileName);
     generatedProFile.setAttributes(Core::GeneratedFile::OpenProjectAttribute);
     generatedProFile.setContents(
-        "# Created by and for " + QGuiApplication::applicationDisplayName()
+        "# Created by and for " + QLatin1String(Core::Constants::IDE_DISPLAY_NAME)
         + " This file was created for editing the project sources only.\n"
-          "# You may attempt to use it for building too, by modifying this file here.\n\n"
-          "#TARGET = "
-        + projectName
-        + "\n\n"
-          "QT = "
-        + wizard->qtModules() + "\n\n" + proHeaders + "\n\n" + proSources + "\n\n" + proIncludes
-        + "\n\n"
-          "#DEFINES = \n\n");
+        "# You may attempt to use it for building too, by modifying this file here.\n\n"
+        "#TARGET = " + projectName + "\n\n"
+        "QT = " + wizard->qtModules()  + "\n\n"
+        + proHeaders + "\n\n"
+        + proSources + "\n\n"
+        + proIncludes + "\n\n"
+        "#DEFINES = \n\n"
+        );
 
     return GeneratedFiles{generatedProFile};
 }
@@ -242,7 +261,7 @@ GeneratedFiles generateCmakeFiles(const SimpleProjectWizardDialog *wizard,
     const FilePath projectFileName = Utils::FilePath::fromString(QFileInfo(dir, "CMakeLists.txt").absoluteFilePath());
     const QStringList paths = Utils::transform(wizard->selectedPaths(), &FilePath::toString);
 
-    MimeType headerType = Utils::mimeTypeForName(Utils::Constants::C_HEADER_MIMETYPE);
+    MimeType headerType = Utils::mimeTypeForName("text/x-chdr");
 
     QStringList nameFilters = headerType.globPatterns();
 
@@ -292,22 +311,23 @@ GeneratedFiles generateCmakeFiles(const SimpleProjectWizardDialog *wizard,
     GeneratedFile generatedProFile(projectFileName);
     generatedProFile.setAttributes(Core::GeneratedFile::OpenProjectAttribute);
     generatedProFile.setContents(
-        "# Created by and for " + QGuiApplication::applicationDisplayName()
+        "# Created by and for " + QLatin1String(Core::Constants::IDE_DISPLAY_NAME)
         + " This file was created for editing the project sources only.\n"
           "# You may attempt to use it for building too, by modifying this file here.\n\n"
           "cmake_minimum_required(VERSION 3.5)\n"
-          "project("
-        + projectName
-        + ")\n\n"
+          "project("+ projectName +")\n\n"
+          "set(CMAKE_INCLUDE_CURRENT_DIR ON)\n"
           "set(CMAKE_AUTOUIC ON)\n"
           "set(CMAKE_AUTOMOC ON)\n"
           "set(CMAKE_AUTORCC ON)\n"
           "set(CMAKE_CXX_STANDARD 11)\n"
           "set(CMAKE_CXX_STANDARD_REQUIRED ON)\n"
-        + components + "\n\n" + includes + "\n\n" + srcs
-        + "\n\n"
+          + components + "\n\n"
+          + includes + "\n\n"
+          + srcs + "\n\n"
           "add_executable(${CMAKE_PROJECT_NAME} ${SRCS})\n\n"
-        + libs);
+          + libs
+        );
     return GeneratedFiles{generatedProFile};
 }
 
@@ -323,7 +343,7 @@ GeneratedFiles SimpleProjectWizard::generateFiles(const QWizard *w,
         return generateCmakeFiles(wizard, errorMessage);
 
     if (errorMessage)
-        *errorMessage = Tr::tr("Unknown build system \"%1\"").arg(wizard->buildSystem());
+        *errorMessage = tr("Unknown build system \"%1\"").arg(wizard->buildSystem());
     return {};
 }
 

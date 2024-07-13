@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "dropsupport.h"
 
@@ -10,7 +32,7 @@
 #include <QDropEvent>
 #include <QTimer>
 
-#ifdef Q_OS_MACOS
+#ifdef Q_OS_OSX
 // for file drops from Finder, working around QTBUG-40449
 #include "fileutils_mac.h"
 #endif
@@ -40,6 +62,10 @@ static bool isFileDropMime(const QMimeData *d, QList<DropSupport::FileSpec> *fil
     const QList<QUrl>::const_iterator cend = urls.constEnd();
     for (QList<QUrl>::const_iterator it = urls.constBegin(); it != cend; ++it) {
         QUrl url = *it;
+#ifdef Q_OS_OSX
+        // for file drops from Finder, working around QTBUG-40449
+        url = Internal::filePathUrl(url);
+#endif
         const QString fileName = url.toLocalFile();
         if (!fileName.isEmpty()) {
             hasFiles = true;
@@ -63,7 +89,7 @@ DropSupport::DropSupport(QWidget *parentWidget, const DropFilterFunction &filter
 
 QStringList DropSupport::mimeTypesForFilePaths()
 {
-    return {"text/uri-list"};
+    return QStringList("text/uri-list");
 }
 
 bool DropSupport::isFileDrop(QDropEvent *event)
@@ -108,7 +134,7 @@ bool DropSupport::eventFilter(QObject *obj, QEvent *event)
                     de->acceptProposedAction();
                 bool needToScheduleEmit = m_files.isEmpty();
                 m_files.append(tempFiles);
-                m_dropPos = de->position().toPoint();
+                m_dropPos = de->pos();
                 if (needToScheduleEmit) { // otherwise we already have a timer pending
                     // Delay the actual drop, to avoid conflict between
                     // actions that happen when opening files, and actions that the item views do
@@ -122,7 +148,7 @@ bool DropSupport::eventFilter(QObject *obj, QEvent *event)
                 accepted = true;
                 bool needToScheduleEmit = m_values.isEmpty();
                 m_values.append(fileDropMimeData->values());
-                m_dropPos = de->position().toPoint();
+                m_dropPos = de->pos();
                 if (needToScheduleEmit)
                     QTimer::singleShot(100, this, &DropSupport::emitValuesDropped);
             }
@@ -181,7 +207,7 @@ void DropMimeData::addFile(const FilePath &filePath, int line, int column)
 {
     // standard mime data
     QList<QUrl> currentUrls = urls();
-    currentUrls.append(filePath.toUrl());
+    currentUrls.append(QUrl::fromLocalFile(filePath.toString()));
     setUrls(currentUrls);
     // special mime data
     m_files.append(DropSupport::FileSpec(filePath, line, column));

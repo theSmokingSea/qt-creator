@@ -1,13 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "appoutputpane.h"
 
 #include "projectexplorer.h"
 #include "projectexplorerconstants.h"
 #include "projectexplorericons.h"
-#include "projectexplorertr.h"
 #include "runcontrol.h"
+#include "session.h"
 #include "showoutputtaskhandler.h"
 #include "windebuginterface.h"
 
@@ -16,7 +38,6 @@
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/outputwindow.h>
-#include <coreplugin/session.h>
 #include <texteditor/behaviorsettings.h>
 #include <texteditor/fontsettings.h>
 #include <texteditor/texteditorsettings.h>
@@ -46,7 +67,6 @@
 
 static Q_LOGGING_CATEGORY(appOutputLog, "qtc.projectexplorer.appoutput", QtWarningMsg);
 
-using namespace Core;
 using namespace Utils;
 
 namespace ProjectExplorer {
@@ -70,8 +90,8 @@ static QObject *debuggerPlugin()
 static QString msgAttachDebuggerTooltip(const QString &handleDescription = QString())
 {
     return handleDescription.isEmpty() ?
-           Tr::tr("Attach debugger to this process") :
-           Tr::tr("Attach debugger to %1").arg(handleDescription);
+           AppOutputPane::tr("Attach debugger to this process") :
+           AppOutputPane::tr("Attach debugger to %1").arg(handleDescription);
 }
 
 class TabWidget : public QTabWidget
@@ -137,25 +157,22 @@ AppOutputPane::RunControlTab::RunControlTab(RunControl *runControl, Core::Output
 }
 
 AppOutputPane::AppOutputPane() :
+    m_mainWidget(new QWidget),
     m_tabWidget(new TabWidget),
-    m_stopAction(new QAction(Tr::tr("Stop"), this)),
-    m_closeCurrentTabAction(new QAction(Tr::tr("Close Tab"), this)),
-    m_closeAllTabsAction(new QAction(Tr::tr("Close All Tabs"), this)),
-    m_closeOtherTabsAction(new QAction(Tr::tr("Close Other Tabs"), this)),
+    m_stopAction(new QAction(tr("Stop"), this)),
+    m_closeCurrentTabAction(new QAction(tr("Close Tab"), this)),
+    m_closeAllTabsAction(new QAction(tr("Close All Tabs"), this)),
+    m_closeOtherTabsAction(new QAction(tr("Close Other Tabs"), this)),
     m_reRunButton(new QToolButton),
     m_stopButton(new QToolButton),
     m_attachButton(new QToolButton),
     m_settingsButton(new QToolButton),
     m_formatterWidget(new QWidget),
     m_handler(new ShowOutputTaskHandler(this,
-        Tr::tr("Show &App Output"),
-        Tr::tr("Show the output that generated this issue in Application Output."),
-        Tr::tr("A")))
+        tr("Show &App Output"),
+        tr("Show the output that generated this issue in Application Output."),
+        tr("A")))
 {
-    setId("ApplicationOutput");
-    setDisplayName(Tr::tr("Application Output"));
-    setPriorityInStatusBar(60);
-
     ExtensionSystem::PluginManager::addObject(m_handler);
 
     setObjectName("AppOutputPane"); // Used in valgrind engine
@@ -163,14 +180,14 @@ AppOutputPane::AppOutputPane() :
 
     // Rerun
     m_reRunButton->setIcon(Utils::Icons::RUN_SMALL_TOOLBAR.icon());
-    m_reRunButton->setToolTip(Tr::tr("Re-run this run-configuration."));
+    m_reRunButton->setToolTip(tr("Re-run this run-configuration."));
     m_reRunButton->setEnabled(false);
     connect(m_reRunButton, &QToolButton::clicked,
             this, &AppOutputPane::reRunRunControl);
 
     // Stop
     m_stopAction->setIcon(Utils::Icons::STOP_SMALL_TOOLBAR.icon());
-    m_stopAction->setToolTip(Tr::tr("Stop running program."));
+    m_stopAction->setToolTip(tr("Stop running program."));
     m_stopAction->setEnabled(false);
 
     Core::Command *cmd = Core::ActionManager::registerAction(m_stopAction, Constants::STOP);
@@ -193,7 +210,7 @@ AppOutputPane::AppOutputPane() :
     connect(this, &IOutputPane::zoomOutRequested, this, &AppOutputPane::zoomOut);
     connect(this, &IOutputPane::resetZoomRequested, this, &AppOutputPane::resetZoom);
 
-    m_settingsButton->setToolTip(Core::ICore::msgShowOptionsDialog());
+    m_settingsButton->setToolTip(tr("Open Settings Page"));
     m_settingsButton->setIcon(Utils::Icons::SETTINGS_TOOLBAR.icon());
     connect(m_settingsButton, &QToolButton::clicked, this, [] {
         Core::ICore::showOptionsDialog(OPTIONS_PAGE_ID);
@@ -205,16 +222,20 @@ AppOutputPane::AppOutputPane() :
 
     // Spacer (?)
 
+    auto *layout = new QVBoxLayout;
+    layout->setContentsMargins(0, 0, 0, 0);
     m_tabWidget->setDocumentMode(true);
     m_tabWidget->setTabsClosable(true);
     m_tabWidget->setMovable(true);
     connect(m_tabWidget, &QTabWidget::tabCloseRequested,
             this, [this](int index) { closeTab(index); });
+    layout->addWidget(m_tabWidget);
 
-    connect(m_tabWidget, &QTabWidget::currentChanged,
-            this, &AppOutputPane::tabChanged);
+    connect(m_tabWidget, &QTabWidget::currentChanged, this, &AppOutputPane::tabChanged);
     connect(m_tabWidget, &TabWidget::contextMenuRequested,
             this, &AppOutputPane::contextMenuRequested);
+
+    m_mainWidget->setLayout(layout);
 
     connect(SessionManager::instance(), &SessionManager::aboutToUnloadSession,
             this, &AppOutputPane::aboutToUnloadSession);
@@ -222,60 +243,58 @@ AppOutputPane::AppOutputPane() :
     setupFilterUi("AppOutputPane.Filter");
     setFilteringEnabled(false);
     setZoomButtonsEnabled(false);
-    setupContext("Core.AppOutputPane", m_tabWidget);
+    setupContext("Core.AppOutputPane", m_mainWidget);
 }
 
 AppOutputPane::~AppOutputPane()
 {
     qCDebug(appOutputLog) << "AppOutputPane::~AppOutputPane: Entries left" << m_runControlTabs.size();
 
-    for (const RunControlTab &rt : std::as_const(m_runControlTabs)) {
+    for (const RunControlTab &rt : qAsConst(m_runControlTabs)) {
         delete rt.window;
         delete rt.runControl;
     }
-    delete m_tabWidget;
+    delete m_mainWidget;
     ExtensionSystem::PluginManager::removeObject(m_handler);
     delete m_handler;
 }
 
-AppOutputPane::RunControlTab *AppOutputPane::currentTab()
+int AppOutputPane::currentIndex() const
 {
-    return tabFor(m_tabWidget->currentWidget());
-}
-
-const AppOutputPane::RunControlTab *AppOutputPane::currentTab() const
-{
-    return tabFor(m_tabWidget->currentWidget());
+    if (const QWidget *w = m_tabWidget->currentWidget())
+        return indexOf(w);
+    return -1;
 }
 
 RunControl *AppOutputPane::currentRunControl() const
 {
-    if (const RunControlTab * const tab = currentTab())
-        return tab->runControl;
+    const int index = currentIndex();
+    if (index != -1)
+        return m_runControlTabs.at(index).runControl;
     return nullptr;
 }
 
-AppOutputPane::RunControlTab *AppOutputPane::tabFor(const RunControl *rc)
+int AppOutputPane::indexOf(const RunControl *rc) const
 {
-    const auto it = std::find_if(m_runControlTabs.begin(), m_runControlTabs.end(),
-                                 [rc](RunControlTab &t) { return t.runControl == rc; });
-    if (it == m_runControlTabs.end())
-        return nullptr;
-    return &*it;
+    for (int i = m_runControlTabs.size() - 1; i >= 0; i--)
+        if (m_runControlTabs.at(i).runControl == rc)
+            return i;
+    return -1;
 }
 
-AppOutputPane::RunControlTab *AppOutputPane::tabFor(const QWidget *outputWindow)
+int AppOutputPane::indexOf(const QWidget *outputWindow) const
 {
-    const auto it = std::find_if(m_runControlTabs.begin(), m_runControlTabs.end(),
-            [outputWindow](RunControlTab &t) { return t.window == outputWindow; });
-    if (it == m_runControlTabs.end())
-        return nullptr;
-    return &*it;
+    for (int i = m_runControlTabs.size() - 1; i >= 0; i--)
+        if (m_runControlTabs.at(i).window == outputWindow)
+            return i;
+    return -1;
 }
 
-const AppOutputPane::RunControlTab *AppOutputPane::tabFor(const QWidget *outputWindow) const
+int AppOutputPane::tabWidgetIndexOf(int runControlIndex) const
 {
-    return const_cast<AppOutputPane *>(this)->tabFor(outputWindow);
+    if (runControlIndex >= 0 && runControlIndex < m_runControlTabs.size())
+        return m_tabWidget->indexOf(m_runControlTabs.at(runControlIndex).window);
+    return -1;
 }
 
 void AppOutputPane::updateCloseActions()
@@ -300,13 +319,23 @@ void AppOutputPane::aboutToUnloadSession()
 
 QWidget *AppOutputPane::outputWidget(QWidget *)
 {
-    return m_tabWidget;
+    return m_mainWidget;
 }
 
-QList<QWidget *> AppOutputPane::toolBarWidgets() const
+QList<QWidget*> AppOutputPane::toolBarWidgets() const
 {
     return QList<QWidget *>{m_reRunButton, m_stopButton, m_attachButton, m_settingsButton,
                 m_formatterWidget} + IOutputPane::toolBarWidgets();
+}
+
+QString AppOutputPane::displayName() const
+{
+    return tr("Application Output");
+}
+
+int AppOutputPane::priorityInStatusBar() const
+{
+    return 60;
 }
 
 void AppOutputPane::clearContents()
@@ -337,17 +366,17 @@ void AppOutputPane::setFocus()
 
 void AppOutputPane::updateFilter()
 {
-    if (RunControlTab * const tab = currentTab()) {
-        tab->window->updateFilterProperties(filterText(), filterCaseSensitivity(),
-                                            filterUsesRegexp(), filterIsInverted(),
-                                            beforeContext(), afterContext());
+    const int index = currentIndex();
+    if (index != -1) {
+        m_runControlTabs.at(index).window->updateFilterProperties(
+                    filterText(), filterCaseSensitivity(), filterUsesRegexp(), filterIsInverted());
     }
 }
 
 const QList<Core::OutputWindow *> AppOutputPane::outputWindows() const
 {
     QList<Core::OutputWindow *> windows;
-    for (const RunControlTab &tab : std::as_const(m_runControlTabs)) {
+    for (const RunControlTab &tab : qAsConst(m_runControlTabs)) {
         if (tab.window)
             windows << tab.window;
     }
@@ -363,24 +392,12 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
 {
     QTC_ASSERT(rc, return);
 
-    auto runControlChanged = [this, rc] {
-        RunControl *current = currentRunControl();
-        if (current && current == rc)
-            enableButtons(current); // RunControl::isRunning() cannot be trusted in signal handler.
-    };
-
-    connect(rc, &RunControl::aboutToStart, this, runControlChanged);
-    connect(rc, &RunControl::started, this, runControlChanged);
-    connect(rc, &RunControl::stopped, this, [this, rc] {
-        QTimer::singleShot(0, this, [this, rc] { runControlFinished(rc); });
-        for (const RunControlTab &t : std::as_const(m_runControlTabs)) {
-            if (t.runControl == rc) {
-                if (t.window)
-                    t.window->flush();
-                break;
-            }
-        }
-    });
+    connect(rc, &RunControl::aboutToStart,
+            this, &AppOutputPane::slotRunControlChanged);
+    connect(rc, &RunControl::started,
+            this, &AppOutputPane::slotRunControlChanged);
+    connect(rc, &RunControl::stopped,
+            this, &AppOutputPane::slotRunControlFinished);
     connect(rc, &RunControl::applicationProcessHandleChanged,
             this, &AppOutputPane::enableDefaultButtons);
     connect(rc, &RunControl::appendMessage,
@@ -392,37 +409,28 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
     const CommandLine thisCommand = rc->commandLine();
     const FilePath thisWorkingDirectory = rc->workingDirectory();
     const Environment thisEnvironment = rc->environment();
-    const auto tab = std::find_if(
-        m_runControlTabs.begin(), m_runControlTabs.end(), [&](const RunControlTab &tab) {
-            if (!tab.runControl || !tab.runControl->isStopped())
-                return false;
-            return thisCommand == tab.runControl->commandLine()
-                   && thisWorkingDirectory == tab.runControl->workingDirectory()
-                   && thisEnvironment == tab.runControl->environment();
-        });
-    const auto updateOutputFileName = [this](int index, RunControl *rc) {
-        qobject_cast<OutputWindow *>(m_tabWidget->widget(index))
-            //: file name suggested for saving application output, %1 = run configuration display name
-            ->setOutputFileNameHint(Tr::tr("application-output-%1.txt").arg(rc->displayName()));
-    };
-    if (tab != m_runControlTabs.end()) {
+    const int tabIndex = Utils::indexOf(m_runControlTabs, [&](const RunControlTab &tab) {
+        if (!tab.runControl || tab.runControl->isRunning())
+            return false;
+        return thisCommand == tab.runControl->commandLine()
+                && thisWorkingDirectory == tab.runControl->workingDirectory()
+                && thisEnvironment == tab.runControl->environment();
+    });
+    if (tabIndex != -1) {
+        RunControlTab &tab = m_runControlTabs[tabIndex];
         // Reuse this tab
-        if (tab->runControl)
-            delete tab->runControl;
+        if (tab.runControl)
+            tab.runControl->initiateFinish();
+        tab.runControl = rc;
+        tab.window->reset();
+        rc->setupFormatter(tab.window->outputFormatter());
 
-        tab->runControl = rc;
-        tab->window->reset();
-        rc->setupFormatter(tab->window->outputFormatter());
-
-        handleOldOutput(tab->window);
+        handleOldOutput(tab.window);
 
         // Update the title.
-        const int tabIndex = m_tabWidget->indexOf(tab->window);
-        QTC_ASSERT(tabIndex != -1, return);
         m_tabWidget->setTabText(tabIndex, rc->displayName());
-        updateOutputFileName(tabIndex, rc);
 
-        tab->window->scrollToBottom();
+        tab.window->scrollToBottom();
         qCDebug(appOutputLog) << "AppOutputPane::createNewOutputWindow: Reusing tab"
                               << tabIndex << "for" << rc;
         return;
@@ -432,7 +440,7 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
     Id contextId = Id(C_APP_OUTPUT).withSuffix(counter++);
     Core::Context context(contextId);
     Core::OutputWindow *ow = new Core::OutputWindow(context, SETTINGS_KEY, m_tabWidget);
-    ow->setWindowTitle(Tr::tr("Application Output Window"));
+    ow->setWindowTitle(tr("Application Output Window"));
     ow->setWindowIcon(Icons::WINDOW.icon());
     ow->setWordWrapEnabled(m_settings.wrapOutput);
     ow->setMaxCharCount(m_settings.maxCharCount);
@@ -443,7 +451,7 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
 
     auto updateBehaviorSettings = [ow] {
         ow->setWheelZoomEnabled(
-                    TextEditor::globalBehaviorSettings().m_scrollWheelZooming);
+                    TextEditor::TextEditorSettings::behaviorSettings().m_scrollWheelZooming);
     };
 
     updateFontSettings();
@@ -451,7 +459,7 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
 
     connect(ow, &Core::OutputWindow::wheelZoom, this, [this, ow]() {
         float fontZoom = ow->fontZoom();
-        for (const RunControlTab &tab : std::as_const(m_runControlTabs))
+        for (const RunControlTab &tab : qAsConst(m_runControlTabs))
             tab.window->setFontZoom(fontZoom);
     });
     connect(TextEditor::TextEditorSettings::instance(), &TextEditor::TextEditorSettings::fontSettingsChanged,
@@ -461,7 +469,6 @@ void AppOutputPane::createNewOutputWindow(RunControl *rc)
 
     m_runControlTabs.push_back(RunControlTab(rc, ow));
     m_tabWidget->addTab(ow, rc->displayName());
-    updateOutputFileName(m_tabWidget->count() - 1, rc);
     qCDebug(appOutputLog) << "AppOutputPane::createNewOutputWindow: Adding tab for" << rc;
     updateCloseActions();
     setFilteringEnabled(m_tabWidget->count() > 0);
@@ -477,7 +484,7 @@ void AppOutputPane::handleOldOutput(Core::OutputWindow *window) const
 
 void AppOutputPane::updateFromSettings()
 {
-    for (const RunControlTab &tab : std::as_const(m_runControlTabs)) {
+    for (const RunControlTab &tab : qAsConst(m_runControlTabs)) {
         tab.window->setWordWrapEnabled(m_settings.wrapOutput);
         tab.window->setMaxCharCount(m_settings.maxCharCount);
     }
@@ -485,29 +492,29 @@ void AppOutputPane::updateFromSettings()
 
 void AppOutputPane::appendMessage(RunControl *rc, const QString &out, OutputFormat format)
 {
-    RunControlTab * const tab = tabFor(rc);
-    if (!tab)
-        return;
-
-    QString stringToWrite;
-    if (format == NormalMessageFormat || format == ErrorMessageFormat) {
-        stringToWrite = QTime::currentTime().toString();
-        stringToWrite += ": ";
-    }
-    stringToWrite += out;
-    tab->window->appendMessage(stringToWrite, format);
-
-    if (format != NormalMessageFormat) {
-        switch (tab->behaviorOnOutput) {
-        case AppOutputPaneMode::FlashOnOutput:
-            flash();
-            break;
-        case AppOutputPaneMode::PopupOnFirstOutput:
-            tab->behaviorOnOutput = AppOutputPaneMode::FlashOnOutput;
-            Q_FALLTHROUGH();
-        case AppOutputPaneMode::PopupOnOutput:
-            popup(NoModeSwitch);
-            break;
+    const int index = indexOf(rc);
+    if (index != -1) {
+        Core::OutputWindow *window = m_runControlTabs.at(index).window;
+        QString stringToWrite;
+        if (format == NormalMessageFormat || format == ErrorMessageFormat) {
+            stringToWrite = QTime::currentTime().toString();
+            stringToWrite += ": ";
+        }
+        stringToWrite += out;
+        window->appendMessage(stringToWrite, format);
+        if (format != NormalMessageFormat) {
+            RunControlTab &tab = m_runControlTabs[index];
+            switch (tab.behaviorOnOutput) {
+            case AppOutputPaneMode::FlashOnOutput:
+                flash();
+                break;
+            case AppOutputPaneMode::PopupOnFirstOutput:
+                tab.behaviorOnOutput = AppOutputPaneMode::FlashOnOutput;
+                Q_FALLTHROUGH();
+            case AppOutputPaneMode::PopupOnOutput:
+                popup(NoModeSwitch);
+                break;
+            }
         }
     }
 }
@@ -539,13 +546,13 @@ void AppOutputPane::storeSettings() const
     s->setValueWithDefault(WRAP_OUTPUT_KEY, m_settings.wrapOutput, kWrapOutputDefault);
     s->setValueWithDefault(MAX_LINES_KEY,
                            m_settings.maxCharCount / 100,
-                           Core::Constants::DEFAULT_MAX_CHAR_COUNT / 100);
+                           Core::Constants::DEFAULT_MAX_CHAR_COUNT);
 }
 
 void AppOutputPane::loadSettings()
 {
-    QtcSettings * const s = Core::ICore::settings();
-    const auto modeFromSettings = [s](const Key key, AppOutputPaneMode defaultValue) {
+    QSettings * const s = Core::ICore::settings();
+    const auto modeFromSettings = [s](const QString key, AppOutputPaneMode defaultValue) {
         return static_cast<AppOutputPaneMode>(s->value(key, int(defaultValue)).toInt());
     };
     m_settings.runOutputMode = modeFromSettings(POP_UP_FOR_RUN_OUTPUT_KEY, kRunOutputModeDefault);
@@ -555,44 +562,47 @@ void AppOutputPane::loadSettings()
     m_settings.mergeChannels = s->value(MERGE_CHANNELS_KEY, kMergeChannelsDefault).toBool();
     m_settings.wrapOutput = s->value(WRAP_OUTPUT_KEY, kWrapOutputDefault).toBool();
     m_settings.maxCharCount = s->value(MAX_LINES_KEY,
-                                       Core::Constants::DEFAULT_MAX_CHAR_COUNT / 100).toInt() * 100;
+                                       Core::Constants::DEFAULT_MAX_CHAR_COUNT).toInt() * 100;
 }
 
 void AppOutputPane::showTabFor(RunControl *rc)
 {
-    if (RunControlTab * const tab = tabFor(rc))
-        m_tabWidget->setCurrentWidget(tab->window);
+    m_tabWidget->setCurrentIndex(tabWidgetIndexOf(indexOf(rc)));
 }
 
 void AppOutputPane::setBehaviorOnOutput(RunControl *rc, AppOutputPaneMode mode)
 {
-    if (RunControlTab * const tab = tabFor(rc))
-        tab->behaviorOnOutput = mode;
+    const int index = indexOf(rc);
+    if (index != -1)
+        m_runControlTabs[index].behaviorOnOutput = mode;
 }
 
 void AppOutputPane::reRunRunControl()
 {
-    RunControlTab * const tab = currentTab();
-    QTC_ASSERT(tab, return);
-    QTC_ASSERT(tab->runControl, return);
-    QTC_ASSERT(!tab->runControl->isRunning(), return);
+    const int index = currentIndex();
+    const RunControlTab &tab = m_runControlTabs.at(index);
+    QTC_ASSERT(tab.runControl, return);
+    QTC_ASSERT(index != -1 && !tab.runControl->isRunning(), return);
 
-    handleOldOutput(tab->window);
-    tab->window->scrollToBottom();
-    tab->runControl->initiateReStart();
+    handleOldOutput(tab.window);
+    tab.window->scrollToBottom();
+    tab.runControl->initiateReStart();
 }
 
 void AppOutputPane::attachToRunControl()
 {
-    RunControl * const rc = currentRunControl();
-    QTC_ASSERT(rc, return);
-    QTC_ASSERT(rc->isRunning(), return);
+    const int index = currentIndex();
+    QTC_ASSERT(index != -1, return);
+    RunControl *rc = m_runControlTabs.at(index).runControl;
+    QTC_ASSERT(rc && rc->isRunning(), return);
     ExtensionSystem::Invoker<void>(debuggerPlugin(), "attachExternalApplication", rc);
 }
 
 void AppOutputPane::stopRunControl()
 {
-    RunControl * const rc = currentRunControl();
+    const int index = currentIndex();
+    QTC_ASSERT(index != -1, return);
+    RunControl *rc = m_runControlTabs.at(index).runControl;
     QTC_ASSERT(rc, return);
 
     if (rc->isRunning()) {
@@ -624,40 +634,31 @@ QList<RunControl *> AppOutputPane::allRunControls() const
 
 void AppOutputPane::closeTab(int tabIndex, CloseTabMode closeTabMode)
 {
-    QWidget * const tabWidget = m_tabWidget->widget(tabIndex);
-    RunControlTab *tab = tabFor(tabWidget);
-    QTC_ASSERT(tab, return);
+    int index = indexOf(m_tabWidget->widget(tabIndex));
+    QTC_ASSERT(index != -1, return);
 
-    RunControl *runControl = tab->runControl;
-    Core::OutputWindow *window = tab->window;
+    RunControl *runControl = m_runControlTabs[index].runControl;
+    Core::OutputWindow *window = m_runControlTabs[index].window;
     qCDebug(appOutputLog) << "AppOutputPane::closeTab tab" << tabIndex << runControl << window;
     // Prompt user to stop
     if (closeTabMode == CloseTabWithPrompt) {
+        QWidget *tabWidget = m_tabWidget->widget(tabIndex);
         if (runControl && runControl->isRunning() && !runControl->promptToStop())
             return;
         // The event loop has run, thus the ordering might have changed, a tab might
         // have been closed, so do some strange things...
         tabIndex = m_tabWidget->indexOf(tabWidget);
-        tab = tabFor(tabWidget);
-        if (tabIndex == -1 || !tab)
+        index = indexOf(tabWidget);
+        if (tabIndex == -1 || index == -1)
             return;
     }
 
     m_tabWidget->removeTab(tabIndex);
     delete window;
 
-    Utils::erase(m_runControlTabs, [runControl](const RunControlTab &t) {
-        return t.runControl == runControl; });
-    if (runControl) {
-        if (runControl->isRunning()) {
-            QMetaObject::invokeMethod(runControl, [runControl] {
-                runControl->setAutoDeleteOnStop(true);
-                runControl->initiateStop();
-            }, Qt::QueuedConnection);
-        } else {
-            delete runControl;
-        }
-    }
+    if (runControl)
+        runControl->initiateFinish(); // Will self-destruct.
+    m_runControlTabs.removeAt(index);
     updateCloseActions();
     setFilteringEnabled(m_tabWidget->count() > 0);
 
@@ -667,10 +668,10 @@ void AppOutputPane::closeTab(int tabIndex, CloseTabMode closeTabMode)
 
 bool AppOutputPane::optionallyPromptToStop(RunControl *runControl)
 {
-    bool promptToStop = projectExplorerSettings().prompToStopRunControl;
-    if (!runControl->promptToStop(&promptToStop))
+    ProjectExplorerSettings settings = ProjectExplorerPlugin::projectExplorerSettings();
+    if (!runControl->promptToStop(&settings.prompToStopRunControl))
         return false;
-    setPromptToStopSettings(promptToStop);
+    ProjectExplorerPlugin::setProjectExplorerSettings(settings);
     return true;
 }
 
@@ -686,19 +687,19 @@ void AppOutputPane::enableDefaultButtons()
 
 void AppOutputPane::zoomIn(int range)
 {
-    for (const RunControlTab &tab : std::as_const(m_runControlTabs))
+    for (const RunControlTab &tab : qAsConst(m_runControlTabs))
         tab.window->zoomIn(range);
 }
 
 void AppOutputPane::zoomOut(int range)
 {
-    for (const RunControlTab &tab : std::as_const(m_runControlTabs))
+    for (const RunControlTab &tab : qAsConst(m_runControlTabs))
         tab.window->zoomOut(range);
 }
 
 void AppOutputPane::resetZoom()
 {
-    for (const RunControlTab &tab : std::as_const(m_runControlTabs))
+    for (const RunControlTab &tab : qAsConst(m_runControlTabs))
         tab.window->resetZoom();
 }
 
@@ -712,8 +713,8 @@ void AppOutputPane::enableButtons(const RunControl *rc)
         if (isRunning && debuggerPlugin() && rc->applicationProcessHandle().isValid()) {
             m_attachButton->setEnabled(true);
             ProcessHandle h = rc->applicationProcessHandle();
-            QString tip = h.isValid() ? Tr::tr("PID %1").arg(h.pid())
-                                      : Tr::tr("Invalid");
+            QString tip = h.isValid() ? RunControl::tr("PID %1").arg(h.pid())
+                                      : RunControl::tr("Invalid");
             m_attachButton->setToolTip(msgAttachDebuggerTooltip(tip));
         } else {
             m_attachButton->setEnabled(false);
@@ -733,12 +734,12 @@ void AppOutputPane::enableButtons(const RunControl *rc)
 
 void AppOutputPane::tabChanged(int i)
 {
-    RunControlTab * const controlTab = tabFor(m_tabWidget->widget(i));
-    if (i != -1 && controlTab) {
-        controlTab->window->updateFilterProperties(filterText(), filterCaseSensitivity(),
-                                                   filterUsesRegexp(), filterIsInverted(),
-                                                   beforeContext(), afterContext());
-        enableButtons(controlTab->runControl);
+    const int index = indexOf(m_tabWidget->widget(i));
+    if (i != -1 && index != -1) {
+        const RunControlTab &controlTab = m_runControlTabs[index];
+        controlTab.window->updateFilterProperties(filterText(), filterCaseSensitivity(),
+                                                  filterUsesRegexp(), filterIsInverted());
+        enableButtons(controlTab.runControl);
     } else {
         enableDefaultButtons();
     }
@@ -748,15 +749,12 @@ void AppOutputPane::contextMenuRequested(const QPoint &pos, int index)
 {
     const QList<QAction *> actions = {m_closeCurrentTabAction, m_closeAllTabsAction, m_closeOtherTabsAction};
     QAction *action = QMenu::exec(actions, m_tabWidget->mapToGlobal(pos), nullptr, m_tabWidget);
-    if (action == m_closeAllTabsAction) {
-        closeTabs(AppOutputPane::CloseTabWithPrompt);
-        return;
-    }
-
-    const int currentIdx = index != -1 ? index : m_tabWidget->currentIndex();
+    const int currentIdx = index != -1 ? index : currentIndex();
     if (action == m_closeCurrentTabAction) {
         if (currentIdx >= 0)
             closeTab(currentIdx);
+    } else if (action == m_closeAllTabsAction) {
+        closeTabs(AppOutputPane::CloseTabWithPrompt);
     } else if (action == m_closeOtherTabsAction) {
         for (int t = m_tabWidget->count() - 1; t >= 0; t--)
             if (t != currentIdx)
@@ -764,22 +762,40 @@ void AppOutputPane::contextMenuRequested(const QPoint &pos, int index)
     }
 }
 
-void AppOutputPane::runControlFinished(RunControl *runControl)
+void AppOutputPane::slotRunControlChanged()
 {
-    const RunControlTab * const tab = tabFor(runControl);
+    RunControl *current = currentRunControl();
+    if (current && current == sender())
+        enableButtons(current); // RunControl::isRunning() cannot be trusted in signal handler.
+}
+
+void AppOutputPane::slotRunControlFinished()
+{
+    auto *rc = qobject_cast<RunControl *>(sender());
+    QTimer::singleShot(0, this, [this, rc]() { slotRunControlFinished2(rc); });
+    for (const RunControlTab &t : qAsConst(m_runControlTabs)) {
+        if (t.runControl == rc) {
+            t.window->flush();
+            break;
+        }
+    }
+}
+
+void AppOutputPane::slotRunControlFinished2(RunControl *sender)
+{
+    const int senderIndex = indexOf(sender);
 
     // This slot is queued, so the stop() call in closeTab might lead to this slot, after closeTab already cleaned up
-    if (!tab)
+    if (senderIndex == -1)
         return;
 
     // Enable buttons for current
     RunControl *current = currentRunControl();
 
-    qCDebug(appOutputLog) << "AppOutputPane::runControlFinished" << runControl
-                          << m_tabWidget->indexOf(tab->window)
+    qCDebug(appOutputLog) << "AppOutputPane::runControlFinished"  << sender << senderIndex
                           << "current" << current << m_runControlTabs.size();
 
-    if (current && current == runControl)
+    if (current && current == sender)
         enableButtons(current);
 
     ProjectExplorerPlugin::updateRunActions();
@@ -817,28 +833,24 @@ bool AppOutputPane::canNavigate() const
     return false;
 }
 
-bool AppOutputPane::hasFilterContext() const
-{
-    return true;
-}
-
 class AppOutputSettingsWidget : public Core::IOptionsPageWidget
 {
+    Q_DECLARE_TR_FUNCTIONS(ProjectExplorer::Internal::AppOutputSettingsPage)
 public:
     AppOutputSettingsWidget()
     {
         const AppOutputSettings &settings = ProjectExplorerPlugin::appOutputSettings();
-        m_wrapOutputCheckBox.setText(Tr::tr("Word-wrap output"));
+        m_wrapOutputCheckBox.setText(tr("Word-wrap output"));
         m_wrapOutputCheckBox.setChecked(settings.wrapOutput);
-        m_cleanOldOutputCheckBox.setText(Tr::tr("Clear old output on a new run"));
+        m_cleanOldOutputCheckBox.setText(tr("Clear old output on a new run"));
         m_cleanOldOutputCheckBox.setChecked(settings.cleanOldOutput);
-        m_mergeChannelsCheckBox.setText(Tr::tr("Merge stderr and stdout"));
+        m_mergeChannelsCheckBox.setText(tr("Merge stderr and stdout"));
         m_mergeChannelsCheckBox.setChecked(settings.mergeChannels);
         for (QComboBox * const modeComboBox
              : {&m_runOutputModeComboBox, &m_debugOutputModeComboBox}) {
-            modeComboBox->addItem(Tr::tr("Always"), int(AppOutputPaneMode::PopupOnOutput));
-            modeComboBox->addItem(Tr::tr("Never"), int(AppOutputPaneMode::FlashOnOutput));
-            modeComboBox->addItem(Tr::tr("On First Output Only"),
+            modeComboBox->addItem(tr("Always"), int(AppOutputPaneMode::PopupOnOutput));
+            modeComboBox->addItem(tr("Never"), int(AppOutputPaneMode::FlashOnOutput));
+            modeComboBox->addItem(tr("On First Output Only"),
                                   int(AppOutputPaneMode::PopupOnFirstOutput));
         }
         m_runOutputModeComboBox.setCurrentIndex(m_runOutputModeComboBox
@@ -852,15 +864,15 @@ public:
         layout->addWidget(&m_cleanOldOutputCheckBox);
         layout->addWidget(&m_mergeChannelsCheckBox);
         const auto maxCharsLayout = new QHBoxLayout;
-        const QString msg = Tr::tr("Limit output to %1 characters");
+        const QString msg = tr("Limit output to %1 characters");
         const QStringList parts = msg.split("%1") << QString() << QString();
         maxCharsLayout->addWidget(new QLabel(parts.at(0).trimmed()));
         maxCharsLayout->addWidget(&m_maxCharsBox);
         maxCharsLayout->addWidget(new QLabel(parts.at(1).trimmed()));
         maxCharsLayout->addStretch(1);
         const auto outputModeLayout = new QFormLayout;
-        outputModeLayout->addRow(Tr::tr("Open Application Output when running:"), &m_runOutputModeComboBox);
-        outputModeLayout->addRow(Tr::tr("Open Application Output when debugging:"),
+        outputModeLayout->addRow(tr("Open Application Output when running:"), &m_runOutputModeComboBox);
+        outputModeLayout->addRow(tr("Open Application Output when debugging:"),
                                  &m_debugOutputModeComboBox);
         layout->addLayout(outputModeLayout);
         layout->addLayout(maxCharsLayout);
@@ -894,7 +906,7 @@ private:
 AppOutputSettingsPage::AppOutputSettingsPage()
 {
     setId(OPTIONS_PAGE_ID);
-    setDisplayName(Tr::tr("Application Output"));
+    setDisplayName(AppOutputSettingsWidget::tr("Application Output"));
     setCategory(Constants::BUILD_AND_RUN_SETTINGS_CATEGORY);
     setWidgetCreator([] { return new AppOutputSettingsWidget; });
 }

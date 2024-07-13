@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "configcontroller.h"
 
@@ -9,10 +31,11 @@
 
 #include "qmt/stereotype/stereotypecontroller.h"
 
-#include <QDebug>
+#include <QDir>
+#include <QFileInfo>
+#include <QFile>
 
-using Utils::FilePath;
-using Utils::FilePaths;
+#include <QDebug>
 
 namespace qmt {
 
@@ -23,8 +46,8 @@ public:
 };
 
 ConfigController::ConfigController(QObject *parent)
-    : QObject(parent)
-    , d(new ConfigControllerPrivate)
+    : QObject(parent),
+      d(new ConfigControllerPrivate)
 {
 }
 
@@ -38,7 +61,7 @@ void ConfigController::setStereotypeController(StereotypeController *stereotypeC
     d->m_stereotypeController = stereotypeController;
 }
 
-void ConfigController::readStereotypeDefinitions(const FilePath &path)
+void ConfigController::readStereotypeDefinitions(const QString &path)
 {
     if (path.isEmpty()) {
         // TODO add error handling
@@ -53,19 +76,25 @@ void ConfigController::readStereotypeDefinitions(const FilePath &path)
     connect(&parser, &StereotypeDefinitionParser::toolbarParsed,
             this, &ConfigController::onToolbarParsed);
 
-    FilePaths paths;
-    if (path.isFile()) {
-        paths.append(path);
-    } else if (path.isDir()) {
-        paths = path.dirEntries({ { "*.def" } });
+    QStringList fileNames;
+    QDir dir;
+    QFileInfo fileInfo(path);
+    if (fileInfo.isFile()) {
+        dir.setPath(fileInfo.path());
+        fileNames.append(fileInfo.fileName());
+    } else if (fileInfo.isDir()) {
+        dir.setPath(path);
+        dir.setNameFilters(QStringList("*.def"));
+        fileNames = dir.entryList(QDir::Files);
     } else {
         // TODO add error handling
         return;
     }
-    for (const FilePath &filePath : std::as_const(paths)) {
-        auto data = filePath.fileContents();
-        if (data.has_value()) {
-            QString text = QString::fromUtf8(data.value());
+    foreach (const QString &fileName, fileNames) {
+        QFile file(QFileInfo(dir, fileName).absoluteFilePath());
+        if (file.open(QIODevice::ReadOnly)) {
+            QString text = QString::fromUtf8(file.readAll());
+            file.close();
             StringTextSource source;
             source.setSourceId(1);
             source.setText(text);

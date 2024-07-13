@@ -1,5 +1,37 @@
-// Copyright (C) 2020 Uwe Kindler
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-2.1-or-later OR GPL-3.0-or-later
+/****************************************************************************
+**
+** Copyright (C) 2020 Uwe Kindler
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 2.1 or (at your option) any later version.
+** The licenses are as published by the Free Software Foundation
+** and appearing in the file LICENSE.LGPLv21 included in the packaging
+** of this file. Please review the following information to ensure
+** the GNU Lesser General Public License version 2.1 requirements
+** will be met: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -21,9 +53,6 @@ class DockContainerWidget;
 class DockAreaWidget;
 class DockContainerWidgetPrivate;
 class FloatingDockContainer;
-class AutoHideTab;
-class AutoHideDockContainer;
-class AutoHideSideBar;
 
 /**
  * The QDockWidget class provides a widget that can be docked inside a
@@ -32,8 +61,6 @@ class AutoHideSideBar;
 class ADS_EXPORT DockWidget : public QFrame
 {
     Q_OBJECT
-    Q_PROPERTY(bool focused READ isFocused WRITE setFocused NOTIFY focusedChanged)
-
 private:
     DockWidgetPrivate *d; ///< private data (pimpl)
     friend class DockWidgetPrivate;
@@ -54,8 +81,6 @@ protected:
     friend class DockWidgetTab;
     friend class DockWidgetTabPrivate;
     friend class DockAreaTitleBarPrivate;
-    friend class AutoHideDockContainer;
-    friend AutoHideSideBar;
 
     /**
      * Assigns the dock manager that manages this dock widget
@@ -127,34 +152,18 @@ public:
     using Super = QFrame;
 
     enum DockWidgetFeature {
-        DockWidgetClosable = 0x001, ///< dock widget has a close button
-        DockWidgetMovable
-        = 0x002, ///< dock widget is movable and can be moved to a new position in the current dock container
-        DockWidgetFloatable = 0x004,     ///< dock widget can be dragged into a floating window
-        DockWidgetDeleteOnClose = 0x008, ///< deletes the dock widget when it is closed
-        CustomCloseHandling
-        = 0x010, ///< clicking the close button will not close the dock widget but emits the closeRequested() signal instead
-        DockWidgetFocusable = 0x020, ///< if this is enabled, a dock widget can get focus highlighting
-        DockWidgetForceCloseWithArea
-        = 0x040,       ///< dock widget will be closed when the dock area hosting it is closed
-        NoTab = 0x080, ///< dock widget tab will never be shown if this flag is set
-        DeleteContentOnClose
-        = 0x100, ///< deletes only the contained widget on close, keeping the dock widget intact
-        ///< and in place. Attempts to rebuild the contents widget on show if there is a widget factory set.
-        DockWidgetPinnable
-        = 0x200, ///< dock widget can be pinned and added to an auto hide dock container
-        DefaultDockWidgetFeatures = DockWidgetClosable | DockWidgetMovable | DockWidgetFloatable
-                                    | DockWidgetFocusable | DockWidgetPinnable,
-        AllDockWidgetFeatures = DefaultDockWidgetFeatures | DockWidgetDeleteOnClose
-                                | CustomCloseHandling,
-        DockWidgetAlwaysCloseAndDelete = DockWidgetForceCloseWithArea | DockWidgetDeleteOnClose,
-        NoDockWidgetFeatures = 0x000
+        DockWidgetClosable = 0x01,///< dock widget has a close button
+        DockWidgetMovable = 0x02,///< dock widget is movable and can be moved to a new position in the current dock container
+        DockWidgetFloatable = 0x04,
+        DockWidgetDeleteOnClose = 0x08, ///< deletes the dock widget when it is closed
+        CustomCloseHandling = 0x10,
+        DefaultDockWidgetFeatures = DockWidgetClosable | DockWidgetMovable | DockWidgetFloatable,
+        AllDockWidgetFeatures = DefaultDockWidgetFeatures | DockWidgetDeleteOnClose | CustomCloseHandling,
+        NoDockWidgetFeatures = 0x00
     };
     Q_DECLARE_FLAGS(DockWidgetFeatures, DockWidgetFeature)
 
     enum eState { StateHidden, StateDocked, StateFloating };
-
-    enum eToolBarStyleSource { ToolBarStyleFromDockManager, ToolBarStyleFromDockWidget };
 
     /**
      * Sets the widget for the dock widget to widget.
@@ -181,18 +190,10 @@ public:
      * To ensure, that a dock widget does not block resizing, the dock widget
      * reimplements minimumSizeHint() function to return a very small minimum
      * size hint. If you would like to adhere the minimumSizeHint() from the
-     * content widget, then set the minimumSizeHintMode() to
-     * MinimumSizeHintFromContent. If you would like to use the minimumSize()
-     * value of the content widget or the dock widget, then you can use the
-     * MinimumSizeHintFromDockWidgetMinimumSize or
-     * MinimumSizeHintFromContentMinimumSize modes.
+     * content widget, the set the minimumSizeHintMode() to
+     * MinimumSizeHintFromContent.
      */
-    enum eMinimumSizeHintMode {
-        MinimumSizeHintFromDockWidget,
-        MinimumSizeHintFromContent,
-        MinimumSizeHintFromDockWidgetMinimumSize,
-        MinimumSizeHintFromContentMinimumSize,
-    };
+    enum eMinimumSizeHintMode { MinimumSizeHintFromDockWidget, MinimumSizeHintFromContent };
 
     /**
      * This mode configures the behavior of the toggle view action.
@@ -236,7 +237,7 @@ public:
     /**
      * Sets the widget for the dock widget to widget.
      * The InsertMode defines how the widget is inserted into the dock widget.
-     * The content of a dock widget should be resizable to a very small size to
+     * The content of a dock widget should be resizable do a very small size to
      * prevent the dock widget from blocking the resizing. To ensure, that a
      * dock widget can be resized very well, it is better to insert the content+
      * widget into a scroll area or to provide a widget that is already a scroll
@@ -251,18 +252,6 @@ public:
      * provide the InsertMode ForceNoScrollArea
      */
     void setWidget(QWidget *widget, eInsertMode insertMode = AutoScrollArea);
-
-    /**
-     * Only used when the feature flag DeleteContentOnClose is set.
-     * Using the flag and setting a widget factory allows to free the resources
-     * of the widget of your application while retaining the position the next
-     * time you want to show your widget, unlike the flag DockWidgetDeleteOnClose
-     * which deletes the dock widget itself. Since we keep the dock widget, all
-     * regular features of ADS should work as normal, including saving and
-     * restoring the state of the docking system and using perspectives.
-     */
-    using FactoryFunc = std::function<QWidget *(QWidget *)>;
-    void setWidgetFactory(FactoryFunc createWidget, eInsertMode insertMode = AutoScrollArea);
 
     /**
      * Remove the widget from the dock and give ownership back to the caller
@@ -313,49 +302,16 @@ public:
     DockContainerWidget *dockContainer() const;
 
     /**
-     * This function return the floating DockContainer if is isFloating() is true
-     * and a nullptr if this dock widget is not floating.
-     */
-    FloatingDockContainer *floatingDockContainer() const;
-
-    /**
      * Returns the dock area widget this dock widget belongs to or 0
      * if this dock widget has not been docked yet
      */
     DockAreaWidget *dockAreaWidget() const;
 
     /**
-     * Returns the side tab widget for this dock, if this dock widget is in
-     * a auto hide container. If it is not in a auto hide container, then this
-     * function returns a nullptr,
-     */
-    AutoHideTab *sideTabWidget() const;
-
-    /**
-     * Assign a side tab widget if this dock widget is an auto hide container
-     */
-    void setSideTabWidget(AutoHideTab *sideTab) const;
-
-    /**
-     * Returns true, if this dock widget is in an auto hide container
-     */
-    bool isAutoHide() const;
-
-    /**
-     * Returns the auto hide dock container of this dock widget or 0 if there is none.
-     */
-    AutoHideDockContainer *autoHideDockContainer() const;
-
-    /**
-     * Returns the auto hide side bar location or SideBarNone if, this is not an autohide dock widget.
-     */
-    SideBarLocation autoHideLocation() const;
-
-    /**
      * This property holds whether the dock widget is floating.
-     * A dock widget is only floating, if it is the one and only widget inside of a floating
-     * container. If there are more than one dock widget in a floating container, the all dock
-     * widgets are docked and not floating.
+     * A dock widget is only floating, if it is the one and only widget inside
+     * of a floating container. If there are more than one dock widget in a
+     * floating container, the all dock widgets are docked and not floating.
      */
     bool isFloating() const;
 
@@ -372,26 +328,10 @@ public:
     bool isClosed() const;
 
     /**
-     * Sets the focus property for widget
-     */
-    void setFocused(bool focused);
-
-    /**
-     * Returns true if this dock widget is focused.
-     */
-    bool isFocused() const;
-
-    /**
      * Returns a checkable action that can be used to show or close this dock widget.
      * The action's text is set to the dock widget's window title.
      */
     QAction *toggleViewAction() const;
-
-    /**
-     * Use provided action to be the default toggle view action for this dock widget.
-     * This dock widget now owns the action.
-     */
-    void setToggleViewAction(QAction *action);
 
     /**
      * Configures the behavior of the toggle view action.
@@ -405,16 +345,6 @@ public:
      * \see eMinimumSizeHintMode for a detailed description
      */
     void setMinimumSizeHintMode(eMinimumSizeHintMode mode);
-
-    /**
-     * Get the minimum size hint mode configured by setMinimumSizeHintMode
-     */
-    eMinimumSizeHintMode minimumSizeHintMode() const;
-
-    /**
-     * Returns true if the dock widget is set as central widget of it's dock manager
-     */
-    bool isCentralWidget() const;
 
     /**
      * Sets the dock widget icon that is shown in tabs and in toggle view
@@ -450,17 +380,6 @@ public:
      * on destruction
      */
     void setToolBar(QToolBar *toolBar);
-
-    /**
-     * Configures, if the dock widget uses the global tool bar styles from
-     * dock manager or if it uses its own tool bar style
-     */
-    void setToolBarStyleSource(eToolBarStyleSource source);
-
-    /**
-     * Returns the configured tool bar style source
-     */
-    eToolBarStyleSource toolBarStyleSource() const;
 
     /**
      * This function sets the tool button style for the given dock widget state.
@@ -544,7 +463,7 @@ public: // reimplements QFrame
 
     /**
      * This property controls whether the dock widget is open or closed.
-     * The toggleViewAction triggers this slot
+     * The toogleViewAction triggers this slot
      */
     void toggleView(bool open = true);
 
@@ -582,40 +501,24 @@ public: // reimplements QFrame
     void closeDockWidget();
 
     /**
-     * Request closing of the dock widget.
-     * For DockWidget with default close handling, the function does the same like clodeDockWidget()
-     * but if the flag CustomCloseHandling is set, the function only emits the closeRequested() signal.
-     */
-    void requestCloseDockWidget();
-
-    /**
      * Shows the widget in full-screen mode.
-     * Normally this function only affects windows. To make the interface compatible to QDockWidget,
-     * this function also maximizes a floating dock widget.
+     * Normally this function only affects windows. To make the interface
+     * compatible to QDockWidget, this function also maximizes a floating
+     * dock widget.
      *
-     * \note Full-screen mode works fine under Windows, but has certain problems (doe not work)
-     * under X (Linux). These problems are due to limitations of the ICCCM protocol that specifies
-     * the communication between X11 clients and the window manager. ICCCM simply does not
+     * \note Full-screen mode works fine under Windows, but has certain
+     * problems (doe not work) under X (Linux). These problems are due to
+     * limitations of the ICCCM protocol that specifies the communication
+     * between X11 clients and the window manager. ICCCM simply does not
      * understand the concept of non-decorated full-screen windows.
      */
     void showFullScreen();
 
     /**
-     * This function complements showFullScreen() to restore the widget after it has been in full
-     * screen mode.
+     * This function complements showFullScreen() to restore the widget
+     * after it has been in full screen mode.
      */
     void showNormal();
-
-    /**
-     * Sets the dock widget into auto hide mode if this feature is enabled
-     * via CDockManager::setAutoHideFlags(CDockManager::AutoHideFeatureEnabled)
-     */
-    void setAutoHide(bool enable, SideBarLocation location = SideBarNone, int tabIndex = -1);
-
-    /**
-     * Switches the dock widget to auto hide mode or vice versa depending on its current state.
-     */
-    void toggleAutoHide(SideBarLocation location = SideBarNone);
 
 signals:
     /**
@@ -658,8 +561,6 @@ signals:
      * The features parameter gives the new value of the property.
      */
     void featuresChanged(DockWidgetFeatures features);
-
-    void focusedChanged();
 }; // class DockWidget
 
 } // namespace ADS

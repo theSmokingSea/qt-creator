@@ -1,19 +1,39 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "actionhandler.h"
 
-#include "modeleditor.h"
 #include "modeleditor_constants.h"
-#include "modeleditortr.h"
+#include "modeleditor.h"
 
-#include <coreplugin/actionmanager/actioncontainer.h>
-#include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/coreconstants.h>
+#include <coreplugin/actionmanager/actionmanager.h>
+#include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
 #include <utils/icon.h>
-#include <utils/stringutils.h>
 #include <utils/utilsicons.h>
 
 #include <QAction>
@@ -35,7 +55,6 @@ public:
     QAction *deleteAction = nullptr;
     QAction *selectAllAction = nullptr;
     QAction *openParentDiagramAction = nullptr;
-    QAction *toggleViewFilterAction = nullptr;
     QAction *synchronizeBrowserAction = nullptr;
     QAction *exportDiagramAction = nullptr;
     QAction *exportSelectedElementsAction = nullptr;
@@ -96,11 +115,6 @@ QAction *ActionHandler::openParentDiagramAction() const
     return d->openParentDiagramAction;
 }
 
-QAction *ActionHandler::toggleViewFilterAction() const
-{
-    return d->toggleViewFilterAction;
-}
-
 QAction *ActionHandler::synchronizeBrowserAction() const
 {
     return d->synchronizeBrowserAction;
@@ -128,26 +142,26 @@ void ActionHandler::createActions()
     d->pasteAction = registerCommand(Core::Constants::PASTE, &ModelEditor::paste, d->context)->action();
     Core::Command *removeCommand = registerCommand(
                 Constants::REMOVE_SELECTED_ELEMENTS, &ModelEditor::removeSelectedElements, d->context,
-                Tr::tr("&Remove"), QKeySequence::Delete);
+                tr("&Remove"), QKeySequence::Delete);
     medit->addAction(removeCommand, Core::Constants::G_EDIT_COPYPASTE);
     d->removeAction = removeCommand->action();
     Core::Command *deleteCommand = registerCommand(
                 Constants::DELETE_SELECTED_ELEMENTS, &ModelEditor::deleteSelectedElements, d->context,
-                Tr::tr("&Delete"), QKeySequence("Ctrl+D"));
+                tr("&Delete"), QKeySequence("Ctrl+D"));
     medit->addAction(deleteCommand, Core::Constants::G_EDIT_COPYPASTE);
     d->deleteAction = deleteCommand->action();
     d->selectAllAction = registerCommand(Core::Constants::SELECTALL, &ModelEditor::selectAll, d->context)->action();
 
     Core::Command *exportDiagramCommand = registerCommand(
                 Constants::EXPORT_DIAGRAM, &ModelEditor::exportDiagram, d->context,
-                Tr::tr("Export Diagram..."));
+                tr("Export Diagram..."));
     exportDiagramCommand->setAttribute(Core::Command::CA_Hide);
     mfile->addAction(exportDiagramCommand, Core::Constants::G_FILE_EXPORT);
     d->exportDiagramAction = exportDiagramCommand->action();
 
     Core::Command *exportSelectedElementsCommand = registerCommand(
                 Constants::EXPORT_SELECTED_ELEMENTS, &ModelEditor::exportSelectedElements, d->context,
-                Tr::tr("Export Selected Elements..."));
+                tr("Export Selected Elements..."));
     exportSelectedElementsCommand->setAttribute(Core::Command::CA_Hide);
     mfile->addAction(exportSelectedElementsCommand, Core::Constants::G_FILE_EXPORT);
     d->exportSelectedElementsAction = exportSelectedElementsCommand->action();
@@ -158,49 +172,34 @@ void ActionHandler::createActions()
 
     d->openParentDiagramAction = registerCommand(
                 Constants::OPEN_PARENT_DIAGRAM, &ModelEditor::openParentDiagram, Core::Context(),
-                Tr::tr("Open Parent Diagram"), QKeySequence("Ctrl+Shift+P"),
+                tr("Open Parent Diagram"), QKeySequence("Ctrl+Shift+P"),
                 QIcon(":/modeleditor/up.png"))->action();
-    registerCommand(Constants::ACTION_ADD_PACKAGE, nullptr, Core::Context(), Tr::tr("Add Package"),
+    registerCommand(Constants::ACTION_ADD_PACKAGE, nullptr, Core::Context(), tr("Add Package"),
                     QKeySequence(), QIcon(":/modelinglib/48x48/package.png"));
-    registerCommand(Constants::ACTION_ADD_COMPONENT, nullptr, Core::Context(), Tr::tr("Add Component"),
+    registerCommand(Constants::ACTION_ADD_COMPONENT, nullptr, Core::Context(), tr("Add Component"),
                     QKeySequence(), QIcon(":/modelinglib/48x48/component.png"));
-    registerCommand(Constants::ACTION_ADD_CLASS, nullptr, Core::Context(), Tr::tr("Add Class"),
+    registerCommand(Constants::ACTION_ADD_CLASS, nullptr, Core::Context(), tr("Add Class"),
                     QKeySequence(), QIcon(":/modelinglib/48x48/class.png"));
-    registerCommand(Constants::ACTION_ADD_CANVAS_DIAGRAM, nullptr, Core::Context(), Tr::tr("Add Canvas Diagram"),
+    registerCommand(Constants::ACTION_ADD_CANVAS_DIAGRAM, nullptr, Core::Context(), tr("Add Canvas Diagram"),
                     QKeySequence(), QIcon(":/modelinglib/48x48/canvas-diagram.png"));
-    d->toggleViewFilterAction
-        = registerCommand(
-              Constants::ACTION_TOGGLE_VIEWFILTER,
-              &ModelEditor::toggleModelTreeFilter,
-              Core::Context(),
-              Tr::tr("Toggle View and Filter Settings"),
-              QKeySequence(Tr::tr("Ctrl+Shift+L")),
-              Utils::Icons::EYE_OPEN_TOOLBAR.icon())->action();
-    d->toggleViewFilterAction->setCheckable(true);
-    d->synchronizeBrowserAction
-        = registerCommand(
-              Constants::ACTION_SYNC_BROWSER,
-              nullptr,
-              Core::Context(),
-              Tr::tr("Synchronize Browser and Diagram"),
-              QKeySequence(),
-              Utils::Icons::LINK_TOOLBAR.icon(),
-              Tr::tr("Synchronize Browser and Diagram") + "<br><i><small>"
-                  + Utils::stripAccelerator(Tr::tr("Press && Hold for Options")) + "</small></i>")
-              ->action();
+    d->synchronizeBrowserAction = registerCommand(
+                Constants::ACTION_SYNC_BROWSER, nullptr, Core::Context(),
+                tr("Synchronize Browser and Diagram") + "<br><i><small>"
+                + tr("Press && Hold for Options") + "</small></i>", QKeySequence(),
+                Utils::Icons::LINK_TOOLBAR.icon())->action();
     d->synchronizeBrowserAction->setCheckable(true);
 
-    auto editPropertiesAction = new QAction(Tr::tr("Edit Element Properties"),
+    auto editPropertiesAction = new QAction(tr("Edit Element Properties"),
                                             Core::ICore::dialogParent());
     Core::Command *editPropertiesCommand = Core::ActionManager::registerAction(
                 editPropertiesAction, Constants::SHORTCUT_MODEL_EDITOR_EDIT_PROPERTIES, d->context);
-    editPropertiesCommand->setDefaultKeySequence(QKeySequence(Tr::tr("Shift+Return")));
+    editPropertiesCommand->setDefaultKeySequence(QKeySequence(tr("Shift+Return")));
     connect(editPropertiesAction, &QAction::triggered, this, &ActionHandler::onEditProperties);
 
-    auto editItemAction = new QAction(Tr::tr("Edit Item on Diagram"), Core::ICore::dialogParent());
+    auto editItemAction = new QAction(tr("Edit Item on Diagram"), Core::ICore::dialogParent());
     Core::Command *editItemCommand = Core::ActionManager::registerAction(
                 editItemAction, Constants::SHORTCUT_MODEL_EDITOR_EDIT_ITEM, d->context);
-    editItemCommand->setDefaultKeySequence(QKeySequence(Tr::tr("Return")));
+    editItemCommand->setDefaultKeySequence(QKeySequence(tr("Return")));
     connect(editItemAction, &QAction::triggered, this, &ActionHandler::onEditItem);
 }
 
@@ -227,20 +226,13 @@ std::function<void()> invokeOnCurrentModelEditor(void (ModelEditor::*function)()
     };
 }
 
-Core::Command *ActionHandler::registerCommand(
-    const Utils::Id &id,
-    void (ModelEditor::*function)(),
-    const Core::Context &context,
-    const QString &title,
-    const QKeySequence &keySequence,
-    const QIcon &icon,
-    const QString &toolTip)
+Core::Command *ActionHandler::registerCommand(const Utils::Id &id, void (ModelEditor::*function)(),
+                                              const Core::Context &context, const QString &title,
+                                              const QKeySequence &keySequence, const QIcon &icon)
 {
     auto action = new QAction(title, this);
     if (!icon.isNull())
         action->setIcon(icon);
-    if (!toolTip.isEmpty())
-        action->setToolTip(toolTip);
     Core::Command *command = Core::ActionManager::registerAction(action, id, context, /*scriptable=*/true);
     if (!keySequence.isEmpty())
         command->setDefaultKeySequence(keySequence);

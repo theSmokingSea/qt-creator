@@ -1,3 +1,4 @@
+import qbs
 import qbs.FileInfo
 
 CppApplication {

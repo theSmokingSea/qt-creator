@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppdoxygen_test.h"
 
@@ -8,7 +30,6 @@
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/documentmodel.h>
-#include <texteditor/commentssettings.h>
 
 #include <QCoreApplication>
 #include <QDebug>
@@ -21,26 +42,10 @@ namespace { typedef QByteArray _; }
 using CppEditor::Tests::TemporaryDir;
 using CppEditor::Tests::TestCase;
 using CppEditor::Internal::Tests::VerifyCleanCppModelManager;
-using namespace TextEditor;
-
-using namespace Utils;
 
 namespace CppEditor {
 namespace Internal {
 namespace Tests {
-
-class SettingsInjector
-{
-public:
-    SettingsInjector(const CommentsSettings::Data &tempSettings)
-    {
-        CommentsSettings::setData(tempSettings);
-    }
-    ~SettingsInjector() { CommentsSettings::setData(m_oldSettings); }
-
-private:
-    const CommentsSettings::Data m_oldSettings = CommentsSettings::data();
-};
 
 void DoxygenTest::initTestCase()
 {
@@ -54,6 +59,8 @@ void DoxygenTest::cleanTestCase()
 
 void DoxygenTest::cleanup()
 {
+    if (oldSettings)
+        CppToolsSettings::instance()->setCommentsSettings(*oldSettings);
     QVERIFY(Core::EditorManager::closeAllEditors(false));
     QVERIFY(TestCase::garbageCollectGlobalSnapshot());
 }
@@ -62,9 +69,7 @@ void DoxygenTest::testBasic_data()
 {
     QTest::addColumn<QByteArray>("given");
     QTest::addColumn<QByteArray>("expected");
-    QTest::addColumn<int>("commandPrefix");
 
-    using CommandPrefix = CommentsSettings::CommandPrefix;
     QTest::newRow("qt_style") << _(
         "bool preventFolding;\n"
         "/*!|\n"
@@ -74,29 +79,8 @@ void DoxygenTest::testBasic_data()
         "/*!\n"
         " * \\brief a\n"
         " */\n"
-        "int a;\n") << int(CommandPrefix::Auto);
-
-    QTest::newRow("qt_style_settings_override") << _(
-        "bool preventFolding;\n"
-        "/*!|\n"
         "int a;\n"
-        ) << _(
-        "bool preventFolding;\n"
-        "/*!\n"
-        " * @brief a\n"
-        " */\n"
-        "int a;\n") << int(CommandPrefix::At);
-
-    QTest::newRow("qt_style_settings_override_redundant") << _(
-        "bool preventFolding;\n"
-        "/*!|\n"
-        "int a;\n"
-        ) << _(
-        "bool preventFolding;\n"
-        "/*!\n"
-        " * \\brief a\n"
-        " */\n"
-        "int a;\n") << int(CommandPrefix::Backslash);
+    );
 
     QTest::newRow("qt_style_cursor_before_existing_comment") << _(
         "bool preventFolding;\n"
@@ -110,7 +94,8 @@ void DoxygenTest::testBasic_data()
         " * \n"
         " * \\brief something\n"
         " */\n"
-        "int a;\n") << int(CommandPrefix::Auto);
+        "int a;\n"
+    );
 
     QTest::newRow("qt_style_continuation") << _(
         "bool preventFolding;\n"
@@ -124,7 +109,8 @@ void DoxygenTest::testBasic_data()
         " * \\brief a\n"
         " * \n"
         " */\n"
-        "int a;\n") << int(CommandPrefix::Auto);
+        "int a;\n"
+    );
 
     QTest::newRow("java_style") << _(
         "bool preventFolding;\n"
@@ -135,29 +121,8 @@ void DoxygenTest::testBasic_data()
         "/**\n"
         " * @brief a\n"
         " */\n"
-        "int a;\n") << int(CommandPrefix::Auto);
-
-    QTest::newRow("java_style_settings_override") << _(
-        "bool preventFolding;\n"
-        "/**|\n"
         "int a;\n"
-        ) << _(
-        "bool preventFolding;\n"
-        "/**\n"
-        " * \\brief a\n"
-        " */\n"
-        "int a;\n") << int(CommandPrefix::Backslash);
-
-    QTest::newRow("java_style_settings_override_redundant") << _(
-        "bool preventFolding;\n"
-        "/**|\n"
-        "int a;\n"
-        ) << _(
-        "bool preventFolding;\n"
-        "/**\n"
-        " * @brief a\n"
-        " */\n"
-        "int a;\n") << int(CommandPrefix::At);
+    );
 
     QTest::newRow("java_style_continuation") << _(
         "bool preventFolding;\n"
@@ -171,7 +136,8 @@ void DoxygenTest::testBasic_data()
         " * @brief a\n"
         " * \n"
         " */\n"
-        "int a;\n") << int(CommandPrefix::Auto);
+        "int a;\n"
+    );
 
     QTest::newRow("cpp_styleA") << _(
          "bool preventFolding;\n"
@@ -182,7 +148,8 @@ void DoxygenTest::testBasic_data()
          "///\n"
          "/// \\brief a\n"
          "///\n"
-         "int a;\n") << int(CommandPrefix::Auto);
+         "int a;\n"
+    );
 
     QTest::newRow("cpp_styleB") << _(
          "bool preventFolding;\n"
@@ -193,7 +160,8 @@ void DoxygenTest::testBasic_data()
          "//!\n"
          "//! \\brief a\n"
          "//!\n"
-         "int a;\n") << int(CommandPrefix::Auto);
+         "int a;\n"
+    );
 
     QTest::newRow("cpp_styleA_continuation") << _(
          "bool preventFolding;\n"
@@ -207,7 +175,8 @@ void DoxygenTest::testBasic_data()
          "/// \\brief a\n"
          "/// \n"
          "///\n"
-         "int a;\n") << int(CommandPrefix::Auto);
+         "int a;\n"
+     );
 
     QTest::newRow("cpp_styleB_continuation") << _(
          "bool preventFolding;\n"
@@ -221,34 +190,33 @@ void DoxygenTest::testBasic_data()
          "//! \\brief a\n"
          "//! \n"
          "//!\n"
-         "int a;\n") << int(CommandPrefix::Auto);
+         "int a;\n"
+     );
 
     /// test cpp style doxygen comment when inside a indented scope
     QTest::newRow("cpp_styleA_indented") << _(
-         "void func() {\n"
+         "    bool preventFolding;\n"
          "    ///|\n"
          "    int a;\n"
-         "}\n"
         ) << _(
-         "void func() {\n"
+         "    bool preventFolding;\n"
          "    ///\n"
          "    /// \\brief a\n"
          "    ///\n"
          "    int a;\n"
-         "}\n") << int(CommandPrefix::Auto);
+    );
 
     QTest::newRow("cpp_styleB_indented") << _(
-         "void func() {\n"
+         "    bool preventFolding;\n"
          "    //!|\n"
          "    int a;\n"
-         "}\n"
         ) << _(
-         "void func() {\n"
+         "    bool preventFolding;\n"
          "    //!\n"
          "    //! \\brief a\n"
          "    //!\n"
          "    int a;\n"
-         "}\n") << int(CommandPrefix::Auto);
+    );
 
     QTest::newRow("cpp_styleA_indented_preserve_mixed_indention_continuation") << _(
          "\t bool preventFolding;\n"
@@ -258,7 +226,8 @@ void DoxygenTest::testBasic_data()
          "\t bool preventFolding;\n"
          "\t /// \\brief a\n"
          "\t /// \n"
-         "\t int a;\n") << int(CommandPrefix::Auto);
+         "\t int a;\n"
+    );
 
     /// test cpp style doxygen comment continuation when inside a indented scope
     QTest::newRow("cpp_styleA_indented_continuation") << _(
@@ -273,7 +242,8 @@ void DoxygenTest::testBasic_data()
          "    /// \\brief a\n"
          "    /// \n"
          "    ///\n"
-         "    int a;\n") << int(CommandPrefix::Auto);
+         "    int a;\n"
+    );
 
     QTest::newRow("cpp_styleB_indented_continuation") << _(
          "    bool preventFolding;\n"
@@ -287,7 +257,8 @@ void DoxygenTest::testBasic_data()
          "    //! \\brief a\n"
          "    //! \n"
          "    //!\n"
-         "    int a;\n") << int(CommandPrefix::Auto);
+         "    int a;\n"
+    );
 
     QTest::newRow("cpp_styleA_corner_case") << _(
           "bool preventFolding;\n"
@@ -297,7 +268,8 @@ void DoxygenTest::testBasic_data()
             "bool preventFolding;\n"
             "///\n"
             "void d(); ///\n"
-            "\n") << int(CommandPrefix::Auto);
+            "\n"
+    );
 
     QTest::newRow("cpp_styleB_corner_case") << _(
           "bool preventFolding;\n"
@@ -307,7 +279,8 @@ void DoxygenTest::testBasic_data()
           "bool preventFolding;\n"
           "//!\n"
           "void d(); //!\n"
-          "\n") << int(CommandPrefix::Auto);
+          "\n"
+    );
 
     QTest::newRow("noContinuationForExpressionAndComment1") << _(
           "bool preventFolding;\n"
@@ -315,7 +288,8 @@ void DoxygenTest::testBasic_data()
         ) << _(
           "bool preventFolding;\n"
           "*foo //\n"
-          "\n") << int(CommandPrefix::Auto);
+          "\n"
+    );
 
     QTest::newRow("noContinuationForExpressionAndComment2") << _(
           "bool preventFolding;\n"
@@ -323,7 +297,8 @@ void DoxygenTest::testBasic_data()
         ) << _(
           "bool preventFolding;\n"
           "*foo /*\n"
-          "       \n") << int(CommandPrefix::Auto);
+          "       \n"
+    );
 
     QTest::newRow("withMacroFromDocumentBeforeFunction") << _(
           "#define API\n"
@@ -334,7 +309,8 @@ void DoxygenTest::testBasic_data()
           "/**\n"
           " * @brief f\n"
           " */\n"
-          "API void f();\n") << int(CommandPrefix::Auto);
+          "API void f();\n"
+    );
 
     QTest::newRow("withAccessSpecifierBeforeFunction") << _(
           "class C {\n"
@@ -347,7 +323,8 @@ void DoxygenTest::testBasic_data()
           "     * @brief f\n"
           "     */\n"
           "    public: void f();\n"
-          "};\n") << int(CommandPrefix::Auto);
+          "};\n"
+    );
 
     QTest::newRow("classTemplate") << _(
           "bool preventFolding;\n"
@@ -360,7 +337,8 @@ void DoxygenTest::testBasic_data()
           " * @brief The C class\n"
           " */\n"
           "template<typename T> class C {\n"
-          "};\n") << int(CommandPrefix::Auto);
+          "};\n"
+    );
 
     QTest::newRow("continuation_after_text_in_first_line") << _(
         "bool preventFolding;\n"
@@ -372,7 +350,8 @@ void DoxygenTest::testBasic_data()
         "/*! leading comment\n"
         " *  \n"
         " */\n"
-        "int a;\n") << int(CommandPrefix::Auto);
+        "int a;\n"
+    );
 
     QTest::newRow("continuation_after_extra_indent") << _(
         "bool preventFolding;\n"
@@ -386,19 +365,14 @@ void DoxygenTest::testBasic_data()
         " *  cont\n"
         " *  \n"
         " */\n"
-        "int a;\n") << int(CommandPrefix::Auto);
+        "int a;\n"
+    );
 }
 
 void DoxygenTest::testBasic()
 {
     QFETCH(QByteArray, given);
     QFETCH(QByteArray, expected);
-    QFETCH(int, commandPrefix);
-
-    CommentsSettings::Data settings = CommentsSettings::data();
-    settings.commandPrefix = static_cast<CommentsSettings::CommandPrefix>(commandPrefix);
-    const SettingsInjector injector(settings);
-
     runTest(given, expected);
 }
 
@@ -418,7 +392,7 @@ void DoxygenTest::testWithMacroFromHeaderBeforeFunction()
 
     const CppTestDocument headerDocumentDefiningMacro("header.h", "#define API\n");
 
-    runTest(given, expected, {headerDocumentDefiningMacro});
+    runTest(given, expected, /*settings=*/ 0, {headerDocumentDefiningMacro});
 }
 
 void DoxygenTest::testNoLeadingAsterisks_data()
@@ -439,12 +413,11 @@ void DoxygenTest::testNoLeadingAsterisks()
     QFETCH(QByteArray, given);
     QFETCH(QByteArray, expected);
 
-    TextEditor::CommentsSettings::Data injection;
-    injection.enableDoxygen = true;
-    injection.leadingAsterisks = false;
-    const SettingsInjector injector(injection);
+    TextEditor::CommentsSettings injection;
+    injection.m_enableDoxygen = true;
+    injection.m_leadingAsterisks = false;
 
-    runTest(given, expected);
+    runTest(given, expected, &injection);
 }
 
 void DoxygenTest::verifyCleanState() const
@@ -457,6 +430,7 @@ void DoxygenTest::verifyCleanState() const
 /// The '|' in the input denotes the cursor position.
 void DoxygenTest::runTest(const QByteArray &original,
                           const QByteArray &expected,
+                          TextEditor::CommentsSettings *settings,
                           const TestDocuments &includedHeaderDocuments)
 {
     // Write files to disk
@@ -473,11 +447,17 @@ void DoxygenTest::runTest(const QByteArray &original,
     }
 
     // Update Code Model
-    QVERIFY(TestCase::parseFiles(testDocument.filePath().toString()));
+    QVERIFY(TestCase::parseFiles(testDocument.filePath()));
 
     // Open Editor
     QVERIFY(TestCase::openCppEditor(testDocument.filePath(), &testDocument.m_editor,
                                     &testDocument.m_editorWidget));
+
+    if (settings) {
+        auto *cts = CppToolsSettings::instance();
+        oldSettings.reset(new TextEditor::CommentsSettings(cts->commentsSettings()));
+        cts->setCommentsSettings(*settings);
+    }
 
     // We want to test documents that start with a comment. By default, the
     // editor will fold the very first comment it encounters, assuming
@@ -488,21 +468,13 @@ void DoxygenTest::runTest(const QByteArray &original,
     //    testDocument.m_editorWidget->unfoldAll();
     testDocument.m_editor->setCursorPosition(testDocument.m_cursorPosition);
 
-    QVERIFY(TestCase::waitForRehighlightedSemanticDocument(testDocument.m_editorWidget));
+    TestCase::waitForRehighlightedSemanticDocument(testDocument.m_editorWidget);
 
     // Send 'ENTER' key press
     QKeyEvent event(QEvent::KeyPress, Qt::Key_Enter, Qt::NoModifier);
     QCoreApplication::sendEvent(testDocument.m_editorWidget, &event);
     const QByteArray result = testDocument.m_editorWidget->document()->toPlainText().toUtf8();
 
-    if (isClangFormatPresent()) {
-        QEXPECT_FAIL("noContinuationForExpressionAndComment1",
-                     "ClangFormat indents differently",
-                     Continue);
-        QEXPECT_FAIL("noContinuationForExpressionAndComment2",
-                     "ClangFormat indents differently",
-                     Continue);
-    }
     QCOMPARE(QLatin1String(result), QLatin1String(expected));
 
     testDocument.m_editorWidget->undo();

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "classitem.h"
 
@@ -45,8 +67,6 @@
 
 #include <qmt/stereotype/customrelation.h>
 
-#include "../../modelinglibtr.h"
-
 namespace qmt {
 
 static const char ASSOCIATION[] = "association";
@@ -85,16 +105,29 @@ void ClassItem::update()
         m_methodsText.clear();
     }
 
-    updateCustomIcon(style);
+    // custom icon
+    if (stereotypeIconDisplay() == StereotypeIcon::DisplayIcon) {
+        if (!m_customIcon)
+            m_customIcon = new CustomIconItem(diagramSceneModel(), this);
+        m_customIcon->setStereotypeIconId(stereotypeIconId());
+        m_customIcon->setBaseSize(stereotypeIconMinimumSize(m_customIcon->stereotypeIcon(), CUSTOM_ICON_MINIMUM_AUTO_WIDTH, CUSTOM_ICON_MINIMUM_AUTO_HEIGHT));
+        m_customIcon->setBrush(style->fillBrush());
+        m_customIcon->setPen(style->outerLinePen());
+        m_customIcon->setZValue(SHAPE_ZVALUE);
+    } else if (m_customIcon) {
+        m_customIcon->scene()->removeItem(m_customIcon);
+        delete m_customIcon;
+        m_customIcon = nullptr;
+    }
 
     // shape
-    if (!customIconItem()) {
+    if (!m_customIcon) {
         if (!m_shape)
             m_shape = new QGraphicsRectItem(this);
         m_shape->setBrush(style->fillBrush());
         m_shape->setPen(style->outerLinePen());
         m_shape->setZValue(SHAPE_ZVALUE);
-    } else if (m_shape) {
+    } else if (m_shape){
         m_shape->scene()->removeItem(m_shape);
         delete m_shape;
         m_shape = nullptr;
@@ -246,7 +279,7 @@ void ClassItem::update()
         m_templateParameterBox = nullptr;
     }
 
-    updateSelectionMarker(customIconItem());
+    updateSelectionMarker(m_customIcon);
     updateRelationStarter();
     updateAlignmentButtons();
     updateGeometry();
@@ -254,8 +287,8 @@ void ClassItem::update()
 
 bool ClassItem::intersectShapeWithLine(const QLineF &line, QPointF *intersectionPoint, QLineF *intersectionLine) const
 {
-    if (customIconItem()) {
-        QList<QPolygonF> polygons = customIconItem()->outline();
+    if (m_customIcon) {
+        QList<QPolygonF> polygons = m_customIcon->outline();
         for (int i = 0; i < polygons.size(); ++i)
             polygons[i].translate(object()->pos() + object()->rect().topLeft());
         if (shapeIcon().textAlignment() == qmt::StereotypeIcon::TextalignBelow) {
@@ -367,7 +400,7 @@ bool ClassItem::extendContextMenu(QMenu *menu)
 {
     bool extended = false;
     if (diagramSceneModel()->diagramSceneController()->elementTasks()->hasClassDefinition(object(), diagramSceneModel()->diagram())) {
-        menu->addAction(new ContextMenuAction(Tr::tr("Show Definition"), "showDefinition", menu));
+        menu->addAction(new ContextMenuAction(tr("Show Definition"), "showDefinition", menu));
         extended = true;
     }
     return extended;
@@ -392,7 +425,7 @@ QString ClassItem::buildDisplayName() const
         name = object()->name();
         name += QLatin1Char('<');
         bool first = true;
-        for (const QString &p : diagramClass->templateParameters()) {
+        foreach (const QString &p, diagramClass->templateParameters()) {
             if (!first)
                 name += QLatin1Char(',');
             name += p;
@@ -433,11 +466,11 @@ void ClassItem::addRelationStarterTool(const QString &id)
     if (id == INHERITANCE)
         relationStarter()->addArrow(INHERITANCE, ArrowItem::ShaftSolid,
                                     ArrowItem::HeadNone, ArrowItem::HeadTriangle,
-                                    Tr::tr("Inheritance"));
+                                    tr("Inheritance"));
     else if (id == ASSOCIATION)
         relationStarter()->addArrow(ASSOCIATION, ArrowItem::ShaftSolid,
                                     ArrowItem::HeadNone, ArrowItem::HeadFilledTriangle,
-                                    Tr::tr("Association"));
+                                    tr("Association"));
     else
         ObjectItem::addRelationStarterTool(id);
 }
@@ -495,7 +528,7 @@ DClass::TemplateDisplay ClassItem::templateDisplay() const
 
     DClass::TemplateDisplay templateDisplay = diagramClass->templateDisplay();
     if (templateDisplay == DClass::TemplateSmart) {
-        if (customIconItem())
+        if (m_customIcon)
             templateDisplay = DClass::TemplateName;
         else
             templateDisplay = DClass::TemplateBox;
@@ -508,8 +541,8 @@ QSizeF ClassItem::calcMinimumGeometry() const
     double width = 0.0;
     double height = 0.0;
 
-    if (customIconItem()) {
-        QSizeF sz = customIconItemMinimumSize(customIconItem(),
+    if (m_customIcon) {
+        QSizeF sz = stereotypeIconMinimumSize(m_customIcon->stereotypeIcon(),
                                               CUSTOM_ICON_MINIMUM_AUTO_WIDTH, CUSTOM_ICON_MINIMUM_AUTO_HEIGHT);
         if (shapeIcon().textAlignment() != qmt::StereotypeIcon::TextalignTop
                 && shapeIcon().textAlignment() != qmt::StereotypeIcon::TextalignCenter)
@@ -576,7 +609,12 @@ void ClassItem::updateGeometry()
     height = geometry.height();
 
     if (object()->isAutoSized()) {
-        correctAutoSize(customIconItem(), width, height, MINIMUM_AUTO_WIDTH, MINIMUM_AUTO_HEIGHT);
+        if (!m_customIcon) {
+            if (width < MINIMUM_AUTO_WIDTH)
+                width = MINIMUM_AUTO_WIDTH;
+            if (height < MINIMUM_AUTO_HEIGHT)
+                height = MINIMUM_AUTO_HEIGHT;
+        }
     } else {
         QRectF rect = object()->rect();
         if (rect.width() > width)
@@ -601,15 +639,15 @@ void ClassItem::updateGeometry()
     // a backup for the graphics item used for manual resized and persistency.
     object()->setRect(rect);
 
-    if (customIconItem()) {
-        customIconItem()->setPos(left, top);
-        customIconItem()->setActualSize(QSizeF(width, height));
+    if (m_customIcon) {
+        m_customIcon->setPos(left, top);
+        m_customIcon->setActualSize(QSizeF(width, height));
     }
 
     if (m_shape)
         m_shape->setRect(rect);
 
-    if (customIconItem()) {
+    if (m_customIcon) {
         switch (shapeIcon().textAlignment()) {
         case qmt::StereotypeIcon::TextalignBelow:
             y += height + BODY_VERT_BORDER;
@@ -661,7 +699,7 @@ void ClassItem::updateGeometry()
         y += nameItem()->boundingRect().height();
     }
     if (m_contextLabel) {
-        if (customIconItem())
+        if (m_customIcon)
             m_contextLabel->resetMaxWidth();
         else
             m_contextLabel->setMaxWidth(width - 2 * BODY_HORIZ_BORDER);
@@ -674,7 +712,7 @@ void ClassItem::updateGeometry()
         y += 8.0;
     }
     if (m_attributes) {
-        if (customIconItem())
+        if (m_customIcon)
             m_attributes->setPos(-m_attributes->boundingRect().width() / 2.0, y);
         else
             m_attributes->setPos(left + BODY_HORIZ_BORDER, y);
@@ -686,7 +724,7 @@ void ClassItem::updateGeometry()
         y += 8.0;
     }
     if (m_methods) {
-        if (customIconItem())
+        if (m_customIcon)
             m_methods->setPos(-m_methods->boundingRect().width() / 2.0, y);
         else
             m_methods->setPos(left + BODY_HORIZ_BORDER, y);
@@ -730,7 +768,7 @@ void ClassItem::updateMembers(const Style *style)
     auto dclass = dynamic_cast<DClass *>(object());
     QMT_ASSERT(dclass, return);
 
-    for (const MClassMember &member : dclass->members()) {
+    foreach (const MClassMember &member, dclass->members()) {
         switch (member.memberType()) {
         case MClassMember::MemberUndefined:
             QMT_ASSERT(false, return);
@@ -747,22 +785,21 @@ void ClassItem::updateMembers(const Style *style)
             break;
         }
 
-        bool needBr = false;
         if (text && !text->isEmpty())
-            needBr = true;
+            *text += "<br/>";
 
+        bool addNewline = false;
+        bool addSpace = false;
         if (currentVisibility)
             *currentVisibility = member.visibility();
         if (currentGroup && member.group() != *currentGroup) {
-            needBr = false;
-            *text += QString("<p style=\"padding:0;margin-top:6;margin-bottom:0;\"><b>[%1]</b></p>").arg(member.group());
+            *text += QString("[%1]").arg(member.group());
+            addNewline = true;
             *currentGroup = member.group();
         }
-
-        if (needBr)
+        if (addNewline)
             *text += "<br/>";
 
-        bool addSpace = false;
         bool haveSignal = false;
         bool haveSlot = false;
         if (member.visibility() != MClassMember::VisibilityUndefined) {

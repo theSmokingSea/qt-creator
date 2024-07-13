@@ -1,18 +1,43 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nimbuildsystem.h"
 
 #include "nimconstants.h"
+#include "nimproject.h"
 #include "nimbleproject.h"
 
-#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
+#include <projectexplorer/kitinformation.h>
 
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
+
+#include <QStandardPaths>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -25,6 +50,14 @@ const char EXCLUDED_FILES_KEY[] = "ExcludedFiles";
 NimProjectScanner::NimProjectScanner(Project *project)
     : m_project(project)
 {
+    m_scanner.setFilter([this](const Utils::MimeType &, const FilePath &fp) {
+        const QString path = fp.toString();
+        return excludedFiles().contains(path)
+                || path.endsWith(".nimproject")
+                || path.contains(".nimproject.user")
+                || path.contains(".nimble.user");
+    });
+
     connect(&m_directoryWatcher, &FileSystemWatcher::directoryChanged,
             this, &NimProjectScanner::directoryChanged);
     connect(&m_directoryWatcher, &FileSystemWatcher::fileChanged,
@@ -44,9 +77,9 @@ NimProjectScanner::NimProjectScanner(Project *project)
         }
 
         // Sync watched dirs
-        const QSet<FilePath> fsDirs = Utils::transform<QSet>(nodes,
-            [](const std::unique_ptr<FileNode> &fn) { return fn->directory(); });
-        const QSet<FilePath> projectDirs = Utils::toSet(m_directoryWatcher.directoryPaths());
+        const QSet<QString> fsDirs = Utils::transform<QSet>(nodes,
+            [](const std::unique_ptr<FileNode> &fn) { return fn->directory().toString(); });
+        const QSet<QString> projectDirs = Utils::toSet(m_directoryWatcher.directories());
         m_directoryWatcher.addDirectories(Utils::toList(fsDirs - projectDirs), FileSystemWatcher::WatchAllChanges);
         m_directoryWatcher.removeDirectories(Utils::toList(projectDirs - fsDirs));
 
@@ -83,19 +116,12 @@ void NimProjectScanner::saveSettings()
 
 void NimProjectScanner::startScan()
 {
-    m_scanner.setFilter(
-        [excludedFiles = excludedFiles()](const Utils::MimeType &, const FilePath &fp) {
-            const QString path = fp.toString();
-            return excludedFiles.contains(path) || path.endsWith(".nimproject")
-                   || path.contains(".nimproject.user") || path.contains(".nimble.user");
-        });
-
     m_scanner.asyncScanForFiles(m_project->projectDirectory());
 }
 
 void NimProjectScanner::watchProjectFilePath()
 {
-    m_directoryWatcher.addFile(m_project->projectFilePath(), FileSystemWatcher::WatchModifiedDate);
+    m_directoryWatcher.addFile(m_project->projectFilePath().toString(), FileSystemWatcher::WatchModifiedDate);
 }
 
 void NimProjectScanner::setExcludedFiles(const QStringList &list)
@@ -168,7 +194,7 @@ void NimBuildSystem::triggerParsing()
 
 FilePath nimPathFromKit(Kit *kit)
 {
-    auto tc = ToolchainKitAspect::toolchain(kit, Constants::C_NIMLANGUAGE_ID);
+    auto tc = ToolChainKitAspect::toolChain(kit, Constants::C_NIMLANGUAGE_ID);
     QTC_ASSERT(tc, return {});
     const FilePath command = tc->compilerCommand();
     return command.isEmpty() ? FilePath() : command.absolutePath();
@@ -177,10 +203,10 @@ FilePath nimPathFromKit(Kit *kit)
 FilePath nimblePathFromKit(Kit *kit)
 {
     // There's no extra setting for "nimble", derive it from the "nim" path.
-    const FilePath nimbleFromPath = FilePath("nimble").searchInPath();
+    const QString nimbleFromPath = QStandardPaths::findExecutable("nimble");
     const FilePath nimPath = nimPathFromKit(kit);
     const FilePath nimbleFromKit = nimPath.pathAppended("nimble").withExecutableSuffix();
-    return nimbleFromKit.exists() ? nimbleFromKit.canonicalPath() : nimbleFromPath;
+    return nimbleFromKit.exists() ? nimbleFromKit.canonicalPath() : FilePath::fromString(nimbleFromPath);
 }
 
 bool NimBuildSystem::supportsAction(Node *context, ProjectAction action, const Node *node) const

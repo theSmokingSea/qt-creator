@@ -1,12 +1,35 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Layouts
-import QtQuick.Controls
-import HelperWidgets
-import StudioControls as StudioControls
-import StudioTheme as StudioTheme
+import QtQuick 2.15
+import QtQuick.Layouts 1.15
+import QtQuick.Controls 2.15
+import HelperWidgets 2.0
+import StudioControls 1.0 as StudioControls
+import StudioTheme 1.0 as StudioTheme
+import QtQuickDesignerTheme 1.0
 
 Row {
     id: root
@@ -21,21 +44,11 @@ Row {
     // by QtQuick3D to add built-in primitives to the model.
     property var defaultItems
 
-    // These paths will be used for default items if they are defined. Otherwise, default item
-    // itself is used as the path.
-    property var defaultPaths
-
     // Current item
     property string absoluteFilePath: ""
 
-    // If this property is set, this path will be opened instead of the default path
-    property string resourcesPath
-
     property alias comboBox: comboBox
     property alias spacer: spacer
-    property alias actionIndicatorVisible: comboBox.actionIndicatorVisible
-
-    property bool hideDuplicates: true
 
     FileResourcesModel {
         id: fileModel
@@ -46,96 +59,6 @@ Row {
     ColorLogic {
         id: colorLogic
         backendValue: root.backendValue
-    }
-
-    component ThumbnailToolTip: ToolTip {
-        id: toolTip
-
-        property alias checkerVisible: checker.visible
-        property alias thumbnailSource: thumbnail.source
-
-        property alias titleText: title.text
-        property alias descriptionText: description.text
-
-        property int maximumWidth: 420
-
-        delay: StudioTheme.Values.toolTipDelay
-
-        background: Rectangle {
-            color: StudioTheme.Values.themeToolTipBackground
-            border.color: StudioTheme.Values.themeToolTipOutline
-            border.width: StudioTheme.Values.border
-        }
-
-        contentItem: Row {
-            id: row
-
-            readonly property real __epsilon: 2
-
-            height: Math.max(wrapper.visible ? wrapper.height : 0, column.height)
-            spacing: 10
-
-            Item {
-                id: wrapper
-                visible: thumbnail.status === Image.Ready
-                width: 96
-                height: 96
-
-                Image {
-                    id: checker
-                    anchors.fill: parent
-                    fillMode: Image.Tile
-                    source: "images/checkers.png"
-                }
-
-                Image {
-                    id: thumbnail
-                    anchors.fill: parent
-                    sourceSize.width: wrapper.width
-                    sourceSize.height: wrapper.height
-                    asynchronous: true
-                    fillMode: Image.PreserveAspectFit
-                }
-            }
-
-            Column {
-                id: column
-
-                property int thumbnailSize: wrapper.visible ? wrapper.width + row.spacing : 0
-
-                spacing: 10
-                anchors.verticalCenter: parent.verticalCenter
-                width: Math.min(toolTip.maximumWidth - column.thumbnailSize,
-                                Math.max(titleTextMetrics.width + row.__epsilon,
-                                         descriptionTextMetrics.width + row.__epsilon))
-
-                Text {
-                    id: title
-                    font: toolTip.font
-                    color: StudioTheme.Values.themeToolTipText
-
-                    TextMetrics {
-                        id: titleTextMetrics
-                        text: title.text
-                        font: title.font
-                    }
-                }
-
-                Text {
-                    id: description
-                    width: column.width
-                    font: toolTip.font
-                    color: StudioTheme.Values.themeToolTipText
-                    wrapMode: Text.Wrap
-
-                    TextMetrics {
-                        id: descriptionTextMetrics
-                        text: description.text
-                        font: description.font
-                    }
-                }
-            }
-        }
     }
 
     StudioControls.FilterComboBox {
@@ -184,28 +107,70 @@ Row {
             }
         }
 
-        ThumbnailToolTip {
-            id: rootToolTip
+        ToolTip {
+            id: toolTip
+            visible: comboBox.hover && toolTip.text !== ""
+            text: root.backendValue.valueToString
+            delay: StudioTheme.Values.toolTipDelay
 
-            visible: comboBox.hover && rootToolTip.text !== ""
-            text: root.backendValue?.valueToString ?? ""
-
-            checkerVisible: !root.isMesh(root.absoluteFilePath)
-            thumbnailSource: {
-                if (root.isBuiltInPrimitive(root.absoluteFilePath))
-                    return "image://qmldesigner_thumbnails/"
-                        + root.absoluteFilePath.substring(1, root.absoluteFilePath.length)
-                        + ".builtin"
-
-                if (fileModel.isLocal(root.absoluteFilePath))
-                    return "image://qmldesigner_thumbnails/" + root.absoluteFilePath
-
-                return root.absoluteFilePath
+            background: Rectangle {
+                color: StudioTheme.Values.themeToolTipBackground
+                border.color: StudioTheme.Values.themeToolTipOutline
+                border.width: StudioTheme.Values.border
             }
-            titleText: root.fileName(rootToolTip.text)
-            descriptionText: root.isBuiltInPrimitive(rootToolTip.text)
-                                ? qsTr("Built-in primitive")
-                                : rootToolTip.text
+
+            contentItem: RowLayout {
+                spacing: 10
+
+                Item {
+                    visible: thumbnail.status === Image.Ready
+                    Layout.preferredWidth: 100
+                    Layout.preferredHeight: 100
+
+                    Image {
+                        id: checker
+                        visible: !root.isMesh(root.absoluteFilePath)
+                        anchors.fill: parent
+                        fillMode: Image.Tile
+                        source: "images/checkers.png"
+                    }
+
+                    Image {
+                        id: thumbnail
+                        asynchronous: true
+                        anchors.fill: parent
+                        fillMode: Image.PreserveAspectFit
+                        source: {
+                            if (root.isBuiltInPrimitive(root.absoluteFilePath))
+                                return "image://qmldesigner_thumbnails/"
+                                    + root.absoluteFilePath.substring(1, root.absoluteFilePath.length)
+                                    + ".builtin"
+
+                            if (fileModel.isLocal(root.absoluteFilePath))
+                                return "image://qmldesigner_thumbnails/" + root.absoluteFilePath
+
+                            return root.absoluteFilePath
+                        }
+                    }
+                }
+
+                ColumnLayout {
+                    Text {
+                        text: root.fileName(toolTip.text)
+                        color: StudioTheme.Values.themeToolTipText
+                        font: toolTip.font
+                    }
+
+                    Text {
+                        Layout.fillWidth: true
+                        text: root.isBuiltInPrimitive(toolTip.text) ? qsTr("Built-in primitive")
+                                                                    : toolTip.text
+                        font: toolTip.font
+                        color: StudioTheme.Values.themeToolTipText
+                        wrapMode: Text.WordWrap
+                    }
+                }
+            }
         }
 
         delegate: ItemDelegate {
@@ -217,6 +182,8 @@ Row {
 
             id: delegateRoot
             width: comboBox.popup.width - comboBox.popup.leftPadding - comboBox.popup.rightPadding
+                   - (comboBox.popupScrollBar.visible ? comboBox.popupScrollBar.contentItem.implicitWidth + 2
+                                                      : 0) // TODO Magic number
             height: StudioTheme.Values.height - 2 * StudioTheme.Values.border
             padding: 0
             hoverEnabled: true
@@ -229,18 +196,32 @@ Row {
 
             onClicked: comboBox.selectItem(delegateRoot.DelegateModel.itemsIndex)
 
-            contentItem: Text {
-                leftPadding: 8
-                text: name
-                color: {
-                    if (!delegateRoot.enabled)
-                        return comboBox.style.text.disabled
+            indicator: Item {
+                id: itemDelegateIconArea
+                width: delegateRoot.height
+                height: delegateRoot.height
 
-                    if (comboBox.currentIndex === delegateRoot.DelegateModel.itemsIndex)
-                        return comboBox.style.text.selectedText
-
-                    return comboBox.style.text.idle
+                Label {
+                    id: itemDelegateIcon
+                    text: StudioTheme.Constants.tickIcon
+                    color: delegateRoot.highlighted ? StudioTheme.Values.themeTextSelectedTextColor
+                                                    : StudioTheme.Values.themeTextColor
+                    font.family: StudioTheme.Constants.iconFont.family
+                    font.pixelSize: StudioTheme.Values.spinControlIconSizeMulti
+                    visible: comboBox.currentIndex === delegateRoot.DelegateModel.itemsIndex ? true
+                                                                                             : false
+                    anchors.fill: parent
+                    renderType: Text.NativeRendering
+                    horizontalAlignment: Text.AlignHCenter
+                    verticalAlignment: Text.AlignVCenter
                 }
+            }
+
+            contentItem: Text {
+                leftPadding: itemDelegateIconArea.width
+                text: name
+                color: delegateRoot.highlighted ? StudioTheme.Values.themeTextSelectedTextColor
+                                                : StudioTheme.Values.themeTextColor
                 font: comboBox.font
                 elide: Text.ElideRight
                 verticalAlignment: Text.AlignVCenter
@@ -251,42 +232,72 @@ Row {
                 y: 0
                 width: delegateRoot.width
                 height: delegateRoot.height
-                color: {
-                    if (!delegateRoot.enabled)
-                        return "transparent"
-
-                    if (delegateRoot.hovered && comboBox.currentIndex === delegateRoot.DelegateModel.itemsIndex)
-                        return comboBox.style.interactionHover
-
-                    if (comboBox.currentIndex === delegateRoot.DelegateModel.itemsIndex)
-                        return comboBox.style.interaction
-
-                    if (delegateRoot.hovered)
-                        return comboBox.style.background.hover
-
-                    return "transparent"
-                }
+                color: delegateRoot.highlighted ? StudioTheme.Values.themeInteraction
+                                                : "transparent"
             }
 
-            ThumbnailToolTip {
+            ToolTip {
                 id: delegateToolTip
-
                 visible: delegateRoot.hovered
                 text: delegateRoot.relativeFilePath
+                delay: StudioTheme.Values.toolTipDelay
 
-                checkerVisible: !root.isMesh(delegateRoot.absoluteFilePath)
-                thumbnailSource: {
-                    if (root.isBuiltInPrimitive(delegateRoot.name))
-                        return "image://qmldesigner_thumbnails/"
-                            + delegateRoot.name.substring(1, delegateRoot.name.length)
-                            + ".builtin"
-
-                    return "image://qmldesigner_thumbnails/" + delegateRoot.absoluteFilePath
+                background: Rectangle {
+                    color: StudioTheme.Values.themeToolTipBackground
+                    border.color: StudioTheme.Values.themeToolTipOutline
+                    border.width: StudioTheme.Values.border
                 }
-                titleText: delegateRoot.name
-                descriptionText: root.isBuiltInPrimitive(delegateToolTip.text)
-                                    ? qsTr("Built-in primitive")
-                                    : delegateToolTip.text
+
+                contentItem: RowLayout {
+                    spacing: 10
+
+                    Item {
+                        visible: delegateThumbnail.status === Image.Ready
+                        Layout.preferredWidth: 100
+                        Layout.preferredHeight: 100
+
+                        Image {
+                            id: delegateChecker
+                            visible: !root.isMesh(delegateRoot.absoluteFilePath)
+                            anchors.fill: parent
+                            fillMode: Image.Tile
+                            source: "images/checkers.png"
+                        }
+
+                        Image {
+                            id: delegateThumbnail
+                            asynchronous: true
+                            anchors.fill: parent
+                            fillMode: Image.PreserveAspectFit
+                            source: {
+                                if (root.isBuiltInPrimitive(delegateRoot.name))
+                                    return "image://qmldesigner_thumbnails/"
+                                        + delegateRoot.name.substring(1, delegateRoot.name.length)
+                                        + ".builtin"
+
+                                return "image://qmldesigner_thumbnails/" + delegateRoot.absoluteFilePath
+                            }
+                        }
+                    }
+
+                    ColumnLayout {
+                        Text {
+                            text: delegateRoot.name
+                            color: StudioTheme.Values.themeToolTipText
+                            font: delegateToolTip.font
+                        }
+
+                        Text {
+                            Layout.fillWidth: true
+                            text: root.isBuiltInPrimitive(delegateToolTip.text)
+                                  ? qsTr("Built-in primitive")
+                                  : delegateToolTip.text
+                            font: delegateToolTip.font
+                            color: StudioTheme.Values.themeToolTipText
+                            wrapMode: Text.WordWrap
+                        }
+                    }
+                }
             }
         }
 
@@ -428,46 +439,27 @@ Row {
         // QtDS very slow. This will happen when selecting different items in the scene.
         comboBox.model = {}
 
-        let nameMap = new Map;
-
         if (root.defaultItems !== undefined) {
             for (var i = 0; i < root.defaultItems.length; ++i) {
                 comboBox.listModel.append({
-                    absoluteFilePath: root.defaultPaths ? root.defaultPaths[i]
-                                                        : "",
-                    relativeFilePath: root.defaultPaths ? root.defaultPaths[i]
-                                                        : root.defaultItems[i],
+                    absoluteFilePath: "",
+                    relativeFilePath: root.defaultItems[i],
                     name: root.defaultItems[i],
                     group: 0
                 })
-                nameMap.set(root.defaultItems[i], i)
             }
         }
 
         const myModel = fileModel.model
         for (var j = 0; j < myModel.length; ++j) {
             let item = myModel[j]
-            if (root.hideDuplicates && nameMap.has(item.fileName)) {
-                // Prefer hiding generated component files rather than other project files
-                let listIndex = nameMap.get(item.fileName)
-                let absPath = comboBox.listModel.get(listIndex).absoluteFilePath
-                if (absPath.includes("/Generated/") || absPath.includes("/asset_imports/")) {
-                    comboBox.listModel.set(listIndex, {
-                        absoluteFilePath: item.absoluteFilePath,
-                        relativeFilePath: item.relativeFilePath,
-                        name: item.fileName,
-                        group: 1
-                    })
-                }
-            } else {
-                comboBox.listModel.append({
-                    absoluteFilePath: item.absoluteFilePath,
-                    relativeFilePath: item.relativeFilePath,
-                    name: item.fileName,
-                    group: 1
-                })
-                nameMap.set(item.fileName, comboBox.listModel.count - 1)
-            }
+
+            comboBox.listModel.append({
+                absoluteFilePath: item.absoluteFilePath,
+                relativeFilePath: item.relativeFilePath,
+                name: item.fileName,
+                group: 1
+            })
         }
 
         comboBox.model = Qt.binding(function() { return comboBox.listModel })
@@ -482,8 +474,6 @@ Row {
     }
 
     onDefaultItemsChanged: root.createModel()
-    onDefaultPathsChanged: root.createModel()
-    onHideDuplicatesChanged: root.createModel()
 
     Component.onCompleted: {
         root.createModel()
@@ -529,7 +519,7 @@ Row {
         icon: StudioTheme.Constants.addFile
         iconColor: root.textColor
         onClicked: {
-            fileModel.openFileDialog(resourcesPath)
+            fileModel.openFileDialog()
             if (fileModel.fileName !== "") {
                 root.backendValue.value = fileModel.fileName
                 root.absoluteFilePath = fileModel.resolve(root.backendValue.value)

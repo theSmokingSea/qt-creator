@@ -1,14 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmakeprojectimporter.h"
 
-#include "makefileparse.h"
-#include "qmakebuildconfiguration.h"
 #include "qmakebuildinfo.h"
-#include "qmakekitaspect.h"
+#include "qmakekitinformation.h"
+#include "qmakebuildconfiguration.h"
 #include "qmakeproject.h"
-#include "qmakeprojectmanagertr.h"
+#include "makefileparse.h"
 #include "qmakestep.h"
 
 #include <projectexplorer/buildinfo.h>
@@ -17,36 +38,34 @@
 #include <projectexplorer/toolchain.h>
 #include <projectexplorer/toolchainmanager.h>
 
-#include <qtsupport/qtkitaspect.h>
+#include <qtsupport/qtkitinformation.h>
 #include <qtsupport/qtsupportconstants.h>
 #include <qtsupport/qtversionfactory.h>
 #include <qtsupport/qtversionmanager.h>
 
 #include <utils/algorithm.h>
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 
 #include <QDir>
-#include <QLoggingCategory>
-#include <QSet>
+#include <QFileInfo>
 #include <QStringList>
+#include <QLoggingCategory>
 
 #include <memory>
 
 using namespace ProjectExplorer;
+using namespace QmakeProjectManager;
 using namespace QtSupport;
 using namespace Utils;
 
-namespace QmakeProjectManager::Internal {
-
-const Id QT_IS_TEMPORARY("Qmake.TempQt");
-const char IOSQT[] = "Qt4ProjectManager.QtVersion.Ios"; // ugly
+namespace {
 
 struct DirectoryData
 {
     QString makefile;
-    FilePath buildDirectory;
-    FilePath canonicalQmakeBinary;
+    Utils::FilePath buildDirectory;
+    Utils::FilePath canonicalQmakeBinary;
     QtProjectImporter::QtVersionData qtVersionData;
     QString parsedSpec;
     QtVersion::QmakeBuildConfigs buildConfig;
@@ -55,24 +74,35 @@ struct DirectoryData
     QMakeStepConfig::OsType osType;
 };
 
+} // namespace
+
+namespace QmakeProjectManager {
+namespace Internal {
+
+const Utils::Id QT_IS_TEMPORARY("Qmake.TempQt");
+const char IOSQT[] = "Qt4ProjectManager.QtVersion.Ios"; // ugly
+
 QmakeProjectImporter::QmakeProjectImporter(const FilePath &path) :
     QtProjectImporter(path)
 { }
 
-FilePaths QmakeProjectImporter::importCandidates()
+QStringList QmakeProjectImporter::importCandidates()
 {
-    FilePaths candidates{projectFilePath().absolutePath()};
+    QStringList candidates;
 
-    QSet<FilePath> seenBaseDirs;
-    for (Kit *k : KitManager::kits()) {
+    QFileInfo pfi = projectFilePath().toFileInfo();
+    const QString prefix = pfi.baseName();
+    candidates << pfi.absolutePath();
+
+    foreach (Kit *k, KitManager::kits()) {
         const FilePath sbdir = QmakeBuildConfiguration::shadowBuildDirectory
                     (projectFilePath(), k, QString(), BuildConfiguration::Unknown);
 
-        const FilePath baseDir = sbdir.absolutePath();
-        if (!Utils::insert(seenBaseDirs, baseDir))
-            continue;
-        for (const FilePath &path : baseDir.dirEntries(QDir::Dirs | QDir::NoDotAndDotDot)) {
-            if (!candidates.contains(path))
+        const QString baseDir = sbdir.toFileInfo().absolutePath();
+
+        foreach (const QString &dir, QDir(baseDir).entryList()) {
+            const QString path = baseDir + QLatin1Char('/') + dir;
+            if (dir.startsWith(prefix) && !candidates.contains(path))
                 candidates << path;
         }
     }
@@ -86,10 +116,10 @@ QList<void *> QmakeProjectImporter::examineDirectory(const FilePath &importPath,
     QList<void *> result;
     const QLoggingCategory &logs = MakeFileParse::logging();
 
-    const QStringList makefiles = QDir(importPath.toString()).entryList(QStringList(("Makefile*")));
+    QStringList makefiles = QDir(importPath.toString()).entryList(QStringList(QLatin1String("Makefile*")));
     qCDebug(logs) << "  Makefiles:" << makefiles;
 
-    for (const QString &file : makefiles) {
+    foreach (const QString &file, makefiles) {
         std::unique_ptr<DirectoryData> data(new DirectoryData);
         data->makefile = file;
         data->buildDirectory = importPath;
@@ -97,7 +127,7 @@ QList<void *> QmakeProjectImporter::examineDirectory(const FilePath &importPath,
         qCDebug(logs) << "  Parsing makefile" << file;
         // find interesting makefiles
         const FilePath makefile = importPath / file;
-        MakeFileParse parse(makefile, MakeFileParse::Mode::FilterKnownConfigValues, projectFilePath());
+        MakeFileParse parse(makefile, MakeFileParse::Mode::FilterKnownConfigValues);
         if (parse.makeFileState() != MakeFileParse::Okay) {
             qCDebug(logs) << "  Parsing the makefile failed" << makefile;
             continue;
@@ -108,7 +138,7 @@ QList<void *> QmakeProjectImporter::examineDirectory(const FilePath &importPath,
         }
 
         data->canonicalQmakeBinary = parse.qmakePath().canonicalPath();
-        if (!data->canonicalQmakeBinary.exists()) {
+        if (data->canonicalQmakeBinary.isEmpty()) {
             qCDebug(logs) << "  " << parse.qmakePath() << "doesn't exist anymore";
             continue;
         }
@@ -160,7 +190,7 @@ bool QmakeProjectImporter::matchKit(void *directoryData, const Kit *k) const
 
     QtVersion *kitVersion = QtKitAspect::qtVersion(k);
     QString kitSpec = QmakeKitAspect::mkspec(k);
-    Toolchain *tc = ToolchainKitAspect::cxxToolchain(k);
+    ToolChain *tc = ToolChainKitAspect::cxxToolChain(k);
     if (kitSpec.isEmpty() && kitVersion)
         kitSpec = kitVersion->mkspecFor(tc);
     QMakeStepConfig::OsType kitOsType = QMakeStepConfig::NoOsType;
@@ -190,10 +220,10 @@ const QList<BuildInfo> QmakeProjectImporter::buildInfoList(void *directoryData) 
     BuildInfo info;
     if (data->buildConfig & QtVersion::DebugBuild) {
         info.buildType = BuildConfiguration::Debug;
-        info.displayName = Tr::tr("Debug");
+        info.displayName = QCoreApplication::translate("QmakeProjectManager::Internal::QmakeProjectImporter", "Debug");
     } else {
         info.buildType = BuildConfiguration::Release;
-        info.displayName = Tr::tr("Release");
+        info.displayName = QCoreApplication::translate("QmakeProjectManager::Internal::QmakeProjectImporter", "Release");
     }
     info.buildDirectory = data->buildDirectory;
 
@@ -215,19 +245,19 @@ static const Toolchains preferredToolChains(QtVersion *qtVersion, const QString 
 {
     const QString spec = ms.isEmpty() ? qtVersion->mkspec() : ms;
 
-    const Toolchains toolchains = ToolchainManager::toolchains();
+    const Toolchains toolchains = ToolChainManager::toolchains();
     const Abis qtAbis = qtVersion->qtAbis();
-    const auto matcher = [&](const Toolchain *tc) {
+    const auto matcher = [&](const ToolChain *tc) {
         return qtAbis.contains(tc->targetAbi()) && tc->suggestedMkspecList().contains(spec);
     };
-    Toolchain * const cxxToolchain = findOrDefault(toolchains, [matcher](const Toolchain *tc) {
+    ToolChain * const cxxToolchain = findOrDefault(toolchains, [matcher](const ToolChain *tc) {
         return tc->language() == ProjectExplorer::Constants::CXX_LANGUAGE_ID && matcher(tc);
     });
-    Toolchain * const cToolchain = findOrDefault(toolchains, [matcher](const Toolchain *tc) {
+    ToolChain * const cToolchain = findOrDefault(toolchains, [matcher](const ToolChain *tc) {
         return tc->language() == ProjectExplorer::Constants::C_LANGUAGE_ID && matcher(tc);
     });
     Toolchains chosenToolchains;
-    for (Toolchain * const tc : {cxxToolchain, cToolchain}) {
+    for (ToolChain * const tc : {cxxToolchain, cToolchain}) {
         if (tc)
             chosenToolchains << tc;
     };
@@ -240,11 +270,12 @@ Kit *QmakeProjectImporter::createTemporaryKit(const QtProjectImporter::QtVersion
 {
     Q_UNUSED(osType) // TODO use this to select the right toolchain?
     return QtProjectImporter::createTemporaryKit(data, [&data, parsedSpec](Kit *k) -> void {
-        for (Toolchain *const tc : preferredToolChains(data.qt, parsedSpec))
-            ToolchainKitAspect::setToolchain(k, tc);
+        for (ToolChain *const tc : preferredToolChains(data.qt, parsedSpec))
+            ToolChainKitAspect::setToolChain(k, tc);
         if (parsedSpec != data.qt->mkspec())
             QmakeKitAspect::setMkspec(k, parsedSpec, QmakeKitAspect::MkspecSource::Code);
     });
 }
 
-} // QmakeProjectManager::Internal
+} // namespace Internal
+} // namespace QmakeProjectManager

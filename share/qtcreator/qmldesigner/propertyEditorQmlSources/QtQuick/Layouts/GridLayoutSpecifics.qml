@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 import QtQuick 2.15
 import QtQuick.Layouts 1.15
@@ -12,10 +34,7 @@ Section {
     caption: qsTr("Grid Layout")
 
     SectionLayout {
-        PropertyLabel {
-            text: qsTr("Columns & Rows")
-            tooltip: qsTr("Sets the number of columns and rows in the <b>Grid Layout</b>.")
-        }
+        PropertyLabel { text: qsTr("Columns & Rows") }
 
         SecondColumnLayout {
             SpinBox {
@@ -52,10 +71,7 @@ Section {
             ExpandingSpacer {}
         }
 
-        PropertyLabel {
-            text: qsTr("Spacing")
-            tooltip: qsTr("Sets the space between the items in pixels in the rows and columns in the <b>Grid Layout</b>.")
-        }
+        PropertyLabel { text: qsTr("Spacing") }
 
         SecondColumnLayout {
             SpinBox {
@@ -92,10 +108,7 @@ Section {
             ExpandingSpacer {}
         }
 
-        PropertyLabel {
-            text: qsTr("Flow")
-            tooltip: qsTr("Set the direction of dynamic items to flow in rows or columns in the <b>Grid Layout</b>.")
-        }
+        PropertyLabel { text: qsTr("Flow") }
 
         SecondColumnLayout {
             ComboBox {
@@ -109,11 +122,7 @@ Section {
             ExpandingSpacer {}
         }
 
-        PropertyLabel {
-            text: qsTr("Layout direction")
-            tooltip: qsTr("Sets the direction of the dynamic items left to right or right to left in the <b>Grid Layout</b>.")
-
-        }
+        PropertyLabel { text: qsTr("Layout direction") }
 
         SecondColumnLayout {
             ComboBox {
@@ -126,34 +135,5 @@ Section {
 
             ExpandingSpacer {}
         }
-
-        PropertyLabel {
-            text: qsTr("Uniform cell sizes")
-            tooltip: qsTr("Toggles all cells to have a uniform height or width.")
-            visible: majorQtQuickVersion === 6 && minorQtQuickVersion >= 6
-        }
-
-        SecondColumnLayout {
-            CheckBox {
-                text: qsTr("Heights")
-                implicitWidth: StudioTheme.Values.twoControlColumnWidth
-                               + StudioTheme.Values.actionIndicatorWidth
-                backendValue: backendValues.uniformCellHeights
-                visible: majorQtQuickVersion === 6 && minorQtQuickVersion >= 6
-            }
-
-            Spacer { implicitWidth: StudioTheme.Values.twoControlColumnGap }
-
-            CheckBox {
-                text: qsTr("Widths")
-                implicitWidth: StudioTheme.Values.twoControlColumnWidth
-                               + StudioTheme.Values.actionIndicatorWidth
-                backendValue: backendValues.uniformCellWidths
-                visible: majorQtQuickVersion === 6 && minorQtQuickVersion >= 6
-            }
-
-            ExpandingSpacer {}
-        }
     }
 }
-

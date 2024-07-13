@@ -1,10 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "operation.h"
 
 #include "settings.h"
-#include "sdkpersistentsettings.h"
+
+#include <utils/persistentsettings.h>
 
 #include <QDir>
 #include <QFile>
@@ -64,9 +87,9 @@ QVariantMap Operation::load(const QString &file)
     QVariantMap map;
 
     // Read values from original file:
-    QString path = Settings::instance()->getPath(file);
-    if (QFileInfo::exists(path)) {
-        SdkPersistentSettingsReader reader;
+    Utils::FilePath path = Settings::instance()->getPath(file);
+    if (path.exists()) {
+        Utils::PersistentSettingsReader reader;
         if (!reader.load(path))
             return QVariantMap();
         map = reader.restoreValues();
@@ -77,43 +100,34 @@ QVariantMap Operation::load(const QString &file)
 
 bool Operation::save(const QVariantMap &map, const QString &file) const
 {
-    QString path = Settings::instance()->getPath(file);
+    Utils::FilePath path = Settings::instance()->getPath(file);
 
     if (path.isEmpty()) {
         std::cerr << "Error: No path found for " << qPrintable(file) << "." << std::endl;
         return false;
     }
 
-    QString dirName = cleanPath(path + "/..");
-    QDir dir(dirName);
+    Utils::FilePath dirName = path.parentDir();
+    QDir dir(dirName.toString());
     if (!dir.exists() && !dir.mkpath(QLatin1String("."))) {
-        std::cerr << "Error: Could not create directory " << qPrintable(dirName)
+        std::cerr << "Error: Could not create directory " << qPrintable(dirName.toString())
                   << "." << std::endl;
         return false;
     }
 
-    SdkPersistentSettingsWriter writer(path, QLatin1String("QtCreator")
+    Utils::PersistentSettingsWriter writer(path, QLatin1String("QtCreator")
                                            + file[0].toUpper() + file.mid(1));
     QString errorMessage;
     if (!writer.save(map, &errorMessage)) {
-        std::cerr << "Error: Could not save settings " << qPrintable(path)
+        std::cerr << "Error: Could not save settings " << qPrintable(path.toString())
                   << "." << std::endl;
         return false;
     }
-    if (!QFile(path).setPermissions(QFile::ReadOwner | QFile::WriteOwner
+    if (!path.setPermissions(QFile::ReadOwner | QFile::WriteOwner
                                | QFile::ReadGroup | QFile::ReadOther)) {
-        std::cerr << "Error: Could not set permissions for " << qPrintable(path)
+        std::cerr << "Error: Could not set permissions for " << qPrintable(path.toString())
                   << "." << std::endl;
         return false;
     }
     return true;
-}
-
-QString cleanPath(const QString &orig)
-{
-    // QDir::cleanPath() destroys "//", one of which might be needed.
-    const int pos = orig.indexOf("://");
-    if (pos == -1)
-        return QDir::cleanPath(orig);
-    return orig.left(pos) + "://" + QDir::cleanPath(orig.mid(pos + 3));
 }

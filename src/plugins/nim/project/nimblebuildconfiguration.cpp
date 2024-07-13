@@ -1,10 +1,34 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nimblebuildconfiguration.h"
 
 #include "nimconstants.h"
-#include "nimtr.h"
+//#include "nimblebuildstep.h"
+#include "nimbleproject.h"
+#include "nimblebuildsystem.h"
 
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/buildstep.h>
@@ -12,16 +36,20 @@
 #include <projectexplorer/kit.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
+#include <utils/fileutils.h>
+#include <utils/osspecificaspects.h>
 
+#include <QFileInfo>
+#include <QDir>
+
+using namespace Nim;
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace Nim {
-
-NimbleBuildConfiguration::NimbleBuildConfiguration(Target *target, Id id)
+NimbleBuildConfiguration::NimbleBuildConfiguration(Target *target, Utils::Id id)
     : BuildConfiguration(target, id)
 {
-    setConfigWidgetDisplayName(Tr::tr("General"));
+    setConfigWidgetDisplayName(tr("General"));
     setConfigWidgetHasFrame(true);
     setBuildDirectorySettingsKey("Nim.NimbleBuildConfiguration.BuildDirectory");
     appendInitialBuildStep(Constants::C_NIMBLEBUILDSTEP_ID);
@@ -37,16 +65,17 @@ BuildConfiguration::BuildType NimbleBuildConfiguration::buildType() const
     return m_buildType;
 }
 
-void NimbleBuildConfiguration::fromMap(const Store &map)
+bool NimbleBuildConfiguration::fromMap(const QVariantMap &map)
 {
     m_buildType = static_cast<BuildType>(map[Constants::C_NIMBLEBUILDCONFIGURATION_BUILDTYPE].toInt());
-    BuildConfiguration::fromMap(map);
+    return BuildConfiguration::fromMap(map);
 }
 
-void NimbleBuildConfiguration::toMap(Store &map) const
+QVariantMap NimbleBuildConfiguration::toMap() const
 {
-    BuildConfiguration::toMap(map);
+    auto map = BuildConfiguration::toMap();
     map[Constants::C_NIMBLEBUILDCONFIGURATION_BUILDTYPE] = buildType();
+    return map;
 }
 
 void NimbleBuildConfiguration::setBuildType(BuildConfiguration::BuildType buildType)
@@ -75,10 +104,8 @@ NimbleBuildConfigurationFactory::NimbleBuildConfigurationFactory()
             return info;
         };
         return QList<BuildInfo>{
-            oneBuild(BuildConfiguration::Debug, Tr::tr("Debug")),
-            oneBuild(BuildConfiguration::Release, Tr::tr("Release"))
+            oneBuild(BuildConfiguration::Debug, BuildConfiguration::tr("Debug")),
+            oneBuild(BuildConfiguration::Release, BuildConfiguration::tr("Release"))
         };
     });
 }
-
-} // Nim

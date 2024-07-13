@@ -1,11 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "consoleview.h"
-
 #include "consoleitemdelegate.h"
 #include "consoleitemmodel.h"
-#include "../debuggertr.h"
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/manhattanstyle.h>
@@ -32,7 +52,6 @@ namespace Internal {
 ConsoleView::ConsoleView(ConsoleItemModel *model, QWidget *parent) :
     Utils::TreeView(parent), m_model(model)
 {
-    setUniformRowHeights(false);
     setFrameStyle(QFrame::NoFrame);
     setHeaderHidden(true);
     setRootIsDecorated(false);
@@ -86,8 +105,12 @@ void ConsoleView::mousePressEvent(QMouseEvent *event)
         bool handled = false;
         if (type == ConsoleItem::DefaultType) {
             bool showTypeIcon = index.parent() == QModelIndex();
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+            const QStyleOptionViewItem option = viewOptions();
+#else
             QStyleOptionViewItem option;
             initViewItemOption(&option);
+#endif
             ConsoleItemPositions positions(m_model, visualRect(index), option.font, showTypeIcon, true);
 
             if (positions.expandCollapseIcon().contains(pos)) {
@@ -122,14 +145,14 @@ void ConsoleView::contextMenuEvent(QContextMenuEvent *event)
     QModelIndex itemIndex = indexAt(event->pos());
     QMenu menu;
 
-    auto copy = new QAction(Tr::tr("&Copy"), this);
+    auto copy = new QAction(tr("&Copy"), this);
     copy->setEnabled(itemIndex.isValid());
     menu.addAction(copy);
-    auto show = new QAction(Tr::tr("&Show in Editor"), this);
+    auto show = new QAction(tr("&Show in Editor"), this);
     show->setEnabled(canShowItemInTextEditor(itemIndex));
     menu.addAction(show);
     menu.addSeparator();
-    auto clear = new QAction(Tr::tr("C&lear"), this);
+    auto clear = new QAction(tr("C&lear"), this);
     menu.addAction(clear);
 
     QAction *a = menu.exec(event->globalPos());
@@ -162,8 +185,9 @@ void ConsoleView::onRowActivated(const QModelIndex &index)
 
     const Utils::FilePath fp
         = m_finder.findFile(model()->data(index, ConsoleItem::FileRole).toString()).constFirst();
-    if (fp.isReadableFile())
+    if (fp.exists() && fp.isFile() && fp.isReadableFile()) {
         Core::EditorManager::openEditorAt({fp, model()->data(index, ConsoleItem::LineRole).toInt()});
+    }
 }
 
 void ConsoleView::copyToClipboard(const QModelIndex &index)

@@ -195,8 +195,11 @@ public:
     // Symbol's interface
     FullySpecifiedType type() const override;
 
-    const Block *asBlock() const override { return this; }
-    Block *asBlock() override { return this; }
+    const Block *asBlock() const override
+    { return this; }
+
+    Block *asBlock() override
+    { return this; }
 
 protected:
     void visitSymbol0(SymbolVisitor *visitor) override;

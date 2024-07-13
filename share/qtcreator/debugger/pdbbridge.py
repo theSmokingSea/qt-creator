@@ -1,5 +1,27 @@
+############################################################################
+#
 # Copyright (C) 2016 The Qt Company Ltd.
-# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+# Contact: https://www.qt.io/licensing/
+#
+# This file is part of Qt Creator.
+#
+# Commercial License Usage
+# Licensees holding valid commercial Qt licenses may use this file in
+# accordance with the commercial license agreement provided with the
+# Software or, alternatively, in accordance with the terms contained in
+# a written agreement between you and The Qt Company. For licensing terms
+# and conditions see https://www.qt.io/terms-conditions. For further
+# information use the contact form at https://www.qt.io/contact-us.
+#
+# GNU General Public License Usage
+# Alternatively, this file may be used under the terms of the GNU
+# General Public License version 3 as published by the Free Software
+# Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+# included in the packaging of this file. Please review the following
+# information to ensure the GNU General Public License requirements will
+# be met: https://www.gnu.org/licenses/gpl-3.0.html.
+#
+############################################################################
 
 import os
 import re
@@ -239,7 +261,7 @@ class QtcInternalDumper():
     def hexencode(s):
         if sys.version_info[0] == 2:
             return s.encode('hex')
-        if isinstance(s, __builtins__.str):
+        if isinstance(s, str):
             s = s.encode('utf8')
         return base64.b16encode(s).decode('utf8')
 
@@ -392,7 +414,7 @@ class QtcInternalDumper():
         if bp:
             self.currentbp = bp.number
             if (flag and bp.temporary):
-                self.do_clear(__builtins__.str(bp.number))
+                self.do_clear(str(bp.number))
             return True
         else:
             return False
@@ -497,7 +519,7 @@ class QtcInternalDumper():
         try:
             bp = self.get_bpbynumber(arg)
         except ValueError as err:
-            return __builtins__.str(err)
+            return str(err)
         bp.deleteMe()
         self._prune_breaks(bp.file, bp.line)
         return None
@@ -565,12 +587,12 @@ class QtcInternalDumper():
                 break
             frame = frame.f_back
         stack.reverse()
-        i = max(0, __builtins__.len(stack) - 1)
+        i = max(0, len(stack) - 1)
         while tb is not None:
             stack.append((tb.tb_frame, tb.tb_lineno))
             tb = tb.tb_next
         if frame is None:
-            i = max(0, __builtins__.len(stack) - 1)
+            i = max(0, len(stack) - 1)
         return stack, i
 
     # The following methods can be called by clients to use
@@ -584,7 +606,7 @@ class QtcInternalDumper():
         if pyLocals is None:
             pyLocals = pyGlobals
         self.reset()
-        if isinstance(cmd, __builtins__.str):
+        if isinstance(cmd, str):
             cmd = compile(cmd, '<string>', 'exec')
         sys.settrace(self.trace_dispatch)
         try:
@@ -672,7 +694,7 @@ class QtcInternalDumper():
                 line = 'shell ' + line[1:]
             else:
                 return None, None, line
-        i, length = 0, __builtins__.len(line)
+        i, length = 0, len(line)
         while i < length and line[i] in self.identchars:
             i = i + 1
         cmd, arg = line[:i], line[i:].strip()
@@ -685,7 +707,7 @@ class QtcInternalDumper():
         The return value is a flag indicating whether interpretation of
         commands by the interpreter should stop.
         """
-        line = __builtins__.str(line)
+        line = str(line)
         print('LINE 0: %s' % line)
         cmd, arg, line = self.parseline(line)
         print('LINE 1: %s' % line)
@@ -704,20 +726,13 @@ class QtcInternalDumper():
 
     def runit(self):
         print('DIR: %s' % dir())
-        print('ARGV: %s' % sys.argv)
         if sys.argv[0] == '-c':
             sys.argv = sys.argv[2:]
         else:
             sys.argv = sys.argv[1:]
+        print('ARGV: %s' % sys.argv)
         mainpyfile = sys.argv[0]     # Get script filename
         sys.path.append(os.path.dirname(mainpyfile))
-        # Delete arguments superfluous to the inferior
-        try:
-            args_pos = sys.argv.index("--")
-            sys.argv = [sys.argv[0]] + sys.argv[args_pos + 1:]
-        except ValueError:
-            pass
-        print('INFERIOR ARGV: %s' % sys.argv)
         print('MAIN: %s' % mainpyfile)
 
         while True:
@@ -751,12 +766,13 @@ class QtcInternalDumper():
                 if self._user_requested_quit:
                     break
                 print('The program finished')
-                sys.exit(0)
             except SystemExit:
                 # In most cases SystemExit does not warrant a post-mortem session.
                 print('The program exited via sys.exit(). Exit status:')
                 print(sys.exc_info()[1])
                 t = sys.exc_info()[2]
+                self.interaction(None, t)
+
                 print('Post-mortem debugging is finished - ending debug session.')
                 sys.exit(0)
 
@@ -764,7 +780,8 @@ class QtcInternalDumper():
                 traceback.print_exc()
                 print('Uncaught exception. Entering post mortem debugging')
                 t = sys.exc_info()[2]
-                self.curframe_locals['__exception__'] = t
+                self.curframe_locals['__execption__'] = sys.exc_info()[0:2]
+                self.interaction(None, t)
                 print('Post mortem debugger finished - ending debug session.')
                 sys.exit(0)
 
@@ -1030,10 +1047,10 @@ class QtcInternalDumper():
         failed = (None, None, None)
         # Input is identifier, may be in single quotes
         idstring = identifier.split("'")
-        if __builtins__.len(idstring) == 1:
+        if len(idstring) == 1:
             # not in single quotes
             tmp_id = idstring[0].strip()
-        elif __builtins__.len(idstring) == 3:
+        elif len(idstring) == 3:
             # quoted
             tmp_id = idstring[1].strip()
         else:
@@ -1048,7 +1065,7 @@ class QtcInternalDumper():
                 return failed
         # Best first guess at file to look at
         fname = self.defaultFile()
-        if __builtins__.len(parts) == 1:
+        if len(parts) == 1:
             item = parts[0]
         else:
             # More than one part.
@@ -1287,7 +1304,7 @@ class QtcInternalDumper():
         instance it is not possible to jump into the middle of a
         for loop or out of a finally clause.
         """
-        if self.curindex + 1 != __builtins__.len(self.stack):
+        if self.curindex + 1 != len(self.stack):
             self.error('You can only jump within the bottom frame')
             return
         try:
@@ -1412,7 +1429,7 @@ class QtcInternalDumper():
             self.message('Class %s.%s' % (value.__module__, value.__name__))
             return
         # None of the above...
-        self.message(__builtins__.type(value))
+        self.message(type(value))
 
     def do_interact(self, arg):
         """interact
@@ -1452,7 +1469,7 @@ class QtcInternalDumper():
         self.updateData(args)
 
     def updateData(self, args):
-        self.expandedINames = args.get('expanded', {})
+        self.expandedINames = set(args.get('expanded', []))
         self.typeformats = args.get('typeformats', {})
         self.formats = args.get('formats', {})
         self.output = ''
@@ -1481,7 +1498,7 @@ class QtcInternalDumper():
         for watcher in args.get('watchers', []):
             iname = watcher['iname']
             exp = self.hexdecode(watcher['exp'])
-            exp = __builtins__.str(exp).strip()
+            exp = str(exp).strip()
             escapedExp = self.hexencode(exp)
             self.put('{')
             self.putField('iname', iname)
@@ -1515,7 +1532,7 @@ class QtcInternalDumper():
 
     @staticmethod
     def cleanType(typename):
-        t = __builtins__.str(typename)
+        t = str(typename)
         if t.startswith("<type '") and t.endswith("'>"):
             t = t[7:-2]
         if t.startswith("<class '") and t.endswith("'>"):
@@ -1545,21 +1562,20 @@ class QtcInternalDumper():
         return iname in self.expandedINames
 
     def itemFormat(self, item):
-        form = self.formats.get(__builtins__.str(QtcInternalDumper.cleanAddress(item.value.address)))
+        form = self.formats.get(str(QtcInternalDumper.cleanAddress(item.value.address)))
         if form is None:
-            form = self.typeformats.get(__builtins__.str(item.value.type))
+            form = self.typeformats.get(str(item.value.type))
         return form
 
     def dumpValue(self, value, name, iname):
-        t = __builtins__.type(value)
+        t = type(value)
         tt = QtcInternalDumper.cleanType(t)
-        valueStr = __builtins__.str(value)
         if tt == 'module' or tt == 'function':
             return
-        if valueStr.startswith("<class '"):
+        if str(value).startswith("<class '"):
             return
         # FIXME: Should we?
-        if valueStr.startswith('<enum-item '):
+        if str(value).startswith('<enum-item '):
             return
         self.put('{')
         self.putField('iname', iname)
@@ -1570,11 +1586,11 @@ class QtcInternalDumper():
             self.putNumChild(0)
         elif tt == 'list' or tt == 'tuple':
             self.putType(tt)
-            self.putItemCount(__builtins__.len(value))
+            self.putItemCount(len(value))
             # self.putValue(value)
             self.put('children=[')
             for i, val in enumerate(value):
-                self.dumpValue(val, __builtins__.str(i), '%s.%d' % (iname, i))
+                self.dumpValue(val, str(i), '%s.%d' % (iname, i))
             self.put(']')
         elif tt == 'str':
             v = value
@@ -1589,20 +1605,20 @@ class QtcInternalDumper():
             self.putField('valueencoded', 'utf8')
             self.putNumChild(0)
         elif tt == 'buffer':
-            v = valueStr
+            v = str(value)
             self.putType(tt)
             self.putValue(self.hexencode(v))
             self.putField('valueencoded', 'latin1')
             self.putNumChild(0)
         elif tt == 'xrange':
             b = iter(value).next()
-            e = b + __builtins__.len(value)
+            e = b + len(value)
             self.putType(tt)
             self.putValue('(%d, %d)' % (b, e))
             self.putNumChild(0)
         elif tt == 'dict':
             self.putType(tt)
-            self.putItemCount(__builtins__.len(value))
+            self.putItemCount(len(value))
             self.putField('childnumchild', 2)
             self.put('children=[')
             i = 0
@@ -1628,13 +1644,13 @@ class QtcInternalDumper():
             pass
         elif tt == 'function':
             pass
-        elif valueStr.startswith('<enum-item '):
+        elif str(value).startswith('<enum-item '):
             # FIXME: Having enums always shown like this is not nice.
             self.putType(tt)
-            self.putValue(valueStr[11:-1])
+            self.putValue(str(value)[11:-1])
             self.putNumChild(0)
         else:
-            v = valueStr
+            v = str(value)
             p = v.find(' object at ')
             if p > 1:
                 self.putValue('@' + v[p + 11:-1])
@@ -1697,7 +1713,7 @@ class QtcInternalDumper():
         result += ',frames=['
         try:
             level = 0
-            frames = __builtins__.list(reversed(self.stack))
+            frames = list(reversed(self.stack))
             frames = frames[:-2]  # Drop "pdbbridge" and "<string>" levels
             for frame_lineno in frames:
                 frame, lineno = frame_lineno

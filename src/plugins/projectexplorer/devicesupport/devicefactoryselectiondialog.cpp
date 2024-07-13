@@ -1,57 +1,71 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "devicefactoryselectiondialog.h"
+#include "ui_devicefactoryselectiondialog.h"
 
+#include "idevice.h"
 #include "idevicefactory.h"
-#include "../projectexplorertr.h"
 
 #include <utils/fileutils.h>
-#include <utils/layoutbuilder.h>
 
-#include <QDialogButtonBox>
-#include <QListWidget>
 #include <QPushButton>
 
 namespace ProjectExplorer {
 namespace Internal {
 
 DeviceFactorySelectionDialog::DeviceFactorySelectionDialog(QWidget *parent) :
-    QDialog(parent)
+    QDialog(parent), ui(new Ui::DeviceFactorySelectionDialog)
 {
-    resize(420, 330);
-    m_listWidget = new QListWidget;
-    m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
-    m_buttonBox->button(QDialogButtonBox::Ok)->setText(Tr::tr("Start Wizard"));
-
-    using namespace Layouting;
-    Column {
-        Tr::tr("Available device types:"),
-        m_listWidget,
-        m_buttonBox,
-    }.attachTo(this);
+    ui->setupUi(this);
+    ui->buttonBox->button(QDialogButtonBox::Ok)->setText(tr("Start Wizard"));
 
     for (const IDeviceFactory * const factory : IDeviceFactory::allDeviceFactories()) {
         if (!factory->canCreate())
             continue;
         QListWidgetItem *item = new QListWidgetItem(factory->displayName());
         item->setData(Qt::UserRole, QVariant::fromValue(factory->deviceType()));
-        m_listWidget->addItem(item);
+        ui->listWidget->addItem(item);
     }
 
-    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &DeviceFactorySelectionDialog::accept);
-    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &DeviceFactorySelectionDialog::reject);
-    connect(m_listWidget, &QListWidget::itemSelectionChanged,
+    connect(ui->listWidget, &QListWidget::itemSelectionChanged,
             this, &DeviceFactorySelectionDialog::handleItemSelectionChanged);
-    connect(m_listWidget, &QListWidget::itemDoubleClicked,
+    connect(ui->listWidget, &QListWidget::itemDoubleClicked,
             this, &DeviceFactorySelectionDialog::handleItemDoubleClicked);
     handleItemSelectionChanged();
 }
 
+DeviceFactorySelectionDialog::~DeviceFactorySelectionDialog()
+{
+    delete ui;
+}
+
 void DeviceFactorySelectionDialog::handleItemSelectionChanged()
 {
-    m_buttonBox->button(QDialogButtonBox::Ok)
-        ->setEnabled(!m_listWidget->selectedItems().isEmpty());
+    ui->buttonBox->button(QDialogButtonBox::Ok)
+        ->setEnabled(!ui->listWidget->selectedItems().isEmpty());
 }
 
 void DeviceFactorySelectionDialog::handleItemDoubleClicked()
@@ -61,7 +75,7 @@ void DeviceFactorySelectionDialog::handleItemDoubleClicked()
 
 Utils::Id DeviceFactorySelectionDialog::selectedId() const
 {
-    QList<QListWidgetItem *> selected = m_listWidget->selectedItems();
+    QList<QListWidgetItem *> selected = ui->listWidget->selectedItems();
     if (selected.isEmpty())
         return Utils::Id();
     return selected.at(0)->data(Qt::UserRole).value<Utils::Id>();

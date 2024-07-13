@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "project.h"
 
@@ -8,29 +30,24 @@
 #include "buildsystem.h"
 #include "deployconfiguration.h"
 #include "editorconfiguration.h"
-#include "environmentaspect.h"
 #include "kit.h"
-#include "kitaspects.h"
-#include "msvctoolchain.h"
+#include "kitinformation.h"
 #include "projectexplorer.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
-#include "projectmanager.h"
 #include "projectnodes.h"
 #include "runconfiguration.h"
-#include "runconfigurationaspects.h"
+#include "session.h"
 #include "target.h"
 #include "taskhub.h"
-#include "toolchainmanager.h"
 #include "userfileaccessor.h"
 
+#include <coreplugin/idocument.h>
 #include <coreplugin/documentmanager.h>
-#include <coreplugin/editormanager/documentmodel.h>
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
-#include <coreplugin/idocument.h>
 #include <coreplugin/iversioncontrol.h>
 #include <coreplugin/vcsmanager.h>
+#include <coreplugin/editormanager/documentmodel.h>
 
 #include <projectexplorer/buildmanager.h>
 #include <projectexplorer/kitmanager.h>
@@ -45,12 +62,10 @@
 #include <utils/stringutils.h>
 
 #include <QFileDialog>
-#include <QHash>
 
 #include <limits>
 
 #ifdef WITH_TESTS
-#include "projectexplorer_test.h"
 #include <coreplugin/editormanager/editormanager.h>
 #include <utils/temporarydirectory.h>
 
@@ -62,8 +77,6 @@
 
 using namespace Utils;
 using namespace Core;
-
-namespace PE = ProjectExplorer;
 
 namespace ProjectExplorer {
 
@@ -116,10 +129,6 @@ const Project::NodeMatcher Project::SourceFiles = [](const Node *node) {
 
 const Project::NodeMatcher Project::GeneratedFiles = [](const Node *node) {
     return isListedFileNode(node) && node->isGenerated();
-};
-
-const Project::NodeMatcher Project::HiddenRccFolders = [](const Node *node) {
-    return node->isFolderNodeType() && node->filePath().fileName() == ".rcc";
 };
 
 // --------------------------------------------------------------------
@@ -185,9 +194,8 @@ public:
     Target *m_activeTarget = nullptr;
     EditorConfiguration m_editorConfiguration;
     Context m_projectLanguages;
-    Store m_pluginSettings;
+    QVariantMap m_pluginSettings;
     std::unique_ptr<Internal::UserFileAccessor> m_accessor;
-    QHash<Id, QPair<QString, std::function<void()>>> m_generators;
 
     QString m_displayName;
 
@@ -195,9 +203,7 @@ public:
     FilePath m_rootProjectDirectory;
     mutable QVector<const Node *> m_sortedNodeList;
 
-    Store m_extraData;
-
-    QList<Store> m_vanishedTargets;
+    QVariantMap m_extraData;
 };
 
 ProjectPrivate::~ProjectPrivate()
@@ -212,10 +218,9 @@ Project::Project(const QString &mimeType, const FilePath &fileName)
     d->m_document = std::make_unique<ProjectDocument>(mimeType, fileName, this);
     DocumentManager::addDocument(d->m_document.get());
 
-    d->m_macroExpander.setDisplayName(::PE::Tr::tr("Project"));
-    d->m_macroExpander.registerVariable("Project:Name", ::PE::Tr::tr("Project Name"), [this] {
-        return displayName();
-    });
+    d->m_macroExpander.setDisplayName(tr("Project"));
+    d->m_macroExpander.registerVariable("Project:Name", tr("Project Name"),
+            [this] { return displayName(); });
 
     // Only set up containernode after d is set so that it will find the project directory!
     d->m_containerNode = std::make_unique<ContainerNode>(this);
@@ -281,7 +286,7 @@ void Project::addTarget(std::unique_ptr<Target> &&t)
 
     // check activeTarget:
     if (!activeTarget())
-        setActiveTarget(pointer, SetActive::Cascade);
+        SessionManager::setActiveTarget(this, pointer, SetActive::Cascade);
 }
 
 Target *Project::addTargetForDefaultKit()
@@ -317,7 +322,7 @@ bool Project::removeTarget(Target *target)
     auto keep = take(d->m_targets, target);
     if (target == d->m_activeTarget) {
         Target *newActiveTarget = (d->m_targets.size() == 0 ? nullptr : d->m_targets.at(0).get());
-        setActiveTarget(newActiveTarget, SetActive::Cascade);
+        SessionManager::setActiveTarget(this, newActiveTarget, SetActive::Cascade);
     }
     emit removedTarget(target);
 
@@ -334,7 +339,7 @@ Target *Project::activeTarget() const
     return d->m_activeTarget;
 }
 
-void Project::setActiveTargetHelper(Target *target)
+void Project::setActiveTarget(Target *target)
 {
     if (d->m_activeTarget == target)
         return;
@@ -375,7 +380,7 @@ void Project::setExtraProjectFiles(const QSet<FilePath> &projectDocumentPaths,
         return toRemove.contains(d->filePath());
     });
     if (docUpdater) {
-        for (const auto &doc : std::as_const(d->m_extraProjectDocuments))
+        for (const auto &doc : qAsConst(d->m_extraProjectDocuments))
             docUpdater(doc.get());
     }
     QList<IDocument *> toRegister;
@@ -408,7 +413,7 @@ void Project::updateExtraProjectFiles(const QSet<FilePath> &projectDocumentPaths
 
 void Project::updateExtraProjectFiles(const DocUpdater &docUpdater)
 {
-    for (const auto &doc : std::as_const(d->m_extraProjectDocuments))
+    for (const auto &doc : qAsConst(d->m_extraProjectDocuments))
         docUpdater(doc.get());
 }
 
@@ -422,80 +427,11 @@ Target *Project::target(Kit *k) const
     return findOrDefault(d->m_targets, equal(&Target::kit, k));
 }
 
-void Project::setActiveTarget(Target *target, SetActive cascade)
-{
-    if (isShuttingDown())
-        return;
-
-    setActiveTargetHelper(target);
-
-    if (!target) // never cascade setting no target
-        return;
-
-    if (cascade != SetActive::Cascade || !ProjectManager::isProjectConfigurationCascading())
-        return;
-
-    Utils::Id kitId = target->kit()->id();
-    for (Project *otherProject : ProjectManager::projects()) {
-        if (otherProject == this)
-            continue;
-        if (Target *otherTarget = Utils::findOrDefault(otherProject->targets(),
-                                                       [kitId](Target *t) { return t->kit()->id() == kitId; }))
-            otherProject->setActiveTargetHelper(otherTarget);
-    }
-}
-
-QList<Store> Project::vanishedTargets() const
-{
-    return d->m_vanishedTargets;
-}
-
-void Project::removeVanishedTarget(int index)
-{
-    QTC_ASSERT(index >= 0 && index < d->m_vanishedTargets.size(), return);
-    d->m_vanishedTargets.removeAt(index);
-    emit vanishedTargetsChanged();
-}
-
-void Project::removeAllVanishedTargets()
-{
-    d->m_vanishedTargets.clear();
-    emit vanishedTargetsChanged();
-}
-
-Target *Project::createKitAndTargetFromStore(const Utils::Store &store)
-{
-    Id deviceTypeId = Id::fromSetting(store.value(Target::deviceTypeKey()));
-    if (!deviceTypeId.isValid())
-        deviceTypeId = Constants::DESKTOP_DEVICE_TYPE;
-    const QString formerKitName = store.value(Target::displayNameKey()).toString();
-    Kit *k = KitManager::registerKit(
-        [deviceTypeId, &formerKitName](Kit *kit) {
-            const QString kitName = makeUniquelyNumbered(formerKitName,
-                                                         transform(KitManager::kits(),
-                                                                   &Kit::unexpandedDisplayName));
-            kit->setUnexpandedDisplayName(kitName);
-            DeviceTypeKitAspect::setDeviceTypeId(kit, deviceTypeId);
-            kit->setup();
-        });
-    QTC_ASSERT(k, return nullptr);
-    auto t = std::make_unique<Target>(this, k, Target::_constructor_tag{});
-    if (!t->fromMap(store))
-        return nullptr;
-
-    if (t->runConfigurations().isEmpty() && t->buildConfigurations().isEmpty())
-        return nullptr;
-
-    auto pointer = t.get();
-    addTarget(std::move(t));
-    return pointer;
-}
-
 Tasks Project::projectIssues(const Kit *k) const
 {
     Tasks result;
     if (!k->isValid())
-        result.append(createProjectTask(Task::TaskType::Error, ::PE::Tr::tr("Kit is not valid.")));
+        result.append(createProjectTask(Task::TaskType::Error, tr("Kit is not valid.")));
     return {};
 }
 
@@ -522,12 +458,12 @@ bool Project::copySteps(Target *sourceTarget, Target *newTarget)
                     sourceBc->buildSystem()->name()));
         newTarget->addBuildConfiguration(newBc);
         if (sourceTarget->activeBuildConfiguration() == sourceBc)
-            newTarget->setActiveBuildConfiguration(newBc, SetActive::NoCascade);
+            SessionManager::setActiveBuildConfiguration(newTarget, newBc, SetActive::NoCascade);
     }
     if (!newTarget->activeBuildConfiguration()) {
         QList<BuildConfiguration *> bcs = newTarget->buildConfigurations();
         if (!bcs.isEmpty())
-            newTarget->setActiveBuildConfiguration(bcs.first(), SetActive::NoCascade);
+            SessionManager::setActiveBuildConfiguration(newTarget, bcs.first(), SetActive::NoCascade);
     }
 
     for (DeployConfiguration *sourceDc : sourceTarget->deployConfigurations()) {
@@ -539,12 +475,12 @@ bool Project::copySteps(Target *sourceTarget, Target *newTarget)
         newDc->setDisplayName(sourceDc->displayName());
         newTarget->addDeployConfiguration(newDc);
         if (sourceTarget->activeDeployConfiguration() == sourceDc)
-            newTarget->setActiveDeployConfiguration(newDc, SetActive::NoCascade);
+            SessionManager::setActiveDeployConfiguration(newTarget, newDc, SetActive::NoCascade);
     }
     if (!newTarget->activeBuildConfiguration()) {
         QList<DeployConfiguration *> dcs = newTarget->deployConfigurations();
         if (!dcs.isEmpty())
-            newTarget->setActiveDeployConfiguration(dcs.first(), SetActive::NoCascade);
+            SessionManager::setActiveDeployConfiguration(newTarget, dcs.first(), SetActive::NoCascade);
     }
 
     for (RunConfiguration *sourceRc : sourceTarget->runConfigurations()) {
@@ -576,8 +512,8 @@ bool Project::copySteps(Target *sourceTarget, Target *newTarget)
     if (fatalError) {
         // That could be a more granular error message
         QMessageBox::critical(ICore::dialogParent(),
-                              ::PE::Tr::tr("Incompatible Kit"),
-                              ::PE::Tr::tr("Kit %1 is incompatible with kit %2.")
+                              tr("Incompatible Kit"),
+                              tr("Kit %1 is incompatible with kit %2.")
                                   .arg(sourceTarget->kit()->displayName())
                                   .arg(newTarget->kit()->displayName()));
     } else if (!buildconfigurationError.isEmpty()
@@ -586,50 +522,33 @@ bool Project::copySteps(Target *sourceTarget, Target *newTarget)
 
         QString error;
         if (!buildconfigurationError.isEmpty())
-            error += ::PE::Tr::tr("Build configurations:") + QLatin1Char('\n')
-                     + buildconfigurationError.join(QLatin1Char('\n'));
+            error += tr("Build configurations:") + QLatin1Char('\n')
+                    + buildconfigurationError.join(QLatin1Char('\n'));
 
         if (!deployconfigurationError.isEmpty()) {
             if (!error.isEmpty())
                 error.append(QLatin1Char('\n'));
-            error += ::PE::Tr::tr("Deploy configurations:") + QLatin1Char('\n')
-                     + deployconfigurationError.join(QLatin1Char('\n'));
+            error += tr("Deploy configurations:") + QLatin1Char('\n')
+                    + deployconfigurationError.join(QLatin1Char('\n'));
         }
 
         if (!runconfigurationError.isEmpty()) {
             if (!error.isEmpty())
                 error.append(QLatin1Char('\n'));
-            error += ::PE::Tr::tr("Run configurations:") + QLatin1Char('\n')
-                     + runconfigurationError.join(QLatin1Char('\n'));
+            error += tr("Run configurations:") + QLatin1Char('\n')
+                    + runconfigurationError.join(QLatin1Char('\n'));
         }
 
         QMessageBox msgBox(ICore::dialogParent());
         msgBox.setIcon(QMessageBox::Warning);
-        msgBox.setWindowTitle(::PE::Tr::tr("Partially Incompatible Kit"));
-        msgBox.setText(::PE::Tr::tr("Some configurations could not be copied."));
+        msgBox.setWindowTitle(tr("Partially Incompatible Kit"));
+        msgBox.setText(tr("Some configurations could not be copied."));
         msgBox.setDetailedText(error);
         msgBox.setStandardButtons(QMessageBox::Ok | QMessageBox::Cancel);
         fatalError = msgBox.exec() != QDialog::Accepted;
     }
 
     return !fatalError;
-}
-
-bool Project::copySteps(const Utils::Store &store, Kit *targetKit)
-{
-    Target *t = target(targetKit->id());
-    if (!t) {
-        auto t = std::make_unique<Target>(this, targetKit, Target::_constructor_tag{});
-        if (!t->fromMap(store))
-            return false;
-
-        if (t->runConfigurations().isEmpty() && t->buildConfigurations().isEmpty())
-            return false;
-
-        addTarget(std::move(t));
-        return true;
-    }
-    return t->addConfigurationsFromMap(store, /*setActiveConfigurations=*/false);
 }
 
 bool Project::setupTarget(Target *t)
@@ -700,24 +619,15 @@ void Project::saveSettings()
     emit aboutToSaveSettings();
     if (!d->m_accessor)
         d->m_accessor = std::make_unique<Internal::UserFileAccessor>(this);
-    if (!targets().isEmpty()) {
-        Store map;
-        toMap(map);
-        d->m_accessor->saveSettings(map, ICore::dialogParent());
-    }
+    if (!targets().isEmpty())
+        d->m_accessor->saveSettings(toMap(), ICore::dialogParent());
 }
 
 Project::RestoreResult Project::restoreSettings(QString *errorMessage)
 {
-    if (!KitManager::waitForLoaded()) {
-        if (errorMessage)
-            *errorMessage = Tr::tr("Could not load kits in a reasonable amount of time.");
-        return RestoreResult::Error;
-    }
-
     if (!d->m_accessor)
         d->m_accessor = std::make_unique<Internal::UserFileAccessor>(this);
-    Store map(d->m_accessor->restoreSettings(ICore::dialogParent()));
+    QVariantMap map(d->m_accessor->restoreSettings(ICore::dialogParent()));
     RestoreResult result = fromMap(map, errorMessage);
     if (result == RestoreResult::Ok)
         emit settingsLoaded();
@@ -737,7 +647,7 @@ FilePaths Project::files(const NodeMatcher &filter) const
         result.append(projectFilePath());
 
     FilePath lastAdded;
-    for (const Node *n : std::as_const(d->m_sortedNodeList)) {
+    for (const Node *n : qAsConst(d->m_sortedNodeList)) {
         if (!filter(n))
             continue;
 
@@ -753,7 +663,7 @@ FilePaths Project::files(const NodeMatcher &filter) const
 }
 
 /*!
-    Serializes all data into a Store.
+    Serializes all data into a QVariantMap.
 
     This map is then saved in the .user file of the project.
     Just put all your data into the map.
@@ -763,26 +673,21 @@ FilePaths Project::files(const NodeMatcher &filter) const
     creating new build configurations.
 */
 
-void Project::toMap(Store &map) const
+QVariantMap Project::toMap() const
 {
     const QList<Target *> ts = targets();
-    const QList<Store> vts = vanishedTargets();
 
-    map.insert(ACTIVE_TARGET_KEY, ts.indexOf(d->m_activeTarget));
-    map.insert(TARGET_COUNT_KEY, ts.size() + vts.size());
-    int index = 0;
-    for (Target *t : ts) {
-        map.insert(numberedKey(TARGET_KEY_PREFIX, index), variantFromStore(t->toMap()));
-        ++index;
-    }
-    for (const Store &store : vts) {
-        map.insert(numberedKey(TARGET_KEY_PREFIX, index), variantFromStore(store));
-        ++index;
-    }
+    QVariantMap map;
+    map.insert(QLatin1String(ACTIVE_TARGET_KEY), ts.indexOf(d->m_activeTarget));
+    map.insert(QLatin1String(TARGET_COUNT_KEY), ts.size());
+    for (int i = 0; i < ts.size(); ++i)
+        map.insert(QString::fromLatin1(TARGET_KEY_PREFIX) + QString::number(i), ts.at(i)->toMap());
 
-    map.insert(EDITOR_SETTINGS_KEY, variantFromStore(d->m_editorConfiguration.toMap()));
+    map.insert(QLatin1String(EDITOR_SETTINGS_KEY), d->m_editorConfiguration.toMap());
     if (!d->m_pluginSettings.isEmpty())
-        map.insert(PLUGIN_SETTINGS_KEY, variantFromStore(d->m_pluginSettings));
+        map.insert(QLatin1String(PLUGIN_SETTINGS_KEY), d->m_pluginSettings);
+
+    return map;
 }
 
 /*!
@@ -793,16 +698,29 @@ void Project::toMap(Store &map) const
 
 FilePath Project::projectDirectory() const
 {
-    return projectFilePath().absolutePath();
+    return projectDirectory(projectFilePath());
+}
+
+/*!
+    Returns the directory that contains the file \a top.
+
+    This includes the absolute path.
+*/
+
+FilePath Project::projectDirectory(const FilePath &top)
+{
+    if (top.isEmpty())
+        return FilePath();
+    return top.absolutePath();
 }
 
 void Project::changeRootProjectDirectory()
 {
-    FilePath rootPath = FileUtils::getExistingDirectory(nullptr,
-                                                        ::PE::Tr::tr("Select the Root Directory"),
-                                                        rootProjectDirectory(),
-                                                        QFileDialog::ShowDirsOnly
-                                                            | QFileDialog::DontResolveSymlinks);
+    FilePath rootPath = FileUtils::getExistingDirectory(
+          nullptr,
+          tr("Select the Root Directory"),
+          rootProjectDirectory(),
+          QFileDialog::ShowDirsOnly | QFileDialog::DontResolveSymlinks);
     if (rootPath != d->m_rootProjectDirectory) {
         d->m_rootProjectDirectory = rootPath;
         setNamedSettings(Constants::PROJECT_ROOT_PATH_KEY, d->m_rootProjectDirectory.toString());
@@ -831,22 +749,22 @@ ContainerNode *Project::containerNode() const
     return d->m_containerNode.get();
 }
 
-Project::RestoreResult Project::fromMap(const Store &map, QString *errorMessage)
+Project::RestoreResult Project::fromMap(const QVariantMap &map, QString *errorMessage)
 {
     Q_UNUSED(errorMessage)
-    if (map.contains(EDITOR_SETTINGS_KEY)) {
-        Store values = storeFromVariant(map.value(EDITOR_SETTINGS_KEY));
+    if (map.contains(QLatin1String(EDITOR_SETTINGS_KEY))) {
+        QVariantMap values(map.value(QLatin1String(EDITOR_SETTINGS_KEY)).toMap());
         d->m_editorConfiguration.fromMap(values);
     }
 
-    if (map.contains(PLUGIN_SETTINGS_KEY))
-        d->m_pluginSettings = storeFromVariant(map.value(PLUGIN_SETTINGS_KEY));
+    if (map.contains(QLatin1String(PLUGIN_SETTINGS_KEY)))
+        d->m_pluginSettings = map.value(QLatin1String(PLUGIN_SETTINGS_KEY)).toMap();
 
     bool ok;
-    int maxI(map.value(TARGET_COUNT_KEY, 0).toInt(&ok));
+    int maxI(map.value(QLatin1String(TARGET_COUNT_KEY), 0).toInt(&ok));
     if (!ok || maxI < 0)
         maxI = 0;
-    int active = map.value(ACTIVE_TARGET_KEY, 0).toInt(&ok);
+    int active(map.value(QLatin1String(ACTIVE_TARGET_KEY), 0).toInt(&ok));
     if (!ok || active < 0 || active >= maxI)
         active = 0;
 
@@ -866,13 +784,13 @@ Project::RestoreResult Project::fromMap(const Store &map, QString *errorMessage)
     return RestoreResult::Ok;
 }
 
-void Project::createTargetFromMap(const Store &map, int index)
+void Project::createTargetFromMap(const QVariantMap &map, int index)
 {
-    const Key key = numberedKey(TARGET_KEY_PREFIX, index);
+    const QString key = QString::fromLatin1(TARGET_KEY_PREFIX) + QString::number(index);
     if (!map.contains(key))
         return;
 
-    const Store targetMap = storeFromVariant(map.value(key));
+    const QVariantMap targetMap = map.value(key).toMap();
 
     Id id = idFromMap(targetMap);
     if (target(id)) {
@@ -883,20 +801,25 @@ void Project::createTargetFromMap(const Store &map, int index)
 
     Kit *k = KitManager::kit(id);
     if (!k) {
-        // QDS does not want replacement kits.
-        if (ICore::isQtDesignStudio())
-            return;
-
-        d->m_vanishedTargets.append(targetMap);
+        Id deviceTypeId = Id::fromSetting(targetMap.value(Target::deviceTypeKey()));
+        if (!deviceTypeId.isValid())
+            deviceTypeId = Constants::DESKTOP_DEVICE_TYPE;
         const QString formerKitName = targetMap.value(Target::displayNameKey()).toString();
-        TaskHub::addTask(BuildSystemTask(
-            Task::Warning,
-            ::PE::Tr::tr(
-                "Project \"%1\" was configured for "
-                "kit \"%2\" with id %3, which does not exist anymore. You can create a new kit "
-                "or copy the steps of the vanished kit to another kit in %4 mode.")
-                .arg(displayName(), formerKitName, id.toString(), Tr::tr("Projects"))));
-        return;
+        k = KitManager::registerKit([deviceTypeId, &formerKitName](Kit *kit) {
+                const QString kitNameSuggestion = formerKitName.contains(tr("Replacement for"))
+                        ? formerKitName : tr("Replacement for \"%1\"").arg(formerKitName);
+                const QString tempKitName = makeUniquelyNumbered(kitNameSuggestion,
+                        transform(KitManager::kits(), &Kit::unexpandedDisplayName));
+                kit->setUnexpandedDisplayName(tempKitName);
+                DeviceTypeKitAspect::setDeviceTypeId(kit, deviceTypeId);
+                kit->makeReplacementKit();
+                kit->setup();
+        }, id);
+        QTC_ASSERT(k, return);
+        TaskHub::addTask(BuildSystemTask(Task::Warning, tr("Project \"%1\" was configured for "
+            "kit \"%2\" with id %3, which does not exist anymore. The new kit \"%4\" was "
+            "created in its place, in an attempt not to lose custom project settings.")
+                .arg(displayName(), formerKitName, id.toString(), k->displayName())));
     }
 
     auto t = std::make_unique<Target>(this, k, Target::_constructor_tag{});
@@ -934,48 +857,6 @@ const Node *Project::nodeForFilePath(const FilePath &filePath,
             return *it;
     }
     return nullptr;
-}
-
-ProjectNode *Project::productNodeForFilePath(
-    const Utils::FilePath &filePath, const NodeMatcher &extraMatcher) const
-{
-    const Node * const fileNode = nodeForFilePath(filePath, extraMatcher);
-    if (!fileNode)
-        return nullptr;
-    for (ProjectNode *projectNode = fileNode->parentProjectNode(); projectNode;
-         projectNode = projectNode->parentProjectNode()) {
-        if (projectNode->isProduct())
-            return projectNode;
-    }
-    return nullptr;
-}
-
-FilePaths Project::binariesForSourceFile(const FilePath &sourceFile) const
-{
-    if (!rootProjectNode())
-        return {};
-    const QList<Node *> fileNodes = rootProjectNode()->findNodes([&sourceFile](Node *n) {
-        return n->filePath() == sourceFile;
-    });
-    FilePaths binaries;
-    for (const Node * const fileNode : fileNodes) {
-        for (ProjectNode *projectNode = fileNode->parentProjectNode(); projectNode;
-             projectNode = projectNode->parentProjectNode()) {
-            if (!projectNode->isProduct())
-                continue;
-            if (projectNode->productType() == ProductType::App
-                || projectNode->productType() == ProductType::Lib) {
-                const QList<Node *> binaryNodes = projectNode->findNodes([](Node *n) {
-                    return n->asFileNode() && (n->asFileNode()->fileType() == FileType::App
-                               || n->asFileNode()->fileType() == FileType::Lib);
-
-                });
-                binaries << Utils::transform(binaryNodes, &Node::filePath);
-            }
-            break;
-        }
-    }
-    return binaries;
 }
 
 void Project::setProjectLanguages(Context language)
@@ -1047,12 +928,12 @@ Context Project::projectLanguages() const
     return d->m_projectLanguages;
 }
 
-QVariant Project::namedSettings(const Key &name) const
+QVariant Project::namedSettings(const QString &name) const
 {
     return d->m_pluginSettings.value(name);
 }
 
-void Project::setNamedSettings(const Key &name, const QVariant &value)
+void Project::setNamedSettings(const QString &name, const QVariant &value)
 {
     if (value.isNull())
         d->m_pluginSettings.remove(name);
@@ -1062,13 +943,13 @@ void Project::setNamedSettings(const Key &name, const QVariant &value)
 
 void Project::setAdditionalEnvironment(const EnvironmentItems &envItems)
 {
-    setNamedSettings(PROJECT_ENV_KEY, EnvironmentItem::toStringList(envItems));
+    setNamedSettings(PROJECT_ENV_KEY, NameValueItem::toStringList(envItems));
     emit environmentChanged();
 }
 
 EnvironmentItems Project::additionalEnvironment() const
 {
-    return EnvironmentItem::fromStringList(namedSettings(PROJECT_ENV_KEY).toStringList());
+    return NameValueItem::fromStringList(namedSettings(PROJECT_ENV_KEY).toStringList());
 }
 
 bool Project::needsConfiguration() const
@@ -1092,36 +973,31 @@ bool Project::hasMakeInstallEquivalent() const
 
 void Project::setup(const QList<BuildInfo> &infoList)
 {
-    for (const BuildInfo &info : infoList)
-        setup(info);
-}
+    std::vector<std::unique_ptr<Target>> toRegister;
+    for (const BuildInfo &info : infoList) {
+        Kit *k = KitManager::kit(info.kitId);
+        if (!k)
+            continue;
+        Target *t = target(k);
+        if (!t)
+            t = findOrDefault(toRegister, equal(&Target::kit, k));
+        if (!t) {
+            auto newTarget = std::make_unique<Target>(this, k, Target::_constructor_tag{});
+            t = newTarget.get();
+            toRegister.emplace_back(std::move(newTarget));
+        }
 
-BuildConfiguration *Project::setup(const BuildInfo &info)
-{
-    Kit *k = KitManager::kit(info.kitId);
-    if (!k)
-        return nullptr;
-    Target *t = target(k);
-    std::unique_ptr<Target> newTarget;
-    if (!t) {
-        newTarget = std::make_unique<Target>(this, k, Target::_constructor_tag{});
-        t = newTarget.get();
-    }
+        if (!info.factory)
+            continue;
 
-    QTC_ASSERT(t, return nullptr);
-
-    BuildConfiguration *bc = nullptr;
-    if (info.factory) {
-        bc = info.factory->create(t, info);
-        if (bc)
+        if (BuildConfiguration *bc = info.factory->create(t, info))
             t->addBuildConfiguration(bc);
     }
-    if (newTarget) {
-        newTarget->updateDefaultDeployConfigurations();
-        newTarget->updateDefaultRunConfigurations();
-        addTarget(std::move(newTarget));
+    for (std::unique_ptr<Target> &t : toRegister) {
+        t->updateDefaultDeployConfigurations();
+        t->updateDefaultRunConfigurations();
+        addTarget(std::move(t));
     }
-    return bc;
 }
 
 MacroExpander *Project::macroExpander() const
@@ -1149,12 +1025,12 @@ void Project::setCanBuildProducts()
     d->m_canBuildProducts = true;
 }
 
-void Project::setExtraData(const Key &key, const QVariant &data)
+void Project::setExtraData(const QString &key, const QVariant &data)
 {
     d->m_extraData.insert(key, data);
 }
 
-QVariant Project::extraData(const Key &key) const
+QVariant Project::extraData(const QString &key) const
 {
     return d->m_extraData.value(key);
 }
@@ -1165,8 +1041,7 @@ QStringList Project::availableQmlPreviewTranslations(QString *errorMessage)
     const QDir languageDirectory(projectDirectory + "/i18n");
     const auto qmFiles = languageDirectory.entryList({"qml_*.qm"});
     if (qmFiles.isEmpty() && errorMessage)
-        errorMessage->append(::PE::Tr::tr("Could not find any qml_*.qm file at \"%1\"")
-                                 .arg(languageDirectory.absolutePath()));
+        errorMessage->append(tr("Could not find any qml_*.qm file at \"%1\"").arg(languageDirectory.absolutePath()));
     return transform(qmFiles, [](const QString &qmFile) {
         const int localeStartPosition = qmFile.lastIndexOf("_") + 1;
         const int localeEndPosition = qmFile.size() - QString(".qm").size();
@@ -1197,187 +1072,14 @@ bool Project::isEditModePreferred() const
     return true;
 }
 
-void Project::registerGenerator(Utils::Id id, const QString &displayName,
-                                const std::function<void ()> &runner)
-{
-    d->m_generators.insert(id, qMakePair(displayName, runner));
-}
+#if defined(WITH_TESTS)
 
-const QList<QPair<Id, QString>> Project::allGenerators() const
-{
-    QList<QPair<Id, QString>> generators;
-    for (auto it = d->m_generators.cbegin(); it != d->m_generators.cend(); ++it)
-        generators << qMakePair(it.key(), it.value().first);
-    if (const Target * const t = activeTarget()) {
-        if (const BuildSystem * const bs = t->buildSystem())
-            generators += bs->generators();
-    }
-    return generators;
-}
-
-void Project::runGenerator(Utils::Id id)
-{
-    const auto it = d->m_generators.constFind(id);
-    if (it != d->m_generators.constEnd()) {
-        it.value().second();
-        return;
-    }
-    if (const Target * const t = activeTarget()) {
-        if (BuildSystem * const bs = t->buildSystem())
-            bs->runGenerator(id);
-    }
-}
-
-void Project::addVariablesToMacroExpander(const QByteArray &prefix,
-                                          const QString &descriptor,
-                                          MacroExpander *expander,
-                                          const std::function<Project *()> &projectGetter)
-{
-    const auto targetGetter = [projectGetter]() -> Target * {
-        if (const Project *const project = projectGetter())
-            return project->activeTarget();
-        return nullptr;
-    };
-    const auto bcGetter = [targetGetter]() -> BuildConfiguration * {
-        if (const Target *const target = targetGetter())
-            return target->activeBuildConfiguration();
-        return nullptr;
-    };
-    const auto rcGetter = [targetGetter]() -> RunConfiguration * {
-        if (const Target *const target = targetGetter())
-            return target->activeRunConfiguration();
-        return nullptr;
-    };
-    const QByteArray fullPrefix = (prefix.endsWith(':') ? prefix : prefix + ':');
-    const QByteArray prefixWithoutColon = fullPrefix.chopped(1);
-    expander->registerVariable(fullPrefix + "Name",
-                               //: %1 is something like "Active project"
-                               ::PE::Tr::tr("%1: Name.").arg(descriptor),
-                               [projectGetter]() -> QString {
-                                   if (const Project *const project = projectGetter())
-                                       return project->displayName();
-                                   return {};
-                               });
-    expander->registerFileVariables(prefixWithoutColon,
-                                    //: %1 is something like "Active project"
-                                    ::PE::Tr::tr("%1: Full path to main file.").arg(descriptor),
-                                    [projectGetter]() -> FilePath {
-                                        if (const Project *const project = projectGetter())
-                                            return project->projectFilePath();
-                                        return {};
-                                    });
-    expander->registerVariable(fullPrefix + "ProjectDirectory",
-                               //: %1 is something like "Active project"
-                               ::PE::Tr::tr("%1: Full path to Project Directory.").arg(descriptor),
-                               [projectGetter]() -> QString {
-                                   if (const Project *const project = projectGetter())
-                                       return project->projectDirectory().toUserOutput();
-                                   return {};
-                               });
-    expander->registerVariable(fullPrefix + "Kit:Name",
-                               //: %1 is something like "Active project"
-                               ::PE::Tr::tr("%1: The name of the active kit.").arg(descriptor),
-                               [targetGetter]() -> QString {
-                                   if (const Target *const target = targetGetter())
-                                       return target->kit()->displayName();
-                                   return {};
-                               });
-    expander->registerVariable(fullPrefix + "BuildConfig:Name",
-                               //: %1 is something like "Active project"
-                               ::PE::Tr::tr("%1: Name of the active build configuration.")
-                                   .arg(descriptor),
-                               [bcGetter]() -> QString {
-                                   if (const BuildConfiguration *const bc = bcGetter())
-                                       return bc->displayName();
-                                   return {};
-                               });
-    expander->registerVariable(fullPrefix + "BuildConfig:Type",
-                               //: %1 is something like "Active project"
-                               ::PE::Tr::tr("%1: Type of the active build configuration.")
-                                   .arg(descriptor),
-                               [bcGetter]() -> QString {
-                                   const BuildConfiguration *const bc = bcGetter();
-                                   const BuildConfiguration::BuildType type
-                                       = bc ? bc->buildType() : BuildConfiguration::Unknown;
-                                   return BuildConfiguration::buildTypeName(type);
-                               });
-    expander->registerVariable(fullPrefix + "BuildConfig:Path",
-                               //: %1 is something like "Active project"
-                               ::PE::Tr::tr("%1: Full build path of active build configuration.")
-                                   .arg(descriptor),
-                               [bcGetter]() -> QString {
-                                   if (const BuildConfiguration *const bc = bcGetter())
-                                       return bc->buildDirectory().toUserOutput();
-                                   return {};
-                               });
-    expander->registerPrefix(fullPrefix + "BuildConfig:Env",
-                             //: %1 is something like "Active project"
-                             ::PE::Tr::tr("%1: Variables in the active build environment.")
-                                 .arg(descriptor),
-                             [bcGetter](const QString &var) -> QString {
-                                 if (BuildConfiguration *const bc = bcGetter())
-                                     return bc->environment().expandedValueForKey(var);
-                                 return {};
-                             });
-
-    expander->registerVariable(fullPrefix + "RunConfig:Name",
-                               //: %1 is something like "Active project"
-                               ::PE::Tr::tr("%1: Name of the active run configuration.")
-                                   .arg(descriptor),
-                               [rcGetter]() -> QString {
-                                   if (const RunConfiguration *const rc = rcGetter())
-                                       return rc->displayName();
-                                   return {};
-                               });
-    expander->registerFileVariables(fullPrefix + "RunConfig:Executable",
-                                    //: %1 is something like "Active project"
-                                    ::PE::Tr::tr("%1: Executable of the active run configuration.")
-                                        .arg(descriptor),
-                                    [rcGetter]() -> FilePath {
-                                        if (const RunConfiguration *const rc = rcGetter())
-                                            return rc->commandLine().executable();
-                                        return {};
-                                    });
-    expander
-        ->registerPrefix(fullPrefix + "RunConfig:Env",
-                         //: %1 is something like "Active project"
-                         ::PE::Tr::tr(
-                             "%1: Variables in the environment of the active run configuration.")
-                             .arg(descriptor),
-                         [rcGetter](const QString &var) -> QString {
-                             if (const RunConfiguration *const rc = rcGetter()) {
-                                 if (const auto envAspect = rc->aspect<EnvironmentAspect>())
-                                     return envAspect->environment().expandedValueForKey(var);
-                             }
-                             return {};
-                         });
-    expander->registerVariable(fullPrefix + "RunConfig:WorkingDir",
-                               //: %1 is something like "Active project"
-                               ::PE::Tr::tr(
-                                   "%1: Working directory of the active run configuration.")
-                                   .arg(descriptor),
-                               [rcGetter]() -> QString {
-                                   if (const RunConfiguration *const rc = rcGetter()) {
-                                       if (const auto wdAspect
-                                           = rc->aspect<WorkingDirectoryAspect>())
-                                           return wdAspect->workingDirectory().toString();
-                                   }
-                                   return {};
-                               });
-}
-
-} // ProjectExplorer
-
-#ifdef WITH_TESTS
-
-namespace ProjectExplorer::Internal {
-
-static FilePath constructTestPath(const QString &basePath)
+static FilePath constructTestPath(const char *basePath)
 {
     FilePath drive;
     if (HostOsInfo::isWindowsHost())
         drive = "C:";
-    return drive.stringAppended(basePath);
+    return drive + QLatin1String(basePath);
 }
 
 const FilePath TEST_PROJECT_PATH = constructTestPath("/tmp/foobar/baz.project");
@@ -1417,7 +1119,7 @@ public:
     Target *target = nullptr;
 };
 
-void ProjectExplorerTest::testProject_setup()
+void ProjectExplorerPlugin::testProject_setup()
 {
     TestProject project;
 
@@ -1445,7 +1147,7 @@ void ProjectExplorerTest::testProject_setup()
     QVERIFY(!project.target->buildSystem()->hasParsingData());
 }
 
-void ProjectExplorerTest::testProject_changeDisplayName()
+void ProjectExplorerPlugin::testProject_changeDisplayName()
 {
     TestProject project;
 
@@ -1461,7 +1163,7 @@ void ProjectExplorerTest::testProject_changeDisplayName()
     QCOMPARE(spy.count(), 0);
 }
 
-void ProjectExplorerTest::testProject_parsingSuccess()
+void ProjectExplorerPlugin::testProject_parsingSuccess()
 {
     TestProject project;
 
@@ -1487,7 +1189,7 @@ void ProjectExplorerTest::testProject_parsingSuccess()
     QVERIFY(project.target->buildSystem()->hasParsingData());
 }
 
-void ProjectExplorerTest::testProject_parsingFail()
+void ProjectExplorerPlugin::testProject_parsingFail()
 {
     TestProject project;
 
@@ -1524,7 +1226,7 @@ std::unique_ptr<ProjectNode> createFileTree(Project *project)
     return root;
 }
 
-void ProjectExplorerTest::testProject_projectTree()
+void ProjectExplorerPlugin::testProject_projectTree()
 {
     TestProject project;
     QSignalSpy fileSpy(&project, &Project::fileListChanged);
@@ -1566,7 +1268,7 @@ void ProjectExplorerTest::testProject_projectTree()
     QVERIFY(!project.rootProjectNode());
 }
 
-void ProjectExplorerTest::testProject_multipleBuildConfigs()
+void ProjectExplorerPlugin::testProject_multipleBuildConfigs()
 {
     // Find suitable kit.
     Kit * const kit = findOr(KitManager::kits(), nullptr, [](const Kit *k) {
@@ -1578,23 +1280,23 @@ void ProjectExplorerTest::testProject_multipleBuildConfigs()
     // Copy project from qrc file and set it up.
     QTemporaryDir * const tempDir = TemporaryDirectory::masterTemporaryDirectory();
     QVERIFY(tempDir->isValid());
+    QString error;
     const FilePath projectDir = FilePath::fromString(tempDir->path() + "/generic-project");
-    const auto copyResult = FilePath(":/projectexplorer/testdata/generic-project").copyRecursively(projectDir);
-    if (!copyResult)
-        qDebug() << copyResult.error();
-    QVERIFY(copyResult);
-
+    FileUtils::copyRecursively(":/projectexplorer/testdata/generic-project",
+                               projectDir, &error);
+    QVERIFY2(error.isEmpty(), qPrintable(error));
     const QFileInfoList files = QDir(projectDir.toString()).entryInfoList(QDir::Files | QDir::Dirs);
     for (const QFileInfo &f : files)
         QFile(f.absoluteFilePath()).setPermissions(f.permissions() | QFile::WriteUser);
-    const auto theProject = ProjectExplorerPlugin::openProject(projectDir.pathAppended("generic-project.creator"));
+    const auto theProject = openProject(projectDir.pathAppended("generic-project.creator"));
     QVERIFY2(theProject, qPrintable(theProject.errorMessage()));
     theProject.project()->configureAsExampleProject(kit);
     QCOMPARE(theProject.project()->targets().size(), 1);
     Target * const target = theProject.project()->activeTarget();
     QVERIFY(target);
     QCOMPARE(target->buildConfigurations().size(), 6);
-    target->setActiveBuildConfiguration(target->buildConfigurations().at(1), SetActive::Cascade);
+    SessionManager::setActiveBuildConfiguration(target, target->buildConfigurations().at(1),
+                                                SetActive::Cascade);
     BuildSystem * const bs = theProject.project()->activeTarget()->buildSystem();
     QVERIFY(bs);
     QCOMPARE(bs, target->activeBuildConfiguration()->buildSystem());
@@ -1610,98 +1312,14 @@ void ProjectExplorerTest::testProject_multipleBuildConfigs()
     }
     QVERIFY(!bs->isWaitingForParse() && !bs->isParsing());
 
-    QCOMPARE(ProjectManager::startupProject(), theProject.project());
+    QCOMPARE(SessionManager::startupProject(), theProject.project());
     QCOMPARE(ProjectTree::currentProject(), theProject.project());
     QVERIFY(EditorManager::openEditor(projectDir.pathAppended("main.cpp")));
     QVERIFY(ProjectTree::currentNode());
     ProjectTree::instance()->expandAll();
-    ProjectManager::closeAllProjects(); // QTCREATORBUG-25655
+    SessionManager::closeAllProjects(); // QTCREATORBUG-25655
 }
-
-void ProjectExplorerTest::testSourceToBinaryMapping()
-{
-    // Find suitable kit.
-    Kit * const kit = findOr(KitManager::kits(), nullptr, [](const Kit *k) {
-        return k->isValid() && ToolchainKitAspect::cxxToolchain(k);
-    });
-    if (!kit)
-        QSKIP("The test requires at least one kit with a toolchain.");
-
-    const auto toolchain = ToolchainKitAspect::cxxToolchain(kit);
-    QVERIFY(toolchain);
-    if (const auto msvcToolchain = dynamic_cast<Internal::MsvcToolchain *>(toolchain)) {
-        while (!msvcToolchain->environmentInitialized()) {
-            QSignalSpy parsingFinishedSpy(ToolchainManager::instance(),
-                                          &ToolchainManager::toolchainUpdated);
-            QVERIFY(parsingFinishedSpy.wait(10000));
-        }
-    }
-
-    // Copy project from qrc.
-    QTemporaryDir * const tempDir = TemporaryDirectory::masterTemporaryDirectory();
-    QVERIFY(tempDir->isValid());
-    const FilePath projectDir = FilePath::fromString(tempDir->path() + "/multi-target-project");
-    if (!projectDir.exists()) {
-        const auto result = FilePath(":/projectexplorer/testdata/multi-target-project")
-                                .copyRecursively(projectDir);
-        if (!result)
-            qDebug() << result.error();
-        QVERIFY(result);
-        const QFileInfoList files = QDir(projectDir.toString()).entryInfoList(QDir::Files);
-        for (const QFileInfo &f : files)
-            QFile(f.absoluteFilePath()).setPermissions(f.permissions() | QFile::WriteUser);
-    }
-
-    // Load Project.
-    QFETCH(QString, projectFileName);
-    const auto theProject = ProjectExplorerPlugin::openProject(projectDir.pathAppended(projectFileName));
-    if (theProject.errorMessage().contains("text/")) {
-        QSKIP("This test requires the presence of the qmake/cmake/qbs project managers "
-              "to be fully functional");
-    }
-
-    QVERIFY2(theProject, qPrintable(theProject.errorMessage()));
-    theProject.project()->configureAsExampleProject(kit);
-    QCOMPARE(theProject.project()->targets().size(), 1);
-    Target * const target = theProject.project()->activeTarget();
-    QVERIFY(target);
-    BuildSystem * const bs = target->buildSystem();
-    QVERIFY(bs);
-    QCOMPARE(bs, target->activeBuildConfiguration()->buildSystem());
-    if (bs->isWaitingForParse() || bs->isParsing()) {
-        QSignalSpy parsingFinishedSpy(bs, &BuildSystem::parsingFinished);
-        QVERIFY(parsingFinishedSpy.wait(10000));
-    }
-    QVERIFY(!bs->isWaitingForParse() && !bs->isParsing());
-
-    if (QLatin1String(QTest::currentDataTag()) == QLatin1String("qbs")) {
-        BuildManager::buildProjectWithoutDependencies(theProject.project());
-        if (BuildManager::isBuilding()) {
-            QSignalSpy buildingFinishedSpy(BuildManager::instance(), &BuildManager::buildQueueFinished);
-            QVERIFY(buildingFinishedSpy.wait(10000));
-        }
-        QVERIFY(!BuildManager::isBuilding());
-        QSignalSpy projectUpdateSpy(theProject.project(), &Project::fileListChanged);
-        QVERIFY(projectUpdateSpy.wait(5000));
-    }
-
-    // Check mapping
-    const auto binariesForSource = [&](const QString &fileName) {
-        return theProject.project()->binariesForSourceFile(projectDir.pathAppended(fileName));
-    };
-    QCOMPARE(binariesForSource("multi-target-project-main.cpp").size(), 1);
-    QCOMPARE(binariesForSource("multi-target-project-lib.cpp").size(), 1);
-    QCOMPARE(binariesForSource("multi-target-project-shared.h").size(), 2);
-}
-
-void ProjectExplorerTest::testSourceToBinaryMapping_data()
-{
-    QTest::addColumn<QString>("projectFileName");
-    QTest::addRow("cmake") << "CMakeLists.txt";
-    QTest::addRow("qbs") << "multi-target-project.qbs";
-    QTest::addRow("qmake") << "multi-target-project.pro";
-}
-
-} // ProjectExplorer::Internal
 
 #endif // WITH_TESTS
+
+} // namespace ProjectExplorer

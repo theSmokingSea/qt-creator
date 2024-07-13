@@ -6,21 +6,15 @@ Module {
     Depends { name: "cpp" }
 
     Properties {
-        condition: qbs.toolchain.contains("gcc")
-        cpp.cxxFlags: {
-             var flags = ["-Wno-missing-field-initializers"];
-             function isClang() { return qbs.toolchain.contains("clang"); }
-             function versionAtLeast(v) {
-                 return Utilities.versionCompare(cpp.compilerVersion, v) >= 0;
-             };
-             if (isClang())
-                 flags.push("-Wno-constant-logical-operand");
-             if ((!isClang() && versionAtLeast("9"))
-                     || (isClang() && !qbs.hostOS.contains("darwin") && versionAtLeast("10"))) {
-                 flags.push("-Wno-deprecated-copy");
-             }
-             return flags;
-         }
+        condition: qbs.toolchain.contains("gcc") && !qbs.toolchain.contains("clang")
+                   && Utilities.versionCompare(cpp.compilerVersion, "9") >= 0
+        cpp.cxxFlags: ["-Wno-deprecated-copy", "-Wno-init-list-lifetime"]
+    }
+
+    Properties {
+        condition: qbs.toolchain.contains("clang") && !qbs.hostOS.contains("darwin")
+                   && Utilities.versionCompare(cpp.compilerVersion, "10") >= 0
+        cpp.cxxFlags: ["-Wno-deprecated-copy", "-Wno-constant-logical-operand"]
     }
 
     priority: 1
@@ -34,10 +28,7 @@ Module {
             ? ["@loader_path/" + FileInfo.relativePath('/' + appInstallDir, '/' + libInstallDir)]
             : ["$ORIGIN/..", "$ORIGIN/../" + qtc.ide_library_path]
     property string resourcesInstallDir: qtc.ide_data_path + "/qbs"
-    property string pluginsInstallBaseDir: qbs.targetOS.contains("darwin")
-                                           ? qtc.ide_plugin_path + "/.."
-                                           : qtc.ide_library_path + "/.."
-    property string pluginsInstallDir: pluginsInstallBaseDir + "/qbs/plugins"
+    property string pluginsInstallDir: qtc.ide_plugin_path + "/qbs/plugins"
     property string qmlTypeDescriptionsInstallDir: qtc.ide_data_path + "/qml-type-descriptions"
     property string appInstallDir: qtc.ide_bin_path
     property string libexecInstallDir: qtc.ide_libexec_path
@@ -47,7 +38,7 @@ Module {
     property string relativeLibexecPath: FileInfo.relativePath('/' + appInstallDir,
                                                                '/' + libexecInstallDir)
     property string relativePluginsPath: FileInfo.relativePath('/' + appInstallDir,
-                                                               '/' + pluginsInstallBaseDir)
+                                                               '/' + qtc.ide_plugin_path)
     property string relativeSearchPath: FileInfo.relativePath('/' + appInstallDir,
                                                               '/' + resourcesInstallDir)
 }

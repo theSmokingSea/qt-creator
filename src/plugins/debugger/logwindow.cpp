@@ -1,28 +1,51 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "logwindow.h"
 
 #include "debuggeractions.h"
+#include "debuggercore.h"
 #include "debuggerengine.h"
 #include "debuggericons.h"
 #include "debuggerinternalconstants.h"
-#include "debuggertr.h"
 
 #include <QDebug>
 #include <QTime>
 
-#include <QFileDialog>
-#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMenu>
+#include <QSyntaxHighlighter>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QSyntaxHighlighter>
+#include <QFileDialog>
 #include <QToolButton>
 
 #include <aggregation/aggregate.h>
+
+#include <app/app_version.h>
 
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/findplaceholder.h>
@@ -35,7 +58,8 @@
 
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 GlobalLogWindow *theGlobalLog = nullptr;
 
@@ -72,7 +96,7 @@ static bool writeLogContents(const QPlainTextEdit *editor, QWidget *parent)
 {
     bool success = false;
     while (!success) {
-        const FilePath filePath = FileUtils::getSaveFilePath(parent, Tr::tr("Log File"));
+        const FilePath filePath = FileUtils::getSaveFilePath(parent, LogWindow::tr("Log File"));
         if (filePath.isEmpty())
             break;
         FileSaver saver(filePath, QIODevice::Text);
@@ -101,25 +125,26 @@ private:
     {
         using Utils::Theme;
         QTextCharFormat format;
+        Theme *theme = Utils::creatorTheme();
         switch (channelForChar(text.isEmpty() ? QChar() : text.at(0))) {
             case LogInput:
-                format.setForeground(creatorColor(Theme::Debugger_LogWindow_LogInput));
+                format.setForeground(theme->color(Theme::Debugger_LogWindow_LogInput));
                 setFormat(1, text.size(), format);
                 break;
             case LogStatus:
-                format.setForeground(creatorColor(Theme::Debugger_LogWindow_LogStatus));
+                format.setForeground(theme->color(Theme::Debugger_LogWindow_LogStatus));
                 setFormat(1, text.size(), format);
                 break;
             case LogWarning:
-                format.setForeground(creatorColor(Theme::OutputPanes_WarningMessageTextColor));
+                format.setForeground(theme->color(Theme::OutputPanes_WarningMessageTextColor));
                 setFormat(1, text.size(), format);
                 break;
             case LogError:
-                format.setForeground(creatorColor(Theme::OutputPanes_ErrorMessageTextColor));
+                format.setForeground(theme->color(Theme::OutputPanes_ErrorMessageTextColor));
                 setFormat(1, text.size(), format);
                 break;
             case LogTime:
-                format.setForeground(creatorColor(Theme::Debugger_LogWindow_LogTime));
+                format.setForeground(theme->color(Theme::Debugger_LogWindow_LogTime));
                 setFormat(1, text.size(), format);
                 break;
             default:
@@ -151,9 +176,11 @@ public:
 private:
     void highlightBlock(const QString &text) override
     {
+        using Utils::Theme;
+        Theme *theme = Utils::creatorTheme();
         if (text.size() > 3 && text.at(2) == ':') {
             QTextCharFormat format;
-            format.setForeground(creatorColor(Theme::Debugger_LogWindow_LogTime));
+            format.setForeground(theme->color(Theme::Debugger_LogWindow_LogTime));
             setFormat(1, text.size(), format);
         }
     }
@@ -168,6 +195,8 @@ private:
 
 class DebuggerPane : public QPlainTextEdit
 {
+    Q_OBJECT
+
 public:
     explicit DebuggerPane()
     {
@@ -175,11 +204,11 @@ public:
         setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
 
         m_clearContentsAction = new QAction(this);
-        m_clearContentsAction->setText(Tr::tr("Clear Contents"));
+        m_clearContentsAction->setText(tr("Clear Contents"));
         m_clearContentsAction->setEnabled(true);
 
         m_saveContentsAction = new QAction(this);
-        m_saveContentsAction->setText(Tr::tr("Save Contents"));
+        m_saveContentsAction->setText(tr("Save Contents"));
         m_saveContentsAction->setEnabled(true);
         connect(m_saveContentsAction, &QAction::triggered,
                 this, &DebuggerPane::saveContents);
@@ -188,14 +217,14 @@ public:
     void contextMenuEvent(QContextMenuEvent *ev) override
     {
         QMenu *menu = createStandardContextMenu();
-        menu->setAttribute(Qt::WA_DeleteOnClose);
         menu->addAction(m_clearContentsAction);
         menu->addAction(m_saveContentsAction); // X11 clipboard is unreliable for long texts
-        menu->addAction(settings().logTimeStamps.action());
+        menu->addAction(debuggerSettings()->logTimeStamps.action());
         menu->addAction(Core::ActionManager::command(Constants::RELOAD_DEBUGGING_HELPERS)->action());
         menu->addSeparator();
-        menu->addAction(settings().settingsDialog.action());
+        menu->addAction(debuggerSettings()->settingsDialog.action());
         menu->exec(ev->globalPos());
+        delete menu;
     }
 
     void append(const QString &text)
@@ -291,7 +320,7 @@ private:
 
     void focusInEvent(QFocusEvent *ev) override
     {
-        emit statusMessageRequested(Tr::tr("Type Ctrl-<Return> to execute a line."), -1);
+        emit statusMessageRequested(tr("Type Ctrl-<Return> to execute a line."), -1);
         QPlainTextEdit::focusInEvent(ev);
     }
 
@@ -311,6 +340,7 @@ private:
 
 class CombinedPane : public DebuggerPane
 {
+    Q_OBJECT
 public:
     CombinedPane(LogWindow *logWindow)
     {
@@ -356,7 +386,7 @@ public:
 LogWindow::LogWindow(DebuggerEngine *engine)
     : m_engine(engine)
 {
-    setWindowTitle(Tr::tr("Debugger &Log"));
+    setWindowTitle(tr("Debugger &Log"));
     setObjectName("Log");
 
     m_ignoreNextInputEcho = false;
@@ -380,11 +410,11 @@ LogWindow::LogWindow(DebuggerEngine *engine)
     auto repeatButton = new QToolButton(this);
     repeatButton->setIcon(Icons::STEP_OVER.icon());
     repeatButton->setFixedSize(QSize(18, 18));
-    repeatButton->setToolTip(Tr::tr("Repeat last command for debug reasons."));
+    repeatButton->setToolTip(tr("Repeat last command for debug reasons."));
 
     auto commandBox = new QHBoxLayout;
     commandBox->addWidget(repeatButton);
-    commandBox->addWidget(new QLabel(Tr::tr("Command:"), this));
+    commandBox->addWidget(new QLabel(tr("Command:"), this));
     commandBox->addWidget(m_commandEdit);
     commandBox->setContentsMargins(2, 2, 2, 2);
     commandBox->setSpacing(6);
@@ -434,19 +464,17 @@ LogWindow::LogWindow(DebuggerEngine *engine)
 
     setMinimumHeight(60);
 
-    showOutput(
-        LogWarning,
-        Tr::tr(
-            "Note: This log contains possibly confidential information about your machine, "
-            "environment variables, in-memory data of the processes you are debugging, and more. "
-            "It is never transferred over the internet by %1, and only stored "
-            "to disk if you manually use the respective option from the context menu, or through "
-            "mechanisms that are not under the control of %1's Debugger plugin, "
-            "for instance in swap files, or other plugins you might use.\n"
-            "You may be asked to share the contents of this log when reporting bugs related "
-            "to debugger operation. In this case, make sure your submission does not "
-            "contain data you do not want to or you are not allowed to share.\n\n")
-            .arg(QGuiApplication::applicationDisplayName()));
+    showOutput(LogWarning,
+        tr("Note: This log contains possibly confidential information about your machine, "
+           "environment variables, in-memory data of the processes you are debugging, and more. "
+           "It is never transferred over the internet by %1, and only stored "
+           "to disk if you manually use the respective option from the context menu, or through "
+           "mechanisms that are not under the control of %1's Debugger plugin, "
+           "for instance in swap files, or other plugins you might use.\n"
+           "You may be asked to share the contents of this log when reporting bugs related "
+           "to debugger operation. In this case, make sure your submission does not "
+           "contain data you do not want to or you are not allowed to share.\n\n")
+               .arg(Core::Constants::IDE_DISPLAY_NAME));
 }
 
 LogWindow::~LogWindow()
@@ -477,7 +505,7 @@ void LogWindow::sendCommand()
     if (m_engine->acceptsDebuggerCommands())
         m_engine->executeDebuggerCommand(m_commandEdit->text());
     else
-        showOutput(LogError, Tr::tr("User commands are not accepted in the current state."));
+        showOutput(LogError, tr("User commands are not accepted in the current state."));
 }
 
 void LogWindow::showOutput(int channel, const QString &output)
@@ -491,7 +519,7 @@ void LogWindow::showOutput(int channel, const QString &output)
     QString out;
     out.reserve(output.size() + 1000);
 
-    if (output.at(0) != '~' && settings().logTimeStamps()) {
+    if (output.at(0) != '~' && debuggerSettings()->logTimeStamps.value()) {
         out.append(charForChannel(LogTime));
         out.append(logTimeStamp());
         out.append(nchar);
@@ -559,7 +587,7 @@ void LogWindow::showInput(int channel, const QString &input)
         m_inputText->setTextCursor(cursor);
         return;
     }
-    if (settings().logTimeStamps())
+    if (debuggerSettings()->logTimeStamps.value())
         m_inputText->append(logTimeStamp());
     m_inputText->append(input);
     QTextCursor cursor = m_inputText->textCursor();
@@ -574,7 +602,6 @@ void LogWindow::clearContents()
 {
     m_combinedText->clear();
     m_inputText->clear();
-    theGlobalLog->clearContents();
 }
 
 void LogWindow::setCursor(const QCursor &cursor)
@@ -633,7 +660,7 @@ GlobalLogWindow::GlobalLogWindow()
 {
     theGlobalLog = this;
 
-    setWindowTitle(Tr::tr("Global Debugger &Log"));
+    setWindowTitle(tr("Global Debugger &Log"));
     setObjectName("GlobalLog");
 
     auto m_splitter = new Core::MiniSplitter(Qt::Horizontal);
@@ -692,7 +719,7 @@ void GlobalLogWindow::doOutput(const QString &output)
 
 void GlobalLogWindow::doInput(const QString &input)
 {
-    if (settings().logTimeStamps())
+    if (debuggerSettings()->logTimeStamps.value())
         m_leftPane->append(LogWindow::logTimeStamp());
     m_leftPane->append(input);
     QTextCursor cursor = m_leftPane->textCursor();
@@ -720,6 +747,7 @@ void GlobalLogWindow::clearUndoRedoStacks()
     m_rightPane->clearUndoRedoStacks();
 }
 
-} // namespace Debugger::Internal
+} // namespace Internal
+} // namespace Debugger
 
 #include "logwindow.moc"

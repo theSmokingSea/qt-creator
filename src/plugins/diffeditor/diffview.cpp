@@ -1,12 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "diffview.h"
 
 #include "diffeditorconstants.h"
 #include "diffeditordocument.h"
 #include "diffeditoricons.h"
-#include "diffeditortr.h"
 #include "unifieddiffeditorwidget.h"
 #include "sidebysidediffeditorwidget.h"
 
@@ -14,7 +35,8 @@
 
 #include <QCoreApplication>
 
-namespace DiffEditor::Internal {
+namespace DiffEditor {
+namespace Internal {
 
 IDiffView::IDiffView(QObject *parent) : QObject(parent)
 { }
@@ -73,7 +95,7 @@ UnifiedView::UnifiedView()
 {
     setId(Constants::UNIFIED_VIEW_ID);
     setIcon(Icons::UNIFIED_DIFF.icon());
-    setToolTip(Tr::tr("Switch to Unified Diff Editor"));
+    setToolTip(QCoreApplication::translate("DiffEditor::UnifiedView", "Switch to Unified Diff Editor"));
 }
 
 QWidget *UnifiedView::widget()
@@ -100,10 +122,10 @@ void UnifiedView::setDocument(DiffEditorDocument *document)
 
     switch (document->state()) {
     case DiffEditorDocument::Reloading:
-        m_widget->clear(Tr::tr("Waiting for data..."));
+        m_widget->clear(tr("Waiting for data..."));
         break;
     case DiffEditorDocument::LoadFailed:
-        m_widget->clear(Tr::tr("Retrieving data failed."));
+        m_widget->clear(tr("Retrieving data failed."));
         break;
     default:
         break;
@@ -116,6 +138,7 @@ void UnifiedView::beginOperation()
     DiffEditorDocument *document = m_widget->diffDocument();
     if (document && document->state() == DiffEditorDocument::LoadOK)
         m_widget->saveState();
+    m_widget->clear(tr("Waiting for data..."));
 }
 
 void UnifiedView::setDiff(const QList<FileData> &diffFileList)
@@ -124,15 +147,13 @@ void UnifiedView::setDiff(const QList<FileData> &diffFileList)
     m_widget->setDiff(diffFileList);
 }
 
-void UnifiedView::setMessage(const QString &message)
-{
-    m_widget->clear(message);
-}
-
-void UnifiedView::endOperation()
+void UnifiedView::endOperation(bool success)
 {
     QTC_ASSERT(m_widget, return);
-    m_widget->restoreState();
+    if (success)
+        m_widget->restoreState();
+    else
+        m_widget->clear(tr("Retrieving data failed."));
 }
 
 void UnifiedView::setCurrentDiffFileIndex(int index)
@@ -151,9 +172,10 @@ SideBySideView::SideBySideView()
 {
     setId(Constants::SIDE_BY_SIDE_VIEW_ID);
     setIcon(Icons::SIDEBYSIDE_DIFF.icon());
-    setToolTip(Tr::tr("Switch to Side By Side Diff Editor"));
+    setToolTip(QCoreApplication::translate("DiffEditor::SideBySideView",
+                                           "Switch to Side By Side Diff Editor"));
     setSupportsSync(true);
-    setSyncToolTip(Tr::tr("Synchronize Horizontal Scroll Bars"));
+    setSyncToolTip(tr("Synchronize Horizontal Scroll Bars"));
 }
 
 QWidget *SideBySideView::widget()
@@ -166,10 +188,16 @@ QWidget *SideBySideView::widget()
     return m_widget;
 }
 
-TextEditor::TextEditorWidget *SideBySideView::sideEditorWidget(DiffSide side)
+TextEditor::TextEditorWidget *SideBySideView::leftEditorWidget()
 {
     widget(); // ensure widget creation
-    return m_widget->sideEditorWidget(side);
+    return m_widget->leftEditorWidget();
+}
+
+TextEditor::TextEditorWidget *SideBySideView::rightEditorWidget()
+{
+    widget(); // ensure widget creation
+    return m_widget->rightEditorWidget();
 }
 
 void SideBySideView::setDocument(DiffEditorDocument *document)
@@ -181,10 +209,10 @@ void SideBySideView::setDocument(DiffEditorDocument *document)
 
     switch (document->state()) {
     case DiffEditorDocument::Reloading:
-        m_widget->clear(Tr::tr("Waiting for data..."));
+        m_widget->clear(tr("Waiting for data..."));
         break;
     case DiffEditorDocument::LoadFailed:
-        m_widget->clear(Tr::tr("Retrieving data failed."));
+        m_widget->clear(tr("Retrieving data failed."));
         break;
     default:
         break;
@@ -197,6 +225,7 @@ void SideBySideView::beginOperation()
     DiffEditorDocument *document = m_widget->diffDocument();
     if (document && document->state() == DiffEditorDocument::LoadOK)
         m_widget->saveState();
+    m_widget->clear(tr("Waiting for data..."));
 }
 
 void SideBySideView::setCurrentDiffFileIndex(int index)
@@ -211,16 +240,13 @@ void SideBySideView::setDiff(const QList<FileData> &diffFileList)
     m_widget->setDiff(diffFileList);
 }
 
-void SideBySideView::setMessage(const QString &message)
+void SideBySideView::endOperation(bool success)
 {
     QTC_ASSERT(m_widget, return);
-    m_widget->clear(message);
-}
-
-void SideBySideView::endOperation()
-{
-    QTC_ASSERT(m_widget, return);
-    m_widget->restoreState();
+    if (success)
+        m_widget->restoreState();
+    else
+        m_widget->clear(tr("Retrieving data failed."));
 }
 
 void SideBySideView::setSync(bool sync)
@@ -229,4 +255,5 @@ void SideBySideView::setSync(bool sync)
     m_widget->setHorizontalSync(sync);
 }
 
-} // namespace DiffEditor::Internal
+} // namespace Internal
+} // namespace DiffEditor

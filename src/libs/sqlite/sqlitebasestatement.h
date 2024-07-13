@@ -1,33 +1,57 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
-#include "sqlite3_fwd.h"
+#ifdef SQLITE_STATIC_LIBRARY
+#include "config.h"
+#endif
+
 #include "sqliteglobal.h"
 
 #include "sqliteblob.h"
 #include "sqliteexception.h"
-#include "sqliteids.h"
-#include "sqlitetracing.h"
 #include "sqlitetransaction.h"
 #include "sqlitevalue.h"
 
 #include <utils/smallstringvector.h>
 
-#include <nanotrace/nanotracehr.h>
+#include <utils/optional.h>
 #include <utils/span.h>
 
 #include <cstdint>
 #include <exception>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <tuple>
 #include <type_traits>
-#include <vector>
 
 using std::int64_t;
+
+struct sqlite3_stmt;
+struct sqlite3;
 
 namespace Sqlite {
 
@@ -45,7 +69,8 @@ public:
 
     BaseStatement(const BaseStatement &) = delete;
     BaseStatement &operator=(const BaseStatement &) = delete;
-    BaseStatement(BaseStatement &&) = default;
+
+    static void deleteCompiledStatement(sqlite3_stmt *m_compiledStatement);
 
     bool next() const;
     void step() const;
@@ -62,7 +87,6 @@ public:
     template<typename Type>
     Type fetchValue(int column) const;
 
-    void bindNull(int index);
     void bind(int index, NullValue);
     void bind(int index, int value);
     void bind(int index, long long value);
@@ -77,21 +101,6 @@ public:
     void bind(int index, ValueView value);
     void bind(int index, BlobView blobView);
 
-    template<typename Type, typename = std::enable_if_t<Type::IsBasicId::value>>
-    void bind(int index, Type id)
-    {
-        if (!id.isNull())
-            bind(index, id.internalId());
-        else
-            bindNull(index);
-    }
-
-    template<typename Enumeration, std::enable_if_t<std::is_enum_v<Enumeration>, bool> = true>
-    void bind(int index, Enumeration enumeration)
-    {
-        bind(index, Utils::to_underlying(enumeration));
-    }
-
     void bind(int index, uint value) { bind(index, static_cast<long long>(value)); }
 
     void bind(int index, long value)
@@ -104,32 +113,45 @@ public:
 
     sqlite3 *sqliteDatabaseHandle() const;
 
+    [[noreturn]] void checkForStepError(int resultCode) const;
+    [[noreturn]] void checkForPrepareError(int resultCode) const;
+    [[noreturn]] void checkForBindingError(int resultCode) const;
     void setIfIsReadyToFetchValues(int resultCode) const;
     void checkBindingName(int index) const;
     void checkBindingParameterCount(int bindingParameterCount) const;
     void checkColumnCount(int columnCount) const;
     bool isReadOnlyStatement() const;
+    [[noreturn]] void throwStatementIsBusy(const char *whatHasHappened) const;
+    [[noreturn]] void throwStatementHasError(const char *whatHasHappened) const;
+    [[noreturn]] void throwStatementIsMisused(const char *whatHasHappened) const;
+    [[noreturn]] void throwInputOutputError(const char *whatHasHappened) const;
+    [[noreturn]] void throwConstraintPreventsModification(const char *whatHasHappened) const;
+    [[noreturn]] void throwNoValuesToFetch(const char *whatHasHappened) const;
+    [[noreturn]] void throwInvalidColumnFetched(const char *whatHasHappened) const;
+    [[noreturn]] void throwBindingIndexIsOutOfRange(const char *whatHasHappened) const;
+    [[noreturn]] void throwWrongBingingName(const char *whatHasHappened) const;
+    [[noreturn]] void throwUnknowError(const char *whatHasHappened) const;
+    [[noreturn]] void throwBingingTooBig(const char *whatHasHappened) const;
+    [[noreturn]] void throwTooBig(const char *whatHasHappened) const;
+    [[noreturn]] void throwSchemaChangeError(const char *whatHasHappened) const;
+    [[noreturn]] void throwCannotWriteToReadOnlyConnection(const char *whatHasHappened) const;
+    [[noreturn]] void throwProtocolError(const char *whatHasHappened) const;
+    [[noreturn]] void throwDatabaseExceedsMaximumFileSize(const char *whatHasHappened) const;
+    [[noreturn]] void throwDataTypeMismatch(const char *whatHasHappened) const;
+    [[noreturn]] void throwConnectionIsLocked(const char *whatHasHappened) const;
+    [[noreturn]] void throwExecutionInterrupted(const char *whatHasHappened) const;
+    [[noreturn]] void throwDatabaseIsCorrupt(const char *whatHasHappened) const;
+    [[noreturn]] void throwCannotOpen(const char *whatHasHappened) const;
 
     QString columnName(int column) const;
 
-    Database &database() const { return m_database; }
+    Database &database() const;
 
 protected:
     ~BaseStatement() = default;
 
-    std::uintptr_t handle() const
-    {
-        return reinterpret_cast<std::uintptr_t>(m_compiledStatement.get());
-    }
-
 private:
-    struct Deleter
-    {
-        SQLITE_EXPORT void operator()(sqlite3_stmt *statement);
-    };
-
-private:
-    std::unique_ptr<sqlite3_stmt, Deleter> m_compiledStatement;
+    std::unique_ptr<sqlite3_stmt, void (*)(sqlite3_stmt *)> m_compiledStatement;
     Database &m_database;
 };
 
@@ -148,17 +170,9 @@ class StatementImplementation : public BaseStatement
 
 public:
     using BaseStatement::BaseStatement;
-    StatementImplementation(StatementImplementation &&) = default;
 
     void execute()
     {
-        using NanotraceHR::keyValue;
-        NanotraceHR::Tracer tracer{
-            "execute"_t,
-            sqliteHighLevelCategory(),
-            keyValue("sqlite statement", BaseStatement::handle()),
-        };
-
         Resetter resetter{this};
         BaseStatement::next();
     }
@@ -166,11 +180,6 @@ public:
     template<typename... ValueType>
     void bindValues(const ValueType &...values)
     {
-        using NanotraceHR::keyValue;
-        NanotraceHR::Tracer tracer{"bind"_t,
-                                   sqliteHighLevelCategory(),
-                                   keyValue("sqlite statement", BaseStatement::handle())};
-
         static_assert(BindParameterCount == sizeof...(values), "Wrong binding parameter count!");
 
         int index = 0;
@@ -180,82 +189,31 @@ public:
     template<typename... ValueType>
     void write(const ValueType&... values)
     {
-        using NanotraceHR::keyValue;
-        NanotraceHR::Tracer tracer{"write"_t,
-                                   sqliteHighLevelCategory(),
-                                   keyValue("sqlite statement", BaseStatement::handle())};
-
         Resetter resetter{this};
         bindValues(values...);
         BaseStatement::next();
     }
 
-    template<typename T>
-    struct is_container : std::false_type
-    {};
-    template<typename... Args>
-    struct is_container<std::vector<Args...>> : std::true_type
-    {};
-    template<typename... Args>
-    struct is_container<QList<Args...>> : std::true_type
-    {};
-    template<typename T, qsizetype Prealloc>
-    struct is_container<QVarLengthArray<T, Prealloc>> : std::true_type
-    {};
-
-    template<typename T>
-    struct is_small_container : std::false_type
-    {};
-
-    template<typename T, qsizetype Prealloc>
-    struct is_small_container<QVarLengthArray<T, Prealloc>> : std::true_type
-    {};
-
-    template<typename Container,
-             std::size_t capacity = 32,
-             typename = std::enable_if_t<is_container<Container>::value>,
-             typename... QueryTypes>
-    auto values(const QueryTypes &...queryValues)
+    template<typename ResultType, typename... QueryTypes>
+    auto values(std::size_t reserveSize, const QueryTypes &...queryValues)
     {
-        using NanotraceHR::keyValue;
-        NanotraceHR::Tracer tracer{"values"_t,
-                                   sqliteHighLevelCategory(),
-                                   keyValue("sqlite statement", BaseStatement::handle())};
-
         Resetter resetter{this};
-        Container resultValues;
-        using size_tupe = typename Container::size_type;
-        if constexpr (!is_small_container<Container>::value)
-            resultValues.reserve(static_cast<size_tupe>(std::max(capacity, m_maximumResultCount)));
+        std::vector<ResultType> resultValues;
+        resultValues.reserve(std::max(reserveSize, m_maximumResultCount));
 
         bindValues(queryValues...);
 
         while (BaseStatement::next())
             emplaceBackValues(resultValues);
 
-        setMaximumResultCount(static_cast<std::size_t>(resultValues.size()));
+        setMaximumResultCount(resultValues.size());
 
         return resultValues;
-    }
-
-    template<typename ResultType,
-             std::size_t capacity = 32,
-             template<typename...> typename Container = std::vector,
-             typename = std::enable_if_t<!is_container<ResultType>::value>,
-             typename... QueryTypes>
-    auto values(const QueryTypes &...queryValues)
-    {
-        return values<Container<ResultType>, capacity>(queryValues...);
     }
 
     template<typename ResultType, typename... QueryTypes>
     auto value(const QueryTypes &...queryValues)
     {
-        using NanotraceHR::keyValue;
-        NanotraceHR::Tracer tracer{"value"_t,
-                                   sqliteHighLevelCategory(),
-                                   keyValue("sqlite statement", BaseStatement::handle())};
-
         Resetter resetter{this};
         ResultType resultValue{};
 
@@ -270,18 +228,13 @@ public:
     template<typename ResultType, typename... QueryTypes>
     auto optionalValue(const QueryTypes &...queryValues)
     {
-        using NanotraceHR::keyValue;
-        NanotraceHR::Tracer tracer{"optionalValue"_t,
-                                   sqliteHighLevelCategory(),
-                                   keyValue("sqlite statement", BaseStatement::handle())};
-
         Resetter resetter{this};
-        std::optional<ResultType> resultValue;
+        Utils::optional<ResultType> resultValue;
 
         bindValues(queryValues...);
 
         if (BaseStatement::next())
-            resultValue = createOptionalValue<std::optional<ResultType>>();
+            resultValue = createOptionalValue<Utils::optional<ResultType>>();
 
         return resultValue;
     }
@@ -289,9 +242,6 @@ public:
     template<typename Type>
     static auto toValue(Utils::SmallStringView sqlStatement, Database &database)
     {
-        using NanotraceHR::keyValue;
-        NanotraceHR::Tracer tracer{"toValue"_t, sqliteHighLevelCategory()};
-
         StatementImplementation statement(sqlStatement, database);
 
         statement.checkColumnCount(1);
@@ -304,11 +254,6 @@ public:
     template<typename Callable, typename... QueryTypes>
     void readCallback(Callable &&callable, const QueryTypes &...queryValues)
     {
-        using NanotraceHR::keyValue;
-        NanotraceHR::Tracer tracer{"readCallback"_t,
-                                   sqliteHighLevelCategory(),
-                                   keyValue("sqlite statement", BaseStatement::handle())};
-
         Resetter resetter{this};
 
         bindValues(queryValues...);
@@ -324,11 +269,6 @@ public:
     template<typename Container, typename... QueryTypes>
     void readTo(Container &container, const QueryTypes &...queryValues)
     {
-        using NanotraceHR::keyValue;
-        NanotraceHR::Tracer tracer{"readTo"_t,
-                                   sqliteHighLevelCategory(),
-                                   keyValue("sqlite statement", BaseStatement::handle())};
-
         Resetter resetter{this};
 
         bindValues(queryValues...);
@@ -424,12 +364,7 @@ public:
         const_iterator end() const & { return iterator{m_statement, false}; }
 
     private:
-        using TracerCategory = std::decay_t<decltype(sqliteHighLevelCategory())>;
         StatementImplementation &m_statement;
-        NanotraceHR::Tracer<TracerCategory, typename TracerCategory::IsActive> tracer{
-            "range"_t,
-            sqliteHighLevelCategory(),
-            NanotraceHR::keyValue("sqlite statement", m_statement.handle())};
     };
 
     template<typename ResultType>
@@ -485,10 +420,8 @@ private:
         Resetter(StatementImplementation *statement)
             : statement(statement)
         {
-#ifndef QT_NO_DEBUG
             if (statement && !statement->database().isLocked())
-                throw DatabaseIsNotLocked{};
-#endif
+                throw DatabaseIsNotLocked{"Database connection is not locked!"};
         }
 
         Resetter(Resetter &) = delete;
@@ -498,7 +431,7 @@ private:
             : statement{std::exchange(other.statement, nullptr)}
         {}
 
-        void reset() noexcept
+        void reset()
         {
             if (statement)
                 statement->reset();
@@ -518,34 +451,13 @@ private:
             , column(column)
         {}
 
-        explicit operator bool() const { return statement.fetchIntValue(column); }
-        operator int() const { return statement.fetchIntValue(column); }
-        operator long() const { return statement.fetchLongValue(column); }
-        operator long long() const { return statement.fetchLongLongValue(column); }
-        operator double() const { return statement.fetchDoubleValue(column); }
+        operator int() { return statement.fetchIntValue(column); }
+        operator long() { return statement.fetchLongValue(column); }
+        operator long long() { return statement.fetchLongLongValue(column); }
+        operator double() { return statement.fetchDoubleValue(column); }
         operator Utils::SmallStringView() { return statement.fetchSmallStringViewValue(column); }
         operator BlobView() { return statement.fetchBlobValue(column); }
         operator ValueView() { return statement.fetchValueView(column); }
-
-        template<typename ConversionType,
-                 typename = std::enable_if_t<ConversionType::IsBasicId::value>>
-        constexpr operator ConversionType()
-        {
-            if (statement.fetchType(column) == Type::Integer) {
-                if constexpr (std::is_same_v<typename ConversionType::DatabaseType, int>)
-                    return ConversionType::create(statement.fetchIntValue(column));
-                else
-                    return ConversionType::create(statement.fetchLongLongValue(column));
-            }
-
-            return ConversionType{};
-        }
-
-        template<typename Enumeration, std::enable_if_t<std::is_enum_v<Enumeration>, bool> = true>
-        constexpr operator Enumeration()
-        {
-            return static_cast<Enumeration>(statement.fetchLongLongValue(column));
-        }
 
         StatementImplementation &statement;
         int column;
@@ -566,7 +478,7 @@ private:
     template<typename ResultOptionalType, int... ColumnIndices>
     ResultOptionalType createOptionalValue(std::integer_sequence<int, ColumnIndices...>)
     {
-        return ResultOptionalType(std::in_place, ValueGetter(*this, ColumnIndices)...);
+        return ResultOptionalType(Utils::in_place, ValueGetter(*this, ColumnIndices)...);
     }
 
     template<typename ResultOptionalType>
@@ -578,7 +490,7 @@ private:
     template<typename ResultType, int... ColumnIndices>
     ResultType createValue(std::integer_sequence<int, ColumnIndices...>)
     {
-        return ResultType(ValueGetter(*this, ColumnIndices)...);
+        return ResultType{ValueGetter(*this, ColumnIndices)...};
     }
 
     template<typename ResultType>
@@ -587,30 +499,16 @@ private:
         return createValue<ResultType>(std::make_integer_sequence<int, ResultCount>{});
     }
 
-    template<typename Callable, typename... Arguments>
-    CallbackControl invokeCallable(Callable &&callable, Arguments &&...arguments)
-    {
-        if constexpr (std::is_void_v<std::invoke_result_t<Callable, Arguments...>>) {
-            std::invoke(std::forward<Callable>(callable), std::forward<Arguments>(arguments)...);
-            return CallbackControl::Continue;
-        } else {
-            return std::invoke(std::forward<Callable>(callable),
-                               std::forward<Arguments>(arguments)...);
-        }
-    }
-
     template<typename Callable, int... ColumnIndices>
     CallbackControl callCallable(Callable &&callable, std::integer_sequence<int, ColumnIndices...>)
     {
-        return invokeCallable(std::forward<Callable>(callable),
-                              ValueGetter(*this, ColumnIndices)...);
+        return std::invoke(callable, ValueGetter(*this, ColumnIndices)...);
     }
 
     template<typename Callable>
     CallbackControl callCallable(Callable &&callable)
     {
-        return callCallable(std::forward<Callable>(callable),
-                            std::make_integer_sequence<int, ResultCount>{});
+        return callCallable(callable, std::make_integer_sequence<int, ResultCount>{});
     }
 
     void setMaximumResultCount(std::size_t count)

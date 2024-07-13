@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -61,7 +83,7 @@ class InternalCompletionAssistProvider : public CppCompletionAssistProvider
 public:
     TextEditor::IAssistProcessor *createProcessor(const TextEditor::AssistInterface *) const override;
 
-    std::unique_ptr<TextEditor::AssistInterface> createAssistInterface(
+    TextEditor::AssistInterface *createAssistInterface(
         const Utils::FilePath &filePath,
         const TextEditor::TextEditorWidget *textEditorWidget,
         const CPlusPlus::LanguageFeatures &languageFeatures,
@@ -74,7 +96,7 @@ public:
     InternalCppCompletionAssistProcessor();
     ~InternalCppCompletionAssistProcessor() override;
 
-    TextEditor::IAssistProposal *performAsync() override;
+    TextEditor::IAssistProposal *perform(const TextEditor::AssistInterface *interface) override;
 
 private:
     TextEditor::IAssistProposal *createContentProposal();
@@ -86,7 +108,7 @@ private:
     int startCompletionHelper();
     bool tryObjCCompletion();
     bool objcKeywordsWanted() const;
-    int startCompletionInternal(const Utils::FilePath &filePath,
+    int startCompletionInternal(const QString &fileName,
                                 int line, int positionInBlock,
                                 const QString &expression,
                                 int endOfExpression);
@@ -122,10 +144,10 @@ private:
     void addCompletionItem(CPlusPlus::Symbol *symbol,
                            int order = 0);
     void addKeywords();
-    void addMacros(const Utils::FilePath &filePath, const CPlusPlus::Snapshot &snapshot);
+    void addMacros(const QString &fileName, const CPlusPlus::Snapshot &snapshot);
     void addMacros_helper(const CPlusPlus::Snapshot &snapshot,
-                          const Utils::FilePath &filePath,
-                          QSet<Utils::FilePath> *processed,
+                          const QString &fileName,
+                          QSet<QString> *processed,
                           QSet<QString> *definedMacros);
 
     enum {
@@ -135,7 +157,6 @@ private:
     };
 
     QScopedPointer<const CppCompletionAssistInterface> m_interface;
-    const CppCompletionAssistInterface *cppInterface() const;
     CppAssistProposalModelPtr m_model;
 };
 

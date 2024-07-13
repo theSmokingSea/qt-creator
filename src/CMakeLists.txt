@@ -36,9 +36,8 @@ install(EXPORT QtCreator
 )
 
 file(WRITE ${CMAKE_BINARY_DIR}/cmake/QtCreatorConfig.cmake "
-\# Qt version used for building
-\# A compatible Qt version should be used by externally built plugins
-set(QTC_QT_VERSION ${QT_VERSION})
+\# add module path for special FindQt5.cmake that considers Qt6 too
+list(APPEND CMAKE_MODULE_PATH \${CMAKE_CURRENT_LIST_DIR})
 
 \# force plugins to same path naming conventions as Qt Creator
 \# otherwise plugins will not be found
@@ -51,10 +50,10 @@ if(UNIX AND NOT APPLE)
 endif()
 
 include(CMakeFindDependencyMacro)
-find_dependency(Qt6 ${IDE_QT_VERSION_MIN}
+find_dependency(Qt5 ${IDE_QT_VERSION_MIN}
   COMPONENTS Concurrent Core Gui Widgets Core5Compat Network PrintSupport Qml Sql REQUIRED
 )
-find_dependency(Qt6 COMPONENTS Quick QuickWidgets QUIET)
+find_dependency(Qt5 COMPONENTS Quick QuickWidgets QUIET)
 
 if (NOT IDE_VERSION)
   include(\${CMAKE_CURRENT_LIST_DIR}/QtCreatorIDEBranding.cmake)
@@ -88,6 +87,7 @@ file(COPY
   ${PROJECT_SOURCE_DIR}/cmake/QtCreatorDocumentation.cmake
   ${PROJECT_SOURCE_DIR}/cmake/QtCreatorAPI.cmake
   ${PROJECT_SOURCE_DIR}/cmake/QtCreatorAPIInternal.cmake
+  ${PROJECT_SOURCE_DIR}/cmake/FindQt5.cmake
   ${PROJECT_SOURCE_DIR}/cmake/Config.cmake.in
   ${PROJECT_SOURCE_DIR}/cmake/QtcSeparateDebugInfo.cmake
   ${PROJECT_SOURCE_DIR}/cmake/QtcSeparateDebugInfo.Info.plist.in
@@ -102,6 +102,7 @@ install(
     ${PROJECT_SOURCE_DIR}/cmake/QtCreatorDocumentation.cmake
     ${PROJECT_SOURCE_DIR}/cmake/QtCreatorAPI.cmake
     ${PROJECT_SOURCE_DIR}/cmake/QtCreatorAPIInternal.cmake
+    ${PROJECT_SOURCE_DIR}/cmake/FindQt5.cmake
     ${PROJECT_SOURCE_DIR}/cmake/Config.cmake.in
     ${PROJECT_SOURCE_DIR}/cmake/QtcSeparateDebugInfo.cmake
     ${PROJECT_SOURCE_DIR}/cmake/QtcSeparateDebugInfo.Info.plist.in

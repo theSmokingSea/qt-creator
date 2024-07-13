@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "projectinfo_test.h"
 
@@ -65,11 +87,11 @@ public:
     static QList<ProjectPart::ConstPtr> createCAndCxxProjectParts()
     {
         QList<ProjectPart::ConstPtr> projectParts;
-        ToolchainInfo tcInfo;
+        ToolChainInfo tcInfo;
 
         // Create project part for C
         tcInfo.macroInspectionRunner = [](const QStringList &) {
-            return Toolchain::MacroInspectionReport{{}, Utils::LanguageVersion::C11};
+            return ToolChain::MacroInspectionReport{{}, Utils::LanguageVersion::C11};
         };
         const ProjectPart::ConstPtr cprojectpart = ProjectPart::create({}, {}, {}, {}, {}, {}, {},
                                                                   tcInfo);
@@ -77,7 +99,7 @@ public:
 
         // Create project part for CXX
         tcInfo.macroInspectionRunner = [](const QStringList &) {
-            return Toolchain::MacroInspectionReport{{}, Utils::LanguageVersion::CXX98};
+            return ToolChain::MacroInspectionReport{{}, Utils::LanguageVersion::CXX98};
         };
         const ProjectPart::ConstPtr cxxprojectpart = ProjectPart::create({}, {}, {}, {}, {}, {}, {},
                                                                     tcInfo);
@@ -330,10 +352,10 @@ void ProjectPartChooserTest::testDoNotIndicateFromDependencies()
 }
 
 namespace {
-class TestToolchain : public Toolchain
+class TestToolchain : public ToolChain
 {
 public:
-    TestToolchain() : Toolchain("dummy") {}
+    TestToolchain() : ToolChain("dummy") {}
 
 private:
     MacroInspectionRunner createMacroInspectionRunner() const override { return {}; }
@@ -344,7 +366,7 @@ private:
     void addToEnvironment(Utils::Environment &) const override {}
     Utils::FilePath makeCommand(const Utils::Environment &) const override { return {}; }
     QList<Utils::OutputLineParser *> createOutputParsers() const override { return {}; }
-    std::unique_ptr<ToolchainConfigWidget> createConfigurationWidget() override
+    std::unique_ptr<ToolChainConfigWidget> createConfigurationWidget() override
     {
         return {};
     };
@@ -355,19 +377,19 @@ class ProjectInfoGeneratorTestHelper
 public:
     ProjectInfoGeneratorTestHelper()
     {
-        TestToolchain toolchain;
-        projectUpdateInfo.cxxToolchainInfo = {&toolchain, {}, {}};
-        projectUpdateInfo.cToolchainInfo = {&toolchain, {}, {}};
+        TestToolchain aToolChain;
+        projectUpdateInfo.cxxToolChainInfo = {&aToolChain, {}, {}};
+        projectUpdateInfo.cToolChainInfo = {&aToolChain, {}, {}};
     }
 
     ProjectInfo::ConstPtr generate()
     {
-        QPromise<ProjectInfo::ConstPtr> promise;
+        QFutureInterface<ProjectInfo::ConstPtr> fi;
 
         projectUpdateInfo.rawProjectParts += rawProjectPart;
-        ProjectInfoGenerator generator(projectUpdateInfo);
+        ProjectInfoGenerator generator(fi, projectUpdateInfo);
 
-        return generator.generate(promise);
+        return generator.generate();
     }
 
     ProjectUpdateInfo projectUpdateInfo;
@@ -426,7 +448,7 @@ void ProjectInfoGeneratorTest::testProjectPartHasLatestLanguageVersionByDefault(
 void ProjectInfoGeneratorTest::testUseMacroInspectionReportForLanguageVersion()
 {
     ProjectInfoGeneratorTestHelper t;
-    t.projectUpdateInfo.cxxToolchainInfo.macroInspectionRunner = [](const QStringList &) {
+    t.projectUpdateInfo.cxxToolChainInfo.macroInspectionRunner = [](const QStringList &) {
         return TestToolchain::MacroInspectionReport{Macros(), Utils::LanguageVersion::CXX17};
     };
     t.rawProjectPart.files = QStringList{ "foo.cpp" };
@@ -484,7 +506,7 @@ public:
     {
         RawProjectPart rpp;
         rpp.setHeaderPaths(headerPaths);
-        ToolchainInfo tcInfo;
+        ToolChainInfo tcInfo;
         tcInfo.type = toolchainType;
         tcInfo.targetTriple = targetTriple;
         tcInfo.installDir = toolchainInstallDir;
@@ -513,7 +535,7 @@ public:
         user("/projectb/user_path"),
         user("/project/user_path")};
 
-    std::optional<HeaderPathFilter> filter;
+    Utils::optional<HeaderPathFilter> filter;
 
 private:
     ProjectPart::ConstPtr projectPart;

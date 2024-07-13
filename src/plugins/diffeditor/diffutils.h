@@ -1,21 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "diffeditor_global.h"
-#include "diffenums.h"
 
-#include <utils/algorithm.h>
+#include <utils/filepath.h>
 
 #include <QMap>
 #include <QString>
 
-#include <array>
-
 QT_BEGIN_NAMESPACE
-template <class T>
-class QPromise;
+class QFutureInterfaceBase;
 QT_END_NAMESPACE
 
 namespace Utils { class Diff; }
@@ -35,23 +53,6 @@ public:
     QString fileName;
     QString typeInfo;
     PatchBehaviour patchBehaviour = PatchFile;
-};
-
-using DiffFileInfoArray = std::array<DiffFileInfo, SideCount>;
-
-class DiffChunkInfo {
-public:
-    int chunkIndexForBlockNumber(int blockNumber) const;
-    int chunkRowForBlockNumber(int blockNumber) const;
-    int chunkRowsCountForBlockNumber(int blockNumber) const;
-
-    void setChunkIndex(int startBlockNumber, int blockCount, int chunkIndex) {
-        m_chunkInfo.insert(startBlockNumber, {blockCount, chunkIndex});
-    }
-
-private:
-    // start block number, block count of a chunk, chunk index inside a file.
-    QMap<int, QPair<int, int>> m_chunkInfo;
 };
 
 class DIFFEDITOR_EXPORT TextLineData {
@@ -79,10 +80,11 @@ class DIFFEDITOR_EXPORT RowData {
 public:
     RowData() = default;
     RowData(const TextLineData &l)
-        : line({l, l}), equal(true) {}
+        : leftLine(l), rightLine(l), equal(true) {}
     RowData(const TextLineData &l, const TextLineData &r)
-        : line({l, r}) {}
-    std::array<TextLineData, SideCount> line{};
+        : leftLine(l), rightLine(r) {}
+    TextLineData leftLine;
+    TextLineData rightLine;
     bool equal = false;
 };
 
@@ -90,7 +92,8 @@ class DIFFEDITOR_EXPORT ChunkData {
 public:
     QList<RowData> rows;
     QString contextInfo;
-    std::array<int, SideCount> startingLineNumber{};
+    int leftStartingLineNumber = 0;
+    int rightStartingLineNumber = 0;
     bool contextChunk = false;
 };
 
@@ -98,10 +101,11 @@ class DIFFEDITOR_EXPORT ChunkSelection {
 public:
     ChunkSelection() = default;
     ChunkSelection(const QList<int> &left, const QList<int> &right)
-        : selection({left, right}) {}
-    bool isNull() const { return Utils::allOf(selection, &QList<int>::isEmpty); }
+        : leftSelection(left), rightSelection(right) {}
+    bool isNull() const { return leftSelection.isEmpty() && rightSelection.isEmpty(); }
     int selectedRowsCount() const;
-    std::array<QList<int>, SideCount> selection{};
+    QList<int> leftSelection;
+    QList<int> rightSelection;
 };
 
 class DIFFEDITOR_EXPORT FileData {
@@ -118,7 +122,8 @@ public:
     FileData() = default;
     FileData(const ChunkData &chunkData) { chunks.append(chunkData); }
     QList<ChunkData> chunks;
-    DiffFileInfoArray fileInfo{};
+    DiffFileInfo leftFileInfo;
+    DiffFileInfo rightFileInfo;
     FileOperation fileOperation = ChangeFile;
     bool binaryFiles = false;
     bool lastChunkAtTheEndOfFile = false;
@@ -127,6 +132,11 @@ public:
 
 class DIFFEDITOR_EXPORT DiffUtils {
 public:
+    enum PatchFormattingFlags {
+        AddLevel = 0x1, // Add 'a/' , '/b' for git am
+        GitFormat = AddLevel | 0x2, // Add line 'diff ..' as git does
+    };
+
     static ChunkData calculateOriginalData(const QList<Utils::Diff> &leftDiffList,
                                            const QList<Utils::Diff> &rightDiffList);
     static FileData calculateContextData(const ChunkData &originalData,
@@ -142,9 +152,11 @@ public:
                              const QString &leftFileName,
                              const QString &rightFileName,
                              bool lastChunk = false);
-    static QString makePatch(const QList<FileData> &fileDataList);
-    static std::optional<QList<FileData>> readPatch(const QString &patch);
-    static void readPatchWithPromise(QPromise<QList<FileData>> &promise, const QString &patch);
+    static QString makePatch(const QList<FileData> &fileDataList,
+                             unsigned formatFlags = 0);
+    static QList<FileData> readPatch(const QString &patch,
+                                     bool *ok = nullptr,
+                                     QFutureInterfaceBase *jobController = nullptr);
 };
 
 } // namespace DiffEditor

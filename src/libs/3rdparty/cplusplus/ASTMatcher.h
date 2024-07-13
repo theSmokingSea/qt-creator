@@ -38,7 +38,6 @@ public:
     virtual bool match(ArrayAccessAST *node, ArrayAccessAST *pattern);
     virtual bool match(ArrayDeclaratorAST *node, ArrayDeclaratorAST *pattern);
     virtual bool match(ArrayInitializerAST *node, ArrayInitializerAST *pattern);
-    virtual bool match(AwaitExpressionAST *node, AwaitExpressionAST *pattern);
     virtual bool match(AsmDefinitionAST *node, AsmDefinitionAST *pattern);
     virtual bool match(BaseSpecifierAST *node, BaseSpecifierAST *pattern);
     virtual bool match(BinaryExpressionAST *node, BinaryExpressionAST *pattern);
@@ -55,7 +54,6 @@ public:
     virtual bool match(CompoundExpressionAST *node, CompoundExpressionAST *pattern);
     virtual bool match(CompoundLiteralAST *node, CompoundLiteralAST *pattern);
     virtual bool match(CompoundStatementAST *node, CompoundStatementAST *pattern);
-    virtual bool match(ConceptDeclarationAST *node, ConceptDeclarationAST *pattern);
     virtual bool match(ConditionAST *node, ConditionAST *pattern);
     virtual bool match(ConditionalExpressionAST *node, ConditionalExpressionAST *pattern);
     virtual bool match(ContinueStatementAST *node, ContinueStatementAST *pattern);
@@ -65,7 +63,6 @@ public:
     virtual bool match(DeclarationStatementAST *node, DeclarationStatementAST *pattern);
     virtual bool match(DeclaratorAST *node, DeclaratorAST *pattern);
     virtual bool match(DeclaratorIdAST *node, DeclaratorIdAST *pattern);
-    virtual bool match(DecompositionDeclaratorAST *node, DecompositionDeclaratorAST *pattern);
     virtual bool match(DecltypeSpecifierAST *node, DecltypeSpecifierAST *pattern);
     virtual bool match(DeleteExpressionAST *node, DeleteExpressionAST *pattern);
     virtual bool match(DesignatedInitializerAST *node, DesignatedInitializerAST *pattern);
@@ -141,7 +138,6 @@ public:
     virtual bool match(OperatorFunctionIdAST *node, OperatorFunctionIdAST *pattern);
     virtual bool match(ParameterDeclarationAST *node, ParameterDeclarationAST *pattern);
     virtual bool match(ParameterDeclarationClauseAST *node, ParameterDeclarationClauseAST *pattern);
-    virtual bool match(PlaceholderTypeSpecifierAST *node, PlaceholderTypeSpecifierAST *pattern);
     virtual bool match(PointerAST *node, PointerAST *pattern);
     virtual bool match(PointerLiteralAST *node, PointerLiteralAST *pattern);
     virtual bool match(PointerToMemberAST *node, PointerToMemberAST *pattern);
@@ -159,8 +155,6 @@ public:
     virtual bool match(QualifiedNameAST *node, QualifiedNameAST *pattern);
     virtual bool match(RangeBasedForStatementAST *node, RangeBasedForStatementAST *pattern);
     virtual bool match(ReferenceAST *node, ReferenceAST *pattern);
-    virtual bool match(RequiresClauseAST *node, RequiresClauseAST *pattern);
-    virtual bool match(RequiresExpressionAST *node, RequiresExpressionAST *pattern);
     virtual bool match(ReturnStatementAST *node, ReturnStatementAST *pattern);
     virtual bool match(SimpleDeclarationAST *node, SimpleDeclarationAST *pattern);
     virtual bool match(SimpleNameAST *node, SimpleNameAST *pattern);
@@ -178,7 +172,6 @@ public:
     virtual bool match(TrailingReturnTypeAST *node, TrailingReturnTypeAST *pattern);
     virtual bool match(TranslationUnitAST *node, TranslationUnitAST *pattern);
     virtual bool match(TryBlockStatementAST *node, TryBlockStatementAST *pattern);
-    virtual bool match(TypeConstraintAST *node, TypeConstraintAST *pattern);
     virtual bool match(TypeConstructorCallAST *node, TypeConstructorCallAST *pattern);
     virtual bool match(TypeIdAST *node, TypeIdAST *pattern);
     virtual bool match(TypeidExpressionAST *node, TypeidExpressionAST *pattern);
@@ -189,7 +182,6 @@ public:
     virtual bool match(UsingAST *node, UsingAST *pattern);
     virtual bool match(UsingDirectiveAST *node, UsingDirectiveAST *pattern);
     virtual bool match(WhileStatementAST *node, WhileStatementAST *pattern);
-    virtual bool match(YieldExpressionAST *node, YieldExpressionAST *pattern);
 };
 
 } // namespace CPlusPlus

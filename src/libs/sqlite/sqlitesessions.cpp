@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sqlitesessions.h"
 #include "sqlitereadstatement.h"
@@ -20,13 +42,13 @@ void checkResultCode(int resultCode)
     case SQLITE_NOMEM:
         throw std::bad_alloc();
     case SQLITE_SCHEMA:
-        throw CannotApplyChangeSet();
+        throw CannotApplyChangeSet("Cannot apply change set!");
     case SQLITE_MISUSE:
-        throw ChangeSetIsMisused();
+        throw ChangeSetIsMisused("Change set is misused!");
     }
 
     if (resultCode != SQLITE_OK)
-        throw UnknowError();
+        throw UnknowError("Unknow exception");
 }
 
 int xConflict(void *, int conflict, sqlite3_changeset_iter *)
@@ -51,7 +73,7 @@ int xConflict(void *, int conflict, sqlite3_changeset_iter *)
 void Sessions::attachTables(const Utils::SmallStringVector &tableNames)
 {
     for (Utils::SmallStringView tableName : tableNames) {
-        int resultCode = sqlite3session_attach(session.get(), std::string(tableName).c_str());
+        int resultCode = sqlite3session_attach(session.get(), tableName.data());
         checkResultCode(resultCode);
     }
 }
@@ -67,7 +89,7 @@ void Sessions::create()
 {
     sqlite3_session *newSession = nullptr;
     int resultCode = sqlite3session_create(database.backend().sqliteDatabaseHandle(),
-                                           std::string(databaseName).c_str(),
+                                           databaseName.data(),
                                            &newSession);
     session.reset(newSession);
 
@@ -110,7 +132,7 @@ void Sessions::revert()
                                                                " ORDER BY id DESC"}),
                                       database};
 
-    auto changeSets = selectChangeSets.values<SessionChangeSet, 1024>();
+    auto changeSets = selectChangeSets.values<SessionChangeSet>(1024);
 
     for (auto &changeSet : changeSets) {
         int resultCode = sqlite3changeset_apply_v2(database.backend().sqliteDatabaseHandle(),
@@ -134,7 +156,7 @@ void Sessions::apply()
                                                                " ORDER BY id"}),
                                       database};
 
-    auto changeSets = selectChangeSets.values<SessionChangeSet, 1024>();
+    auto changeSets = selectChangeSets.values<SessionChangeSet>(1024);
 
     for (auto &changeSet : changeSets) {
         int resultCode = sqlite3changeset_apply_v2(database.backend().sqliteDatabaseHandle(),
@@ -170,12 +192,7 @@ SessionChangeSets Sessions::changeSets() const
                                                                " ORDER BY id DESC"}),
                                       database};
 
-    return selectChangeSets.values<SessionChangeSet, 1024>();
-}
-
-void Sessions::Deleter::operator()(sqlite3_session *session)
-{
-    sqlite3session_delete(session);
+    return selectChangeSets.values<SessionChangeSet>(1024);
 }
 
 } // namespace Sqlite

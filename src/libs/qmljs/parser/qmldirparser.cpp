@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmldirparser_p.h"
 
@@ -237,26 +259,6 @@ bool QmlDirParser::parse(const QString &source)
                                                           "not %1.").arg(sections[1]));
                 continue;
             }
-        } else if (sections[0] == QLatin1String("default")) {
-            if (sectionCount < 2) {
-                reportError(lineNumber,
-                            0,
-                            QStringLiteral("default directive requires further "
-                                           "arguments, but none were provided."));
-                continue;
-            }
-            if (sections[1] == QLatin1String("import")) {
-                if (!readImport(sections + 1,
-                                sectionCount - 1,
-                                Import::Flags({Import::Optional, Import::OptionalDefault})))
-                    continue;
-            } else {
-                reportError(lineNumber,
-                            0,
-                            QStringLiteral("only optional imports can have a a defaultl, "
-                                           "not %1.")
-                                .arg(sections[1]));
-            }
         } else if (sections[0] == QLatin1String("classname")) {
             if (sectionCount < 2) {
                 reportError(lineNumber, 0,
@@ -268,28 +270,14 @@ bool QmlDirParser::parse(const QString &source)
             _classNames.append(sections[1]);
 
         } else if (sections[0] == QLatin1String("internal")) {
-            if (sectionCount == 3) {
-                Component entry(sections[1], sections[2], -1, -1);
-                entry.internal = true;
-                _components.insert(entry.typeName, entry);
-            } else if (sectionCount == 4) {
-                int major, minor;
-                if (parseVersion(sections[2], &major, &minor)) {
-                    Component entry(sections[1], sections[3], major, minor);
-                    entry.internal = true;
-                    _components.insert(entry.typeName, entry);
-                } else {
-                    reportError(lineNumber, 0,
-                                QStringLiteral("invalid version %1, expected <major>.<minor>")
-                                    .arg(sections[2]));
-                    continue;
-                }
-            } else {
+            if (sectionCount != 3) {
                 reportError(lineNumber, 0,
-                            QStringLiteral("internal types require 2 or 3 arguments, "
-                                           "but %1 were provided").arg(sectionCount - 1));
+                            QStringLiteral("internal types require 2 arguments, but %1 were provided").arg(sectionCount - 1));
                 continue;
             }
+            Component entry(sections[1], sections[2], -1, -1);
+            entry.internal = true;
+            _components.insert(entry.typeName, entry);
         } else if (sections[0] == QLatin1String("singleton")) {
             if (sectionCount < 3 || sectionCount > 4) {
                 reportError(lineNumber, 0,
@@ -326,16 +314,6 @@ bool QmlDirParser::parse(const QString &source)
                 reportError(lineNumber, 0, QStringLiteral("designersupported does not expect any argument"));
             else
                 _designerSupported = true;
-        } else if (sections[0] == QLatin1String("static")) {
-            if (sectionCount != 1)
-                reportError(lineNumber, 0, QStringLiteral("static does not expect any argument"));
-            else
-                _isStaticModule = true;
-        } else if (sections[0] == QLatin1String("system")) {
-            if (sectionCount != 1)
-                reportError(lineNumber, 0, QStringLiteral("system does not expect any argument"));
-            else
-                _isSystemModule = true;
         } else if (sections[0] == QLatin1String("import")
                    || sections[0] == QLatin1String("depends")) {
             if (!readImport(sections, sectionCount, Import::Default))

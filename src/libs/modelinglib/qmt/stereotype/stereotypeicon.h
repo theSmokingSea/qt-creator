@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -29,12 +51,6 @@ public:
         DisplayDecoration,
         DisplayIcon,
         DisplaySmart
-    };
-
-    enum DepthLayer {
-        DepthBehindItems,
-        DepthAmongItems,
-        DepthBeforeItems,
     };
 
     enum SizeLock {
@@ -68,20 +84,12 @@ public:
     void setWidth(qreal width);
     qreal height() const { return m_height; }
     void setHeight(qreal height);
-    bool hasMinWidth() const { return m_minWidth > 0.0; }
+    bool hasMinWidth() const { return m_minWidth > 0; }
     qreal minWidth() const { return m_minWidth; }
     void setMinWidth(qreal minWidth);
-    bool hasMinHeight() const { return m_minHeight > 0.0; }
+    bool hasMinHeight() const { return m_minHeight > 0; }
     qreal minHeight() const { return m_minHeight; }
     void setMinHeight(qreal minHeight);
-    bool hasIconWidth() const { return m_iconWidth > 0.0; }
-    qreal iconWidth() const { return m_iconWidth; }
-    void setIconWith(qreal iconWidth);
-    bool hasIconHeight() const { return m_iconHeight > 0.0; }
-    qreal iconHeight() const { return m_iconHeight; }
-    void setIconHeight(qreal iconHeight);
-    DepthLayer depthLayer() const { return m_depthLayer; }
-    void setDepthLayer(DepthLayer depthLayer);
     SizeLock sizeLock() const { return m_sizeLock; }
     void setSizeLock(SizeLock sizeLock);
     Display display() const { return m_display; }
@@ -104,11 +112,8 @@ private:
     QString m_name;
     qreal m_width = 100.0;
     qreal m_height = 100.0;
-    qreal m_minWidth = -1.0;
-    qreal m_minHeight = -1.0;
-    qreal m_iconWidth = -1.0;
-    qreal m_iconHeight = -1.0;
-    DepthLayer m_depthLayer = DepthAmongItems;
+    qreal m_minWidth = -1;
+    qreal m_minHeight = -1;
     SizeLock m_sizeLock = LockNone;
     Display m_display = DisplaySmart;
     TextAlignment m_textAlignment = TextalignBelow;

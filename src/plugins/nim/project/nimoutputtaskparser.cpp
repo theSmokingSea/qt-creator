@@ -1,5 +1,27 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nimoutputtaskparser.h"
 
@@ -10,7 +32,7 @@ using namespace Utils;
 
 namespace Nim {
 
-NimParser::Result NimParser::handleLine(const QString &lne, OutputFormat)
+NimParser::Result NimParser::handleLine(const QString &lne, Utils::OutputFormat)
 {
     const QString line = lne.trimmed();
     static const QRegularExpression regex("(.+.nim)\\((\\d+), (\\d+)\\) (.+)");
@@ -39,14 +61,16 @@ NimParser::Result NimParser::handleLine(const QString &lne, OutputFormat)
     const CompileTask t(type, message, absoluteFilePath(FilePath::fromUserInput(filename)),
                         lineNumber);
     LinkSpecs linkSpecs;
-    addLinkSpecForAbsoluteFilePath(linkSpecs, t.file, t.line, t.column, match, 1);
+    addLinkSpecForAbsoluteFilePath(linkSpecs, t.file, t.line, match, 1);
     scheduleTask(t, 1);
     return {Status::Done, linkSpecs};
 }
 
-} // Nim
+} // namespace Nim
 
 #ifdef WITH_TESTS
+
+#include "nimplugin.h"
 
 #include <projectexplorer/outputparser_test.h>
 
@@ -54,7 +78,7 @@ NimParser::Result NimParser::handleLine(const QString &lne, OutputFormat)
 
 namespace Nim {
 
-void NimParserTest::testNimParser_data()
+void NimPlugin::testNimParser_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<OutputParserTester::Channel>("inputChannel");
@@ -95,7 +119,7 @@ void NimParserTest::testNimParser_data()
             << QString();
 }
 
-void NimParserTest::testNimParser()
+void NimPlugin::testNimParser()
 {
     OutputParserTester testbench;
     testbench.addLineParser(new NimParser);
@@ -111,6 +135,5 @@ void NimParserTest::testNimParser()
                           outputLines);
 }
 
-} // Nim
-
+}
 #endif

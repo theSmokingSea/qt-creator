@@ -1,11 +1,34 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "ResolveExpression.h"
 
 #include "LookupContext.h"
 #include "Overview.h"
 #include "DeprecatedGenTemplateInstance.h"
+#include "CppRewriter.h"
 #include "TypeOfExpression.h"
 
 #include <cplusplus/Control.h>
@@ -19,8 +42,6 @@
 #include <cplusplus/NameVisitor.h>
 #include <cplusplus/Templates.h>
 
-#include <utils/algorithm.h>
-
 #include <QList>
 #include <QDebug>
 #include <QSet>
@@ -28,7 +49,6 @@
 #include <map>
 
 using namespace CPlusPlus;
-using namespace Utils;
 
 static const bool debug = qEnvironmentVariableIsSet("QTC_LOOKUPCONTEXT_DEBUG");
 
@@ -143,14 +163,15 @@ private:
         for (const LookupItem &it : namedTypeItems) {
             Symbol *declaration = it.declaration();
             if (declaration && declaration->isTypedef()) {
-                if (!Utils::insert(visited, declaration))
+                if (visited.contains(declaration))
                     break;
+                visited.insert(declaration);
 
                 // continue working with the typedefed type and scope
-                if (type->type()->asPointerType()) {
+                if (type->type()->isPointerType()) {
                     *type = FullySpecifiedType(
                             _context.bindings()->control()->pointerType(declaration->type()));
-                } else if (type->type()->asReferenceType()) {
+                } else if (type->type()->isReferenceType()) {
                     *type = FullySpecifiedType(
                             _context.bindings()->control()->referenceType(
                                 declaration->type(),
@@ -231,7 +252,7 @@ QList<LookupItem> ResolveExpression::reference(ExpressionAST *ast, Scope *scope)
 QList<LookupItem> ResolveExpression::resolve(ExpressionAST *ast, Scope *scope, bool ref)
 {
     if (! scope)
-        return {};
+        return QList<LookupItem>();
 
     std::swap(_scope, scope);
     std::swap(_reference, ref);
@@ -667,7 +688,7 @@ class ExpressionDocumentHelper
 public:
     // Set up an expression document with an external Control
     ExpressionDocumentHelper(const QByteArray &utf8code, Control *control)
-        : document(Document::create(FilePath::fromPathPart(u"<completion>")))
+        : document(Document::create(QLatin1String("<completion>")))
     {
         Control *oldControl = document->swapControl(control);
         delete oldControl->diagnosticClient();
@@ -725,12 +746,12 @@ bool ResolveExpression::visit(SimpleNameAST *ast)
 
             TypeOfExpression exprTyper;
             exprTyper.setExpandTemplates(true);
-            Document::Ptr doc = _context.snapshot().document(decl->filePath());
+            Document::Ptr doc = _context.snapshot().document(QString::fromLocal8Bit(decl->fileName()));
             exprTyper.init(doc, _context.snapshot(), _context.bindings(),
                            QSet<const Declaration* >(_autoDeclarationsBeingResolved) << decl);
 
             const ExpressionDocumentHelper exprHelper(exprTyper.preprocessedExpression(initializer),
-                                                      _context.bindings()->control().get());
+                                                      _context.bindings()->control().data());
             const Document::Ptr exprDoc = exprHelper.document;
 
             DeduceAutoCheck deduceAuto(ast->name->identifier(), exprDoc->translationUnit());
@@ -742,7 +763,7 @@ bool ResolveExpression::visit(SimpleNameAST *ast)
             if (typeItems.empty())
                 continue;
 
-            Clone cloner(_context.bindings()->control().get());
+            Clone cloner(_context.bindings()->control().data());
 
             for (int n = 0; n < typeItems.size(); ++ n) {
                 FullySpecifiedType newType = cloner.type(typeItems[n].type(), nullptr);
@@ -1058,15 +1079,13 @@ ClassOrNamespace *ResolveExpression::baseExpression(const QList<LookupItem> &bas
 
         if (Q_UNLIKELY(debug)) {
             qDebug("trying result #%d", ++i);
-            qDebug() << "- before typedef resolving we have:" << oo.prettyType(ty);
+            qDebug() << "- before typedef resolving we have:" << oo(ty);
         }
 
         typedefsResolver.resolve(&ty, &scope, r.binding());
-        if (auto ref = ty->asReferenceType()) // deref if needed
-            ty = ref->elementType();
 
         if (Q_UNLIKELY(debug))
-            qDebug() << "-  after typedef resolving:" << oo.prettyType(ty);
+            qDebug() << "-  after typedef resolving:" << oo(ty);
 
         if (accessOp == T_ARROW) {
             PointerType *ptrTy = ty->asPointerType();
@@ -1082,9 +1101,6 @@ ClassOrNamespace *ResolveExpression::baseExpression(const QList<LookupItem> &bas
                     return binding;
                 }
                 if (ClassOrNamespace *binding = findClass(type, scope))
-                    return binding;
-
-                if (ClassOrNamespace *binding = findClass(type, r.scope())) // local classes and structs
                     return binding;
 
             } else {
@@ -1113,11 +1129,11 @@ ClassOrNamespace *ResolveExpression::baseExpression(const QList<LookupItem> &bas
 
                         Function *instantiatedFunction = nullptr;
 
-                        if (overloadType->asFunctionType()) {
+                        if (overloadType->isFunctionType()) {
                             FullySpecifiedType overloadTy
                                     = instantiate(binding->templateId(), overload);
                             instantiatedFunction = overloadTy->asFunctionType();
-                        } else if (overloadType->asTemplateType()
+                        } else if (overloadType->isTemplateType()
                                    && overloadType->asTemplateType()->declaration()
                                    && overloadType->asTemplateType()->declaration()->asFunction()) {
                             instantiatedFunction = overloadType->asTemplateType()->declaration()->asFunction();
@@ -1130,7 +1146,7 @@ ClassOrNamespace *ResolveExpression::baseExpression(const QList<LookupItem> &bas
 
                             typedefsResolver.resolve(&retTy, &functionScope, r.binding());
 
-                            if (! retTy->asPointerType() && ! retTy->asNamedType())
+                            if (! retTy->isPointerType() && ! retTy->isNamedType())
                                 continue;
 
                             if (PointerType *ptrTy = retTy->asPointerType())
@@ -1162,7 +1178,7 @@ ClassOrNamespace *ResolveExpression::baseExpression(const QList<LookupItem> &bas
             }
         } else if (accessOp == T_DOT) {
             if (replacedDotOperator) {
-                *replacedDotOperator = originalType->asPointerType() || ty->asPointerType();
+                *replacedDotOperator = originalType->isPointerType() || ty->isPointerType();
                 if (PointerType *ptrTy = ty->asPointerType())
                     ty = ptrTy->elementType();
             }
@@ -1180,9 +1196,6 @@ ClassOrNamespace *ResolveExpression::baseExpression(const QList<LookupItem> &bas
             }
 
             if (ClassOrNamespace *binding = findClass(ty, scope, enclosingBinding))
-                return binding;
-
-            if (ClassOrNamespace *binding = findClass(ty, r.scope())) // local classes and structs
                 return binding;
         }
     }

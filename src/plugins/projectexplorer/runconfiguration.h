@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -10,69 +32,51 @@
 #include <utils/aspects.h>
 #include <utils/environment.h>
 #include <utils/macroexpander.h>
+#include <utils/port.h>
+
+#include <QWidget>
 
 #include <functional>
 #include <memory>
 
-namespace Utils {
-class OutputFormatter;
-class ProcessRunData;
-}
+namespace Utils { class OutputFormatter; }
 
 namespace ProjectExplorer {
 class BuildConfiguration;
 class BuildSystem;
 class GlobalOrProjectAspect;
 class ProjectNode;
+class Runnable;
 class RunConfigurationFactory;
 class RunConfiguration;
 class RunConfigurationCreationInfo;
 class Target;
-class BuildTargetInfo;
 
 /**
- * Contains start program entries that are retrieved
- * from the cmake file api
- */
-class LauncherInfo
-{
-public:
-    QString type;
-    Utils::FilePath command;
-    QStringList arguments;
-};
-
-/**
- * Contains a start program entry that is displayed in the run configuration interface.
+ * An interface for a hunk of global or per-project
+ * configuration data.
  *
- * This follows the design for the use of "Test Launcher", the
- * Wrappers for running executables on the host system and "Emulator",
- * wrappers for cross-compiled applications, which are supported for
- * example by the cmake build system.
  */
-class PROJECTEXPLORER_EXPORT Launcher
+
+class PROJECTEXPLORER_EXPORT ISettingsAspect : public Utils::AspectContainer
 {
+    Q_OBJECT
+
 public:
-    Launcher() = default;
+    ISettingsAspect();
 
-    /// Create a single launcher from the \p launcherInfo parameter, which can be of type "Test launcher" or "Emulator"
-    Launcher(const LauncherInfo &launcherInfo,  const Utils::FilePath &sourceDirectory);
+    /// Create a configuration widget for this settings aspect.
+    QWidget *createConfigWidget() const;
 
-    /// Create a combined launcher from the passed info parameters, with \p testLauncherInfo
-    /// as first and \p emulatorLauncherInfo appended
-    Launcher(const LauncherInfo &testLauncherInfo, const LauncherInfo &emulatorlauncherInfo, const Utils::FilePath &sourceDirectory);
+protected:
+    using ConfigWidgetCreator = std::function<QWidget *()>;
+    void setConfigWidgetCreator(const ConfigWidgetCreator &configWidgetCreator);
 
-    bool operator==(const Launcher &other) const
-    {
-        return id == other.id && displayName == other.displayName && command == other.command
-               && arguments == other.arguments;
-    }
+    friend class GlobalOrProjectAspect;
 
-    QString id;
-    QString displayName;
-    Utils::FilePath command;
-    QStringList arguments;
+    ConfigWidgetCreator m_configWidgetCreator;
 };
+
 
 /**
  * An interface to facilitate switching between hunks of
@@ -88,31 +92,32 @@ public:
     GlobalOrProjectAspect();
     ~GlobalOrProjectAspect() override;
 
-    void setProjectSettings(Utils::AspectContainer *settings);
-    void setGlobalSettings(Utils::AspectContainer *settings);
+    void setProjectSettings(ISettingsAspect *settings);
+    void setGlobalSettings(ISettingsAspect *settings);
 
     bool isUsingGlobalSettings() const { return m_useGlobalSettings; }
     void setUsingGlobalSettings(bool value);
     void resetProjectToGlobalSettings();
 
-    Utils::AspectContainer *projectSettings() const { return m_projectSettings; }
-    Utils::AspectContainer *currentSettings() const;
+    ISettingsAspect *projectSettings() const { return m_projectSettings; }
+    ISettingsAspect *globalSettings() const { return m_globalSettings; }
+    ISettingsAspect *currentSettings() const;
 
     struct Data : Utils::BaseAspect::Data
     {
-        Utils::AspectContainer *currentSettings = nullptr;
+        ISettingsAspect *currentSettings = nullptr;
     };
 
 protected:
     friend class RunConfiguration;
-    void fromMap(const Utils::Store &map) override;
-    void toMap(Utils::Store &data) const override;
-    void toActiveMap(Utils::Store &data) const override;
+    void fromMap(const QVariantMap &map) override;
+    void toMap(QVariantMap &data) const override;
+    void toActiveMap(QVariantMap &data) const override;
 
 private:
     bool m_useGlobalSettings = false;
-    Utils::AspectContainer *m_projectSettings = nullptr; // Owned if present.
-    Utils::AspectContainer *m_globalSettings = nullptr;  // Not owned.
+    ISettingsAspect *m_projectSettings = nullptr; // Owned if present.
+    ISettingsAspect *m_globalSettings = nullptr;  // Not owned.
 };
 
 // Documentation inside.
@@ -123,27 +128,22 @@ class PROJECTEXPLORER_EXPORT RunConfiguration : public ProjectConfiguration
 public:
     ~RunConfiguration() override;
 
-    virtual QString disabledReason(Utils::Id runMode) const;
-    virtual bool isEnabled(Utils::Id runMode) const;
+    virtual QString disabledReason() const;
+    virtual bool isEnabled() const;
 
     QWidget *createConfigurationWidget();
 
     bool isConfigured() const;
-    bool isCustomized() const;
-    bool hasCreator() const;
     virtual Tasks checkForIssues() const { return {}; }
-    void setPristineState();
 
     using CommandLineGetter = std::function<Utils::CommandLine()>;
     void setCommandLineGetter(const CommandLineGetter &cmdGetter);
     Utils::CommandLine commandLine() const;
-    bool isPrintEnvironmentEnabled() const;
 
-    using RunnableModifier = std::function<void(Utils::ProcessRunData &)>;
+    using RunnableModifier = std::function<void(Runnable &)>;
     void setRunnableModifier(const RunnableModifier &extraModifier);
 
-    virtual Utils::ProcessRunData runnable() const;
-    virtual QVariantHash extraData() const;
+    virtual Runnable runnable() const;
 
     // Return a handle to the build system target that created this run configuration.
     // May return an empty string if no target built the executable!
@@ -153,21 +153,20 @@ public:
 
     ProjectExplorer::ProjectNode *productNode() const;
 
-    template <class T = Utils::AspectContainer> T *currentSettings(Utils::Id id) const
+    template <class T = ISettingsAspect> T *currentSettings(Utils::Id id) const
     {
         if (auto a = qobject_cast<GlobalOrProjectAspect *>(aspect(id)))
             return qobject_cast<T *>(a->currentSettings());
         return nullptr;
     }
 
-    using ProjectConfiguration::registerAspect;
     using AspectFactory = std::function<Utils::BaseAspect *(Target *)>;
     template <class T> static void registerAspect()
     {
         addAspectFactory([](Target *target) { return new T(target); });
     }
 
-    QMap<Utils::Id, Utils::Store> settingsData() const; // FIXME: Merge into aspectData?
+    QMap<Utils::Id, QVariantMap> settingsData() const; // FIXME: Merge into aspectData?
     Utils::AspectContainerData aspectData() const;
 
     void update();
@@ -190,9 +189,8 @@ protected:
 
 private:
     // Any additional data should be handled by aspects.
-    void fromMap(const Utils::Store &map) final;
-    void toMap(Utils::Store &map) const final;
-    void toMapSimple(Utils::Store &map) const;
+    bool fromMap(const QVariantMap &map) final;
+    QVariantMap toMap() const final;
 
     static void addAspectFactory(const AspectFactory &aspectFactory);
 
@@ -205,8 +203,6 @@ private:
     RunnableModifier m_runnableModifier;
     Updater m_updater;
     Utils::MacroExpander m_expander;
-    Utils::Store m_pristineState;
-    bool m_customized = false;
 };
 
 class RunConfigurationCreationInfo
@@ -232,7 +228,7 @@ public:
     RunConfigurationFactory operator=(const RunConfigurationFactory &) = delete;
     virtual ~RunConfigurationFactory();
 
-    static RunConfiguration *restore(Target *parent, const Utils::Store &map);
+    static RunConfiguration *restore(Target *parent, const QVariantMap &map);
     static RunConfiguration *clone(Target *parent, RunConfiguration *source);
     static const QList<RunConfigurationCreationInfo> creatorsForTarget(Target *parent);
 
@@ -242,7 +238,6 @@ public:
 
 protected:
     virtual QList<RunConfigurationCreationInfo> availableCreators(Target *target) const;
-    virtual bool supportsBuildKey(Target *target, const QString &key) const;
 
     using RunConfigurationCreator = std::function<RunConfiguration *(Target *)>;
 
@@ -264,7 +259,6 @@ private:
     RunConfiguration *create(Target *target) const;
 
     friend class RunConfigurationCreationInfo;
-    friend class RunConfiguration;
     RunConfigurationCreator m_creator;
     Utils::Id m_runConfigurationId;
     QList<Utils::Id> m_supportedProjectTypes;
@@ -278,12 +272,13 @@ public:
     explicit FixedRunConfigurationFactory(const QString &displayName,
                                           bool addDeviceName = false);
 
-private:
     QList<RunConfigurationCreationInfo> availableCreators(Target *parent) const override;
-    bool supportsBuildKey(Target *target, const QString &key) const override;
 
+private:
     const QString m_fixedBuildTarget;
     const bool m_decorateTargetName;
 };
 
 } // namespace ProjectExplorer
+
+Q_DECLARE_METATYPE(ProjectExplorer::ISettingsAspect *);

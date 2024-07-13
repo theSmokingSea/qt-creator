@@ -1,25 +1,39 @@
+import qbs 1.0
 import qbs.FileInfo
 import QtcFunctions
 
 QtcProduct {
-    destinationDirectory: FileInfo.joinPaths(project.buildDirectory, qtc.ide_plugin_path)
-    name: project.name
-    targetName: QtcFunctions.qtLibraryName(qbs, name)
     type: ["dynamiclibrary", "pluginSpec"]
-
     installDir: qtc.ide_plugin_path
     installTags: ["dynamiclibrary", "debuginfo_dll"]
     useGuiPchFile: true
 
-    property stringList pluginRecommends: []
-    property stringList pluginTestDepends: []
+    property var pluginJsonReplacements
+    property var pluginRecommends: []
+    property var pluginTestDepends: []
 
-    Depends { name: "Qt.testlib"; condition: qtc.withPluginTests }
+    targetName: QtcFunctions.qtLibraryName(qbs, name)
+    destinationDirectory: FileInfo.joinPaths(project.buildDirectory, qtc.ide_plugin_path)
+
     Depends { name: "ExtensionSystem" }
     Depends { name: "pluginjson" }
+    pluginjson.useVcsData: false
+    Depends {
+        condition: qtc.testsEnabled
+        name: "Qt.testlib"
+    }
 
+    Properties {
+        condition: qbs.targetOS.contains("unix")
+        cpp.internalVersion: ""
+    }
     cpp.defines: base.concat([name.toUpperCase() + "_LIBRARY"])
-    Properties { cpp.internalVersion: ""; condition: qbs.targetOS.contains("unix") }
+    cpp.sonamePrefix: qbs.targetOS.contains("macos")
+        ? "@rpath"
+        : undefined
+    cpp.rpaths: qbs.targetOS.contains("macos")
+        ? ["@loader_path/../Frameworks", "@loader_path/../PlugIns"]
+        : ["$ORIGIN", "$ORIGIN/.."]
     cpp.linkerFlags: {
         var flags = base;
         if (qbs.buildVariant == "debug" && qbs.toolchain.contains("msvc"))
@@ -28,24 +42,20 @@ QtcProduct {
             flags.push("-compatibility_version", qtc.qtcreator_compat_version);
         return flags;
     }
-    cpp.rpaths: qbs.targetOS.contains("macos")
-        ? ["@loader_path/../Frameworks", "@loader_path/../PlugIns"]
-        : ["$ORIGIN", "$ORIGIN/.."]
-    cpp.sonamePrefix: qbs.targetOS.contains("macos")
-        ? "@rpath"
-        : undefined
-    pluginjson.useVcsData: false
+
+    property string pluginIncludeBase: ".." // #include <plugin/header.h>
+    cpp.includePaths: [pluginIncludeBase]
 
     Group {
         name: "PluginMetaData"
-        prefix: sourceDirectory + '/'
-        files: product.name + ".json.in"
-        fileTags: "pluginJsonIn"
+        prefix: product.sourceDirectory + '/'
+        files: [ product.name + ".json.in" ]
+        fileTags: ["pluginJsonIn"]
     }
 
     Export {
-        Depends { name: "cpp" }
         Depends { name: "ExtensionSystem" }
-        cpp.includePaths: exportingProduct.sourceDirectory + "/.."
+        Depends { name: "cpp" }
+        cpp.includePaths: [exportingProduct.pluginIncludeBase]
     }
 }

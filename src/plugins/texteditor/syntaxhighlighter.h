@@ -1,12 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "texteditor_global.h"
 
 #include <texteditor/texteditorconstants.h>
-#include <texteditor/textdocumentlayout.h>
 
 #include <QObject>
 #include <QTextLayout>
@@ -32,6 +53,7 @@ class SyntaxHighlighterPrivate;
 class TEXTEDITOR_EXPORT SyntaxHighlighter : public QObject
 {
     Q_OBJECT
+    Q_DECLARE_PRIVATE(SyntaxHighlighter)
 public:
     SyntaxHighlighter(QObject *parent = nullptr);
     SyntaxHighlighter(QTextDocument *parent);
@@ -41,8 +63,9 @@ public:
     void setDocument(QTextDocument *doc);
     QTextDocument *document() const;
 
-    void setMimeType(const QString &mimeType);
-    QString mimeType() const;
+    void setExtraFormats(const QTextBlock &block, QVector<QTextLayout::FormatRange> &&formats);
+    void clearExtraFormats(const QTextBlock &block);
+    void clearAllExtraFormats();
 
     static QList<QColor> generateColors(int n, const QColor &background);
 
@@ -50,27 +73,16 @@ public:
     virtual void setFontSettings(const TextEditor::FontSettings &fontSettings);
     TextEditor::FontSettings fontSettings() const;
 
-    void setExtraFormats(const QTextBlock &block, const QList<QTextLayout::FormatRange> &formats);
-    virtual void setLanguageFeaturesFlags(unsigned int /*flags*/) {}; // needed for CppHighlighting
-    virtual void setEnabled(bool /*enabled*/) {}; // needed for DiffAndLogHighlighter
-    virtual void setDefinitionName(const QString & /*definitionName*/) {} // needed for Highlighter
-
-    bool syntaxHighlighterUpToDate() const;
+    void setNoAutomaticHighlighting(bool noAutomatic);
 
 public slots:
-    virtual void rehighlight();
-    virtual void scheduleRehighlight();
+    void rehighlight();
     void rehighlightBlock(const QTextBlock &block);
-    void clearExtraFormats(const QTextBlock &block);
-    void reformatBlocks(int from, int charsRemoved, int charsAdded);
-    void clearAllExtraFormats();
 
 protected:
     void setDefaultTextFormatCategories();
     void setTextFormatCategories(int count, std::function<TextStyle(int)> formatMapping);
     QTextCharFormat formatForCategory(int categoryIndex) const;
-    QTextCharFormat whitespacified(const QTextCharFormat &fmt);
-    QTextCharFormat asSyntaxHighlight(const QTextCharFormat &fmt);
 
     // implement in subclasses
     // default implementation highlights whitespace
@@ -94,23 +106,12 @@ protected:
 
     QTextBlock currentBlock() const;
 
-    virtual void documentChanged(QTextDocument * /*oldDoc*/, QTextDocument * /*newDoc*/) {};
-
-signals:
-    void finished();
-
 private:
-    void setTextFormatCategories(const QList<std::pair<int, TextStyle>> &categories);
+    void setTextFormatCategories(const QVector<std::pair<int, TextStyle>> &categories);
+    void reformatBlocks(int from, int charsRemoved, int charsAdded);
     void delayedRehighlight();
-    void continueRehighlight();
 
-    friend class SyntaxHighlighterPrivate;
-    std::unique_ptr<SyntaxHighlighterPrivate> d;
-
-#ifdef WITH_TESTS
-    friend class tst_highlighter;
-    SyntaxHighlighter(QTextDocument *parent, const FontSettings &fontsettings);
-#endif
+    QScopedPointer<SyntaxHighlighterPrivate> d_ptr;
 };
 
 } // namespace TextEditor

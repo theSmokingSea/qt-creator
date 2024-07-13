@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "DeprecatedGenTemplateInstance.h"
 #include "Overview.h"
@@ -362,20 +384,19 @@ FullySpecifiedType ApplySubstitution::applySubstitution(int index) const
 
 } // end of anonymous namespace
 
-DeprecatedGenTemplateInstance::DeprecatedGenTemplateInstance(std::shared_ptr<Control> control,
-                                                             const Substitution &substitution)
-    : _control(control)
-    , _substitution(substitution)
-{}
+DeprecatedGenTemplateInstance::DeprecatedGenTemplateInstance(QSharedPointer<Control> control, const Substitution &substitution)
+    : _control(control),
+      _substitution(substitution)
+{ }
 
 FullySpecifiedType DeprecatedGenTemplateInstance::gen(Symbol *symbol)
 {
-    ApplySubstitution o(_control.get(), symbol, _substitution);
+    ApplySubstitution o(_control.data(), symbol, _substitution);
     return o.apply(symbol->type());
 }
 
 FullySpecifiedType DeprecatedGenTemplateInstance::instantiate(const Name *className, Symbol *candidate,
-                                                              std::shared_ptr<Control> control)
+                                                              QSharedPointer<Control> control)
 {
     if (className) {
         if (const TemplateNameId *templId = className->asTemplateNameId()) {
@@ -390,7 +411,7 @@ FullySpecifiedType DeprecatedGenTemplateInstance::instantiate(const Name *classN
 
                         if (templArgName && templArgName->identifier()) {
                             const Identifier *templArgId = templArgName->identifier();
-                            subst.push_back({templArgId, templArgTy});
+                            subst.append(qMakePair(templArgId, templArgTy));
                         }
                     }
                 }

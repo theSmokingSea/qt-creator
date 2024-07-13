@@ -1,5 +1,27 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -13,15 +35,14 @@
 
 #include <utils/filesystemwatcher.h>
 
-namespace ProjectExplorer {
-class Kit;
-class ProjectUpdater;
-} // ProjectExplorer
+#include <QFutureWatcher>
 
+namespace CppEditor { class CppProjectUpdater; }
+namespace ProjectExplorer { class Kit; }
 namespace Utils { class FileSystemWatcher; }
 
-namespace CompilationDatabaseProjectManager::Internal {
-
+namespace CompilationDatabaseProjectManager {
+namespace Internal {
 class CompilationDbParser;
 
 class CompilationDatabaseProject : public ProjectExplorer::Project
@@ -49,15 +70,25 @@ public:
     void updateDeploymentData();
     void buildTreeAndProjectParts();
 
-    std::unique_ptr<ProjectExplorer::ProjectUpdater> m_cppCodeModelUpdater;
+    QFutureWatcher<void> m_parserWatcher;
+    std::unique_ptr<CppEditor::CppProjectUpdater> m_cppCodeModelUpdater;
     MimeBinaryCache m_mimeBinaryCache;
     QByteArray m_projectFileHash;
     CompilationDbParser *m_parser = nullptr;
     Utils::FileSystemWatcher * const m_deployFileWatcher;
 };
 
-void setupCompilationDatabaseEditor();
+class CompilationDatabaseEditorFactory : public TextEditor::TextEditorFactory
+{
+public:
+    CompilationDatabaseEditorFactory();
+};
 
-void setupCompilationDatabaseBuildConfiguration();
+class CompilationDatabaseBuildConfigurationFactory : public ProjectExplorer::BuildConfigurationFactory
+{
+public:
+    CompilationDatabaseBuildConfigurationFactory();
+};
 
-} // CompilationDatabaseProjectManager::Internal
+} // namespace Internal
+} // namespace CompilationDatabaseProjectManager

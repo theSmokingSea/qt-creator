@@ -1,30 +1,56 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "projectnodes.h"
 
+#include "buildconfiguration.h"
 #include "buildsystem.h"
 #include "project.h"
 #include "projectexplorerconstants.h"
+#include "projecttree.h"
 #include "target.h"
 
+#include <coreplugin/fileiconprovider.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/iversioncontrol.h>
 #include <coreplugin/vcsmanager.h>
 
 #include <utils/fileutils.h>
-#include <utils/fsengine/fileiconprovider.h>
 #include <utils/hostosinfo.h>
-#include <utils/mimeconstants.h>
 #include <utils/mimeutils.h>
 #include <utils/pointeralgorithm.h>
 #include <utils/qtcassert.h>
-#include <utils/threadutils.h>
+#include <utils/stringutils.h>
 #include <utils/utilsicons.h>
 
 #include <QDir>
 #include <QFileInfo>
 #include <QIcon>
+#include <QStyle>
+#include <QThread>
+#include <QTimer>
 
 #include <memory>
 
@@ -35,8 +61,8 @@ namespace ProjectExplorer {
 QHash<QString, QIcon> DirectoryIcon::m_cache;
 
 static FolderNode *recursiveFindOrCreateFolderNode(FolderNode *folder,
-                                                   const FilePath &directory,
-                                                   const FilePath &overrideBaseDir,
+                                                   const Utils::FilePath &directory,
+                                                   const Utils::FilePath &overrideBaseDir,
                                                    const FolderNode::FolderNodeFactory &factory)
 {
     Utils::FilePath path = overrideBaseDir.isEmpty() ? folder->filePath() : overrideBaseDir;
@@ -44,7 +70,7 @@ static FolderNode *recursiveFindOrCreateFolderNode(FolderNode *folder,
     Utils::FilePath directoryWithoutPrefix;
     bool isRelative = false;
 
-    if (path.isEmpty() || path.isRootPath()) {
+    if (path.isEmpty() || path.toDir().isRoot()) {
         directoryWithoutPrefix = directory;
         isRelative = false;
     } else {
@@ -52,24 +78,18 @@ static FolderNode *recursiveFindOrCreateFolderNode(FolderNode *folder,
             isRelative = true;
             directoryWithoutPrefix = directory.relativeChildPath(path);
         } else {
-            const FilePath relativePath = directory.relativePathFrom(path);
-            if (relativePath.path().count("../") < 5) {
-                isRelative = true;
-                directoryWithoutPrefix = relativePath;
-            } else {
-                isRelative = false;
-                path.clear();
-                directoryWithoutPrefix = directory;
-            }
+            isRelative = false;
+            path.clear();
+            directoryWithoutPrefix = directory;
         }
     }
-    QStringList parts = directoryWithoutPrefix.path().split('/', Qt::SkipEmptyParts);
-    if (directory.osType() != OsTypeWindows && !isRelative && !parts.isEmpty())
+    QStringList parts = directoryWithoutPrefix.toString().split('/', Qt::SkipEmptyParts);
+    if (!Utils::HostOsInfo::isWindowsHost() && !isRelative && !parts.isEmpty())
         parts[0].prepend('/');
 
     ProjectExplorer::FolderNode *parent = folder;
-    for (const QString &part : std::as_const(parts)) {
-        path = path.pathAppended(part).cleanPath();
+    for (const QString &part : qAsConst(parts)) {
+        path = path.pathAppended(part);
         // Find folder in subFolders
         FolderNode *next = parent->folderNode(path);
         if (!next) {
@@ -237,7 +257,7 @@ QIcon FileNode::icon() const
     if (hasError())
         return Utils::Icons::WARNING.icon();
     if (m_icon.isNull())
-        m_icon = Utils::FileIconProvider::icon(filePath());
+        m_icon = Core::FileIconProvider::icon(filePath());
     return m_icon;
 }
 
@@ -259,16 +279,6 @@ void FileNode::setHasError(bool error)
 void FileNode::setHasError(bool error) const
 {
     m_hasError = error;
-}
-
-bool FileNode::useUnavailableMarker() const
-{
-    return m_useUnavailableMarker;
-}
-
-void FileNode::setUseUnavailableMarker(bool useUnavailableMarker)
-{
-    m_useUnavailableMarker = useUnavailableMarker;
 }
 
 /*!
@@ -302,21 +312,22 @@ void Node::setParentFolderNode(FolderNode *parentFolder)
     m_parentFolderNode = parentFolder;
 }
 
-FileType Node::fileTypeForMimeType(const MimeType &mt)
+FileType Node::fileTypeForMimeType(const Utils::MimeType &mt)
 {
-    using namespace Utils::Constants;
     FileType type = FileType::Source;
     if (mt.isValid()) {
         const QString mtName = mt.name();
-        if (mtName == C_HEADER_MIMETYPE || mtName == CPP_HEADER_MIMETYPE)
+        if (mtName == Constants::C_HEADER_MIMETYPE
+                || mtName == Constants::CPP_HEADER_MIMETYPE)
             type = FileType::Header;
-        else if (mtName == FORM_MIMETYPE)
+        else if (mtName == Constants::FORM_MIMETYPE)
             type = FileType::Form;
-        else if (mtName == RESOURCE_MIMETYPE)
+        else if (mtName == Constants::RESOURCE_MIMETYPE)
             type = FileType::Resource;
-        else if (mtName == SCXML_MIMETYPE)
+        else if (mtName == Constants::SCXML_MIMETYPE)
             type = FileType::StateChart;
-        else if (mtName == QML_MIMETYPE || mtName == QMLUI_MIMETYPE)
+        else if (mtName == Constants::QML_MIMETYPE
+                 || mtName == Constants::QMLUI_MIMETYPE)
             type = FileType::QML;
     } else {
         type = FileType::Unknown;
@@ -331,50 +342,41 @@ FileType Node::fileTypeForFileName(const Utils::FilePath &file)
 
 FilePath Node::pathOrDirectory(bool dir) const
 {
+    FilePath location;
     const FolderNode *folder = asFolderNode();
     if (isVirtualFolderType() && folder) {
-        FilePath location;
         // Virtual Folder case
         // If there are files directly below or no subfolders, take the folder path
-        auto Any = [](auto) { return true; };
-        if (folder->findChildFileNode(Any) || !folder->findChildFolderNode(Any)) {
+        if (!folder->fileNodes().isEmpty() || folder->folderNodes().isEmpty()) {
             location = m_filePath;
         } else {
             // Otherwise we figure out a commonPath from the subfolders
-            FilePaths list;
-            folder->forEachFolderNode([&](FolderNode *f) { list << f->filePath(); });
-            location = FileUtils::commonPath(list);
+            QStringList list;
+            const QList<FolderNode *> folders = folder->folderNodes();
+            for (FolderNode *f : folders)
+                list << f->filePath().toString() + QLatin1Char('/');
+            location = FilePath::fromString(Utils::commonPath(list));
         }
 
         QTC_CHECK(!location.needsDevice());
         QFileInfo fi = location.toFileInfo();
-        while ((!fi.exists() || !fi.isDir()) && !fi.isRoot() && (fi.fileName() != fi.absolutePath()))
+        while ((!fi.exists() || !fi.isDir()) && !fi.isRoot())
             fi.setFile(fi.absolutePath());
-        return FilePath::fromString(fi.absoluteFilePath());
-    }
-
-    if (m_filePath.isEmpty())
-        return {};
-
-    if (m_filePath.needsDevice()) {
-        if (dir)
-            return m_filePath.isDir() ? m_filePath.absoluteFilePath() : m_filePath.absolutePath();
-        return m_filePath;
-    }
-
-    FilePath location;
-    QFileInfo fi = m_filePath.toFileInfo();
-    // remove any /suffixes, which e.g. ResourceNode uses
-    // Note this could be removed again by making path() a true path again
-    // That requires changes in both the VirtualFolderNode and ResourceNode
-    while (!fi.exists() && !fi.isRoot())
-        fi.setFile(fi.absolutePath());
-
-    if (dir)
-        location = FilePath::fromString(fi.isDir() ? fi.absoluteFilePath() : fi.absolutePath());
-    else
         location = FilePath::fromString(fi.absoluteFilePath());
+    } else if (!m_filePath.isEmpty()) {
+        QTC_CHECK(!m_filePath.needsDevice());
+        QFileInfo fi = m_filePath.toFileInfo();
+        // remove any /suffixes, which e.g. ResourceNode uses
+        // Note this could be removed again by making path() a true path again
+        // That requires changes in both the VirtualFolderNode and ResourceNode
+        while (!fi.exists() && !fi.isRoot())
+            fi.setFile(fi.absolutePath());
 
+        if (dir)
+            location = FilePath::fromString(fi.isDir() ? fi.absoluteFilePath() : fi.absolutePath());
+        else
+            location = FilePath::fromString(fi.absoluteFilePath());
+    }
     return location;
 }
 
@@ -392,9 +394,6 @@ FileNode::FileNode(const Utils::FilePath &filePath, const FileType fileType) :
     m_fileType(fileType)
 {
     setFilePath(filePath);
-    const bool ignored = (fileType == FileType::Project || fileType == FileType::App
-                          || fileType == FileType::Lib);
-    setUseUnavailableMarker(!ignored && !filePath.needsDevice() && !filePath.exists());
     setListInProject(true);
     if (fileType == FileType::Project)
         setPriority(DefaultProjectFilePriority);
@@ -468,21 +467,21 @@ QString FolderNode::displayName() const
  */
 QIcon FolderNode::icon() const
 {
-    QTC_CHECK(isMainThread());
+    QTC_CHECK(QThread::currentThread() == QCoreApplication::instance()->thread());
 
     // Instantiating the Icon provider is expensive.
-    if (auto strPtr = std::get_if<QString>(&m_icon)) {
+    if (auto strPtr = Utils::get_if<QString>(&m_icon)) {
         m_icon = QIcon(*strPtr);
-    } else if (auto directoryIconPtr = std::get_if<DirectoryIcon>(&m_icon)) {
+    } else if (auto directoryIconPtr = Utils::get_if<DirectoryIcon>(&m_icon)) {
         m_icon = directoryIconPtr->icon();
-    } else if (auto creatorPtr = std::get_if<IconCreator>(&m_icon)) {
+    } else if (auto creatorPtr = Utils::get_if<IconCreator>(&m_icon)) {
         m_icon = (*creatorPtr)();
     } else {
-        auto iconPtr = std::get_if<QIcon>(&m_icon);
+        auto iconPtr = Utils::get_if<QIcon>(&m_icon);
         if (!iconPtr || iconPtr->isNull())
-            m_icon = Utils::FileIconProvider::icon(QFileIconProvider::Folder);
+            m_icon = Core::FileIconProvider::icon(QFileIconProvider::Folder);
     }
-    return std::get<QIcon>(m_icon);
+    return Utils::get<QIcon>(m_icon);
 }
 
 Node *FolderNode::findNode(const std::function<bool(Node *)> &filter)
@@ -559,22 +558,6 @@ void FolderNode::forEachProjectNode(const std::function<void(const ProjectNode *
     }
 }
 
-void FolderNode::forEachFileNode(const std::function<void (FileNode *)> &fileTask) const
-{
-    for (const std::unique_ptr<Node> &n : m_nodes) {
-        if (FileNode *fn = n->asFileNode())
-            fileTask(fn);
-    }
-}
-
-void FolderNode::forEachFolderNode(const std::function<void (FolderNode *)> &folderTask) const
-{
-    for (const std::unique_ptr<Node> &n : m_nodes) {
-        if (FolderNode *fn = n->asFolderNode())
-            folderTask(fn);
-    }
-}
-
 ProjectNode *FolderNode::findProjectNode(const std::function<bool(const ProjectNode *)> &predicate)
 {
     if (ProjectNode *projectNode = asProjectNode()) {
@@ -591,29 +574,19 @@ ProjectNode *FolderNode::findProjectNode(const std::function<bool(const ProjectN
     return nullptr;
 }
 
-FolderNode *FolderNode::findChildFolderNode(const std::function<bool(FolderNode *)> &predicate) const
-{
-    for (const std::unique_ptr<Node> &n : m_nodes) {
-        if (FolderNode *fn = n->asFolderNode())
-            if (predicate(fn))
-                return fn;
-    }
-    return nullptr;
-}
-
-FileNode *FolderNode::findChildFileNode(const std::function<bool(FileNode *)> &predicate) const
-{
-    for (const std::unique_ptr<Node> &n : m_nodes) {
-        if (FileNode *fn = n->asFileNode())
-            if (predicate(fn))
-                return fn;
-    }
-    return nullptr;
-}
-
 const QList<Node *> FolderNode::nodes() const
 {
     return Utils::toRawPointer<QList>(m_nodes);
+}
+
+QList<FileNode*> FolderNode::fileNodes() const
+{
+    QList<FileNode *> result;
+    for (const std::unique_ptr<Node> &n : m_nodes) {
+        if (FileNode *fn = n->asFileNode())
+            result.append(fn);
+    }
+    return result;
 }
 
 FileNode *FolderNode::fileNode(const Utils::FilePath &file) const
@@ -623,6 +596,16 @@ FileNode *FolderNode::fileNode(const Utils::FilePath &file) const
         const FileNode *fn = n->asFileNode();
         return fn && fn->filePath() == file;
     }));
+}
+
+QList<FolderNode*> FolderNode::folderNodes() const
+{
+    QList<FolderNode *> result;
+    for (const std::unique_ptr<Node> &n : m_nodes) {
+        if (FolderNode *fn = n->asFolderNode())
+            result.append(fn);
+    }
+    return result;
 }
 
 FolderNode *FolderNode::folderNode(const Utils::FilePath &directory) const
@@ -677,31 +660,29 @@ void FolderNode::addNestedNodes(std::vector<std::unique_ptr<FileNode> > &&files,
 // files.
 void FolderNode::compress()
 {
-    // Child nodes need to be compressed first.
-    forEachFolderNode([&](FolderNode *fn) { fn->compress(); });
+    if (auto subFolder = m_nodes.size() == 1 ? m_nodes.at(0)->asFolderNode() : nullptr) {
+        const bool sameType = (isFolderNodeType() && subFolder->isFolderNodeType())
+                || (isProjectNodeType() && subFolder->isProjectNodeType())
+                || (isVirtualFolderType() && subFolder->isVirtualFolderType());
+        if (!sameType)
+            return;
 
-    // There must be exactly one child node, which has to be of the same type as this node.
-    if (m_nodes.size() != 1)
-        return;
-    const auto subFolder = m_nodes.front()->asFolderNode();
-    if (!subFolder)
-        return;
-    const bool sameType = (isFolderNodeType() && subFolder->isFolderNodeType())
-                          || (isProjectNodeType() && subFolder->isProjectNodeType())
-                          || (isVirtualFolderType() && subFolder->isVirtualFolderType());
-    if (!sameType)
-        return;
+        // Only one subfolder: Compress!
+        setDisplayName(QDir::toNativeSeparators(displayName() + "/" + subFolder->displayName()));
+        for (Node *n : subFolder->nodes()) {
+            std::unique_ptr<Node> toMove = subFolder->takeNode(n);
+            toMove->setParentFolderNode(nullptr);
+            addNode(std::move(toMove));
+        }
+        setAbsoluteFilePathAndLine(subFolder->filePath(), -1);
 
-    // Now do the compression by moving the child node's children into this node
-    // and removing the child node.
-    for (Node *n : subFolder->nodes()) {
-        std::unique_ptr<Node> toMove = subFolder->takeNode(n);
-        toMove->setParentFolderNode(nullptr);
-        addNode(std::move(toMove));
+        takeNode(subFolder);
+
+        compress();
+    } else {
+        for (FolderNode *fn : folderNodes())
+            fn->compress();
     }
-    setDisplayName(QDir::toNativeSeparators(displayName() + "/" + subFolder->displayName()));
-    setAbsoluteFilePathAndLine(subFolder->filePath(), -1);
-    takeNode(subFolder);
 }
 
 bool FolderNode::replaceSubtree(Node *oldNode, std::unique_ptr<Node> &&newNode)
@@ -768,7 +749,8 @@ void FolderNode::setIcon(const IconCreator &iconCreator)
 
 void FolderNode::setLocationInfo(const QVector<FolderNode::LocationInfo> &info)
 {
-    m_locations = Utils::sorted(info, &LocationInfo::priority);
+    m_locations = info;
+    Utils::sort(m_locations, &LocationInfo::priority);
 }
 
 const QVector<FolderNode::LocationInfo> FolderNode::locationInfo() const
@@ -927,7 +909,7 @@ bool ProjectNode::addSubProject(const FilePath &proFilePath)
 
 QStringList ProjectNode::subProjectFileNamePatterns() const
 {
-    return {};
+    return QStringList();
 }
 
 bool ProjectNode::removeSubProject(const FilePath &proFilePath)
@@ -1103,11 +1085,11 @@ DirectoryIcon::DirectoryIcon(const QString &overlay)
 */
 QIcon DirectoryIcon::icon() const
 {
-    QTC_CHECK(isMainThread());
+    QTC_CHECK(QThread::currentThread() == QCoreApplication::instance()->thread());
     const auto it = m_cache.find(m_overlay);
     if (it != m_cache.end())
         return it.value();
-    const QIcon icon = Utils::FileIconProvider::directoryIcon(m_overlay);
+    const QIcon icon = Core::FileIconProvider::directoryIcon(m_overlay);
     m_cache.insert(m_overlay, icon);
     return icon;
 }

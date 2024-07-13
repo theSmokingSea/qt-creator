@@ -1,16 +1,37 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nimrunconfiguration.h"
 #include "nimbuildconfiguration.h"
 
 #include "../nimconstants.h"
-#include "../nimtr.h"
 
 #include <projectexplorer/buildsystem.h>
+#include <projectexplorer/localenvironmentaspect.h>
 #include <projectexplorer/runconfigurationaspects.h>
-
-#include <utils/qtcassert.h>
+#include <projectexplorer/runcontrol.h>
 
 #include <QDir>
 #include <QFileInfo>
@@ -22,40 +43,34 @@ namespace Nim {
 
 class NimRunConfiguration final : public RunConfiguration
 {
+    Q_DECLARE_TR_FUNCTIONS(Nim::NimRunConfiguration)
+
 public:
     NimRunConfiguration(Target *target, Utils::Id id)
         : RunConfiguration(target, id)
     {
-        environment.setSupportForBuildEnvironment(target);
+        auto envAspect = addAspect<LocalEnvironmentAspect>(target);
+        addAspect<ExecutableAspect>(target, ExecutableAspect::RunDevice);
+        addAspect<ArgumentsAspect>(macroExpander());
+        addAspect<WorkingDirectoryAspect>(macroExpander(), envAspect);
+        addAspect<TerminalAspect>();
 
-        executable.setDeviceSelector(target, ExecutableAspect::RunDevice);
-
-        arguments.setMacroExpander(macroExpander());
-
-        workingDir.setMacroExpander(macroExpander());
-
-        setDisplayName(Tr::tr("Current Build Target"));
-        setDefaultDisplayName(Tr::tr("Current Build Target"));
+        setDisplayName(tr("Current Build Target"));
+        setDefaultDisplayName(tr("Current Build Target"));
 
         setUpdater([this, target] {
             auto buildConfiguration = qobject_cast<NimBuildConfiguration *>(target->activeBuildConfiguration());
             QTC_ASSERT(buildConfiguration, return);
             const QFileInfo outFileInfo = buildConfiguration->outFilePath().toFileInfo();
-            executable.setExecutable(FilePath::fromString(outFileInfo.absoluteFilePath()));
+            aspect<ExecutableAspect>()->setExecutable(FilePath::fromString(outFileInfo.absoluteFilePath()));
             const QString workingDirectory = outFileInfo.absoluteDir().absolutePath();
-            workingDir.setDefaultWorkingDirectory(FilePath::fromString(workingDirectory));
+            aspect<WorkingDirectoryAspect>()->setDefaultWorkingDirectory(FilePath::fromString(workingDirectory));
         });
 
         // Connect target signals
         connect(target, &Target::buildSystemUpdated, this, &RunConfiguration::update);
         update();
     }
-
-    EnvironmentAspect environment{this};
-    ExecutableAspect executable{this};
-    ArgumentsAspect arguments{this};
-    WorkingDirectoryAspect workingDir{this};
-    TerminalAspect terminal{this};
 };
 
 // NimRunConfigurationFactory

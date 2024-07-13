@@ -1,14 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "deployconfiguration.h"
 
 #include "buildsteplist.h"
 #include "deploymentdataview.h"
-#include "kitaspects.h"
+#include "kitinformation.h"
 #include "project.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
 #include "target.h"
 
 #include <utils/algorithm.h>
@@ -26,11 +47,12 @@ const char USES_DEPLOYMENT_DATA[] = "ProjectExplorer.DeployConfiguration.CustomD
 const char DEPLOYMENT_DATA[] = "ProjectExplorer.DeployConfiguration.CustomData";
 
 DeployConfiguration::DeployConfiguration(Target *target, Id id)
-    : ProjectConfiguration(target, id)
-    , m_stepList(this, Constants::BUILDSTEPS_DEPLOY)
+    : ProjectConfiguration(target, id),
+      m_stepList(this, Constants::BUILDSTEPS_DEPLOY)
 {
+    QTC_CHECK(target && target == this->target());
     //: Default DeployConfiguration display name
-    setDefaultDisplayName(Tr::tr("Deploy locally"));
+    setDefaultDisplayName(tr("Deploy locally"));
 }
 
 BuildStepList *DeployConfiguration::stepList()
@@ -50,50 +72,47 @@ QWidget *DeployConfiguration::createConfigWidget()
     return m_configWidgetCreator(this);
 }
 
-void DeployConfiguration::toMap(Store &map) const
+QVariantMap DeployConfiguration::toMap() const
 {
-    ProjectConfiguration::toMap(map);
-    map.insert(BUILD_STEP_LIST_COUNT, 1);
-    map.insert(Key(BUILD_STEP_LIST_PREFIX) + '0', variantFromStore(m_stepList.toMap()));
+    QVariantMap map(ProjectConfiguration::toMap());
+    map.insert(QLatin1String(BUILD_STEP_LIST_COUNT), 1);
+    map.insert(QLatin1String(BUILD_STEP_LIST_PREFIX) + QLatin1Char('0'), m_stepList.toMap());
     map.insert(USES_DEPLOYMENT_DATA, usesCustomDeploymentData());
-    Store deployData;
+    QVariantMap deployData;
     for (int i = 0; i < m_customDeploymentData.fileCount(); ++i) {
         const DeployableFile &f = m_customDeploymentData.fileAt(i);
-        deployData.insert(keyFromString(f.localFilePath().toString()), f.remoteDirectory());
+        deployData.insert(f.localFilePath().toString(), f.remoteDirectory());
     }
-    map.insert(DEPLOYMENT_DATA, variantFromStore(deployData));
+    map.insert(DEPLOYMENT_DATA, deployData);
+    return map;
 }
 
-void DeployConfiguration::fromMap(const Store &map)
+bool DeployConfiguration::fromMap(const QVariantMap &map)
 {
-    ProjectConfiguration::fromMap(map);
-    if (hasError())
-        return;
+    if (!ProjectConfiguration::fromMap(map))
+        return false;
 
-    int maxI = map.value(BUILD_STEP_LIST_COUNT, 0).toInt();
-    if (maxI != 1) {
-        reportError();
-        return;
-    }
-    Store data = storeFromVariant(map.value(Key(BUILD_STEP_LIST_PREFIX) + '0'));
+    int maxI = map.value(QLatin1String(BUILD_STEP_LIST_COUNT), 0).toInt();
+    if (maxI != 1)
+        return false;
+    QVariantMap data = map.value(QLatin1String(BUILD_STEP_LIST_PREFIX) + QLatin1Char('0')).toMap();
     if (!data.isEmpty()) {
         m_stepList.clear();
         if (!m_stepList.fromMap(data)) {
             qWarning() << "Failed to restore deploy step list";
             m_stepList.clear();
-            reportError();
-            return;
+            return false;
         }
     } else {
         qWarning() << "No data for deploy step list found!";
-        reportError();
-        return;
+        return false;
     }
 
     m_usesCustomDeploymentData = map.value(USES_DEPLOYMENT_DATA, false).toBool();
-    const Store deployData = storeFromVariant(map.value(DEPLOYMENT_DATA));
+    const QVariantMap deployData = map.value(DEPLOYMENT_DATA).toMap();
     for (auto it = deployData.begin(); it != deployData.end(); ++it)
-        m_customDeploymentData.addFile(FilePath::fromString(stringFromKey(it.key())), it.value().toString());
+        m_customDeploymentData.addFile(FilePath::fromString(it.key()), it.value().toString());
+    return true;
 }
 
 bool DeployConfiguration::isActive() const
@@ -178,7 +197,7 @@ DeployConfiguration *DeployConfigurationFactory::create(Target *parent)
     DeployConfiguration *dc = createDeployConfiguration(parent);
     QTC_ASSERT(dc, return nullptr);
     BuildStepList *stepList = dc->stepList();
-    for (const BuildStepList::StepCreationInfo &info : std::as_const(m_initialSteps)) {
+    for (const BuildStepList::StepCreationInfo &info : qAsConst(m_initialSteps)) {
         if (!info.condition || info.condition(parent))
             stepList->appendStep(info.stepId);
     }
@@ -188,12 +207,10 @@ DeployConfiguration *DeployConfigurationFactory::create(Target *parent)
 DeployConfiguration *DeployConfigurationFactory::clone(Target *parent,
                                                        const DeployConfiguration *source)
 {
-    Store map;
-    source->toMap(map);
-    return restore(parent, map);
+    return restore(parent, source->toMap());
 }
 
-DeployConfiguration *DeployConfigurationFactory::restore(Target *parent, const Store &map)
+DeployConfiguration *DeployConfigurationFactory::restore(Target *parent, const QVariantMap &map)
 {
     const Id id = idFromMap(map);
     DeployConfigurationFactory *factory = Utils::findOrDefault(g_deployConfigurationFactories,
@@ -206,8 +223,7 @@ DeployConfiguration *DeployConfigurationFactory::restore(Target *parent, const S
         return nullptr;
     DeployConfiguration *dc = factory->createDeployConfiguration(parent);
     QTC_ASSERT(dc, return nullptr);
-    dc->fromMap(map);
-    if (dc->hasError()) {
+    if (!dc->fromMap(map)) {
         delete dc;
         dc = nullptr;
     } else if (factory->postRestore()) {
@@ -243,6 +259,18 @@ void DeployConfigurationFactory::setSupportedProjectType(Utils::Id id)
 void DeployConfigurationFactory::addInitialStep(Utils::Id stepId, const std::function<bool (Target *)> &condition)
 {
     m_initialSteps.append({stepId, condition});
+}
+
+///
+// DefaultDeployConfigurationFactory
+///
+
+DefaultDeployConfigurationFactory::DefaultDeployConfigurationFactory()
+{
+    setConfigBaseId("ProjectExplorer.DefaultDeployConfiguration");
+    addSupportedTargetDeviceType(Constants::DESKTOP_DEVICE_TYPE);
+    //: Display name of the default deploy configuration
+    setDefaultDisplayName(DeployConfiguration::tr("Deploy Configuration"));
 }
 
 } // namespace ProjectExplorer

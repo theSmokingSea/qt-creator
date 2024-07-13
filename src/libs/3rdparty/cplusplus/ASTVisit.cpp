@@ -110,23 +110,6 @@ void DecltypeSpecifierAST::accept0(ASTVisitor *visitor)
     visitor->endVisit(this);
 }
 
-void TypeConstraintAST::accept0(ASTVisitor *visitor)
-{
-    if (visitor->visit(this)) {
-        accept(nestedName, visitor);
-        accept(conceptName, visitor);
-        accept(templateArgs, visitor);
-    }
-    visitor->endVisit(this);
-}
-
-void PlaceholderTypeSpecifierAST::accept0(ASTVisitor *visitor)
-{
-    if (visitor->visit(this))
-        accept(typeConstraint, visitor);
-    visitor->endVisit(this);
-}
-
 void DeclaratorAST::accept0(ASTVisitor *visitor)
 {
     if (visitor->visit(this)) {
@@ -385,14 +368,6 @@ void DeclaratorIdAST::accept0(ASTVisitor *visitor)
     visitor->endVisit(this);
 }
 
-void DecompositionDeclaratorAST::accept0(ASTVisitor *visitor)
-{
-    if (visitor->visit(this)) {
-        accept(identifiers, visitor);
-    }
-    visitor->endVisit(this);
-}
-
 void NestedDeclaratorAST::accept0(ASTVisitor *visitor)
 {
     if (visitor->visit(this)) {
@@ -563,7 +538,6 @@ void ForStatementAST::accept0(ASTVisitor *visitor)
 void IfStatementAST::accept0(ASTVisitor *visitor)
 {
     if (visitor->visit(this)) {
-        accept(initStmt, visitor);
         accept(condition, visitor);
         accept(statement, visitor);
         accept(else_statement, visitor);
@@ -959,33 +933,8 @@ void TemplateDeclarationAST::accept0(ASTVisitor *visitor)
 {
     if (visitor->visit(this)) {
         accept(template_parameter_list, visitor);
-        accept(requiresClause, visitor);
         accept(declaration, visitor);
     }
-    visitor->endVisit(this);
-}
-
-void ConceptDeclarationAST::accept0(ASTVisitor *visitor)
-{
-    if (visitor->visit(this)) {
-        accept(name, visitor);
-        accept(attributes, visitor);
-        accept(constraint, visitor);
-    }
-    visitor->endVisit(this);
-}
-
-void RequiresExpressionAST::accept0(ASTVisitor *visitor)
-{
-    if (visitor->visit(this))
-        accept(parameters, visitor);
-    visitor->endVisit(this);
-}
-
-void RequiresClauseAST::accept0(ASTVisitor *visitor)
-{
-    if (visitor->visit(this))
-        accept(constraint, visitor);
     visitor->endVisit(this);
 }
 
@@ -994,20 +943,6 @@ void ThrowExpressionAST::accept0(ASTVisitor *visitor)
     if (visitor->visit(this)) {
         accept(expression, visitor);
     }
-    visitor->endVisit(this);
-}
-
-void YieldExpressionAST::accept0(ASTVisitor *visitor)
-{
-    if (visitor->visit(this))
-        accept(expression, visitor);
-    visitor->endVisit(this);
-}
-
-void AwaitExpressionAST::accept0(ASTVisitor *visitor)
-{
-    if (visitor->visit(this))
-        accept(castExpression, visitor);
     visitor->endVisit(this);
 }
 
@@ -1066,7 +1001,6 @@ void TypenameTypeParameterAST::accept0(ASTVisitor *visitor)
 void TemplateTypeParameterAST::accept0(ASTVisitor *visitor)
 {
     if (visitor->visit(this)) {
-        accept(typeConstraint, visitor);
         accept(template_parameter_list, visitor);
         accept(name, visitor);
         accept(type_id, visitor);
@@ -1318,9 +1252,6 @@ void LambdaExpressionAST::accept0(ASTVisitor *visitor)
 {
     if (visitor->visit(this)) {
         accept(lambda_introducer, visitor);
-        accept(templateParameters, visitor);
-        accept(requiresClause, visitor);
-        accept(attributes, visitor);
         accept(lambda_declarator, visitor);
         accept(statement, visitor);
     }
@@ -1358,7 +1289,6 @@ void LambdaDeclaratorAST::accept0(ASTVisitor *visitor)
         accept(attributes, visitor);
         accept(exception_specification, visitor);
         accept(trailing_return_type, visitor);
-        accept(requiresClause, visitor);
     }
     visitor->endVisit(this);
 }

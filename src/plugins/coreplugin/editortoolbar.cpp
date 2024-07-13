@@ -1,22 +1,42 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "editortoolbar.h"
 
-#include "actionmanager/actionmanager.h"
-#include "actionmanager/command.h"
-#include "coreplugintr.h"
-#include "editormanager/documentmodel.h"
-#include "editormanager/editormanager.h"
-#include "editormanager/editormanager_p.h"
-#include "editormanager/ieditor.h"
-#include "icore.h"
+#include <coreplugin/actionmanager/actionmanager.h>
+#include <coreplugin/actionmanager/command.h>
+#include <coreplugin/editormanager/documentmodel.h>
+#include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/editormanager/editormanager_p.h>
+#include <coreplugin/editormanager/ieditor.h>
+#include <coreplugin/fileiconprovider.h>
+#include <coreplugin/icore.h>
 
-#include <utils/filepath.h>
-#include <utils/fsengine/fileiconprovider.h>
+#include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
-#include <utils/stylehelper.h>
 #include <utils/utilsicons.h>
 
 #include <QApplication>
@@ -39,24 +59,6 @@ enum {
 
 namespace Core {
 
-class ButtonWithMenu : public QToolButton
-{
-public:
-    ButtonWithMenu(QWidget *parent = nullptr)
-        : QToolButton(parent)
-    {}
-
-protected:
-    void mousePressEvent(QMouseEvent *e) override
-    {
-        if (e->button() == Qt::RightButton) {
-            showMenu();
-            return;
-        }
-        QToolButton::mousePressEvent(e);
-    }
-};
-
 struct EditorToolBarPrivate
 {
     explicit EditorToolBarPrivate(QWidget *parent, EditorToolBar *q);
@@ -69,8 +71,8 @@ struct EditorToolBarPrivate
     EditorToolBar::MenuProvider m_menuProvider;
     QAction *m_goBackAction;
     QAction *m_goForwardAction;
-    ButtonWithMenu *m_backButton;
-    ButtonWithMenu *m_forwardButton;
+    QToolButton *m_backButton;
+    QToolButton *m_forwardButton;
     QToolButton *m_splitButton;
     QAction *m_horizontalSplitAction;
     QAction *m_verticalSplitAction;
@@ -86,27 +88,27 @@ struct EditorToolBarPrivate
     bool m_isStandalone;
 };
 
-EditorToolBarPrivate::EditorToolBarPrivate(QWidget *parent, EditorToolBar *q)
-    : m_editorList(new QComboBox(q))
-    , m_closeEditorButton(new QToolButton(q))
-    , m_lockButton(new QToolButton(q))
-    , m_dragHandle(new QToolButton(q))
-    , m_dragHandleMenu(nullptr)
-    , m_goBackAction(new QAction(Utils::Icons::PREV_TOOLBAR.icon(), Tr::tr("Go Back"), parent))
-    , m_goForwardAction(new QAction(Utils::Icons::NEXT_TOOLBAR.icon(), Tr::tr("Go Forward"), parent))
-    , m_backButton(new ButtonWithMenu(q))
-    , m_forwardButton(new ButtonWithMenu(q))
-    , m_splitButton(new QToolButton(q))
-    , m_horizontalSplitAction(
-          new QAction(Utils::Icons::SPLIT_HORIZONTAL.icon(), Tr::tr("Split"), parent))
-    , m_verticalSplitAction(
-          new QAction(Utils::Icons::SPLIT_VERTICAL.icon(), Tr::tr("Split Side by Side"), parent))
-    , m_splitNewWindowAction(new QAction(Tr::tr("Open in New Window"), parent))
-    , m_closeSplitButton(new QToolButton(q))
-    , m_activeToolBar(nullptr)
-    , m_toolBarPlaceholder(new QWidget(q))
-    , m_defaultToolBar(new QWidget(q))
-    , m_isStandalone(false)
+EditorToolBarPrivate::EditorToolBarPrivate(QWidget *parent, EditorToolBar *q) :
+    m_editorList(new QComboBox(q)),
+    m_closeEditorButton(new QToolButton(q)),
+    m_lockButton(new QToolButton(q)),
+    m_dragHandle(new QToolButton(q)),
+    m_dragHandleMenu(nullptr),
+    m_goBackAction(new QAction(Utils::Icons::PREV_TOOLBAR.icon(), EditorManager::tr("Go Back"), parent)),
+    m_goForwardAction(new QAction(Utils::Icons::NEXT_TOOLBAR.icon(), EditorManager::tr("Go Forward"), parent)),
+    m_backButton(new QToolButton(q)),
+    m_forwardButton(new QToolButton(q)),
+    m_splitButton(new QToolButton(q)),
+    m_horizontalSplitAction(new QAction(Utils::Icons::SPLIT_HORIZONTAL.icon(),
+                                        EditorManager::tr("Split"), parent)),
+    m_verticalSplitAction(new QAction(Utils::Icons::SPLIT_VERTICAL.icon(),
+                                      EditorManager::tr("Split Side by Side"), parent)),
+    m_splitNewWindowAction(new QAction(EditorManager::tr("Open in New Window"), parent)),
+    m_closeSplitButton(new QToolButton(q)),
+    m_activeToolBar(nullptr),
+    m_toolBarPlaceholder(new QWidget(q)),
+    m_defaultToolBar(new QWidget(q)),
+    m_isStandalone(false)
 {
 }
 
@@ -128,8 +130,8 @@ EditorToolBar::EditorToolBar(QWidget *parent) :
 
     d->m_lockButton->setEnabled(false);
 
-    d->m_dragHandle->setProperty(Utils::StyleHelper::C_NO_ARROW, true);
-    d->m_dragHandle->setToolTip(Tr::tr("Drag to drag documents between splits"));
+    d->m_dragHandle->setProperty("noArrow", true);
+    d->m_dragHandle->setToolTip(tr("Drag to drag documents between splits"));
     d->m_dragHandle->installEventFilter(this);
     d->m_dragHandleMenu = new QMenu(d->m_dragHandle);
     d->m_dragHandle->setMenu(d->m_dragHandleMenu);
@@ -137,9 +139,8 @@ EditorToolBar::EditorToolBar(QWidget *parent) :
     connect(d->m_goBackAction, &QAction::triggered, this, &EditorToolBar::goBackClicked);
     connect(d->m_goForwardAction, &QAction::triggered, this, &EditorToolBar::goForwardClicked);
 
-    d->m_editorList->setProperty(Utils::StyleHelper::C_HIDE_ICON, true);
-    d->m_editorList->setProperty(Utils::StyleHelper::C_NOT_ELIDE_ASTERISK, true);
-    d->m_editorList->setProperty(Utils::StyleHelper::C_ELIDE_MODE, Qt::ElideMiddle);
+    d->m_editorList->setProperty("hideicon", true);
+    d->m_editorList->setProperty("notelideasterisk", true);
     d->m_editorList->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
     d->m_editorList->setMinimumContentsLength(20);
     d->m_editorList->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon);
@@ -149,7 +150,7 @@ EditorToolBar::EditorToolBar(QWidget *parent) :
 
     d->m_closeEditorButton->setIcon(Utils::Icons::CLOSE_TOOLBAR.icon());
     d->m_closeEditorButton->setEnabled(false);
-    d->m_closeEditorButton->setProperty(Utils::StyleHelper::C_SHOW_BORDER, true);
+    d->m_closeEditorButton->setProperty("showborder", true);
 
     d->m_toolBarPlaceholder->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
 
@@ -158,9 +159,9 @@ EditorToolBar::EditorToolBar(QWidget *parent) :
     d->m_forwardButton->setDefaultAction(d->m_goForwardAction);
 
     d->m_splitButton->setIcon(Utils::Icons::SPLIT_HORIZONTAL_TOOLBAR.icon());
-    d->m_splitButton->setToolTip(Tr::tr("Split"));
+    d->m_splitButton->setToolTip(tr("Split"));
     d->m_splitButton->setPopupMode(QToolButton::InstantPopup);
-    d->m_splitButton->setProperty(Utils::StyleHelper::C_NO_ARROW, true);
+    d->m_splitButton->setProperty("noArrow", true);
     auto splitMenu = new QMenu(d->m_splitButton);
     splitMenu->addAction(d->m_horizontalSplitAction);
     splitMenu->addAction(d->m_verticalSplitAction);
@@ -186,19 +187,17 @@ EditorToolBar::EditorToolBar(QWidget *parent) :
 
     // this signal is disconnected for standalone toolbars and replaced with
     // a private slot connection
-    connect(d->m_editorList, &QComboBox::activated, this, &EditorToolBar::listSelectionActivated);
-    connect(d->m_editorList, &QComboBox::customContextMenuRequested, this, [this](QPoint p) {
+    connect(d->m_editorList, QOverload<int>::of(&QComboBox::activated),
+            this, &EditorToolBar::listSelectionActivated);
+
+    connect(d->m_editorList, &QComboBox::customContextMenuRequested, [this](QPoint p) {
        QMenu menu;
        fillListContextMenu(&menu);
        menu.exec(d->m_editorList->mapToGlobal(p));
     });
-    connect(d->m_dragHandleMenu, &QMenu::aboutToShow, this, [this] {
+    connect(d->m_dragHandleMenu, &QMenu::aboutToShow, [this]() {
+       d->m_dragHandleMenu->clear();
        fillListContextMenu(d->m_dragHandleMenu);
-    });
-    connect(d->m_dragHandleMenu, &QMenu::aboutToHide, this, [this] {
-        // Remove actions from context menu, to avoid any shortcuts set on them
-        // for the display in the menu interfering with global actions
-        d->m_dragHandleMenu->clear();
     });
     connect(d->m_lockButton, &QAbstractButton::clicked, this, &EditorToolBar::makeEditorWritable);
     connect(d->m_closeEditorButton, &QAbstractButton::clicked,
@@ -231,7 +230,7 @@ EditorToolBar::~EditorToolBar()
 void EditorToolBar::removeToolbarForEditor(IEditor *editor)
 {
     QTC_ASSERT(editor, return);
-    disconnect(editor->document(), &IDocument::changed, this, nullptr);
+    disconnect(editor->document(), &IDocument::changed, this, &EditorToolBar::checkDocumentStatus);
 
     QWidget *toolBar = editor->toolBar();
     if (toolBar != nullptr) {
@@ -265,9 +264,7 @@ void EditorToolBar::closeEditor()
 void EditorToolBar::addEditor(IEditor *editor)
 {
     QTC_ASSERT(editor, return);
-    auto document = editor->document();
-    connect(document, &IDocument::changed,
-            this, [this, document] { checkDocumentStatus(document); });
+    connect(editor->document(), &IDocument::changed, this, &EditorToolBar::checkDocumentStatus);
     QWidget *toolBar = editor->toolBar();
 
     if (toolBar && !d->m_isStandalone)
@@ -303,9 +300,9 @@ void EditorToolBar::setToolbarCreationFlags(ToolbarCreationFlags flags)
                 this,
                 &EditorToolBar::setCurrentEditor);
 
-        disconnect(d->m_editorList, &QComboBox::activated,
+        disconnect(d->m_editorList, QOverload<int>::of(&QComboBox::activated),
                    this, &EditorToolBar::listSelectionActivated);
-        connect(d->m_editorList, &QComboBox::activated,
+        connect(d->m_editorList, QOverload<int>::of(&QComboBox::activated),
                 this, &EditorToolBar::changeActiveEditor);
         d->m_splitButton->setVisible(false);
         d->m_closeSplitButton->setVisible(false);
@@ -320,7 +317,7 @@ void EditorToolBar::setMenuProvider(const EditorToolBar::MenuProvider &provider)
 void EditorToolBar::setCurrentEditor(IEditor *editor)
 {
     IDocument *document = editor ? editor->document() : nullptr;
-    const std::optional<int> index = DocumentModel::rowOfDocument(document);
+    const Utils::optional<int> index = DocumentModel::rowOfDocument(document);
     if (QTC_GUARD(index))
         d->m_editorList->setCurrentIndex(*index);
 
@@ -345,7 +342,11 @@ void EditorToolBar::fillListContextMenu(QMenu *menu)
         IEditor *editor = EditorManager::currentEditor();
         DocumentModel::Entry *entry = editor ? DocumentModel::entryForDocument(editor->document())
                                              : nullptr;
-        EditorManager::addContextMenuActions(menu, entry, editor);
+        EditorManager::addSaveAndCloseEditorActions(menu, entry, editor);
+        menu->addSeparator();
+        EditorManager::addPinEditorActions(menu, entry);
+        menu->addSeparator();
+        EditorManager::addNativeDirAndOpenWithActions(menu, entry);
     }
 }
 
@@ -365,26 +366,18 @@ void EditorToolBar::setCanGoForward(bool canGoForward)
     d->m_goForwardAction->setEnabled(canGoForward);
 }
 
-void EditorToolBar::setGoBackMenu(QMenu *menu)
-{
-    d->m_backButton->setMenu(menu);
-}
-
-void EditorToolBar::setGoForwardMenu(QMenu *menu)
-{
-    d->m_forwardButton->setMenu(menu);
-}
-
 void EditorToolBar::updateActionShortcuts()
 {
-    d->m_closeEditorButton->setToolTip(ActionManager::command(Constants::CLOSE)->stringWithAppendedShortcut(Tr::tr("Close Document")));
+    d->m_closeEditorButton->setToolTip(ActionManager::command(Constants::CLOSE)->stringWithAppendedShortcut(EditorManager::tr("Close Document")));
     d->m_goBackAction->setToolTip(ActionManager::command(Constants::GO_BACK)->action()->toolTip());
     d->m_goForwardAction->setToolTip(ActionManager::command(Constants::GO_FORWARD)->action()->toolTip());
-    d->m_closeSplitButton->setToolTip(ActionManager::command(Constants::REMOVE_CURRENT_SPLIT)->stringWithAppendedShortcut(Tr::tr("Remove Split")));
+    d->m_closeSplitButton->setToolTip(ActionManager::command(Constants::REMOVE_CURRENT_SPLIT)->stringWithAppendedShortcut(tr("Remove Split")));
 }
 
-void EditorToolBar::checkDocumentStatus(IDocument *document)
+void EditorToolBar::checkDocumentStatus()
 {
+    auto document = qobject_cast<IDocument *>(sender());
+    QTC_ASSERT(document, return);
     DocumentModel::Entry *entry = DocumentModel::entryAtRow(
                 d->m_editorList->currentIndex());
 
@@ -413,18 +406,18 @@ void EditorToolBar::updateDocumentStatus(IDocument *document)
         const static QIcon locked = Utils::Icons::LOCKED_TOOLBAR.icon();
         d->m_lockButton->setIcon(locked);
         d->m_lockButton->setEnabled(true);
-        d->m_lockButton->setToolTip(Tr::tr("Make Writable"));
+        d->m_lockButton->setToolTip(tr("Make Writable"));
     } else {
         const static QIcon unlocked = Utils::Icons::UNLOCKED_TOOLBAR.icon();
         d->m_lockButton->setIcon(unlocked);
         d->m_lockButton->setEnabled(false);
-        d->m_lockButton->setToolTip(Tr::tr("File is writable"));
+        d->m_lockButton->setToolTip(tr("File is writable"));
     }
 
     if (document->filePath().isEmpty())
         d->m_dragHandle->setIcon(QIcon());
     else
-        d->m_dragHandle->setIcon(Utils::FileIconProvider::icon(document->filePath()));
+        d->m_dragHandle->setIcon(FileIconProvider::icon(document->filePath()));
 
     d->m_editorList->setToolTip(document->filePath().isEmpty()
                                 ? document->displayName()
@@ -455,7 +448,7 @@ bool EditorToolBar::eventFilter(QObject *obj, QEvent *event)
                 return Utils::StyledBar::eventFilter(obj, event);
             auto drag = new QDrag(this);
             auto data = new Utils::DropMimeData;
-            data->addFile(entry->filePath());
+            data->addFile(entry->fileName());
             drag->setMimeData(data);
             Qt::DropAction action = drag->exec(Qt::MoveAction | Qt::CopyAction, Qt::MoveAction);
             if (action == Qt::MoveAction)

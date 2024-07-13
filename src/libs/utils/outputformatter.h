@@ -1,17 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "utils_global.h"
 
 #include "filepath.h"
+#include "optional.h"
 #include "outputformat.h"
 
 #include <QObject>
 
 #include <functional>
-#include <optional>
 
 QT_BEGIN_NAMESPACE
 class QPlainTextEdit;
@@ -44,19 +66,13 @@ public:
     using LinkSpecs = QList<LinkSpec>;
     class Result {
     public:
-        Result(Status s,
-               const LinkSpecs &l = {},
-               const std::optional<QString> &c = {},
-               const std::optional<OutputFormat> &f = {})
-            : status(s)
-            , linkSpecs(l)
-            , newContent(c)
-            , formatOverride(f)
-        {}
+        Result(Status s, const LinkSpecs &l = {}, const optional<QString> &c = {},
+               const optional<OutputFormat> &f = {})
+            : status(s), linkSpecs(l), newContent(c), formatOverride(f) {}
         Status status;
         LinkSpecs linkSpecs;
-        std::optional<QString> newContent; // Hard content override. Only to be used in extreme cases.
-        std::optional<OutputFormat> formatOverride;
+        optional<QString> newContent; // Hard content override. Only to be used in extreme cases.
+        optional<OutputFormat> formatOverride;
     };
 
     static bool isLinkTarget(const QString &target);
@@ -93,13 +109,12 @@ protected:
     Utils::FilePath absoluteFilePath(const Utils::FilePath &filePath) const;
     static QString createLinkTarget(const FilePath &filePath, int line, int column);
     static void addLinkSpecForAbsoluteFilePath(LinkSpecs &linkSpecs, const FilePath &filePath,
-                                               int lineNo, int column, int pos, int len);
+                                               int lineNo, int pos, int len);
     static void addLinkSpecForAbsoluteFilePath(LinkSpecs &linkSpecs, const FilePath &filePath,
-                                               int lineNo, int column,
-                                               const QRegularExpressionMatch &match, int capIndex);
+                                               int lineNo, const QRegularExpressionMatch &match,
+                                               int capIndex);
     static void addLinkSpecForAbsoluteFilePath(LinkSpecs &linkSpecs, const FilePath &filePath,
-                                               int lineNo, int column,
-                                               const QRegularExpressionMatch &match,
+                                               int lineNo, const QRegularExpressionMatch &match,
                                                const QString &capName);
     bool fileExists(const Utils::FilePath &fp) const;
 

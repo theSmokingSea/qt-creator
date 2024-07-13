@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -9,15 +31,10 @@
 #include "projectpart.h"
 
 #include <projectexplorer/project.h>
-#include <utils/cpplanguage_details.h>
 
+#include <QFutureInterface>
 #include <QObject>
 #include <QMutex>
-
-QT_BEGIN_NAMESPACE
-template <typename T>
-class QPromise;
-QT_END_NAMESPACE
 
 namespace ProjectExplorer { class Project; }
 
@@ -29,18 +46,18 @@ class CPPEDITOR_EXPORT BaseEditorDocumentParser : public QObject
 
 public:
     using Ptr = QSharedPointer<BaseEditorDocumentParser>;
-    static Ptr get(const Utils::FilePath &filePath);
+    static Ptr get(const QString &filePath);
 
     struct Configuration {
         bool usePrecompiledHeaders = false;
         QByteArray editorDefines;
         QString preferredProjectPartId;
 
-        friend bool operator==(const Configuration &left, const Configuration &right)
+        bool operator==(const Configuration &other)
         {
-            return left.usePrecompiledHeaders == right.usePrecompiledHeaders
-                && left.editorDefines == right.editorDefines
-                && left.preferredProjectPartId == right.preferredProjectPartId;
+            return usePrecompiledHeaders == other.usePrecompiledHeaders
+                    && editorDefines == other.editorDefines
+                    && preferredProjectPartId == other.preferredProjectPartId;
         }
     };
 
@@ -63,15 +80,15 @@ public:
     };
 
 public:
-    BaseEditorDocumentParser(const Utils::FilePath &filePath);
+    BaseEditorDocumentParser(const QString &filePath);
     ~BaseEditorDocumentParser() override;
 
-    const Utils::FilePath &filePath() const;
+    QString filePath() const;
     Configuration configuration() const;
     void setConfiguration(const Configuration &configuration);
 
     void update(const UpdateParams &updateParams);
-    void update(const QPromise<void> &promise, const UpdateParams &updateParams);
+    void update(const QFutureInterface<void> &future, const UpdateParams &updateParams);
 
     ProjectPartInfo projectPartInfo() const;
 
@@ -96,13 +113,13 @@ protected:
     mutable QMutex m_stateAndConfigurationMutex;
 
 private:
-    virtual void updateImpl(const QPromise<void> &promise,
+    virtual void updateImpl(const QFutureInterface<void> &future,
                             const UpdateParams &updateParams) = 0;
 
-    const Utils::FilePath m_filePath;
+    const QString m_filePath;
     Configuration m_configuration;
     State m_state;
     mutable QMutex m_updateIsRunning;
 };
 
-} // CppEditor
+} // namespace CppEditor

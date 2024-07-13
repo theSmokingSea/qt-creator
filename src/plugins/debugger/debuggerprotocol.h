@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -8,15 +30,14 @@
 #include <QString>
 #include <QJsonValue>
 #include <QJsonObject>
-#include <QVarLengthArray>
 #include <QVector>
 
-#include <utils/filepath.h>
-#include <utils/textutils.h>
+#include <utils/fileutils.h>
 
 namespace Utils { class ProcessHandle; }
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 class DebuggerResponse;
 
@@ -43,6 +64,7 @@ public:
     void arg(const char *name, const QList<int> &list);
     void arg(const char *name, const QStringList &list); // Note: Hex-encodes.
     void arg(const char *name, const QJsonValue &value);
+    void arg(const char *name, const Utils::FilePath &filePath);
 
     QString argsToPython() const;
     QString argsToString() const;
@@ -107,8 +129,6 @@ class DebuggerOutputParser
 public:
     explicit DebuggerOutputParser(const QString &output);
 
-    using Buffer = QVarLengthArray<char, 30>;
-
     QChar current() const { return *from; }
     bool isCurrent(QChar c) const { return *from == c; }
     bool isAtEnd() const { return from >= to; }
@@ -120,11 +140,9 @@ public:
     int readInt();
     QChar readChar();
     QString readCString();
-    void readCStringData(Buffer &buffer);
+    QString readString(const std::function<bool(char)> &isValidChar);
 
-    QStringView readString(const std::function<bool(char)> &isValidChar);
-
-    QStringView buffer() const { return QStringView(from, to - from); }
+    QString buffer() const { return QString(from, to - from); }
     int remainingChars() const { return int(to - from); }
 
     void skipCommas();
@@ -327,10 +345,11 @@ public:
 public:
     LocationType type = UnknownLocation;
     Utils::FilePath fileName;
-    Utils::Text::Position textPosition;
+    int lineNumber = 0;
     quint64 address = 0;
 };
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(Debugger::Internal::DebuggerCommand::CommandFlags)

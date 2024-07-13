@@ -1,8 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "glsleditor.h"
 #include "glsleditorconstants.h"
+#include "glsleditorplugin.h"
 #include "glslhighlighter.h"
 #include "glslautocompleter.h"
 #include "glslcompletionassist.h"
@@ -14,10 +37,9 @@
 #include <glsl/glslsemantic.h>
 #include <glsl/glslsymbols.h>
 
-#include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
+#include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/command.h>
-#include <coreplugin/coreplugintr.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
 
@@ -30,18 +52,18 @@
 #include <texteditor/refactoroverlay.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/syntaxhighlighter.h>
-#include <texteditor/texteditor.h>
+#include <texteditor/texteditoractionhandler.h>
 #include <texteditor/texteditorconstants.h>
 #include <texteditor/texteditorsettings.h>
 
 #include <utils/algorithm.h>
 #include <utils/changeset.h>
-#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
 #include <utils/tooltip/tooltip.h>
 #include <utils/uncommentselection.h>
 
 #include <QCoreApplication>
+#include <QSettings>
 #include <QComboBox>
 #include <QFileInfo>
 #include <QHeaderView>
@@ -52,7 +74,8 @@
 using namespace TextEditor;
 using namespace GLSL;
 
-namespace GlslEditor::Internal {
+namespace GlslEditor {
+namespace Internal {
 
 static int versionFor(const QString &source)
 {
@@ -103,93 +126,6 @@ enum {
     UPDATE_DOCUMENT_DEFAULT_INTERVAL = 150
 };
 
-class InitFile final
-{
-public:
-    explicit InitFile(const QString &fileName) : m_fileName(fileName) {}
-
-    ~InitFile() { delete m_engine; }
-
-    GLSL::Engine *engine() const
-    {
-        if (!m_engine)
-            initialize();
-        return m_engine;
-    }
-
-    GLSL::TranslationUnitAST *ast() const
-    {
-        if (!m_ast)
-            initialize();
-        return m_ast;
-    }
-
-private:
-    void initialize() const
-    {
-        // Parse the builtins for any language variant so we can use all keywords.
-        const int variant = GLSL::Lexer::Variant_All;
-
-        QByteArray code;
-        QFile file(Core::ICore::resourcePath("glsl").pathAppended(m_fileName).toString());
-        if (file.open(QFile::ReadOnly))
-            code = file.readAll();
-
-        m_engine = new GLSL::Engine();
-        GLSL::Parser parser(m_engine, code.constData(), code.size(), variant);
-        m_ast = parser.parse();
-    }
-
-    QString m_fileName;
-    mutable GLSL::Engine *m_engine = nullptr;
-    mutable GLSL::TranslationUnitAST *m_ast = nullptr;
-};
-
-static const InitFile *fragmentShaderInit(int variant)
-{
-    static InitFile glsl_es_100_frag{"glsl_es_100.frag"};
-    static InitFile glsl_120_frag{"glsl_120.frag"};
-    static InitFile glsl_330_frag{"glsl_330.frag"};
-
-    if (variant & GLSL::Lexer::Variant_GLSL_400)
-        return &glsl_330_frag;
-
-    if (variant & GLSL::Lexer::Variant_GLSL_120)
-        return  &glsl_120_frag;
-
-    return &glsl_es_100_frag;
-}
-
-static const InitFile *vertexShaderInit(int variant)
-{
-    static InitFile glsl_es_100_vert{"glsl_es_100.vert"};
-    static InitFile glsl_120_vert{"glsl_120.vert"};
-    static InitFile glsl_330_vert{"glsl_330.vert"};
-
-    if (variant & GLSL::Lexer::Variant_GLSL_400)
-        return &glsl_330_vert;
-
-    if (variant & GLSL::Lexer::Variant_GLSL_120)
-        return &glsl_120_vert;
-
-    return &glsl_es_100_vert;
-}
-
-static const InitFile *shaderInit(int variant)
-{
-    static InitFile glsl_es_100_common{"glsl_es_100_common.glsl"};
-    static InitFile glsl_120_common{"glsl_120_common.glsl"};
-    static InitFile glsl_330_common{"glsl_330_common.glsl"};
-
-    if (variant & GLSL::Lexer::Variant_GLSL_400)
-        return &glsl_330_common;
-
-    if (variant & GLSL::Lexer::Variant_GLSL_120)
-        return &glsl_120_common;
-
-    return &glsl_es_100_common;
-}
-
 class CreateRanges: protected Visitor
 {
     QTextDocument *textDocument;
@@ -229,8 +165,7 @@ public:
 
     QSet<QString> identifiers() const;
 
-    std::unique_ptr<AssistInterface> createAssistInterface(AssistKind assistKind,
-                                                           AssistReason reason) const override;
+    AssistInterface *createAssistInterface(AssistKind assistKind, AssistReason reason) const override;
 
 private:
     void updateDocumentNow();
@@ -252,7 +187,8 @@ GlslEditorWidget::GlslEditorWidget()
     connect(&m_updateDocumentTimer, &QTimer::timeout,
             this, &GlslEditorWidget::updateDocumentNow);
 
-    connect(this, &QPlainTextEdit::textChanged, [this] { m_updateDocumentTimer.start(); });
+    connect(this, &QPlainTextEdit::textChanged,
+            [this]() { m_updateDocumentTimer.start(); });
 
     m_outlineCombo = new QComboBox;
     m_outlineCombo->setMinimumContentsLength(22);
@@ -326,14 +262,14 @@ void GlslEditorWidget::updateDocumentNow()
         Semantic sem;
         Scope *globalScope = new Namespace();
         doc->_globalScope = globalScope;
-        const InitFile *file = shaderInit(variant);
+        const GlslEditorPlugin::InitFile *file = GlslEditorPlugin::shaderInit(variant);
         sem.translationUnit(file->ast(), globalScope, file->engine());
         if (variant & Lexer::Variant_VertexShader) {
-            file = vertexShaderInit(variant);
+            file = GlslEditorPlugin::vertexShaderInit(variant);
             sem.translationUnit(file->ast(), globalScope, file->engine());
         }
         if (variant & Lexer::Variant_FragmentShader) {
-            file = fragmentShaderInit(variant);
+            file = GlslEditorPlugin::fragmentShaderInit(variant);
             sem.translationUnit(file->ast(), globalScope, file->engine());
         }
         sem.translationUnit(ast, globalScope, doc->_engine);
@@ -349,12 +285,13 @@ void GlslEditorWidget::updateDocumentNow()
         QList<QTextEdit::ExtraSelection> sels;
         QSet<int> errors;
 
-        const QList<DiagnosticMessage> messages = doc->_engine->diagnosticMessages();
-        for (const DiagnosticMessage &m : messages) {
+        foreach (const DiagnosticMessage &m, doc->_engine->diagnosticMessages()) {
             if (! m.line())
                 continue;
-            if (!Utils::insert(errors, m.line()))
+            else if (errors.contains(m.line()))
                 continue;
+
+            errors.insert(m.line());
 
             QTextCursor cursor(document()->findBlockByNumber(m.line() - 1));
             cursor.movePosition(QTextCursor::EndOfBlock, QTextCursor::KeepAnchor);
@@ -402,19 +339,19 @@ int languageVariant(const QString &type)
         isVertex = true;
         isFragment = true;
     } else if (type == QLatin1String("text/x-glsl") ||
-               type == QLatin1String(Utils::Constants::GLSL_MIMETYPE)) {
+               type == QLatin1String("application/x-glsl")) {
         isVertex = true;
         isFragment = true;
         isDesktop = true;
-    } else if (type == QLatin1String(Utils::Constants::GLSL_VERT_MIMETYPE)) {
+    } else if (type == QLatin1String("text/x-glsl-vert")) {
         isVertex = true;
         isDesktop = true;
-    } else if (type == QLatin1String(Utils::Constants::GLSL_FRAG_MIMETYPE)) {
+    } else if (type == QLatin1String("text/x-glsl-frag")) {
         isFragment = true;
         isDesktop = true;
-    } else if (type == QLatin1String(Utils::Constants::GLSL_ES_VERT_MIMETYPE)) {
+    } else if (type == QLatin1String("text/x-glsl-es-vert")) {
         isVertex = true;
-    } else if (type == QLatin1String(Utils::Constants::GLSL_ES_FRAG_MIMETYPE)) {
+    } else if (type == QLatin1String("text/x-glsl-es-frag")) {
         isFragment = true;
     }
     if (isDesktop)
@@ -428,52 +365,46 @@ int languageVariant(const QString &type)
     return variant;
 }
 
-std::unique_ptr<AssistInterface> GlslEditorWidget::createAssistInterface(
+AssistInterface *GlslEditorWidget::createAssistInterface(
     AssistKind kind, AssistReason reason) const
 {
-    if (kind != Completion)
-        return TextEditorWidget::createAssistInterface(kind, reason);
-
-    return std::make_unique<GlslCompletionAssistInterface>(textCursor(),
-                                                           textDocument()->filePath(),
-                                                           reason,
-                                                           textDocument()->mimeType(),
-                                                           m_glslDocument);
+    if (kind == Completion)
+        return new GlslCompletionAssistInterface(textCursor(),
+                                                 textDocument()->filePath(),
+                                                 reason,
+                                                 textDocument()->mimeType(),
+                                                 m_glslDocument);
+    return TextEditorWidget::createAssistInterface(kind, reason);
 }
 
+
+//
 //  GlslEditorFactory
+//
 
-class GlslEditorFactory final : public TextEditor::TextEditorFactory
+GlslEditorFactory::GlslEditorFactory()
 {
-public:
-    GlslEditorFactory()
-    {
-        setId(Constants::C_GLSLEDITOR_ID);
-        setDisplayName(::Core::Tr::tr(Constants::C_GLSLEDITOR_DISPLAY_NAME));
-        addMimeType(Utils::Constants::GLSL_MIMETYPE);
-        addMimeType(Utils::Constants::GLSL_VERT_MIMETYPE);
-        addMimeType(Utils::Constants::GLSL_FRAG_MIMETYPE);
-        addMimeType(Utils::Constants::GLSL_ES_VERT_MIMETYPE);
-        addMimeType(Utils::Constants::GLSL_ES_FRAG_MIMETYPE);
+    setId(Constants::C_GLSLEDITOR_ID);
+    setDisplayName(QCoreApplication::translate("OpenWith::Editors", Constants::C_GLSLEDITOR_DISPLAY_NAME));
+    addMimeType(Constants::GLSL_MIMETYPE);
+    addMimeType(Constants::GLSL_MIMETYPE_VERT);
+    addMimeType(Constants::GLSL_MIMETYPE_FRAG);
+    addMimeType(Constants::GLSL_MIMETYPE_VERT_ES);
+    addMimeType(Constants::GLSL_MIMETYPE_FRAG_ES);
 
-        setDocumentCreator([]() { return new TextDocument(Constants::C_GLSLEDITOR_ID); });
-        setEditorWidgetCreator([]() { return new GlslEditorWidget; });
-        setIndenterCreator(&createGlslIndenter);
-        setSyntaxHighlighterCreator(&createGlslHighlighter);
-        setCommentDefinition(Utils::CommentDefinition::CppStyle);
-        setCompletionAssistProvider(createGlslCompletionAssistProvider());
-        setParenthesesMatchingEnabled(true);
-        setCodeFoldingSupported(true);
+    setDocumentCreator([]() { return new TextDocument(Constants::C_GLSLEDITOR_ID); });
+    setEditorWidgetCreator([]() { return new GlslEditorWidget; });
+    setIndenterCreator([](QTextDocument *doc) { return new GlslIndenter(doc); });
+    setSyntaxHighlighterCreator([]() { return new GlslHighlighter; });
+    setCommentDefinition(Utils::CommentDefinition::CppStyle);
+    setCompletionAssistProvider(new GlslCompletionAssistProvider);
+    setParenthesesMatchingEnabled(true);
+    setCodeFoldingSupported(true);
 
-        setOptionalActionMask(OptionalActions::Format
-                                | OptionalActions::UnCommentSelection
-                                | OptionalActions::UnCollapseAll);
-    }
-};
-
-void setupGlslEditorFactory()
-{
-    static GlslEditorFactory theGlslEditorFactory;
+    setEditorActionHandlers(TextEditorActionHandler::Format
+                          | TextEditorActionHandler::UnCommentSelection
+                          | TextEditorActionHandler::UnCollapseAll);
 }
 
-} // GlslEditor::Internal
+} // namespace Internal
+} // namespace GlslEditor

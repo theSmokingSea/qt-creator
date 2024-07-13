@@ -1,9 +1,30 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
+#include "emacskeysplugin.h"
 #include "emacskeysconstants.h"
 #include "emacskeysstate.h"
-#include "emacskeystr.h"
 
 #include <coreplugin/icore.h>
 #include <coreplugin/editormanager/editormanager.h>
@@ -11,21 +32,16 @@
 #include <coreplugin/icontext.h>
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/coreconstants.h>
-
-#include <extensionsystem/iplugin.h>
-
 #include <utils/qtcassert.h>
-
 
 #include <texteditor/texteditor.h>
 #include <texteditor/textdocument.h>
 
 #include <QAction>
+#include <QPlainTextEdit>
 #include <QApplication>
 #include <QClipboard>
-#include <QPlainTextEdit>
 #include <QScrollBar>
-#include <QTextCursor>
 
 QT_BEGIN_NAMESPACE
 extern void qt_set_sequence_auto_mnemonic(bool enable);
@@ -34,61 +50,30 @@ QT_END_NAMESPACE
 using namespace Core;
 using namespace Utils;
 
-namespace EmacsKeys::Internal {
-
-static QString plainSelectedText(const QTextCursor &cursor)
+namespace {
+QString plainSelectedText(const QTextCursor &cursor)
 {
     // selectedText() returns U+2029 (PARAGRAPH SEPARATOR) instead of newline
     return cursor.selectedText().replace(QChar::ParagraphSeparator, QLatin1Char('\n'));
 }
+}
 
-class EmacsKeysPlugin final : public ExtensionSystem::IPlugin
+namespace EmacsKeys {
+namespace Internal {
+
+//---------------------------------------------------------------------------
+// EmacsKeysPlugin
+//---------------------------------------------------------------------------
+
+EmacsKeysPlugin::EmacsKeysPlugin() = default;
+
+EmacsKeysPlugin::~EmacsKeysPlugin() = default;
+
+bool EmacsKeysPlugin::initialize(const QStringList &arguments, QString *errorString)
 {
-    Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "EmacsKeys.json")
+    Q_UNUSED(arguments)
+    Q_UNUSED(errorString)
 
-    void initialize() final;
-
-    void editorAboutToClose(Core::IEditor *editor);
-    void currentEditorChanged(Core::IEditor *editor);
-
-    void deleteCharacter();       // C-d
-    void killWord();              // M-d
-    void killLine();              // C-k
-    void insertLineAndIndent();   // C-j
-
-    void gotoFileStart();         // M-<
-    void gotoFileEnd();           // M->
-    void gotoLineStart();         // C-a
-    void gotoLineEnd();           // C-e
-    void gotoNextLine();          // C-n
-    void gotoPreviousLine();      // C-p
-    void gotoNextCharacter();     // C-f
-    void gotoPreviousCharacter(); // C-b
-    void gotoNextWord();          // M-f
-    void gotoPreviousWord();      // M-b
-
-    void mark();                  // C-SPC
-    void exchangeCursorAndMark(); // C-x C-x
-    void copy();                  // M-w
-    void cut();                   // C-w
-    void yank();                  // C-y
-
-    void scrollHalfDown();        // C-v
-    void scrollHalfUp();          // M-v
-
-    QAction *registerAction(Id id, void (EmacsKeysPlugin::*callback)(), const QString &title);
-    void genericGoto(QTextCursor::MoveOperation op, bool abortAssist = true);
-    void genericVScroll(int direction);
-
-    QHash<QPlainTextEdit *, EmacsKeysState *> m_stateMap;
-    QPlainTextEdit *m_currentEditorWidget = nullptr;
-    EmacsKeysState *m_currentState = nullptr;
-    TextEditor::TextEditorWidget *m_currentBaseTextEditorWidget = nullptr;
-};
-
-void EmacsKeysPlugin::initialize()
-{
     // We have to use this hack here at the moment, because it's the only way to
     // disable Qt Creator menu accelerators aka mnemonics. Many of them get into
     // the way of typical emacs keys, such as: Alt+F (File), Alt+B (Build),
@@ -101,50 +86,60 @@ void EmacsKeysPlugin::initialize()
             this, &EmacsKeysPlugin::currentEditorChanged);
 
     registerAction(Constants::DELETE_CHARACTER,
-        &EmacsKeysPlugin::deleteCharacter, Tr::tr("Delete Character"));
+        &EmacsKeysPlugin::deleteCharacter, tr("Delete Character"));
     registerAction(Constants::KILL_WORD,
-        &EmacsKeysPlugin::killWord, Tr::tr("Kill Word"));
+        &EmacsKeysPlugin::killWord, tr("Kill Word"));
     registerAction(Constants::KILL_LINE,
-        &EmacsKeysPlugin::killLine, Tr::tr("Kill Line"));
+        &EmacsKeysPlugin::killLine, tr("Kill Line"));
     registerAction(Constants::INSERT_LINE_AND_INDENT,
-        &EmacsKeysPlugin::insertLineAndIndent, Tr::tr("Insert New Line and Indent"));
+        &EmacsKeysPlugin::insertLineAndIndent, tr("Insert New Line and Indent"));
 
     registerAction(Constants::GOTO_FILE_START,
-        &EmacsKeysPlugin::gotoFileStart, Tr::tr("Go to File Start"));
+        &EmacsKeysPlugin::gotoFileStart, tr("Go to File Start"));
     registerAction(Constants::GOTO_FILE_END,
-        &EmacsKeysPlugin::gotoFileEnd, Tr::tr("Go to File End"));
+        &EmacsKeysPlugin::gotoFileEnd, tr("Go to File End"));
     registerAction(Constants::GOTO_LINE_START,
-        &EmacsKeysPlugin::gotoLineStart, Tr::tr("Go to Line Start"));
+        &EmacsKeysPlugin::gotoLineStart, tr("Go to Line Start"));
     registerAction(Constants::GOTO_LINE_END,
-        &EmacsKeysPlugin::gotoLineEnd, Tr::tr("Go to Line End"));
+        &EmacsKeysPlugin::gotoLineEnd, tr("Go to Line End"));
     registerAction(Constants::GOTO_NEXT_LINE,
-        &EmacsKeysPlugin::gotoNextLine, Tr::tr("Go to Next Line"));
+        &EmacsKeysPlugin::gotoNextLine, tr("Go to Next Line"));
     registerAction(Constants::GOTO_PREVIOUS_LINE,
-        &EmacsKeysPlugin::gotoPreviousLine, Tr::tr("Go to Previous Line"));
+        &EmacsKeysPlugin::gotoPreviousLine, tr("Go to Previous Line"));
     registerAction(Constants::GOTO_NEXT_CHARACTER,
-        &EmacsKeysPlugin::gotoNextCharacter, Tr::tr("Go to Next Character"));
+        &EmacsKeysPlugin::gotoNextCharacter, tr("Go to Next Character"));
     registerAction(Constants::GOTO_PREVIOUS_CHARACTER,
-        &EmacsKeysPlugin::gotoPreviousCharacter, Tr::tr("Go to Previous Character"));
+        &EmacsKeysPlugin::gotoPreviousCharacter, tr("Go to Previous Character"));
     registerAction(Constants::GOTO_NEXT_WORD,
-        &EmacsKeysPlugin::gotoNextWord, Tr::tr("Go to Next Word"));
+        &EmacsKeysPlugin::gotoNextWord, tr("Go to Next Word"));
     registerAction(Constants::GOTO_PREVIOUS_WORD,
-        &EmacsKeysPlugin::gotoPreviousWord, Tr::tr("Go to Previous Word"));
+        &EmacsKeysPlugin::gotoPreviousWord, tr("Go to Previous Word"));
 
     registerAction(Constants::MARK,
-        &EmacsKeysPlugin::mark, Tr::tr("Mark"));
+        &EmacsKeysPlugin::mark, tr("Mark"));
     registerAction(Constants::EXCHANGE_CURSOR_AND_MARK,
-        &EmacsKeysPlugin::exchangeCursorAndMark, Tr::tr("Exchange Cursor and Mark"));
+        &EmacsKeysPlugin::exchangeCursorAndMark, tr("Exchange Cursor and Mark"));
     registerAction(Constants::COPY,
-        &EmacsKeysPlugin::copy, Tr::tr("Copy"));
+        &EmacsKeysPlugin::copy, tr("Copy"));
     registerAction(Constants::CUT,
-        &EmacsKeysPlugin::cut, Tr::tr("Cut"));
+        &EmacsKeysPlugin::cut, tr("Cut"));
     registerAction(Constants::YANK,
-        &EmacsKeysPlugin::yank, Tr::tr("Yank"));
+        &EmacsKeysPlugin::yank, tr("Yank"));
 
     registerAction(Constants::SCROLL_HALF_DOWN,
-        &EmacsKeysPlugin::scrollHalfDown, Tr::tr("Scroll Half Screen Down"));
+        &EmacsKeysPlugin::scrollHalfDown, tr("Scroll Half Screen Down"));
     registerAction(Constants::SCROLL_HALF_UP,
-        &EmacsKeysPlugin::scrollHalfUp, Tr::tr("Scroll Half Screen Up"));
+        &EmacsKeysPlugin::scrollHalfUp, tr("Scroll Half Screen Up"));
+    return true;
+}
+
+void EmacsKeysPlugin::extensionsInitialized()
+{
+}
+
+ExtensionSystem::IPlugin::ShutdownFlag EmacsKeysPlugin::aboutToShutdown()
+{
+    return SynchronousShutdown;
 }
 
 void EmacsKeysPlugin::editorAboutToClose(IEditor *editor)
@@ -386,6 +381,5 @@ void EmacsKeysPlugin::genericVScroll(int direction)
     m_currentState->endOwnAction(KeysActionOther);
 }
 
-} // EmacsKeys::Internal
-
-#include "emacskeysplugin.moc"
+} // namespace Internal
+} // namespace EmacsKeys

@@ -1,34 +1,68 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "currentprojectfilter.h"
-
-#include "project.h"
-#include "projectexplorertr.h"
 #include "projecttree.h"
+#include "project.h"
+
+#include <utils/algorithm.h>
 
 using namespace Core;
 using namespace ProjectExplorer;
 using namespace ProjectExplorer::Internal;
-using namespace Utils;
 
 CurrentProjectFilter::CurrentProjectFilter()
+    : BaseFileFilter()
 {
     setId("Files in current project");
-    setDisplayName(Tr::tr("Files in Current Project"));
-    setDescription(Tr::tr("Locates files from the current document's project. Append \"+<number>\" "
-                          "or \":<number>\" to jump to the given line number. Append another "
-                          "\"+<number>\" or \":<number>\" to jump to the column number as well."));
+    setDisplayName(tr("Files in Current Project"));
+    setDescription(tr("Matches all files from the current document's project. Append \"+<number>\" "
+                      "or \":<number>\" to jump to the given line number. Append another "
+                      "\"+<number>\" or \":<number>\" to jump to the column number as well."));
     setDefaultShortcutString("p");
-    setRefreshRecipe(Tasking::Sync([this] { invalidate(); }));
+    setDefaultIncludedByDefault(false);
 
     connect(ProjectTree::instance(), &ProjectTree::currentProjectChanged,
             this, &CurrentProjectFilter::currentProjectChanged);
+}
 
-    m_cache.setGeneratorProvider([this] {
-        const FilePaths paths = m_project ? m_project->files(Project::SourceFiles) : FilePaths();
-        return LocatorFileCache::filePathsGenerator(paths);
-    });
+void CurrentProjectFilter::markFilesAsOutOfDate()
+{
+    setFileIterator(nullptr);
+}
+
+void CurrentProjectFilter::prepareSearch(const QString &entry)
+{
+    Q_UNUSED(entry)
+    if (!fileIterator()) {
+        Utils::FilePaths paths;
+        if (m_project)
+            paths = m_project->files(Project::SourceFiles);
+        setFileIterator(new BaseFileFilter::ListIterator(paths));
+    }
+    BaseFileFilter::prepareSearch(entry);
 }
 
 void CurrentProjectFilter::currentProjectChanged()
@@ -36,12 +70,21 @@ void CurrentProjectFilter::currentProjectChanged()
     Project *project = ProjectTree::currentProject();
     if (project == m_project)
         return;
-
     if (m_project)
-        disconnect(m_project, &Project::fileListChanged, this, &CurrentProjectFilter::invalidate);
+        disconnect(m_project, &Project::fileListChanged,
+                   this, &CurrentProjectFilter::markFilesAsOutOfDate);
+
+    if (project)
+        connect(project, &Project::fileListChanged,
+                this, &CurrentProjectFilter::markFilesAsOutOfDate);
+
     m_project = project;
-    if (m_project)
-        connect(m_project, &Project::fileListChanged, this, &CurrentProjectFilter::invalidate);
+    markFilesAsOutOfDate();
+}
 
-    invalidate();
+void CurrentProjectFilter::refresh(QFutureInterface<void> &future)
+{
+    Q_UNUSED(future)
+    QMetaObject::invokeMethod(this, &CurrentProjectFilter::markFilesAsOutOfDate,
+                              Qt::QueuedConnection);
 }

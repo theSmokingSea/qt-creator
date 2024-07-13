@@ -1,47 +1,42 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "codecselector.h"
-
-#include "../coreplugintr.h"
-#include "../textdocument.h"
+#include <coreplugin/textdocument.h>
 
 #include <utils/algorithm.h>
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/itemviews.h>
 
 #include <QDebug>
-#include <QDialog>
-#include <QDialogButtonBox>
-#include <QLabel>
-#include <QListWidget>
+#include <QTextCodec>
 #include <QPushButton>
 #include <QScrollBar>
 #include <QVBoxLayout>
 
 namespace Core {
-namespace Internal {
-
-class CodecSelector : public QDialog
-{
-public:
-    CodecSelector(QWidget *parent, Core::BaseTextDocument *doc);
-    ~CodecSelector() override;
-
-    QTextCodec *selectedCodec() const;
-
-private:
-    void updateButtons();
-    void buttonClicked(QAbstractButton *button);
-
-    bool m_hasDecodingError;
-    bool m_isModified;
-    QLabel *m_label;
-    Utils::ListWidget *m_listWidget;
-    QDialogButtonBox *m_dialogButtonBox;
-    QAbstractButton *m_reloadButton;
-    QAbstractButton *m_saveButton;
-};
 
 /* custom class to make sure the width is wide enough for the
  * contents. Should be easier with Qt. */
@@ -65,12 +60,12 @@ CodecSelector::CodecSelector(QWidget *parent, Core::BaseTextDocument *doc)
     if (m_hasDecodingError)
         buf = doc->decodingErrorSample();
 
-    setWindowTitle(Tr::tr("Text Encoding"));
+    setWindowTitle(tr("Text Encoding"));
     m_label = new QLabel(this);
     QString decodingErrorHint;
     if (m_hasDecodingError)
-        decodingErrorHint = '\n' + Tr::tr("The following encodings are likely to fit:");
-    m_label->setText(Tr::tr("Select encoding for \"%1\".%2")
+        decodingErrorHint = QLatin1Char('\n') + tr("The following encodings are likely to fit:");
+    m_label->setText(tr("Select encoding for \"%1\".%2")
                      .arg(doc->filePath().fileName())
                      .arg(decodingErrorHint));
 
@@ -79,17 +74,18 @@ CodecSelector::CodecSelector(QWidget *parent, Core::BaseTextDocument *doc)
 
     QStringList encodings;
 
-    const QList<int> mibs = Utils::sorted(QTextCodec::availableMibs());
+    QList<int> mibs = QTextCodec::availableMibs();
+    Utils::sort(mibs);
     QList<int> sortedMibs;
-    for (const int mib : mibs)
+    for (const int mib : qAsConst(mibs))
         if (mib >= 0)
             sortedMibs += mib;
-    for (const int mib : mibs)
+    for (const int mib : qAsConst(mibs))
         if (mib < 0)
             sortedMibs += mib;
 
     int currentIndex = -1;
-    for (const int mib : std::as_const(sortedMibs)) {
+    for (const int mib : qAsConst(sortedMibs)) {
         QTextCodec *c = QTextCodec::codecForMib(mib);
         if (!doc->supportsCodec(c))
             continue;
@@ -119,8 +115,8 @@ CodecSelector::CodecSelector(QWidget *parent, Core::BaseTextDocument *doc)
     connect(m_listWidget, &QListWidget::itemSelectionChanged, this, &CodecSelector::updateButtons);
 
     m_dialogButtonBox = new QDialogButtonBox(this);
-    m_reloadButton = m_dialogButtonBox->addButton(Tr::tr("Reload with Encoding"), QDialogButtonBox::DestructiveRole);
-    m_saveButton =  m_dialogButtonBox->addButton(Tr::tr("Save with Encoding"), QDialogButtonBox::DestructiveRole);
+    m_reloadButton = m_dialogButtonBox->addButton(tr("Reload with Encoding"), QDialogButtonBox::DestructiveRole);
+    m_saveButton =  m_dialogButtonBox->addButton(tr("Save with Encoding"), QDialogButtonBox::DestructiveRole);
     m_dialogButtonBox->addButton(QDialogButtonBox::Cancel);
     connect(m_dialogButtonBox, &QDialogButtonBox::clicked, this, &CodecSelector::buttonClicked);
     connect(m_listWidget, &QAbstractItemView::activated, m_reloadButton, &QAbstractButton::click);
@@ -157,21 +153,12 @@ QTextCodec *CodecSelector::selectedCodec() const
 
 void CodecSelector::buttonClicked(QAbstractButton *button)
 {
-    CodecSelectorResult::Action result = CodecSelectorResult::Cancel;
+    Result result =  Cancel;
     if (button == m_reloadButton)
-        result = CodecSelectorResult::Reload;
+        result = Reload;
     if (button == m_saveButton)
-        result = CodecSelectorResult::Save;
+        result = Save;
     done(result);
-}
-
-} // namespace Internal
-
-CodecSelectorResult askForCodec(QWidget *parent, BaseTextDocument *doc)
-{
-    Internal::CodecSelector dialog(parent, doc);
-    const CodecSelectorResult::Action result = CodecSelectorResult::Action(dialog.exec());
-    return {result, dialog.selectedCodec()};
 }
 
 } // namespace Core

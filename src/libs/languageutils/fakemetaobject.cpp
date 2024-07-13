@@ -1,25 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "fakemetaobject.h"
 #include <QCryptographicHash>
 
 using namespace LanguageUtils;
-
-static QByteArrayView asData(const void *mem, size_t len)
-{
-    return QByteArrayView(reinterpret_cast<const char *>(mem), len);
-}
-
-static void addData(QCryptographicHash &hash, int x)
-{
-    hash.addData(asData(&x, sizeof(int)));
-}
-
-static void addData(QCryptographicHash &hash, const QString &x)
-{
-    hash.addData(asData(x.constData(), x.size() * sizeof(QChar)));
-}
 
 FakeMetaEnum::FakeMetaEnum()
 {}
@@ -54,12 +61,15 @@ bool FakeMetaEnum::hasKey(const QString &key) const
 
 void FakeMetaEnum::addToHash(QCryptographicHash &hash) const
 {
-    addData(hash, m_name.size());
-    addData(hash, m_name);
-    addData(hash, m_keys.size());
-    for (const QString &key : std::as_const(m_keys)) {
-        addData(hash, key.size());
-        addData(hash, key);
+    int len = m_name.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(m_name.constData()), len * sizeof(QChar));
+    len = m_keys.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    foreach (const QString &key, m_keys) {
+        len = key.size();
+        hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+        hash.addData(reinterpret_cast<const char *>(key.constData()), len * sizeof(QChar));
     }
 }
 
@@ -133,23 +143,29 @@ void FakeMetaMethod::setRevision(int r)
 
 void FakeMetaMethod::addToHash(QCryptographicHash &hash) const
 {
-    addData(hash, m_name.size());
-    addData(hash, m_name);
-    addData(hash, m_methodAccess);
-    addData(hash, m_methodTy);
-    addData(hash, m_revision);
-    addData(hash, m_paramNames.size());
-    for (const QString &pName : std::as_const(m_paramNames)) {
-        addData(hash, pName.size());
-        addData(hash, pName);
+    int len = m_name.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(m_name.constData()), len * sizeof(QChar));
+    hash.addData(reinterpret_cast<const char *>(&m_methodAccess), sizeof(m_methodAccess));
+    hash.addData(reinterpret_cast<const char *>(&m_methodTy), sizeof(m_methodTy));
+    hash.addData(reinterpret_cast<const char *>(&m_revision), sizeof(m_revision));
+    len = m_paramNames.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    foreach (const QString &pName, m_paramNames) {
+        len = pName.size();
+        hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+        hash.addData(reinterpret_cast<const char *>(pName.constData()), len * sizeof(QChar));
     }
-    addData(hash, m_paramTypes.size());
-    for (const QString &pType : std::as_const(m_paramTypes)) {
-        addData(hash, pType.size());
-        addData(hash, pType);
+    len = m_paramTypes.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    foreach (const QString &pType, m_paramTypes) {
+        len = pType.size();
+        hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+        hash.addData(reinterpret_cast<const char *>(pType.constData()), len * sizeof(QChar));
     }
-    addData(hash, m_returnType.size());
-    addData(hash, m_returnType);
+    len = m_returnType.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(m_returnType.constData()), len * sizeof(QChar));
 }
 
 QString FakeMetaMethod::describe(int baseIndent) const
@@ -164,7 +180,7 @@ QString FakeMetaMethod::describe(int baseIndent) const
     res += QString::number(methodType());
     res += newLine;
     res += QLatin1String("  parameterNames:[");
-    for (const QString &pName : parameterNames()) {
+    foreach (const QString &pName, parameterNames()) {
         res += newLine;
         res += QLatin1String("    ");
         res += pName;
@@ -172,7 +188,7 @@ QString FakeMetaMethod::describe(int baseIndent) const
     res += QLatin1Char(']');
     res += newLine;
     res += QLatin1String("  parameterTypes:[");
-    for (const QString &pType : parameterTypes()) {
+    foreach (const QString &pType, parameterTypes()) {
         res += newLine;
         res += QLatin1String("    ");
         res += pType;
@@ -219,15 +235,17 @@ int FakeMetaProperty::revision() const
 
 void FakeMetaProperty::addToHash(QCryptographicHash &hash) const
 {
-    addData(hash, m_propertyName.size());
-    addData(hash, m_propertyName);
-    addData(hash, m_revision);
+    int len = m_propertyName.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(m_propertyName.constData()), len * sizeof(QChar));
+    hash.addData(reinterpret_cast<const char *>(&m_revision), sizeof(m_revision));
     int flags = (m_isList ? (1 << 0) : 0)
             + (m_isPointer ? (1 << 1) : 0)
             + (m_isWritable ? (1 << 2) : 0);
-    addData(hash, flags);
-    addData(hash, m_type.size());
-    addData(hash, m_type);
+    hash.addData(reinterpret_cast<const char *>(&flags), sizeof(flags));
+    len = m_type.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(m_type.constData()), len * sizeof(QChar));
 }
 
 QString FakeMetaProperty::describe(int baseIndent) const
@@ -273,11 +291,6 @@ QString FakeMetaObject::className() const
 void FakeMetaObject::setClassName(const QString &name)
 { m_className = name; }
 
-QString FakeMetaObject::filePath() const
-{ return m_filePath; }
-void FakeMetaObject::setFilePath(const QString &path)
-{ m_filePath = path; }
-
 void FakeMetaObject::addExport(const QString &name, const QString &package, ComponentVersion version)
 {
     Export exp;
@@ -292,11 +305,11 @@ void FakeMetaObject::setExportMetaObjectRevision(int exportIndex, int metaObject
     m_exports[exportIndex].metaObjectRevision = metaObjectRevision;
 }
 
-const QList<FakeMetaObject::Export> FakeMetaObject::exports() const
+QList<FakeMetaObject::Export> FakeMetaObject::exports() const
 { return m_exports; }
 FakeMetaObject::Export FakeMetaObject::exportInPackage(const QString &package) const
 {
-    for (const Export &exp : m_exports) {
+    foreach (const Export &exp, m_exports) {
         if (exp.package == package)
             return exp;
     }
@@ -365,51 +378,51 @@ QByteArray FakeMetaObject::calculateFingerprint() const
 {
     QCryptographicHash hash(QCryptographicHash::Sha1);
     int len = m_className.size();
-    addData(hash, len);
-    addData(hash, m_className);
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(m_className.constData()), len * sizeof(QChar));
     len = m_attachedTypeName.size();
-    addData(hash, len);
-    addData(hash, m_attachedTypeName);
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(m_attachedTypeName.constData()), len * sizeof(QChar));
     len = m_defaultPropertyName.size();
-    addData(hash, len);
-    addData(hash, m_defaultPropertyName);
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(m_defaultPropertyName.constData()), len * sizeof(QChar));
     len = m_enumNameToIndex.size();
-    addData(hash, len);
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
     {
         QStringList keys(m_enumNameToIndex.keys());
         keys.sort();
-        for (const QString &key : std::as_const(keys)) {
+        foreach (const QString &key, keys) {
             len = key.size();
-            addData(hash, len);
-            addData(hash, key);
+            hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+            hash.addData(reinterpret_cast<const char *>(key.constData()), len * sizeof(QChar));
             int value = m_enumNameToIndex.value(key);
-            addData(hash, value);
+            hash.addData(reinterpret_cast<const char *>(&value), sizeof(value)); // avoid? this adds order dependency to fingerprint...
             m_enums.at(value).addToHash(hash);
         }
     }
     len = m_exports.size();
-    addData(hash, len);
-    for (const Export &e : std::as_const(m_exports))
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    foreach (const Export &e, m_exports)
         e.addToHash(hash); // normalize order?
     len = m_exports.size();
-    addData(hash, len);
-    for (const FakeMetaMethod &m : std::as_const(m_methods))
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    foreach (const FakeMetaMethod &m, m_methods)
         m.addToHash(hash); // normalize order?
     {
         QStringList keys(m_propNameToIdx.keys());
         keys.sort();
-        for (const QString &key : std::as_const(keys)) {
+        foreach (const QString &key, keys) {
             len = key.size();
-            addData(hash, len);
-            addData(hash, key);
+            hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+            hash.addData(reinterpret_cast<const char *>(key.constData()), len * sizeof(QChar));
             int value = m_propNameToIdx.value(key);
-            addData(hash, value);
+            hash.addData(reinterpret_cast<const char *>(&value), sizeof(value)); // avoid? this adds order dependency to fingerprint...
             m_props.at(value).addToHash(hash);
         }
     }
     len = m_superName.size();
-    addData(hash, len);
-    addData(hash, m_superName);
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(m_superName.constData()), len * sizeof(QChar));
 
     QByteArray res = hash.result();
     res.append('F');
@@ -497,7 +510,7 @@ QString FakeMetaObject::describe(bool printDetails, int baseIndent) const
 
     res += newLine;
     res += QLatin1String("exports:[");
-    for (const Export &e : exports()) {
+    foreach (const Export &e, exports()) {
         res += newLine;
         res += QLatin1String("  ");
         res += e.describe(baseIndent + 2);
@@ -544,12 +557,14 @@ bool FakeMetaObject::Export::isValid() const
 
 void FakeMetaObject::Export::addToHash(QCryptographicHash &hash) const
 {
-    addData(hash, package.size());
-    addData(hash, package);
-    addData(hash, type.size());
-    addData(hash, type);
+    int len = package.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(package.constData()), len * sizeof(QChar));
+    len = type.size();
+    hash.addData(reinterpret_cast<const char *>(&len), sizeof(len));
+    hash.addData(reinterpret_cast<const char *>(type.constData()), len * sizeof(QChar));
     version.addToHash(hash);
-    addData(hash, metaObjectRevision);
+    hash.addData(reinterpret_cast<const char *>(&metaObjectRevision), sizeof(metaObjectRevision));
 }
 
 QString FakeMetaObject::Export::describe(int baseIndent) const

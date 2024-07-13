@@ -1,21 +1,43 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// Copyright (C) 2016 Falko Arps
-// Copyright (C) 2016 Sven Klein
-// Copyright (C) 2016 Giuliano Schneider
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2016 Falko Arps
+** Copyright (C) 2016 Sven Klein
+** Copyright (C) 2016 Giuliano Schneider
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "ioptionspage.h"
 
-#include <utils/algorithm.h>
-#include <utils/layoutbuilder.h>
+#include <coreplugin/icore.h>
+
+#include <utils/aspects.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 
 #include <QCheckBox>
 #include <QGroupBox>
-#include <QHash>
+#include <QIcon>
 #include <QLabel>
-#include <QPointer>
 #include <QPushButton>
 #include <QRegularExpression>
 
@@ -23,60 +45,15 @@ using namespace Utils;
 
 namespace Core {
 
-namespace Internal {
-
-class IOptionsPageWidgetPrivate
-{
-public:
-    std::function<void()> m_onApply;
-    std::function<void()> m_onCancel;
-    std::function<void()> m_onFinish;
-};
-
-class IOptionsPagePrivate
-{
-public:
-    Id m_id;
-    Id m_category;
-    QString m_displayName;
-    QString m_displayCategory;
-    FilePath m_categoryIconPath;
-    IOptionsPage::WidgetCreator m_widgetCreator;
-    QPointer<QWidget> m_widget; // Used in conjunction with m_widgetCreator
-
-    bool m_keywordsInitialized = false;
-    QStringList m_keywords;
-
-    std::function<AspectContainer *()> m_settingsProvider;
-};
-
-class IOptionsPageProviderPrivate
-{
-public:
-    Id m_category;
-    QString m_displayCategory;
-    FilePath m_categoryIconPath;
-};
-
-} // namespace Internal
-
 /*!
     \class Core::IOptionsPageProvider
     \inmodule QtCreator
     \internal
 */
-
 /*!
     \class Core::IOptionsPageWidget
-    \inheaderfile coreplugin/dialogs/ioptionspage.h
-    \ingroup mainclasses
     \inmodule QtCreator
-
-    \brief The IOptionsPageWidget class is used to standardize the interaction
-    between an IOptionsPage and its widget.
-
-    Use setOnApply() and setOnFinish() to set functions that are called when
-    the IOptionsPage is applied and finished respectively.
+    \internal
 */
 
 /*!
@@ -91,66 +68,40 @@ public:
     \image qtcreator-options-dialog.png
 */
 
-IOptionsPageWidget::IOptionsPageWidget()
-    : d(new Internal::IOptionsPageWidgetPrivate)
-{}
+/*!
 
-IOptionsPageWidget::~IOptionsPageWidget() = default;
+    \fn Utils::Id Core::IOptionsPage::id() const
+
+    Returns a unique identifier for referencing the options page.
+*/
 
 /*!
-    Sets the function that is called by default on apply to \a func.
-*/
-void IOptionsPageWidget::setOnApply(const std::function<void()> &func)
-{
-    d->m_onApply = func;
-}
+    \fn QString Core::IOptionsPage::displayName() const
 
-void IOptionsPageWidget::setOnCancel(const std::function<void()> &func)
-{
-    d->m_onCancel = func;
-}
+    Returns the translated display name of the options page.
+*/
 
 /*!
-    Sets the function that is called by default on finish to \a func.
+    \fn Utils::Id Core::IOptionsPage::category() const
+
+    Returns the unique id for the category that the options page should be displayed in. This id is
+    used for sorting the list on the left side of the \uicontrol Options dialog.
 */
-void IOptionsPageWidget::setOnFinish(const std::function<void()> &func)
-{
-    d->m_onFinish = func;
-}
 
 /*!
-    Calls the apply function, if set.
-    \sa setOnApply
-*/
-void IOptionsPageWidget::apply()
-{
-    if (d->m_onApply)
-        d->m_onApply();
-}
+    \fn QString Core::IOptionsPage::displayCategory() const
 
-void IOptionsPageWidget::cancel()
-{
-    if (d->m_onCancel)
-        d->m_onCancel();
-}
+    Returns the translated category name of the options page. This name is displayed in the list on
+    the left side of the \uicontrol Options dialog.
+*/
 
 /*!
-    Calls the finish function, if set.
-    \sa setOnFinish
+    Returns the category icon of the options page. This icon is displayed in the list on the left
+    side of the \uicontrol Options dialog.
 */
-void IOptionsPageWidget::finish()
+QIcon IOptionsPage::categoryIcon() const
 {
-    if (d->m_onFinish)
-        d->m_onFinish();
-}
-
-/*!
-    Returns the path to the category icon of the options page. This icon will be read from this
-    path and displayed in the list on the left side of the \uicontrol Options dialog.
-*/
-FilePath IOptionsPage::categoryIconPath() const
-{
-    return d->m_categoryIconPath;
+    return m_categoryIcon.icon();
 }
 
 /*!
@@ -159,55 +110,7 @@ FilePath IOptionsPage::categoryIconPath() const
  */
 void IOptionsPage::setWidgetCreator(const WidgetCreator &widgetCreator)
 {
-    d->m_widgetCreator = widgetCreator;
-}
-
-/*!
-    Returns a list of ui strings that are used inside the widget.
-*/
-QStringList IOptionsPage::keywords() const
-{
-    auto that = const_cast<IOptionsPage *>(this);
-    QWidget *widget = that->widget();
-    if (!widget)
-        return {};
-    // find common subwidgets
-    for (const QLabel *label : widget->findChildren<QLabel *>())
-        d->m_keywords << label->text();
-    for (const QCheckBox *checkbox : widget->findChildren<QCheckBox *>())
-        d->m_keywords << checkbox->text();
-    for (const QPushButton *pushButton : widget->findChildren<QPushButton *>())
-        d->m_keywords << pushButton->text();
-    for (const QGroupBox *groupBox : widget->findChildren<QGroupBox *>())
-        d->m_keywords << groupBox->title();
-
-    return d->m_keywords;
-}
-
-/*!
-    Sets the \a id of the options page.
-*/
-void IOptionsPage::setId(Id id)
-{
-    d->m_id = id;
-}
-
-/*!
-    Sets \a displayName as the display name of the options page.
-*/
-void IOptionsPage::setDisplayName(const QString &displayName)
-{
-    d->m_displayName = displayName;
-}
-
-void IOptionsPage::setCategory(Id category)
-{
-    d->m_category = category;
-}
-
-void IOptionsPage::setDisplayCategory(const QString &displayCategory)
-{
-    d->m_displayCategory = displayCategory;
+    m_widgetCreator = widgetCreator;
 }
 
 /*!
@@ -223,23 +126,17 @@ void IOptionsPage::setDisplayCategory(const QString &displayCategory)
 
 QWidget *IOptionsPage::widget()
 {
-    if (!d->m_widget) {
-        if (d->m_widgetCreator) {
-            d->m_widget = d->m_widgetCreator();
-            QTC_CHECK(d->m_widget);
-        } else if (d->m_settingsProvider) {
-            d->m_widget = new IOptionsPageWidget;
-            AspectContainer *container = d->m_settingsProvider();
-            if (auto layouter = container->layouter()) {
-                layouter().attachTo(d->m_widget);
-            } else {
-                QTC_CHECK(false);
-            }
+    if (!m_widget) {
+        if (m_widgetCreator) {
+            m_widget = m_widgetCreator();
+        } else if (m_layouter) {
+            m_widget = new QWidget;
+            m_layouter(m_widget);
         } else {
             QTC_CHECK(false);
         }
     }
-    return d->m_widget;
+    return m_widget;
 }
 
 /*!
@@ -253,35 +150,13 @@ QWidget *IOptionsPage::widget()
 
 void IOptionsPage::apply()
 {
-    if (auto widget = qobject_cast<IOptionsPageWidget *>(d->m_widget))
+    if (auto widget = qobject_cast<IOptionsPageWidget *>(m_widget)) {
         widget->apply();
-
-    if (d->m_settingsProvider) {
-        AspectContainer *container = d->m_settingsProvider();
-        QTC_ASSERT(container, return);
-        // Sanity check: Aspects in option pages should not autoapply.
-        if (!container->aspects().isEmpty()) {
-            BaseAspect *aspect = container->aspects().first();
-            QTC_ASSERT(aspect, return);
-            QTC_ASSERT(!aspect->isAutoApply(), container->setAutoApply(false));
-        }
-        if (container->isDirty()) {
-            container->apply();
-            container->writeSettings();
+    } else if (m_settings) {
+        if (m_settings->isDirty()) {
+            m_settings->apply();
+            m_settings->writeSettings(ICore::settings());
          }
-    }
-}
-
-void IOptionsPage::cancel()
-{
-    if (auto widget = qobject_cast<IOptionsPageWidget *>(d->m_widget))
-         widget->cancel();
-
-    if (d->m_settingsProvider) {
-         AspectContainer *container = d->m_settingsProvider();
-         QTC_ASSERT(container, return);
-         if (container->isDirty())
-            container->cancel();
     }
 }
 
@@ -296,15 +171,12 @@ void IOptionsPage::cancel()
 
 void IOptionsPage::finish()
 {
-    if (auto widget = qobject_cast<IOptionsPageWidget *>(d->m_widget))
+    if (auto widget = qobject_cast<IOptionsPageWidget *>(m_widget))
         widget->finish();
+    else if (m_settings)
+        m_settings->finish();
 
-    if (d->m_settingsProvider) {
-        AspectContainer *container = d->m_settingsProvider();
-        container->finish();
-    }
-
-    delete d->m_widget;
+    delete m_widget;
 }
 
 /*!
@@ -313,29 +185,60 @@ void IOptionsPage::finish()
 */
 void IOptionsPage::setCategoryIconPath(const FilePath &categoryIconPath)
 {
-    d->m_categoryIconPath = categoryIconPath;
+    m_categoryIcon = Icon({{categoryIconPath, Theme::PanelTextColorDark}}, Icon::Tint);
 }
 
-void IOptionsPage::setSettingsProvider(const std::function<AspectContainer *()> &provider)
+void IOptionsPage::setSettings(AspectContainer *settings)
 {
-    d->m_settingsProvider = provider;
+    m_settings = settings;
 }
 
-static QList<IOptionsPage *> &optionsPages()
+void IOptionsPage::setLayouter(const std::function<void(QWidget *w)> &layouter)
 {
-    static QList<IOptionsPage *> thePages;
-    return thePages;
+    m_layouter = layouter;
 }
 
 /*!
-    Constructs an options page and registers it
+    \fn void Core::IOptionsPage::setId(Utils::Id id)
+
+    Sets the \a id of the options page.
+*/
+
+/*!
+    \fn void Core::IOptionsPage::setDisplayName(const QString &displayName)
+
+    Sets \a displayName as the display name of the options page.
+*/
+
+/*!
+    \fn void Core::IOptionsPage::setCategory(Utils::Id category)
+
+    Uses \a category to sort the options pages.
+*/
+
+/*!
+    \fn void Core::IOptionsPage::setDisplayCategory(const QString &displayCategory)
+
+    Sets \a displayCategory as the display category of the options page.
+*/
+
+/*!
+    \fn void Core::IOptionsPage::setCategoryIcon(const Utils::Icon &categoryIcon)
+
+    Sets \a categoryIcon as the category icon of the options page.
+*/
+
+static QList<IOptionsPage *> g_optionsPages;
+
+/*!
+    Constructs an options page with the given \a parent and registers it
     at the global options page pool if \a registerGlobally is \c true.
 */
-IOptionsPage::IOptionsPage(bool registerGlobally)
-    : d(new Internal::IOptionsPagePrivate)
+IOptionsPage::IOptionsPage(QObject *parent, bool registerGlobally)
+    : QObject(parent)
 {
     if (registerGlobally)
-        optionsPages().append(this);
+        g_optionsPages.append(this);
 }
 
 /*!
@@ -343,7 +246,7 @@ IOptionsPage::IOptionsPage(bool registerGlobally)
  */
 IOptionsPage::~IOptionsPage()
 {
-    optionsPages().removeOne(this);
+    g_optionsPages.removeOne(this);
 }
 
 /*!
@@ -351,41 +254,7 @@ IOptionsPage::~IOptionsPage()
  */
 const QList<IOptionsPage *> IOptionsPage::allOptionsPages()
 {
-    return optionsPages();
-}
-
-/*!
-    Returns a unique identifier for referencing the options page.
-*/
-Id IOptionsPage::id() const
-{
-    return d->m_id;
-}
-
-/*!
-    Returns the translated display name of the options page.
-*/
-QString IOptionsPage::displayName() const
-{
-    return d->m_displayName;
-}
-
-/*!
-    Returns the unique id for the category that the options page should be displayed in. This id is
-    used for sorting the list on the left side of the \uicontrol Options dialog.
-*/
-Id IOptionsPage::category() const
-{
-    return d->m_category;
-}
-
-/*!
-    Returns the translated category name of the options page. This name is displayed in the list on
-    the left side of the \uicontrol Options dialog.
-*/
-QString IOptionsPage::displayCategory() const
-{
-    return d->m_displayCategory;
+    return g_optionsPages;
 }
 
 /*!
@@ -395,12 +264,24 @@ QString IOptionsPage::displayCategory() const
 */
 bool IOptionsPage::matches(const QRegularExpression &regexp) const
 {
-    if (!d->m_keywordsInitialized) {
-        d->m_keywords = transform(keywords(), stripAccelerator);
-        d->m_keywordsInitialized = true;
-    }
+    if (!m_keywordsInitialized) {
+        auto that = const_cast<IOptionsPage *>(this);
+        QWidget *widget = that->widget();
+        if (!widget)
+            return false;
+        // find common subwidgets
+        for (const QLabel *label : widget->findChildren<QLabel *>())
+            m_keywords << Utils::stripAccelerator(label->text());
+        for (const QCheckBox *checkbox : widget->findChildren<QCheckBox *>())
+            m_keywords << Utils::stripAccelerator(checkbox->text());
+        for (const QPushButton *pushButton : widget->findChildren<QPushButton *>())
+            m_keywords << Utils::stripAccelerator(pushButton->text());
+        for (const QGroupBox *groupBox : widget->findChildren<QGroupBox *>())
+            m_keywords << Utils::stripAccelerator(groupBox->title());
 
-    for (const QString &keyword : d->m_keywords)
+        m_keywordsInitialized = true;
+    }
+    for (const QString &keyword : qAsConst(m_keywords))
         if (keyword.contains(regexp))
             return true;
     return false;
@@ -408,8 +289,8 @@ bool IOptionsPage::matches(const QRegularExpression &regexp) const
 
 static QList<IOptionsPageProvider *> g_optionsPagesProviders;
 
-IOptionsPageProvider::IOptionsPageProvider()
-    : d(new Internal::IOptionsPageProviderPrivate)
+IOptionsPageProvider::IOptionsPageProvider(QObject *parent)
+    : QObject(parent)
 {
     g_optionsPagesProviders.append(this);
 }
@@ -424,52 +305,9 @@ const QList<IOptionsPageProvider *> IOptionsPageProvider::allOptionsPagesProvide
     return g_optionsPagesProviders;
 }
 
-Id IOptionsPageProvider::category() const
+QIcon IOptionsPageProvider::categoryIcon() const
 {
-    return d->m_category;
-}
-
-QString IOptionsPageProvider::displayCategory() const
-{
-    return d->m_displayCategory;
-}
-
-FilePath IOptionsPageProvider::categoryIconPath() const
-{
-    return d->m_categoryIconPath;
-}
-
-/*!
-    Uses \a category to sort the options pages.
-*/
-void IOptionsPageProvider::setCategory(Id category)
-{
-    d->m_category = category;
-}
-
-/*!
-    Sets \a displayCategory as the display category of the options page.
-*/
-void IOptionsPageProvider::setDisplayCategory(const QString &displayCategory)
-{
-    d->m_displayCategory = displayCategory;
-}
-
-void IOptionsPageProvider::setCategoryIconPath(const FilePath &iconPath)
-{
-    d->m_categoryIconPath = iconPath;
-}
-
-static QHash<Id, Id> g_preselectedOptionPageItems;
-
-void setPreselectedOptionsPageItem(Id page, Id item)
-{
-    g_preselectedOptionPageItems.insert(page, item);
-}
-
-Id preselectedOptionsPageItem(Id page)
-{
-    return g_preselectedOptionPageItems.value(page);
+    return m_categoryIcon.icon();
 }
 
 } // Core

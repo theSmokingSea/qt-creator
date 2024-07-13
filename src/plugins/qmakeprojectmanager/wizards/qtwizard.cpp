@@ -1,33 +1,53 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qtwizard.h"
 
 #include <qmakeprojectmanager/qmakeproject.h>
 #include <qmakeprojectmanager/qmakeprojectmanagerconstants.h>
-#include <qmakeprojectmanager/qmakeprojectmanagertr.h>
 
 #include <coreplugin/icore.h>
 
 #include <cppeditor/cppeditorconstants.h>
-#include <cppeditor/cpptoolsreuse.h>
 
-#include <projectexplorer/kitaspects.h>
+#include <projectexplorer/kitinformation.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/projecttree.h>
 #include <projectexplorer/targetsetuppage.h>
 #include <projectexplorer/task.h>
 
-#include <qtsupport/qtkitaspect.h>
+#include <qtsupport/qtkitinformation.h>
 #include <qtsupport/qtsupportconstants.h>
 
 #include <utils/algorithm.h>
-#include <utils/mimeconstants.h>
+
+#include <QCoreApplication>
+#include <QVariant>
 
 using namespace ProjectExplorer;
 using namespace QtSupport;
-using namespace Utils;
 
 namespace QmakeProjectManager {
 namespace Internal {
@@ -40,22 +60,22 @@ QtWizard::QtWizard()
 
 QString QtWizard::sourceSuffix()
 {
-    return CppEditor::preferredCxxSourceSuffix(ProjectTree::currentProject());
+    return preferredSuffix(QLatin1String(ProjectExplorer::Constants::CPP_SOURCE_MIMETYPE));
 }
 
 QString QtWizard::headerSuffix()
 {
-    return CppEditor::preferredCxxHeaderSuffix(ProjectTree::currentProject());
+    return preferredSuffix(QLatin1String(ProjectExplorer::Constants::CPP_HEADER_MIMETYPE));
 }
 
 QString QtWizard::formSuffix()
 {
-    return preferredSuffix(QLatin1String(Utils::Constants::FORM_MIMETYPE));
+    return preferredSuffix(QLatin1String(ProjectExplorer::Constants::FORM_MIMETYPE));
 }
 
 QString QtWizard::profileSuffix()
 {
-    return preferredSuffix(QLatin1String(Utils::Constants::PROFILE_MIMETYPE));
+    return preferredSuffix(QLatin1String(Constants::PROFILE_MIMETYPE));
 }
 
 bool QtWizard::postGenerateFiles(const QWizard *w, const Core::GeneratedFiles &l, QString *errorMessage) const
@@ -72,7 +92,7 @@ bool QtWizard::qt4ProjectPostGenerateFiles(const QWizard *w,
     // Generate user settings
     for (const Core::GeneratedFile &file : generatedFiles)
         if (file.attributes() & Core::GeneratedFile::OpenProjectAttribute) {
-            dialog->writeUserFile(file.filePath());
+            dialog->writeUserFile(file.path());
             break;
         }
 
@@ -87,9 +107,9 @@ QString QtWizard::templateDir()
 
 bool QtWizard::lowerCaseFiles()
 {
-    QByteArray lowerCaseSettingsKey = CppEditor::Constants::CPPEDITOR_SETTINGSGROUP;
-    lowerCaseSettingsKey += '/';
-    lowerCaseSettingsKey += CppEditor::Constants::LOWERCASE_CPPFILES_KEY;
+    QString lowerCaseSettingsKey = QLatin1String(CppEditor::Constants::CPPEDITOR_SETTINGSGROUP);
+    lowerCaseSettingsKey += QLatin1Char('/');
+    lowerCaseSettingsKey += QLatin1String(CppEditor::Constants::LOWERCASE_CPPFILES_KEY);
     const bool lowerCaseDefault = CppEditor::Constants::LOWERCASE_CPPFILES_DEFAULT;
     return Core::ICore::settings()->value(lowerCaseSettingsKey, QVariant(lowerCaseDefault)).toBool();
 }
@@ -160,17 +180,17 @@ int BaseQmakeProjectWizardDialog::addTargetSetupPage(int id)
     m_targetSetupPage->setTasksGenerator([this](const Kit *k) -> Tasks {
         if (!QtKitAspect::qtVersionPredicate(requiredFeatures())(k))
             return {
-                ProjectExplorer::CompileTask(Task::Error, Tr::tr("Required Qt features not present."))};
+                ProjectExplorer::CompileTask(Task::Error, tr("Required Qt features not present."))};
 
         const Utils::Id platform = selectedPlatform();
         if (platform.isValid() && !QtKitAspect::platformPredicate(platform)(k))
             return {ProjectExplorer::CompileTask(
                 ProjectExplorer::Task::Warning,
-                Tr::tr("Qt version does not target the expected platform."))};
+                tr("Qt version does not target the expected platform."))};
         QSet<Utils::Id> features = {QtSupport::Constants::FEATURE_DESKTOP};
         if (!QtKitAspect::qtVersionPredicate(features)(k))
             return {ProjectExplorer::CompileTask(ProjectExplorer::Task::Unknown,
-                                                 Tr::tr("Qt version does not provide all features."))};
+                                                 tr("Qt version does not provide all features."))};
         return {};
     });
 
@@ -183,12 +203,12 @@ int BaseQmakeProjectWizardDialog::addTargetSetupPage(int id)
     return id;
 }
 
-bool BaseQmakeProjectWizardDialog::writeUserFile(const Utils::FilePath &proFile) const
+bool BaseQmakeProjectWizardDialog::writeUserFile(const QString &proFileName) const
 {
     if (!m_targetSetupPage)
         return false;
 
-    QmakeProject *pro = new QmakeProject(proFile);
+    QmakeProject *pro = new QmakeProject(Utils::FilePath::fromString(proFileName));
     bool success = m_targetSetupPage->setupProject(pro);
     if (success)
         pro->saveSettings();
@@ -203,15 +223,14 @@ QList<Utils::Id> BaseQmakeProjectWizardDialog::selectedKits() const
     return m_targetSetupPage->selectedKits();
 }
 
-void BaseQmakeProjectWizardDialog::generateProfileName(const QString &name,
-                                                       const Utils::FilePath &path)
+void BaseQmakeProjectWizardDialog::generateProfileName(const QString &name, const QString &path)
 {
     if (!m_targetSetupPage)
         return;
 
-    const Utils::FilePath proFile = path / name / (name + ".pro");
+    const QString proFile = QDir::cleanPath(path + '/' + name + '/' + name + ".pro");
 
-    m_targetSetupPage->setProjectPath(proFile);
+    m_targetSetupPage->setProjectPath(Utils::FilePath::fromString(proFile));
 }
 
 } // Internal

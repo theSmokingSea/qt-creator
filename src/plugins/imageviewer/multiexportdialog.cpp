@@ -1,11 +1,31 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "multiexportdialog.h"
-
 #include "exportdialog.h"
 #include "imageview.h" // ExportData
-#include "imageviewertr.h"
 
 #include <coreplugin/coreicons.h>
 #include <coreplugin/icore.h>
@@ -15,18 +35,20 @@
 #include <utils/utilsicons.h>
 
 #include <QDialogButtonBox>
+#include <QDir>
+#include <QFileInfo>
 #include <QFormLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QMessageBox>
 #include <QScreen>
+#include <QSettings>
 #include <QToolButton>
 #include <QWidgetAction>
 
-using namespace Utils;
-
-namespace ImageViewer::Internal {
+namespace ImageViewer {
+namespace Internal {
 
 static const int standardIconSizesValues[] = {16, 24, 32, 48, 64, 128, 256};
 
@@ -94,36 +116,36 @@ static QVector<QSize> stringToSizes(const QString &s)
     return result;
 }
 
-static FilePath fileNameForSize(QString pattern, const QSize &s)
+static QString fileNameForSize(QString pattern, const QSize &s)
 {
     pattern.replace("%1", QString::number(s.width()));
     pattern.replace("%2", QString::number(s.height()));
-    return FilePath::fromString(pattern);
+    return pattern;
 }
 
 // Helpers for writing/reading the user-specified size specifications
 // from/to the settings.
-static Key settingsGroup() { return "ExportSvgSizes"; }
+static inline QString settingsGroup() { return QStringLiteral("ExportSvgSizes"); }
 
 static QVector<QSize> readSettings(const QSize &size)
 {
     QVector<QSize> result;
-    QtcSettings *settings = Core::ICore::settings();
+    QSettings *settings = Core::ICore::settings();
     settings->beginGroup(settingsGroup());
     const QStringList keys = settings->allKeys();
     const int idx = keys.indexOf(sizeToString(size));
     if (idx >= 0)
-        result = stringToSizes(settings->value(keyFromString(keys.at(idx))).toString());
+        result = stringToSizes(settings->value(keys.at(idx)).toString());
     settings->endGroup();
     return result;
 }
 
 static void writeSettings(const QSize &size, const QString &sizeSpec)
 {
-    QtcSettings *settings = Core::ICore::settings();
+    QSettings *settings = Core::ICore::settings();
     settings->beginGroup(settingsGroup());
     const QString spec = sizeToString(size);
-    settings->setValue(keyFromString(spec), QVariant(sizeSpec));
+    settings->setValue(spec, QVariant(sizeSpec));
 
     // Limit the number of sizes to 10. Remove the
     // first element unless it is the newly added spec.
@@ -131,7 +153,7 @@ static void writeSettings(const QSize &size, const QString &sizeSpec)
     while (keys.size() > 10) {
         const int existingIndex = keys.indexOf(spec);
         const int removeIndex = existingIndex == 0 ? 1 : 0;
-        settings->remove(keyFromString(keys.takeAt(removeIndex)));
+        settings->remove(keys.takeAt(removeIndex));
     }
     settings->endGroup();
 }
@@ -158,11 +180,11 @@ MultiExportDialog::MultiExportDialog(QWidget *parent)
     m_pathChooser->setExpectedKind(Utils::PathChooser::SaveFile);
     m_pathChooser->setPromptDialogFilter(ExportDialog::imageNameFilterString());
     const QString pathChooserToolTip =
-        Tr::tr("Enter a file name containing place holders %1 "
+        tr("Enter a file name containing place holders %1 "
            "which will be replaced by the width and height of the image, respectively.")
           .arg("%1, %2");
     m_pathChooser->setToolTip(pathChooserToolTip);
-    QLabel *pathChooserLabel = new QLabel(Tr::tr("File:"));
+    QLabel *pathChooserLabel = new QLabel(tr("File:"));
     pathChooserLabel->setToolTip(pathChooserToolTip);
     formLayout->addRow(pathChooserLabel, m_pathChooser);
 
@@ -170,18 +192,18 @@ MultiExportDialog::MultiExportDialog(QWidget *parent)
     sizeEditButton->setFocusPolicy(Qt::NoFocus);
     sizeEditButton->setIcon(Utils::Icons::ARROW_DOWN.icon());
     auto sizeEditMenu = new QMenu(this);
-    sizeEditMenu->addAction(Tr::tr("Clear"),
+    sizeEditMenu->addAction(tr("Clear"),
                             m_sizesLineEdit, &QLineEdit::clear);
-    sizeEditMenu->addAction(Tr::tr("Set Standard Icon Sizes"), this,
+    sizeEditMenu->addAction(tr("Set Standard Icon Sizes"), this,
                             &MultiExportDialog::setStandardIconSizes);
-    sizeEditMenu->addAction(Tr::tr("Generate Sizes"), this,
+    sizeEditMenu->addAction(tr("Generate Sizes"), this,
                             &MultiExportDialog::setGeneratedSizes);
     sizeEditButton->setMenu(sizeEditMenu);
     sizeEditButton->setPopupMode(QToolButton::InstantPopup);
 
     const QString sizesToolTip =
-        Tr::tr("A comma-separated list of size specifications of the form \"<width>x<height>\".");
-    auto sizesLabel = new QLabel(Tr::tr("Sizes:"));
+        tr("A comma-separated list of size specifications of the form \"<width>x<height>\".");
+    auto sizesLabel = new QLabel(tr("Sizes:"));
     sizesLabel->setToolTip(sizesToolTip);
     formLayout->addRow(sizesLabel, m_sizesLineEdit);
     m_sizesLineEdit->setToolTip(sizesToolTip);
@@ -235,7 +257,7 @@ void MultiExportDialog::suggestSizes()
 QVector<ExportData> MultiExportDialog::exportData() const
 {
     const QVector<QSize> sizeList = sizes();
-    const QString pattern = exportFileName().toString();
+    const QString pattern = exportFileName();
      QVector<ExportData> result;
      result.reserve(sizeList.size());
      for (const QSize &s : sizeList)
@@ -257,36 +279,36 @@ void MultiExportDialog::accept()
 
     const QString &sizeSpec = sizesSpecification();
     if (sizeSpec.isEmpty()) {
-        QMessageBox::warning(this, windowTitle(), Tr::tr("Please specify some sizes."));
+        QMessageBox::warning(this, windowTitle(), tr("Please specify some sizes."));
         return;
     }
 
     const QVector<ExportData> &data = exportData();
     if (data.isEmpty()) {
         QMessageBox::warning(this, windowTitle(),
-                             Tr::tr("Invalid size specification: %1").arg(sizeSpec));
+                             tr("Invalid size specification: %1").arg(sizeSpec));
         return;
     }
-    if (data.size() > 1 && data.at(0).filePath == data.at(1).filePath) {
+    if (data.size() > 1 && data.at(0).fileName == data.at(1).fileName) {
         QMessageBox::warning(this, windowTitle(),
-                             Tr::tr("The file name must contain one of the placeholders %1, %2.")
+                             tr("The file name must contain one of the placeholders %1, %2.")
                                 .arg(QString("%1"), QString("%2")));
         return;
     }
 
     writeSettings(m_svgSize, sizeSpec);
 
-    FilePaths existingFiles;
+    QStringList existingFiles;
     for (const ExportData &d : data) {
-        if (d.filePath.exists())
-            existingFiles.append(d.filePath);
+        if (QFileInfo::exists(d.fileName))
+            existingFiles.append(d.fileName);
     }
     if (!existingFiles.isEmpty()) {
         const QString message = existingFiles.size() == 1
-            ? Tr::tr("The file %1 already exists.\nWould you like to overwrite it?")
-                .arg(existingFiles.constFirst().toUserOutput())
-            : Tr::tr("The files %1 already exist.\nWould you like to overwrite them?")
-                .arg(FilePath::formatFilePaths(existingFiles, ", "));
+            ? tr("The file %1 already exists.\nWould you like to overwrite it?")
+                .arg(QDir::toNativeSeparators(existingFiles.constFirst()))
+            : tr("The files %1 already exist.\nWould you like to overwrite them?")
+                .arg(QDir::toNativeSeparators(existingFiles.join(", ")));
         QMessageBox messageBox(QMessageBox::Question, windowTitle(), message,
                                QMessageBox::Yes | QMessageBox::No, this);
         if (messageBox.exec() != QMessageBox::Yes)
@@ -296,21 +318,18 @@ void MultiExportDialog::accept()
     QDialog::accept();
 }
 
-FilePath MultiExportDialog::exportFileName() const
+QString MultiExportDialog::exportFileName() const
 {
-    return m_pathChooser->filePath();
+    return m_pathChooser->filePath().toString();
 }
 
-void MultiExportDialog::setExportFileName(const FilePath &filePath)
+void MultiExportDialog::setExportFileName(QString f)
 {
-    FilePath f = filePath;
-    QString ff = f.path();
-    const int lastDot = ff.lastIndexOf('.');
-    if (lastDot != -1) {
-        ff.insert(lastDot, "-%1");
-        f = f.withNewPath(ff);
-    };
-    m_pathChooser->setFilePath(f);
+    const int lastDot = f.lastIndexOf('.');
+    if (lastDot != -1)
+        f.insert(lastDot, "-%1");
+    m_pathChooser->setFilePath(Utils::FilePath::fromString(f));
 }
 
-} // ImageViewer:Internal
+} // namespace Internal
+} // namespace ImageViewer

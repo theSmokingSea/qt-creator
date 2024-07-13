@@ -1,1 +1,0 @@
-HEADERS = TheClass.h

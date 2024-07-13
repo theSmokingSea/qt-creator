@@ -1,26 +1,43 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+﻿/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nimcodestylepreferenceswidget.h"
+#include "ui_nimcodestylepreferenceswidget.h"
 
 #include "../nimconstants.h"
 #include "../editor/nimeditorfactory.h"
 
 #include <extensionsystem/pluginmanager.h>
-
 #include <texteditor/displaysettings.h>
 #include <texteditor/fontsettings.h>
 #include <texteditor/icodestylepreferences.h>
-#include <texteditor/icodestylepreferencesfactory.h>
 #include <texteditor/indenter.h>
-#include <texteditor/snippets/snippeteditor.h>
-#include <texteditor/snippets/snippetprovider.h>
-#include <texteditor/simplecodestylepreferenceswidget.h>
 #include <texteditor/tabsettings.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditorsettings.h>
-
-#include <utils/layoutbuilder.h>
+#include <texteditor/snippets/snippetprovider.h>
 
 using namespace TextEditor;
 
@@ -29,23 +46,11 @@ namespace Nim {
 NimCodeStylePreferencesWidget::NimCodeStylePreferencesWidget(ICodeStylePreferences *preferences, QWidget *parent)
     : TextEditor::CodeStyleEditorWidget(parent)
     , m_preferences(preferences)
+    , m_ui(new Ui::NimCodeStylePreferencesWidget())
 {
-    auto tabPreferencesWidget = new SimpleCodeStylePreferencesWidget;
-    tabPreferencesWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Preferred);
-    tabPreferencesWidget->setPreferences(preferences);
-
-    m_previewTextEdit = new SnippetEditorWidget;
-    m_previewTextEdit->setPlainText(Nim::Constants::C_NIMCODESTYLEPREVIEWSNIPPET);
-
-    using namespace Layouting;
-    Row {
-        Column {
-            tabPreferencesWidget,
-            st,
-        },
-        m_previewTextEdit,
-        noMargin,
-    }.attachTo(this);
+    m_ui->setupUi(this);
+    m_ui->tabPreferencesWidget->setPreferences(preferences);
+    m_ui->previewTextEdit->setPlainText(Nim::Constants::C_NIMCODESTYLEPREVIEWSNIPPET);
 
     decorateEditor(TextEditorSettings::fontSettings());
     connect(TextEditorSettings::instance(), &TextEditorSettings::fontSettingsChanged,
@@ -59,38 +64,43 @@ NimCodeStylePreferencesWidget::NimCodeStylePreferencesWidget(ICodeStylePreferenc
     updatePreview();
 }
 
-NimCodeStylePreferencesWidget::~NimCodeStylePreferencesWidget() = default;
+NimCodeStylePreferencesWidget::~NimCodeStylePreferencesWidget()
+{
+    delete m_ui;
+    m_ui = nullptr;
+}
 
 void NimCodeStylePreferencesWidget::decorateEditor(const FontSettings &fontSettings)
 {
-    m_previewTextEdit->textDocument()->setFontSettings(fontSettings);
-    NimEditorFactory::decorateEditor(m_previewTextEdit);
+    m_ui->previewTextEdit->textDocument()->setFontSettings(fontSettings);
+    NimEditorFactory::decorateEditor(m_ui->previewTextEdit);
 }
 
 void NimCodeStylePreferencesWidget::setVisualizeWhitespace(bool on)
 {
-    DisplaySettings displaySettings = m_previewTextEdit->displaySettings();
+    DisplaySettings displaySettings = m_ui->previewTextEdit->displaySettings();
     displaySettings.m_visualizeWhitespace = on;
-    m_previewTextEdit->setDisplaySettings(displaySettings);
+    m_ui->previewTextEdit->setDisplaySettings(displaySettings);
 }
 
 void NimCodeStylePreferencesWidget::updatePreview()
 {
-    QTextDocument *doc = m_previewTextEdit->document();
+    QTextDocument *doc = m_ui->previewTextEdit->document();
 
     const TabSettings &ts = m_preferences
             ? m_preferences->currentTabSettings()
             : TextEditorSettings::codeStyle()->tabSettings();
-    m_previewTextEdit->textDocument()->setTabSettings(ts);
+    m_ui->previewTextEdit->textDocument()->setTabSettings(ts);
 
     QTextBlock block = doc->firstBlock();
-    QTextCursor tc = m_previewTextEdit->textCursor();
+    QTextCursor tc = m_ui->previewTextEdit->textCursor();
     tc.beginEditBlock();
     while (block.isValid()) {
-        m_previewTextEdit->textDocument()->indenter()->indentBlock(block, QChar::Null, ts);
+        m_ui->previewTextEdit->textDocument()->indenter()->indentBlock(block, QChar::Null, ts);
         block = block.next();
     }
     tc.endEditBlock();
 }
 
-} // Nim
+} // namespace Nim
+

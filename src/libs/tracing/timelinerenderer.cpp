@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "timelinerenderer_p.h"
 #include "timelinerenderpass.h"
@@ -183,28 +205,23 @@ void TimelineRenderer::wheelEvent(QWheelEvent *event)
     // ctrl-wheel means zoom
     if (event->modifiers() & Qt::ControlModifier) {
         event->setAccepted(true);
-        if (event->angleDelta().y() == 0)
-            return;
         TimelineZoomControl *zoom = zoomer();
 
-        // Handle similar to text editor, but avoid floats.
-        // angleDelta of 120 is considered a 10% change in zoom.
-        const qint64 delta = event->angleDelta().y();
-        const qint64 newDuration = qBound(zoom->minimumRangeLength(),
-                                          zoom->rangeDuration() * 1200 / (1200 + delta),
-                                          std::max(zoom->minimumRangeLength(),
-                                                   zoom->traceDuration()));
-        const qint64 mouseTime = event->position().toPoint().x() * zoom->windowDuration() / width()
-                                 + zoom->windowStart();
-        // Try to keep mouseTime where it was in relation to the shown range,
-        // but keep within traceStart/End
-        const qint64 newStart
-            = qBound(zoom->traceStart(),
-                     mouseTime
-                         - newDuration * /*rest is mouse time position [0,1] in range:*/
-                               (mouseTime - zoom->rangeStart()) / zoom->rangeDuration(),
-                     std::max(zoom->traceStart(), zoom->traceEnd() - newDuration));
-        zoom->setRange(newStart, newStart + newDuration);
+        int degrees = (event->angleDelta().x() + event->angleDelta().y()) / 8;
+        const qint64 circle = 360;
+        qint64 mouseTime = event->position().toPoint().x() * zoom->windowDuration() / width() +
+                zoom->windowStart();
+        qint64 beforeMouse = (mouseTime - zoom->rangeStart()) * (circle - degrees) / circle;
+        qint64 afterMouse = (zoom->rangeEnd() - mouseTime) * (circle - degrees) / circle;
+
+        qint64 newStart = qBound(zoom->traceStart(), zoom->traceEnd(), mouseTime - beforeMouse);
+        if (newStart + zoom->minimumRangeLength() > zoom->traceEnd())
+            return; // too close to trace end
+
+        qint64 newEnd = qBound(newStart + zoom->minimumRangeLength(), zoom->traceEnd(),
+                               mouseTime + afterMouse);
+
+        zoom->setRange(newStart, newEnd);
     } else {
         TimelineAbstractRenderer::wheelEvent(event);
     }

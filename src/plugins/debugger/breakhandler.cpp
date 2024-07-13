@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/***************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "breakhandler.h"
 
@@ -8,7 +30,6 @@
 #include "debuggerengine.h"
 #include "debuggericons.h"
 #include "debuggerinternalconstants.h"
-#include "debuggertr.h"
 #include "disassembleragent.h"
 #include "enginemanager.h"
 #include "simplifytype.h"
@@ -18,7 +39,8 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
-#include <coreplugin/session.h>
+
+#include <projectexplorer/session.h>
 
 #include <texteditor/textmark.h>
 #include <texteditor/texteditor.h>
@@ -40,7 +62,6 @@
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDebug>
-#include <QDialogButtonBox>
 #include <QDir>
 #include <QFormLayout>
 #include <QGroupBox>
@@ -68,13 +89,10 @@ class BreakpointMarker : public TextEditor::TextMark
 {
 public:
     BreakpointMarker(const Breakpoint &bp, const FilePath &fileName, int lineNumber)
-        : TextMark(fileName,
-                   lineNumber,
-                   {Tr::tr("Breakpoint"), Constants::TEXT_MARK_CATEGORY_BREAKPOINT})
-        , m_bp(bp)
+        : TextMark(fileName, lineNumber, Constants::TEXT_MARK_CATEGORY_BREAKPOINT), m_bp(bp)
     {
         setColor(Theme::Debugger_Breakpoint_TextMarkColor);
-        setDefaultToolTip(Tr::tr("Breakpoint"));
+        setDefaultToolTip(QApplication::translate("BreakHandler", "Breakpoint"));
         setPriority(TextEditor::TextMark::NormalPriority);
         setIconProvider([bp] { return bp->icon(); });
         setToolTipProvider([bp] { return bp->toolTip(); });
@@ -84,14 +102,14 @@ public:
     {
         TextMark::updateLineNumber(lineNumber);
         QTC_ASSERT(m_bp, return);
-        m_bp->setTextPosition({lineNumber, -1});
+        m_bp->setLineNumber(lineNumber);
         if (GlobalBreakpoint gbp = m_bp->globalBreakpoint())
-            gbp->m_params.textPosition.line = lineNumber;
+            gbp->m_params.lineNumber = lineNumber;
     }
 
-    void updateFilePath(const FilePath &fileName) final
+    void updateFileName(const FilePath &fileName) final
     {
-        TextMark::updateFilePath(fileName);
+        TextMark::updateFileName(fileName);
         QTC_ASSERT(m_bp, return);
         m_bp->setFileName(fileName);
         if (GlobalBreakpoint gbp = m_bp->globalBreakpoint())
@@ -107,7 +125,7 @@ public:
         if (!gbp)
             return;
         BreakpointParameters params = gbp->m_params;
-        params.textPosition.line = line;
+        params.lineNumber = line;
         gbp->deleteBreakpoint();
         BreakpointManager::createBreakpoint(params);
     }
@@ -129,12 +147,9 @@ class GlobalBreakpointMarker : public TextEditor::TextMark
 {
 public:
     GlobalBreakpointMarker(GlobalBreakpoint gbp, const FilePath &fileName, int lineNumber)
-        : TextMark(fileName,
-                   lineNumber,
-                   {Tr::tr("Breakpoint"), Constants::TEXT_MARK_CATEGORY_BREAKPOINT})
-        , m_gbp(gbp)
+        : TextMark(fileName, lineNumber, Constants::TEXT_MARK_CATEGORY_BREAKPOINT), m_gbp(gbp)
     {
-        setDefaultToolTip(Tr::tr("Breakpoint"));
+        setDefaultToolTip(QApplication::translate("BreakHandler", "Breakpoint"));
         setPriority(TextEditor::TextMark::NormalPriority);
         setIconProvider([this] { return m_gbp->icon(); });
         setToolTipProvider([this] { return m_gbp->toolTip(); });
@@ -158,9 +173,9 @@ public:
         m_gbp->updateLineNumber(lineNumber);
     }
 
-    void updateFilePath(const FilePath &fileName) final
+    void updateFileName(const FilePath &fileName) final
     {
-        TextMark::updateFilePath(fileName);
+        TextMark::updateFileName(fileName);
         QTC_ASSERT(m_gbp, return);
         m_gbp->updateFileName(fileName);
     }
@@ -191,44 +206,44 @@ static QString stateToString(BreakpointState state)
 {
     switch (state) {
         case BreakpointNew:
-            return Tr::tr("New");
+            return BreakHandler::tr("New");
         case BreakpointInsertionRequested:
-            return Tr::tr("Insertion requested");
+            return BreakHandler::tr("Insertion requested");
         case BreakpointInsertionProceeding:
-            return Tr::tr("Insertion proceeding");
+            return BreakHandler::tr("Insertion proceeding");
         case BreakpointUpdateRequested:
-            return Tr::tr("Change requested");
+            return BreakHandler::tr("Change requested");
         case BreakpointUpdateProceeding:
-            return Tr::tr("Change proceeding");
+            return BreakHandler::tr("Change proceeding");
         case BreakpointInserted:
-            return Tr::tr("Breakpoint inserted");
+            return BreakHandler::tr("Breakpoint inserted");
         case BreakpointRemoveRequested:
-            return Tr::tr("Removal requested");
+            return BreakHandler::tr("Removal requested");
         case BreakpointRemoveProceeding:
-            return Tr::tr("Removal proceeding");
+            return BreakHandler::tr("Removal proceeding");
         case BreakpointDead:
-            return Tr::tr("Dead");
+            return BreakHandler::tr("Dead");
         default:
             break;
     }
     //: Invalid breakpoint state.
-    return Tr::tr("<invalid state>");
+    return BreakHandler::tr("<invalid state>");
 }
 
 static QString msgBreakpointAtSpecialFunc(const QString &func)
 {
-    return Tr::tr("Breakpoint at \"%1\"").arg(func);
+    return BreakHandler::tr("Breakpoint at \"%1\"").arg(func);
 }
 
 static QString typeToString(BreakpointType type)
 {
     switch (type) {
         case BreakpointByFileAndLine:
-            return Tr::tr("Breakpoint by File and Line");
+            return BreakHandler::tr("Breakpoint by File and Line");
         case BreakpointByFunction:
-            return Tr::tr("Breakpoint by Function");
+            return BreakHandler::tr("Breakpoint by Function");
         case BreakpointByAddress:
-            return Tr::tr("Breakpoint by Address");
+            return BreakHandler::tr("Breakpoint by Address");
         case BreakpointAtThrow:
             return msgBreakpointAtSpecialFunc("throw");
         case BreakpointAtCatch:
@@ -242,20 +257,20 @@ static QString typeToString(BreakpointType type)
         case BreakpointAtSysCall:
             return msgBreakpointAtSpecialFunc("syscall");
         case BreakpointAtMain:
-            return Tr::tr("Breakpoint at Function \"main()\"");
+            return BreakHandler::tr("Breakpoint at Function \"main()\"");
         case WatchpointAtAddress:
-            return Tr::tr("Watchpoint at Address");
+            return BreakHandler::tr("Watchpoint at Address");
         case WatchpointAtExpression:
-            return Tr::tr("Watchpoint at Expression");
+            return BreakHandler::tr("Watchpoint at Expression");
         case BreakpointOnQmlSignalEmit:
-            return Tr::tr("Breakpoint on QML Signal Emit");
+            return BreakHandler::tr("Breakpoint on QML Signal Emit");
         case BreakpointAtJavaScriptThrow:
-            return Tr::tr("Breakpoint at JavaScript throw");
+            return BreakHandler::tr("Breakpoint at JavaScript throw");
         case UnknownBreakpointType:
         case LastBreakpointType:
             break;
     }
-    return Tr::tr("Unknown Breakpoint Type");
+    return BreakHandler::tr("Unknown Breakpoint Type");
 }
 
 class LeftElideDelegate : public QStyledItemDelegate
@@ -293,6 +308,8 @@ public:
 
 class BreakpointDialog : public QDialog
 {
+    Q_DECLARE_TR_FUNCTIONS(Debugger::Internal::BreakHandler)
+
 public:
     explicit BreakpointDialog(unsigned int enabledParts, QWidget *parent = nullptr);
     bool showDialog(BreakpointParameters *data, BreakpointParts *parts);
@@ -356,130 +373,130 @@ BreakpointDialog::BreakpointDialog(unsigned int enabledParts, QWidget *parent)
     : QDialog(parent), m_enabledParts(enabledParts), m_previousType(UnknownBreakpointType),
       m_firstTypeChange(true)
 {
-    setWindowTitle(Tr::tr("Edit Breakpoint Properties"));
+    setWindowTitle(tr("Edit Breakpoint Properties"));
 
-    auto groupBoxBasic = new QGroupBox(Tr::tr("Basic"), this);
+    auto groupBoxBasic = new QGroupBox(tr("Basic"), this);
 
     // Match BreakpointType (omitting unknown type).
     const QStringList types = {
-        Tr::tr("File Name and Line Number"),
-        Tr::tr("Function Name"),
-        Tr::tr("Break on Memory Address"),
-        Tr::tr("Break When C++ Exception Is Thrown"),
-        Tr::tr("Break When C++ Exception Is Caught"),
-        Tr::tr("Break When Function \"main\" Starts"),
-        Tr::tr("Break When a New Process Is Forked"),
-        Tr::tr("Break When a New Process Is Executed"),
-        Tr::tr("Break When a System Call Is Executed"),
-        Tr::tr("Break on Data Access at Fixed Address"),
-        Tr::tr("Break on Data Access at Address Given by Expression"),
-        Tr::tr("Break on QML Signal Emit"),
-        Tr::tr("Break When JavaScript Exception Is Thrown")
+        tr("File Name and Line Number"),
+        tr("Function Name"),
+        tr("Break on Memory Address"),
+        tr("Break When C++ Exception Is Thrown"),
+        tr("Break When C++ Exception Is Caught"),
+        tr("Break When Function \"main\" Starts"),
+        tr("Break When a New Process Is Forked"),
+        tr("Break When a New Process Is Executed"),
+        tr("Break When a System Call Is Executed"),
+        tr("Break on Data Access at Fixed Address"),
+        tr("Break on Data Access at Address Given by Expression"),
+        tr("Break on QML Signal Emit"),
+        tr("Break When JavaScript Exception Is Thrown")
     };
     // We don't list UnknownBreakpointType, so 1 less:
     QTC_CHECK(types.size() + 1 == LastBreakpointType);
     m_comboBoxType = new QComboBox(groupBoxBasic);
     m_comboBoxType->setMaxVisibleItems(20);
     m_comboBoxType->addItems(types);
-    m_labelType = new QLabel(Tr::tr("Breakpoint &type:"), groupBoxBasic);
+    m_labelType = new QLabel(tr("Breakpoint &type:"), groupBoxBasic);
     m_labelType->setBuddy(m_comboBoxType);
 
     m_pathChooserFileName = new PathChooser(groupBoxBasic);
     m_pathChooserFileName->setHistoryCompleter("Debugger.Breakpoint.File.History");
     m_pathChooserFileName->setExpectedKind(PathChooser::File);
-    m_labelFileName = new QLabel(Tr::tr("&File name:"), groupBoxBasic);
+    m_labelFileName = new QLabel(tr("&File name:"), groupBoxBasic);
     m_labelFileName->setBuddy(m_pathChooserFileName);
 
     m_lineEditLineNumber = new QLineEdit(groupBoxBasic);
-    m_labelLineNumber = new QLabel(Tr::tr("&Line number:"), groupBoxBasic);
+    m_labelLineNumber = new QLabel(tr("&Line number:"), groupBoxBasic);
     m_labelLineNumber->setBuddy(m_lineEditLineNumber);
 
     m_checkBoxEnabled = new QCheckBox(groupBoxBasic);
-    m_labelEnabled = new QLabel(Tr::tr("&Enabled:"), groupBoxBasic);
+    m_labelEnabled = new QLabel(tr("&Enabled:"), groupBoxBasic);
     m_labelEnabled->setBuddy(m_checkBoxEnabled);
 
     m_lineEditAddress = new QLineEdit(groupBoxBasic);
-    m_labelAddress = new QLabel(Tr::tr("&Address:"), groupBoxBasic);
+    m_labelAddress = new QLabel(tr("&Address:"), groupBoxBasic);
     m_labelAddress->setBuddy(m_lineEditAddress);
 
     m_lineEditExpression = new QLineEdit(groupBoxBasic);
-    m_labelExpression = new QLabel(Tr::tr("&Expression:"), groupBoxBasic);
+    m_labelExpression = new QLabel(tr("&Expression:"), groupBoxBasic);
     m_labelExpression->setBuddy(m_lineEditExpression);
 
     m_lineEditFunction = new QLineEdit(groupBoxBasic);
-    m_labelFunction = new QLabel(Tr::tr("Fun&ction:"), groupBoxBasic);
+    m_labelFunction = new QLabel(tr("Fun&ction:"), groupBoxBasic);
     m_labelFunction->setBuddy(m_lineEditFunction);
 
-    auto groupBoxAdvanced = new QGroupBox(Tr::tr("Advanced"), this);
+    auto groupBoxAdvanced = new QGroupBox(tr("Advanced"), this);
 
     m_checkBoxTracepoint = new QCheckBox(groupBoxAdvanced);
-    m_labelTracepoint = new QLabel(Tr::tr("T&racepoint only:"), groupBoxAdvanced);
+    m_labelTracepoint = new QLabel(tr("T&racepoint only:"), groupBoxAdvanced);
     m_labelTracepoint->setBuddy(m_checkBoxTracepoint);
 
     m_checkBoxOneShot = new QCheckBox(groupBoxAdvanced);
-    m_labelOneShot = new QLabel(Tr::tr("&One shot only:"), groupBoxAdvanced);
+    m_labelOneShot = new QLabel(tr("&One shot only:"), groupBoxAdvanced);
     m_labelOneShot->setBuddy(m_checkBoxOneShot);
 
     const QString pathToolTip =
-        Tr::tr("<p>Determines how the path is specified "
-                    "when setting breakpoints:</p><ul>"
-               "<li><i>Use Engine Default</i>: Preferred setting of the "
-                    "debugger engine.</li>"
-               "<li><i>Use Full Path</i>: Pass full path, avoiding ambiguities "
-                    "should files of the same name exist in several modules. "
-                    "This is the engine default for CDB and LLDB.</li>"
-               "<li><i>Use File Name</i>: Pass the file name only. This is "
-                    "useful when using a source tree whose location does "
-                    "not match the one used when building the modules. "
-                    "It is the engine default for GDB as using full paths can "
-                    "be slow with this engine.</li></ul>");
+        tr("<p>Determines how the path is specified "
+                "when setting breakpoints:</p><ul>"
+           "<li><i>Use Engine Default</i>: Preferred setting of the "
+                "debugger engine.</li>"
+           "<li><i>Use Full Path</i>: Pass full path, avoiding ambiguities "
+                "should files of the same name exist in several modules. "
+                "This is the engine default for CDB and LLDB.</li>"
+           "<li><i>Use File Name</i>: Pass the file name only. This is "
+                "useful when using a source tree whose location does "
+                "not match the one used when building the modules. "
+                "It is the engine default for GDB as using full paths can "
+                "be slow with this engine.</li></ul>");
     m_comboBoxPathUsage = new QComboBox(groupBoxAdvanced);
-    m_comboBoxPathUsage->addItem(Tr::tr("Use Engine Default"));
-    m_comboBoxPathUsage->addItem(Tr::tr("Use Full Path"));
-    m_comboBoxPathUsage->addItem(Tr::tr("Use File Name"));
+    m_comboBoxPathUsage->addItem(tr("Use Engine Default"));
+    m_comboBoxPathUsage->addItem(tr("Use Full Path"));
+    m_comboBoxPathUsage->addItem(tr("Use File Name"));
     m_comboBoxPathUsage->setToolTip(pathToolTip);
-    m_labelUseFullPath = new QLabel(Tr::tr("Pat&h:"), groupBoxAdvanced);
+    m_labelUseFullPath = new QLabel(tr("Pat&h:"), groupBoxAdvanced);
     m_labelUseFullPath->setBuddy(m_comboBoxPathUsage);
     m_labelUseFullPath->setToolTip(pathToolTip);
 
     const QString moduleToolTip =
-            "<p>" + Tr::tr("Specifying the module (base name of the library or executable) "
+            "<p>" + tr("Specifying the module (base name of the library or executable) "
                        "for function or file type breakpoints can significantly speed up "
                        "debugger startup times (CDB, LLDB).") + "</p>";
     m_lineEditModule = new QLineEdit(groupBoxAdvanced);
     m_lineEditModule->setToolTip(moduleToolTip);
-    m_labelModule = new QLabel(Tr::tr("&Module:"), groupBoxAdvanced);
+    m_labelModule = new QLabel(tr("&Module:"), groupBoxAdvanced);
     m_labelModule->setBuddy(m_lineEditModule);
     m_labelModule->setToolTip(moduleToolTip);
 
     const QString commandsToolTip =
-            "<p>" + Tr::tr("Debugger commands to be executed when the breakpoint is hit. "
+            "<p>" + tr("Debugger commands to be executed when the breakpoint is hit. "
                        "This feature is only available for GDB.") + "</p>";
     m_textEditCommands = new SmallTextEdit(groupBoxAdvanced);
     m_textEditCommands->setToolTip(commandsToolTip);
-    m_labelCommands = new QLabel(Tr::tr("&Commands:"), groupBoxAdvanced);
+    m_labelCommands = new QLabel(tr("&Commands:"), groupBoxAdvanced);
     m_labelCommands->setBuddy(m_textEditCommands);
     m_labelCommands->setToolTip(commandsToolTip);
 
     m_lineEditMessage = new QLineEdit(groupBoxAdvanced);
-    m_labelMessage = new QLabel(Tr::tr("&Message:"), groupBoxAdvanced);
+    m_labelMessage = new QLabel(tr("&Message:"), groupBoxAdvanced);
     m_labelMessage->setBuddy(m_lineEditMessage);
 
     m_lineEditCondition = new QLineEdit(groupBoxAdvanced);
-    m_labelCondition = new QLabel(Tr::tr("C&ondition:"), groupBoxAdvanced);
+    m_labelCondition = new QLabel(tr("C&ondition:"), groupBoxAdvanced);
     m_labelCondition->setBuddy(m_lineEditCondition);
 
     m_spinBoxIgnoreCount = new QSpinBox(groupBoxAdvanced);
     m_spinBoxIgnoreCount->setMinimum(0);
     m_spinBoxIgnoreCount->setMaximum(2147483647);
-    m_labelIgnoreCount = new QLabel(Tr::tr("&Ignore count:"), groupBoxAdvanced);
+    m_labelIgnoreCount = new QLabel(tr("&Ignore count:"), groupBoxAdvanced);
     m_labelIgnoreCount->setBuddy(m_spinBoxIgnoreCount);
 
     m_lineEditThreadSpec = new QLineEdit(groupBoxAdvanced);
-    m_labelThreadSpec = new QLabel(Tr::tr("&Thread specification:"), groupBoxAdvanced);
+    m_labelThreadSpec = new QLabel(tr("&Thread specification:"), groupBoxAdvanced);
     m_labelThreadSpec->setBuddy(m_lineEditThreadSpec);
 
-    m_checkBoxPropagate = new QCheckBox(Tr::tr("Propagate Change to Preset Breakpoint"), this);
+    m_checkBoxPropagate = new QCheckBox(tr("Propagate Change to Preset Breakpoint"), this);
     m_checkBoxPropagate->setCheckable(true);
     m_checkBoxPropagate->setChecked(true);
     m_checkBoxPropagate->setVisible(false); // FIXME: Make it work.
@@ -526,7 +543,8 @@ BreakpointDialog::BreakpointDialog(unsigned int enabledParts, QWidget *parent)
     verticalLayout->addWidget(m_buttonBox);
     verticalLayout->setStretchFactor(groupBoxAdvanced, 10);
 
-    connect(m_comboBoxType, &QComboBox::activated, this, &BreakpointDialog::typeChanged);
+    connect(m_comboBoxType, QOverload<int>::of(&QComboBox::activated),
+            this, &BreakpointDialog::typeChanged);
     connect(m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 }
@@ -643,7 +661,7 @@ void BreakpointDialog::getParts(unsigned partsMask, BreakpointParameters *data) 
     data->enabled = m_checkBoxEnabled->isChecked();
 
     if (partsMask & FileAndLinePart) {
-        data->textPosition.line = m_lineEditLineNumber->text().toInt();
+        data->lineNumber = m_lineEditLineNumber->text().toInt();
         data->pathUsage = static_cast<BreakpointPathUsage>(m_comboBoxPathUsage->currentIndex());
         data->fileName = m_pathChooserFileName->filePath();
     }
@@ -683,7 +701,7 @@ void BreakpointDialog::setParts(unsigned mask, const BreakpointParameters &data)
 
     if (mask & FileAndLinePart) {
         m_pathChooserFileName->setFilePath(data.fileName);
-        m_lineEditLineNumber->setText(QString::number(data.textPosition.line));
+        m_lineEditLineNumber->setText(QString::number(data.lineNumber));
     }
 
     if (mask & FunctionPart)
@@ -829,6 +847,8 @@ bool BreakpointDialog::showDialog(BreakpointParameters *data,
 // Dialog allowing changing properties of multiple breakpoints at a time.
 class MultiBreakPointsDialog : public QDialog
 {
+    Q_DECLARE_TR_FUNCTIONS(Debugger::Internal::BreakHandler)
+
 public:
     MultiBreakPointsDialog(unsigned int enabledParts, QWidget *parent);
 
@@ -852,7 +872,7 @@ private:
 MultiBreakPointsDialog::MultiBreakPointsDialog(unsigned int enabledParts, QWidget *parent) :
     QDialog(parent)
 {
-    setWindowTitle(Tr::tr("Edit Breakpoint Properties"));
+    setWindowTitle(tr("Edit Breakpoint Properties"));
 
     m_lineEditCondition = new QLineEdit(this);
     m_spinBoxIgnoreCount = new QSpinBox(this);
@@ -865,9 +885,9 @@ MultiBreakPointsDialog::MultiBreakPointsDialog(unsigned int enabledParts, QWidge
 
     auto formLayout = new QFormLayout;
     if (enabledParts & ConditionPart)
-        formLayout->addRow(Tr::tr("&Condition:"), m_lineEditCondition);
-    formLayout->addRow(Tr::tr("&Ignore count:"), m_spinBoxIgnoreCount);
-    formLayout->addRow(Tr::tr("&Thread specification:"), m_lineEditThreadSpec);
+        formLayout->addRow(tr("&Condition:"), m_lineEditCondition);
+    formLayout->addRow(tr("&Ignore count:"), m_spinBoxIgnoreCount);
+    formLayout->addRow(tr("&Thread specification:"), m_lineEditThreadSpec);
 
     auto verticalLayout = new QVBoxLayout(this);
     verticalLayout->addLayout(formLayout);
@@ -883,13 +903,13 @@ BreakHandler::BreakHandler(DebuggerEngine *engine)
 #if USE_BREAK_MODEL_TEST
     new ModelTest(this, 0);
 #endif
-    setHeader({Tr::tr("Number"), Tr::tr("Function"), Tr::tr("File"), Tr::tr("Line"),
-               Tr::tr("Address"), Tr::tr("Condition"), Tr::tr("Ignore"), Tr::tr("Threads")});
+    setHeader({tr("Number"), tr("Function"), tr("File"), tr("Line"), tr("Address"),
+               tr("Condition"), tr("Ignore"), tr("Threads")});
 }
 
 bool BreakpointParameters::isLocatedAt(const FilePath &file, int line, const FilePath &markerFile) const
 {
-    return textPosition.line == line && (fileName == file || fileName == markerFile);
+    return lineNumber == line && (fileName == file || fileName == markerFile);
 }
 
 static bool isSimilarTo(const BreakpointParameters &params, const BreakpointParameters &needle)
@@ -911,7 +931,7 @@ static bool isSimilarTo(const BreakpointParameters &params, const BreakpointPara
     // FIXME: breaks multiple breakpoints at the same location
     if (!params.fileName.isEmpty()
             && params.fileName == needle.fileName
-            && params.textPosition == needle.textPosition)
+            && params.lineNumber == needle.lineNumber)
         return true;
 
     return false;
@@ -991,7 +1011,7 @@ SubBreakpoints BreakHandler::findSubBreakpointsByIndex(const QList<QModelIndex> 
 
 QString BreakHandler::displayFromThreadSpec(int spec)
 {
-    return spec == -1 ? Tr::tr("(all)") : QString::number(spec);
+    return spec == -1 ? BreakHandler::tr("(all)") : QString::number(spec);
 }
 
 int BreakHandler::threadSpecFromDisplay(const QString &str)
@@ -1044,10 +1064,10 @@ QVariant BreakpointItem::data(int column, int role) const
                     return typeToString(m_parameters.type);
 
                 if (m_parameters.type == WatchpointAtAddress)
-                    return Tr::tr("Data at 0x%1").arg(m_parameters.address, 0, 16);
+                    return BreakHandler::tr("Data at 0x%1").arg(m_parameters.address, 0, 16);
 
                 if (m_parameters.type == WatchpointAtExpression)
-                    return Tr::tr("Data at %1").arg(m_parameters.expression);
+                    return BreakHandler::tr("Data at %1").arg(m_parameters.expression);
 
                 return empty;
             }
@@ -1064,7 +1084,7 @@ QVariant BreakpointItem::data(int column, int role) const
                 return empty;
             }
             if (role == Qt::UserRole + 1)
-                return m_parameters.textPosition.line;
+                return m_parameters.lineNumber;
             break;
         case BreakpointAddressColumn:
             if (role == Qt::DisplayRole) {
@@ -1077,7 +1097,7 @@ QVariant BreakpointItem::data(int column, int role) const
             if (role == Qt::DisplayRole)
                 return m_parameters.condition;
             if (role == Qt::ToolTipRole)
-                return Tr::tr("Breakpoint will only be hit if this condition is met.");
+                return BreakHandler::tr("Breakpoint will only be hit if this condition is met.");
             if (role == Qt::UserRole + 1)
                 return m_parameters.condition;
             break;
@@ -1087,7 +1107,7 @@ QVariant BreakpointItem::data(int column, int role) const
                 return ignoreCount ? QVariant(ignoreCount) : QVariant(QString());
             }
             if (role == Qt::ToolTipRole)
-                return Tr::tr("Breakpoint will only be hit after being ignored so many times.");
+                return BreakHandler::tr("Breakpoint will only be hit after being ignored so many times.");
             if (role == Qt::UserRole + 1)
                 return m_parameters.ignoreCount;
             break;
@@ -1095,19 +1115,19 @@ QVariant BreakpointItem::data(int column, int role) const
             if (role == Qt::DisplayRole)
                 return BreakHandler::displayFromThreadSpec(m_parameters.threadSpec);
             if (role == Qt::ToolTipRole)
-                return Tr::tr("Breakpoint will only be hit in the specified thread(s).");
+                return BreakHandler::tr("Breakpoint will only be hit in the specified thread(s).");
             if (role == Qt::UserRole + 1)
                 return BreakHandler::displayFromThreadSpec(m_parameters.threadSpec);
             break;
     }
 
-    if (role == Qt::ToolTipRole && settings().useToolTipsInBreakpointsView())
+    if (role == Qt::ToolTipRole && debuggerSettings()->useToolTipsInBreakpointsView.value())
         return toolTip();
 
-    return {};
+    return QVariant();
 }
 
-void BreakpointItem::addToCommand(DebuggerCommand *cmd, BreakpointPathUsage defaultPathUsage) const
+void BreakpointItem::addToCommand(DebuggerCommand *cmd) const
 {
     QTC_ASSERT(m_globalBreakpoint, return);
     const BreakpointParameters &requested = requestedParameters();
@@ -1120,24 +1140,15 @@ void BreakpointItem::addToCommand(DebuggerCommand *cmd, BreakpointPathUsage defa
     cmd->arg("function", requested.functionName);
     cmd->arg("oneshot", requested.oneShot);
     cmd->arg("enabled", requested.enabled);
-    cmd->arg("line", requested.textPosition.line);
+    cmd->arg("file", requested.fileName);
+    cmd->arg("line", requested.lineNumber);
     cmd->arg("address", requested.address);
     cmd->arg("expression", requested.expression);
-
-    BreakpointPathUsage pathUsage = (requested.pathUsage
-                                     == BreakpointPathUsage::BreakpointPathUsageEngineDefault)
-                                        ? defaultPathUsage
-                                        : requested.pathUsage;
-
-    cmd->arg("file",
-             pathUsage == BreakpointPathUsage::BreakpointUseFullPath
-                 ? requested.fileName.path()
-                 : requested.fileName.fileName());
 }
 
-void BreakpointItem::updateFromGdbOutput(const GdbMi &bkpt, const FilePath &fileRoot)
+void BreakpointItem::updateFromGdbOutput(const GdbMi &bkpt)
 {
-    m_parameters.updateFromGdbOutput(bkpt, fileRoot);
+    m_parameters.updateFromGdbOutput(bkpt);
     adjustMarker();
 }
 
@@ -1195,13 +1206,12 @@ void BreakHandler::requestSubBreakpointEnabling(const SubBreakpoint &sbp, bool e
     }
 }
 
-void BreakpointItem::setMarkerFileAndPosition(const FilePath &fileName,
-                                              const Text::Position &textPosition)
+void BreakpointItem::setMarkerFileAndLine(const FilePath &fileName, int lineNumber)
 {
-    if (m_parameters.fileName == fileName && m_parameters.textPosition == textPosition)
+    if (m_parameters.fileName == fileName && m_parameters.lineNumber == lineNumber)
         return;
     m_parameters.fileName = fileName;
-    m_parameters.textPosition = textPosition;
+    m_parameters.lineNumber = lineNumber;
     destroyMarker();
     updateMarker();
     update();
@@ -1241,7 +1251,7 @@ static bool isAllowedTransition(BreakpointState from, BreakpointState to)
 
 void BreakpointItem::gotoState(BreakpointState target, BreakpointState assumedCurrent)
 {
-    QTC_ASSERT(m_state == assumedCurrent, qDebug() << target << m_state);
+    QTC_ASSERT(m_state == assumedCurrent, qDebug() << m_state);
     setState(target);
 }
 
@@ -1268,8 +1278,7 @@ void BreakHandler::removeDisassemblerMarker(const Breakpoint &bp)
 
 static bool matches(const Location &loc, const BreakpointParameters &bp)
 {
-    if (loc.fileName() == bp.fileName && loc.textPosition() == bp.textPosition
-            && bp.textPosition.line > 0)
+    if (loc.fileName() == bp.fileName && loc.lineNumber() == bp.lineNumber && bp.lineNumber > 0)
         return true;
     if (loc.address() == bp.address && bp.address > 0)
         return true;
@@ -1607,9 +1616,9 @@ bool BreakHandler::contextMenuEvent(const ItemViewEvent &ev)
 
     auto menu = new QMenu;
 
-    addAction(this, menu, Tr::tr("Add Breakpoint..."), true, &BreakpointManager::executeAddBreakpointDialog);
+    addAction(this, menu, tr("Add Breakpoint..."), true, &BreakpointManager::executeAddBreakpointDialog);
 
-    addAction(this, menu, Tr::tr("Delete Selected Breakpoints"),
+    addAction(this, menu, tr("Delete Selected Breakpoints"),
               !selectedBreakpoints.isEmpty(),
               [selectedBreakpoints] {
                 for (Breakpoint bp : selectedBreakpoints) {
@@ -1621,7 +1630,7 @@ bool BreakHandler::contextMenuEvent(const ItemViewEvent &ev)
                 }
              });
 
-    addAction(this, menu, Tr::tr("Edit Selected Breakpoints..."),
+    addAction(this, menu, tr("Edit Selected Breakpoints..."),
               !selectedBreakpoints.isEmpty(),
               [this, selectedBreakpoints, ev] { editBreakpoints(selectedBreakpoints, ev.view()); });
 
@@ -1629,20 +1638,18 @@ bool BreakHandler::contextMenuEvent(const ItemViewEvent &ev)
     // FIXME BP: m_engine->threadsHandler()->currentThreadId();
     // int threadId = 0;
     // addAction(menu,
-    //           threadId == -1 ? Tr::tr("Associate Breakpoint with All Threads")
-    //                          : Tr::tr("Associate Breakpoint with Thread %1").arg(threadId),
+    //           threadId == -1 ? tr("Associate Breakpoint with All Threads")
+    //                          : tr("Associate Breakpoint with Thread %1").arg(threadId),
     //           !selectedItems.isEmpty(),
     //           [this, selectedItems, threadId] {
     //                 for (Breakpoint bp : selectedItems)
     //                     bp.setThreadSpec(threadId);
     //           });
 
-    menu->addSeparator();
-
     addAction(this, menu,
               selectedBreakpoints.size() > 1
-                  ? breakpointsEnabled ? Tr::tr("Disable Selected Breakpoints") : Tr::tr("Enable Selected Breakpoints")
-                  : breakpointsEnabled ? Tr::tr("Disable Breakpoint") : Tr::tr("Enable Breakpoint"),
+                  ? breakpointsEnabled ? tr("Disable Selected Breakpoints") : tr("Enable Selected Breakpoints")
+                  : breakpointsEnabled ? tr("Disable Breakpoint") : tr("Enable Breakpoint"),
               !selectedBreakpoints.isEmpty(),
               [this, selectedBreakpoints, breakpointsEnabled] {
                     for (Breakpoint bp : selectedBreakpoints) {
@@ -1653,41 +1660,10 @@ bool BreakHandler::contextMenuEvent(const ItemViewEvent &ev)
               }
     );
 
-    QList<Breakpoint> enabledBreakpoints;
-    QList<Breakpoint> disabledBreakpoints;
-    forItemsAtLevel<1>([&enabledBreakpoints, &disabledBreakpoints](Breakpoint bp) {
-        if (bp) {
-            if (bp->isEnabled())
-                enabledBreakpoints.append(bp);
-            else
-                disabledBreakpoints.append(bp);
-         }
-    });
-
-    addAction(this, menu, Tr::tr("Disable All Breakpoints"),
-              !enabledBreakpoints.isEmpty(),
-              [this, enabledBreakpoints] {
-        for (Breakpoint bp : enabledBreakpoints) {
-            if (GlobalBreakpoint gbp = bp->globalBreakpoint())
-                gbp->setEnabled(false, false);
-            requestBreakpointEnabling(bp, false);
-        }
-    });
-
-    addAction(this, menu, Tr::tr("Enable All Breakpoints"),
-              !disabledBreakpoints.isEmpty(),
-              [this, disabledBreakpoints] {
-        for (Breakpoint bp : disabledBreakpoints) {
-            if (GlobalBreakpoint gbp = bp->globalBreakpoint())
-                gbp->setEnabled(true, false);
-            requestBreakpointEnabling(bp, true);
-        }
-    });
-
     addAction(this, menu,
               selectedLocations.size() > 1
-                  ? locationsEnabled ? Tr::tr("Disable Selected Locations") : Tr::tr("Enable Selected Locations")
-                  : locationsEnabled ? Tr::tr("Disable Location") : Tr::tr("Enable Location"),
+                  ? locationsEnabled ? tr("Disable Selected Locations") : tr("Enable Selected Locations")
+                  : locationsEnabled ? tr("Disable Location") : tr("Enable Location"),
               !selectedLocations.isEmpty() && handlesIndividualLocations,
               [this, selectedLocations, locationsEnabled] {
                    for (SubBreakpointItem * const sbp : selectedLocations)
@@ -1697,7 +1673,7 @@ bool BreakHandler::contextMenuEvent(const ItemViewEvent &ev)
 
     menu->addSeparator();
 
-    addAction(this, menu, Tr::tr("Delete All Breakpoints"),
+    addAction(this, menu, tr("Delete All Breakpoints"),
               rowCount() > 0,
               &BreakpointManager::executeDeleteAllBreakpointsDialog);
 
@@ -1712,8 +1688,8 @@ bool BreakHandler::contextMenuEvent(const ItemViewEvent &ev)
                     breakpointsInFile.append(findBreakpointByIndex(index));
         }
     }
-    addAction(this, menu, Tr::tr("Delete Breakpoints of \"%1\"").arg(file),
-              Tr::tr("Delete Breakpoints of File"),
+    addAction(this, menu, tr("Delete Breakpoints of \"%1\"").arg(file),
+              tr("Delete Breakpoints of File"),
               breakpointsInFile.size() > 1,
               [breakpointsInFile] {
                 for (Breakpoint bp : breakpointsInFile)
@@ -1722,8 +1698,8 @@ bool BreakHandler::contextMenuEvent(const ItemViewEvent &ev)
 
     menu->addSeparator();
 
-    menu->addAction(settings().useToolTipsInBreakpointsView.action());
-    menu->addAction(settings().settingsDialog.action());
+    menu->addAction(debuggerSettings()->useToolTipsInBreakpointsView.action());
+    menu->addAction(debuggerSettings()->settingsDialog.action());
 
     connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
     menu->popup(ev.globalPos());
@@ -1880,9 +1856,9 @@ FilePath BreakpointItem::markerFileName() const
 
 int BreakpointItem::markerLineNumber() const
 {
-    if (m_parameters.textPosition.line > 0)
-        return m_parameters.textPosition.line;
-    return requestedParameters().textPosition.line;
+    if (m_parameters.lineNumber > 0)
+        return m_parameters.lineNumber;
+    return requestedParameters().lineNumber;
 }
 
 const BreakpointParameters &BreakpointItem::requestedParameters() const
@@ -1913,9 +1889,7 @@ bool BreakpointItem::needsChange() const
         return true;
     if (oparams.command != m_parameters.command)
         return true;
-    if (oparams.type == BreakpointByFileAndLine && oparams.textPosition != m_parameters.textPosition)
-        return true;
-    if (oparams.pathUsage != m_parameters.pathUsage)
+    if (oparams.type == BreakpointByFileAndLine && oparams.lineNumber != m_parameters.lineNumber)
         return true;
     // FIXME: Too strict, functions may have parameter lists, or not.
     // if (m_params.type == BreakpointByFunction && m_params.functionName != m_response.functionName)
@@ -1929,7 +1903,7 @@ void BreakpointItem::updateMarker()
 {
     const FilePath &file = markerFileName();
     int line = markerLineNumber();
-    if (m_marker && (file != m_marker->filePath() || line != m_marker->lineNumber()))
+    if (m_marker && (file != m_marker->fileName() || line != m_marker->lineNumber()))
         destroyMarker();
 
     if (!m_marker && !file.isEmpty() && line > 0)
@@ -1959,81 +1933,78 @@ QString BreakpointItem::toolTip() const
     const BreakpointParameters &requested = requestedParameters();
     QString rc;
     QTextStream str(&rc);
-    str << "<html><body><b>" << Tr::tr("Breakpoint") << "</b>"
+    str << "<html><body><b>" << tr("Breakpoint") << "</b>"
         << "<table>"
-        << "<tr><td>" << Tr::tr("Internal ID:")
+        << "<tr><td>" << tr("Internal ID:")
         << "</td><td>" << m_responseId << "</td></tr>"
-        << "<tr><td>" << Tr::tr("State:")
-        << "</td><td>" << (requestedParameters().enabled ? Tr::tr("Enabled") : Tr::tr("Disabled"));
+        << "<tr><td>" << tr("State:")
+        << "</td><td>" << (requestedParameters().enabled ? tr("Enabled") : tr("Disabled"));
     if (m_parameters.pending)
-        str << ", " << Tr::tr("pending");
+        str << ", " << tr("pending");
     str << ", " << stateToString(m_state) << "</td></tr>";
-    str << "<tr><td>" << Tr::tr("Breakpoint Type:")
+    str << "<tr><td>" << tr("Breakpoint Type:")
         << "</td><td>" << typeToString(requested.type) << "</td></tr>"
-        << "<tr><td>" << Tr::tr("Marker File:")
+        << "<tr><td>" << tr("Marker File:")
         << "</td><td>" << markerFileName().toUserOutput() << "</td></tr>"
-        << "<tr><td>" << Tr::tr("Marker Line:")
-        << "</td><td>" << markerLineNumber() << "</td></tr>";
-    if (m_parameters.hitCount) {
-        str << "<tr><td>" << Tr::tr("Hit Count:")
-            << "</td><td>" << *m_parameters.hitCount << "</td></tr>";
-    }
-
-    str << "</table><br><table>"
-        << "<tr><th>" << Tr::tr("Property")
-        << "</th><th>" << Tr::tr("Requested")
-        << "</th><th>" << Tr::tr("Obtained") << "</th></tr>";
+        << "<tr><td>" << tr("Marker Line:")
+        << "</td><td>" << markerLineNumber() << "</td></tr>"
+        << "<tr><td>" << tr("Hit Count:")
+        << "</td><td>" << m_parameters.hitCount << "</td></tr>"
+        << "</table><br><table>"
+        << "<tr><th>" << tr("Property")
+        << "</th><th>" << tr("Requested")
+        << "</th><th>" << tr("Obtained") << "</th></tr>";
     if (!m_displayName.isEmpty()) {
-        str << "<tr><td>" << Tr::tr("Display Name:")
+        str << "<tr><td>" << tr("Display Name:")
             << "</td><td>&mdash;</td><td>" << m_displayName << "</td></tr>";
     }
     if (m_parameters.type == BreakpointByFunction) {
-        str << "<tr><td>" << Tr::tr("Function Name:")
+        str << "<tr><td>" << tr("Function Name:")
         << "</td><td>" << requested.functionName
         << "</td><td>" << m_parameters.functionName
         << "</td></tr>";
     }
     if (m_parameters.type == BreakpointByFileAndLine) {
-        str << "<tr><td>" << Tr::tr("File Name:")
+        str << "<tr><td>" << tr("File Name:")
             << "</td><td>" << requested.fileName.toUserOutput()
             << "</td><td>" << m_parameters.fileName.toUserOutput()
             << "</td></tr>"
-            << "<tr><td>" << Tr::tr("Line Number:")
-            << "</td><td>" << requested.textPosition.line
-            << "</td><td>" << m_parameters.textPosition.line << "</td></tr>";
+            << "<tr><td>" << tr("Line Number:")
+            << "</td><td>" << requested.lineNumber
+            << "</td><td>" << m_parameters.lineNumber << "</td></tr>";
     }
     if (requested.type == BreakpointByFunction || m_parameters.type == BreakpointByFileAndLine) {
-        str << "<tr><td>" << Tr::tr("Module:")
+        str << "<tr><td>" << tr("Module:")
             << "</td><td>" << requested.module
             << "</td><td>" << m_parameters.module
             << "</td></tr>";
     }
-    str << "<tr><td>" << Tr::tr("Breakpoint Address:")
+    str << "<tr><td>" << tr("Breakpoint Address:")
         << "</td><td>";
     formatAddress(str, requested.address);
     str << "</td><td>";
     formatAddress(str, m_parameters.address);
     str << "</td></tr>";
     if (!requested.command.isEmpty() || !m_parameters.command.isEmpty()) {
-        str << "<tr><td>" << Tr::tr("Command:")
+        str << "<tr><td>" << tr("Command:")
             << "</td><td>" << requested.command
             << "</td><td>" << m_parameters.command
             << "</td></tr>";
     }
     if (!requested.message.isEmpty() || !m_parameters.message.isEmpty()) {
-        str << "<tr><td>" << Tr::tr("Message:")
+        str << "<tr><td>" << tr("Message:")
             << "</td><td>" << requested.message
             << "</td><td>" << m_parameters.message
             << "</td></tr>";
     }
     if (!requested.condition.isEmpty() || !m_parameters.condition.isEmpty()) {
-        str << "<tr><td>" << Tr::tr("Condition:")
+        str << "<tr><td>" << tr("Condition:")
             << "</td><td>" << requested.condition
             << "</td><td>" << m_parameters.condition
             << "</td></tr>";
     }
     if (requested.ignoreCount || m_parameters.ignoreCount) {
-        str << "<tr><td>" << Tr::tr("Ignore Count:") << "</td><td>";
+        str << "<tr><td>" << tr("Ignore Count:") << "</td><td>";
         if (requested.ignoreCount)
             str << m_parameters.ignoreCount;
         str << "</td><td>";
@@ -2042,7 +2013,7 @@ QString BreakpointItem::toolTip() const
         str << "</td></tr>";
     }
     if (requested.threadSpec >= 0 || m_parameters.threadSpec >= 0) {
-        str << "<tr><td>" << Tr::tr("Thread Specification:")
+        str << "<tr><td>" << tr("Thread Specification:")
             << "</td><td>";
         if (requested.threadSpec >= 0)
             str << requested.threadSpec;
@@ -2090,7 +2061,7 @@ void BreakHandler::releaseAllBreakpoints()
     }
     clear();
     // Make now-unclaimed breakpoints globally visible again.
-    for (GlobalBreakpoint gbp: std::as_const(gbps)) {
+    for (GlobalBreakpoint gbp: qAsConst(gbps)) {
         if (gbp)
             gbp->updateMarker();
     }
@@ -2098,33 +2069,33 @@ void BreakHandler::releaseAllBreakpoints()
 
 QString BreakpointItem::msgWatchpointByExpressionTriggered(const QString &expr) const
 {
-    return Tr::tr("Internal data breakpoint %1 at %2 triggered.")
+    return tr("Internal data breakpoint %1 at %2 triggered.")
             .arg(responseId()).arg(expr);
 }
 
 QString BreakpointItem::msgWatchpointByExpressionTriggered(const QString &expr,
                                                            const QString &threadId) const
 {
-    return Tr::tr("Internal data breakpoint %1 at %2 in thread %3 triggered.")
+    return tr("Internal data breakpoint %1 at %2 in thread %3 triggered.")
             .arg(responseId()).arg(expr).arg(threadId);
 }
 
 QString BreakpointItem::msgWatchpointByAddressTriggered(quint64 address) const
 {
-    return Tr::tr("Internal data breakpoint %1 at 0x%2 triggered.")
+    return tr("Internal data breakpoint %1 at 0x%2 triggered.")
             .arg(responseId()).arg(address, 0, 16);
 }
 
 QString BreakpointItem::msgWatchpointByAddressTriggered(quint64 address,
                                                         const QString &threadId) const
 {
-    return Tr::tr("Internal data breakpoint %1 at 0x%2 in thread %3 triggered.")
+    return tr("Internal data breakpoint %1 at 0x%2 in thread %3 triggered.")
             .arg(responseId()).arg(address, 0, 16).arg(threadId);
 }
 
 QString BreakpointItem::msgBreakpointTriggered(const QString &threadId) const
 {
-    return Tr::tr("Stopped at breakpoint %1 in thread %2.")
+    return tr("Stopped at breakpoint %1 in thread %2.")
             .arg(responseId()).arg(threadId);
 }
 
@@ -2200,9 +2171,9 @@ QVariant GlobalBreakpointItem::data(int column, int role) const
                         || m_params.type == BreakpointAtSysCall)
                     return typeToString(m_params.type);
                 if (m_params.type == WatchpointAtAddress)
-                    return Tr::tr("Data at 0x%1").arg(m_params.address, 0, 16);
+                    return BreakHandler::tr("Data at 0x%1").arg(m_params.address, 0, 16);
                 if (m_params.type == WatchpointAtExpression)
-                    return Tr::tr("Data at %1").arg(m_params.expression);
+                    return BreakHandler::tr("Data at %1").arg(m_params.expression);
                 return empty;
             }
             break;
@@ -2212,12 +2183,12 @@ QVariant GlobalBreakpointItem::data(int column, int role) const
             break;
         case BreakpointLineColumn:
             if (role == Qt::DisplayRole) {
-                if (m_params.textPosition.line > 0)
-                    return m_params.textPosition.line;
+                if (m_params.lineNumber > 0)
+                    return m_params.lineNumber;
                 return empty;
             }
             if (role == Qt::UserRole + 1)
-                return m_params.textPosition.line;
+                return m_params.lineNumber;
             break;
         case BreakpointAddressColumn:
             if (role == Qt::DisplayRole) {
@@ -2231,7 +2202,7 @@ QVariant GlobalBreakpointItem::data(int column, int role) const
             if (role == Qt::DisplayRole)
                 return m_params.condition;
             if (role == Qt::ToolTipRole)
-                return Tr::tr("Breakpoint will only be hit if this condition is met.");
+                return BreakHandler::tr("Breakpoint will only be hit if this condition is met.");
             if (role == Qt::UserRole + 1)
                 return m_params.condition;
             break;
@@ -2241,7 +2212,7 @@ QVariant GlobalBreakpointItem::data(int column, int role) const
                 return ignoreCount ? QVariant(ignoreCount) : QVariant(QString());
             }
             if (role == Qt::ToolTipRole)
-                return Tr::tr("Breakpoint will only be hit after being ignored so many times.");
+                return BreakHandler::tr("Breakpoint will only be hit after being ignored so many times.");
             if (role == Qt::UserRole + 1)
                 return m_params.ignoreCount;
             break;
@@ -2249,16 +2220,16 @@ QVariant GlobalBreakpointItem::data(int column, int role) const
             if (role == Qt::DisplayRole)
                 return BreakHandler::displayFromThreadSpec(m_params.threadSpec);
             if (role == Qt::ToolTipRole)
-                return Tr::tr("Breakpoint will only be hit in the specified thread(s).");
+                return BreakHandler::tr("Breakpoint will only be hit in the specified thread(s).");
             if (role == Qt::UserRole + 1)
                 return BreakHandler::displayFromThreadSpec(m_params.threadSpec);
             break;
     }
 
-    if (role == Qt::ToolTipRole && settings().useToolTipsInBreakpointsView())
+    if (role == Qt::ToolTipRole && debuggerSettings()->useToolTipsInBreakpointsView.value())
         return toolTip();
 
-    return {};
+    return QVariant();
 }
 
 QIcon GlobalBreakpointItem::icon() const
@@ -2319,9 +2290,9 @@ void GlobalBreakpointItem::removeBreakpointFromModel()
 
 void GlobalBreakpointItem::updateLineNumber(int lineNumber)
 {
-    if (m_params.textPosition.line == lineNumber)
+    if (m_params.lineNumber == lineNumber)
         return;
-    m_params.textPosition.line = lineNumber;
+    m_params.lineNumber = lineNumber;
     update();
 }
 
@@ -2343,7 +2314,7 @@ FilePath GlobalBreakpointItem::markerFileName() const
 
 int GlobalBreakpointItem::markerLineNumber() const
 {
-    return m_params.textPosition.line;
+    return m_params.lineNumber;
 }
 
 void GlobalBreakpointItem::updateMarker()
@@ -2355,10 +2326,10 @@ void GlobalBreakpointItem::updateMarker()
         return;
     }
 
-    const int line = m_params.textPosition.line;
+    const int line = m_params.lineNumber;
     if (m_marker) {
-        if (m_params.fileName != m_marker->filePath())
-            m_marker->updateFilePath(m_params.fileName);
+        if (m_params.fileName != m_marker->fileName())
+            m_marker->updateFileName(m_params.fileName);
         if (line != m_marker->lineNumber())
             m_marker->move(line);
     } else if (!m_params.fileName.isEmpty() && line > 0) {
@@ -2406,42 +2377,43 @@ QString GlobalBreakpointItem::toolTip() const
 {
     QString rc;
     QTextStream str(&rc);
-    str << "<html><body><b>" << Tr::tr("Unclaimed Breakpoint") << "</b>"
+    str << "<html><body><b>" << BreakpointItem::tr("Unclaimed Breakpoint") << "</b>"
         << "<table>"
-        //<< "<tr><td>" << Tr::tr("ID:") << "</td><td>" << m_id << "</td></tr>"
-        << "<tr><td>" << Tr::tr("State:") << "</td><td>"
-        << (m_params.enabled ? Tr::tr("Enabled") : Tr::tr("Disabled")) << "<tr><td>"
-        << Tr::tr("Breakpoint Type:") << "</td><td>" << typeToString(m_params.type) << "</td></tr>";
+        //<< "<tr><td>" << tr("ID:") << "</td><td>" << m_id << "</td></tr>"
+        << "<tr><td>" << BreakpointItem::tr("State:")
+        << "</td><td>" << (m_params.enabled ? BreakpointItem::tr("Enabled") : BreakpointItem::tr("Disabled"))
+        << "<tr><td>" << BreakpointItem::tr("Breakpoint Type:")
+        << "</td><td>" << typeToString(m_params.type) << "</td></tr>";
     if (m_params.type == BreakpointByFunction) {
-        str << "<tr><td>" << Tr::tr("Function Name:")
+        str << "<tr><td>" << BreakpointItem::tr("Function Name:")
         << "</td><td>" << m_params.functionName
         << "</td></tr>";
     }
     if (m_params.type == BreakpointByFileAndLine) {
-        str << "<tr><td>" << Tr::tr("File Name:")
+        str << "<tr><td>" << BreakpointItem::tr("File Name:")
             << "</td><td>" << m_params.fileName.toUserOutput()
             << "</td></tr>"
-            << "<tr><td>" << Tr::tr("Line Number:")
-            << "</td><td>" << m_params.textPosition.line;
+            << "<tr><td>" << BreakpointItem::tr("Line Number:")
+            << "</td><td>" << m_params.lineNumber;
     }
     if (m_params.type == BreakpointByFunction || m_params.type == BreakpointByFileAndLine) {
-        str << "<tr><td>" << Tr::tr("Module:")
+        str << "<tr><td>" << BreakpointItem::tr("Module:")
             << "</td><td>" << m_params.module
             << "</td></tr>";
     }
-    str << "<tr><td>" << Tr::tr("Breakpoint Address:") << "</td><td>";
+    str << "<tr><td>" << BreakpointItem::tr("Breakpoint Address:") << "</td><td>";
     formatAddress(str, m_params.address);
     str << "</td></tr>";
     if (!m_params.command.isEmpty())
-        str << "<tr><td>" << Tr::tr("Command:") << "</td><td>" << m_params.command << "</td></tr>";
+        str << "<tr><td>" << BreakpointItem::tr("Command:") << "</td><td>" << m_params.command << "</td></tr>";
     if (!m_params.message.isEmpty())
-        str << "<tr><td>" << Tr::tr("Message:") << "</td><td>" << m_params.message << "</td></tr>";
+        str << "<tr><td>" << BreakpointItem::tr("Message:") << "</td><td>" << m_params.message << "</td></tr>";
     if (!m_params.condition.isEmpty())
-        str << "<tr><td>" << Tr::tr("Condition:") << "</td><td>" << m_params.condition << "</td></tr>";
+        str << "<tr><td>" << BreakpointItem::tr("Condition:") << "</td><td>" << m_params.condition << "</td></tr>";
     if (m_params.ignoreCount)
-        str << "<tr><td>" << Tr::tr("Ignore Count:") << "</td><td>" << m_params.ignoreCount << "</td></tr>";
+        str << "<tr><td>" << BreakpointItem::tr("Ignore Count:") << "</td><td>" << m_params.ignoreCount << "</td></tr>";
     if (m_params.threadSpec >= 0)
-        str << "<tr><td>" << Tr::tr("Thread Specification:") << "</td><td>" << m_params.threadSpec << "</td></tr>";
+        str << "<tr><td>" << BreakpointItem::tr("Thread Specification:") << "</td><td>" << m_params.threadSpec << "</td></tr>";
 
     str  << "</table></body></html><hr>";
     return rc;
@@ -2454,8 +2426,8 @@ QString GlobalBreakpointItem::toolTip() const
 BreakpointManager::BreakpointManager()
 {
     theBreakpointManager = this;
-    setHeader({Tr::tr("Debuggee"), Tr::tr("Function"), Tr::tr("File"), Tr::tr("Line"), Tr::tr("Address"),
-               Tr::tr("Condition"), Tr::tr("Ignore"), Tr::tr("Threads")});
+    setHeader({tr("Debuggee"), tr("Function"), tr("File"), tr("Line"), tr("Address"),
+               tr("Condition"), tr("Ignore"), tr("Threads")});
     connect(SessionManager::instance(), &SessionManager::sessionLoaded,
             this, &BreakpointManager::loadSessionData);
     connect(SessionManager::instance(), &SessionManager::aboutToSaveSession,
@@ -2531,12 +2503,12 @@ void BreakpointManager::setOrRemoveBreakpoint(const ContextData &location, const
         BreakpointParameters data;
         if (location.type == LocationByFile) {
             data.type = BreakpointByFileAndLine;
-            if (settings().breakpointsFullPathByDefault())
+            if (debuggerSettings()->breakpointsFullPathByDefault.value())
                 data.pathUsage = BreakpointUseFullPath;
             data.tracepoint = !tracePointMessage.isEmpty();
             data.message = tracePointMessage;
             data.fileName = location.fileName;
-            data.textPosition = location.textPosition;
+            data.lineNumber = location.lineNumber;
         } else if (location.type == LocationByAddress) {
             data.type = BreakpointByAddress;
             data.tracepoint = !tracePointMessage.isEmpty();
@@ -2562,7 +2534,7 @@ GlobalBreakpoint BreakpointManager::findBreakpointFromContext(const ContextData 
     GlobalBreakpoint bestMatch;
     theBreakpointManager->forItemsAtLevel<1>([&](const GlobalBreakpoint &gbp) {
         if (location.type == LocationByFile) {
-            if (gbp->m_params.isLocatedAt(location.fileName, location.textPosition.line, FilePath())) {
+            if (gbp->m_params.isLocatedAt(location.fileName, location.lineNumber, FilePath())) {
                 matchLevel = 2;
                 bestMatch = gbp;
             } else if (matchLevel < 2) {
@@ -2571,7 +2543,7 @@ GlobalBreakpoint BreakpointManager::findBreakpointFromContext(const ContextData 
                     for (Breakpoint bp : handler->breakpoints()) {
                         if (bp->globalBreakpoint() == gbp) {
                             if (bp->fileName() == location.fileName
-                                    && bp->textPosition() == location.textPosition) {
+                                    && bp->lineNumber() == location.lineNumber) {
                                 matchLevel = 1;
                                 bestMatch = gbp;
                             }
@@ -2595,7 +2567,7 @@ void BreakpointManager::executeAddBreakpointDialog()
     BreakpointParameters data(BreakpointByFileAndLine);
     BreakpointParts parts = NoParts;
     BreakpointDialog dialog(~0, ICore::dialogParent());
-    dialog.setWindowTitle(Tr::tr("Add Breakpoint"));
+    dialog.setWindowTitle(tr("Add Breakpoint"));
     if (dialog.showDialog(&data, &parts))
         BreakpointManager::createBreakpoint(data);
 }
@@ -2670,23 +2642,23 @@ bool BreakpointManager::contextMenuEvent(const ItemViewEvent &ev)
 
     auto menu = new QMenu;
 
-    addAction(this, menu, Tr::tr("Add Breakpoint..."), true, &BreakpointManager::executeAddBreakpointDialog);
+    addAction(this, menu, tr("Add Breakpoint..."), true, &BreakpointManager::executeAddBreakpointDialog);
 
-    addAction(this, menu, Tr::tr("Delete Selected Breakpoints"),
+    addAction(this, menu, tr("Delete Selected Breakpoints"),
               !selectedBreakpoints.isEmpty(),
               [selectedBreakpoints] {
                 for (GlobalBreakpoint gbp : selectedBreakpoints)
                     gbp->deleteBreakpoint();
              });
 
-    addAction(this, menu, Tr::tr("Edit Selected Breakpoints..."),
+    addAction(this, menu, tr("Edit Selected Breakpoints..."),
               !selectedBreakpoints.isEmpty(),
               [this, selectedBreakpoints, ev] { editBreakpoints(selectedBreakpoints, ev.view()); });
 
     addAction(this, menu,
               selectedBreakpoints.size() > 1
-                  ? breakpointsEnabled ? Tr::tr("Disable Selected Breakpoints") : Tr::tr("Enable Selected Breakpoints")
-                  : breakpointsEnabled ? Tr::tr("Disable Breakpoint") : Tr::tr("Enable Breakpoint"),
+                  ? breakpointsEnabled ? tr("Disable Selected Breakpoints") : tr("Enable Selected Breakpoints")
+                  : breakpointsEnabled ? tr("Disable Breakpoint") : tr("Enable Breakpoint"),
               !selectedBreakpoints.isEmpty(),
               [selectedBreakpoints, breakpointsEnabled] {
                     for (GlobalBreakpoint gbp : selectedBreakpoints)
@@ -2694,34 +2666,9 @@ bool BreakpointManager::contextMenuEvent(const ItemViewEvent &ev)
               }
     );
 
-    QList<GlobalBreakpoint> enabledBreakpoints;
-    QList<GlobalBreakpoint> disabledBreakpoints;
-    forItemsAtLevel<1>([&enabledBreakpoints, &disabledBreakpoints](GlobalBreakpoint gbp) {
-        if (gbp) {
-            if (gbp->isEnabled())
-                enabledBreakpoints.append(gbp);
-            else
-                disabledBreakpoints.append(gbp);
-         }
-    });
-
-    addAction(this, menu, Tr::tr("Disable All Breakpoints"),
-              !enabledBreakpoints.isEmpty(),
-              [enabledBreakpoints] {
-        for (GlobalBreakpoint gbp : enabledBreakpoints)
-            gbp->setEnabled(false);
-    });
-
-    addAction(this, menu, Tr::tr("Enable All Breakpoints"),
-              !disabledBreakpoints.isEmpty(),
-              [disabledBreakpoints] {
-        for (GlobalBreakpoint gbp : disabledBreakpoints)
-            gbp->setEnabled(true);
-    });
-
     menu->addSeparator();
 
-    addAction(this, menu, Tr::tr("Delete All Breakpoints"),
+    addAction(this, menu, tr("Delete All Breakpoints"),
               rowCount() > 0,
               &BreakpointManager::executeDeleteAllBreakpointsDialog);
 
@@ -2737,8 +2684,8 @@ bool BreakpointManager::contextMenuEvent(const ItemViewEvent &ev)
             });
         }
     }
-    addAction(this, menu, Tr::tr("Delete Breakpoints of \"%1\"").arg(file.toUserOutput()),
-              Tr::tr("Delete Breakpoints of File"),
+    addAction(this, menu, tr("Delete Breakpoints of \"%1\"").arg(file.toUserOutput()),
+              tr("Delete Breakpoints of File"),
               breakpointsInFile.size() > 1,
               [breakpointsInFile] {
                 for (GlobalBreakpoint gbp : breakpointsInFile)
@@ -2747,8 +2694,8 @@ bool BreakpointManager::contextMenuEvent(const ItemViewEvent &ev)
 
     menu->addSeparator();
 
-    menu->addAction(settings().useToolTipsInBreakpointsView.action());
-    menu->addAction(settings().settingsDialog.action());
+    menu->addAction(debuggerSettings()->useToolTipsInBreakpointsView.action());
+    menu->addAction(debuggerSettings()->settingsDialog.action());
 
     connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
     menu->popup(ev.globalPos());
@@ -2765,13 +2712,14 @@ void BreakpointManager::gotoLocation(const GlobalBreakpoint &gbp) const
 
 void BreakpointManager::executeDeleteAllBreakpointsDialog()
 {
-    QMessageBox::StandardButton pressed
-        = CheckableMessageBox::question(ICore::dialogParent(),
-                                        Tr::tr("Remove All Breakpoints"),
-                                        Tr::tr("Are you sure you want to remove all breakpoints "
-                                               "from all files in the current session?"),
-                                        Key("RemoveAllBreakpoints"));
-    if (pressed != QMessageBox::Yes)
+    QDialogButtonBox::StandardButton pressed =
+        CheckableMessageBox::doNotAskAgainQuestion(ICore::dialogParent(),
+           tr("Remove All Breakpoints"),
+           tr("Are you sure you want to remove all breakpoints "
+              "from all files in the current session?"),
+           ICore::settings(),
+           "RemoveAllBreakpoints");
+    if (pressed != QDialogButtonBox::Yes)
         return;
 
     for (GlobalBreakpoint gbp : globalBreakpoints())
@@ -2841,9 +2789,9 @@ void BreakpointManager::saveSessionData()
         if (params.type != BreakpointByFileAndLine)
             map.insert("type", params.type);
         if (!params.fileName.isEmpty())
-            map.insert("filename", params.fileName.toSettings());
-        if (params.textPosition.line)
-            map.insert("linenumber", params.textPosition.line);
+            map.insert("filename", params.fileName.toVariant());
+        if (params.lineNumber)
+            map.insert("linenumber", params.lineNumber);
         if (!params.functionName.isEmpty())
             map.insert("funcname", params.functionName);
         if (params.address)
@@ -2886,10 +2834,10 @@ void BreakpointManager::loadSessionData()
         BreakpointParameters params(BreakpointByFileAndLine);
         QVariant v = map.value("filename");
         if (v.isValid())
-            params.fileName = FilePath::fromSettings(v);
+            params.fileName = FilePath::fromVariant(v);
         v = map.value("linenumber");
         if (v.isValid())
-            params.textPosition.line = v.toString().toInt();
+            params.lineNumber = v.toString().toInt();
         v = map.value("condition");
         if (v.isValid())
             params.condition = v.toString();

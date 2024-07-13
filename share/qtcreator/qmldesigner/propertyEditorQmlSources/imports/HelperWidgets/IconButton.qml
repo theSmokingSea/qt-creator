@@ -1,76 +1,81 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Controls
-import StudioTheme as StudioTheme
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuickDesignerTheme 1.0
+import StudioTheme 1.0 as StudioTheme
 
 Rectangle {
     id: root
 
-    signal clicked(mouse: var)
-    signal pressed(mouse: var)
-    signal released(mouse: var)
+    signal clicked()
 
     property alias icon: icon.text
     property alias tooltip: toolTip.text
     property alias iconSize: icon.font.pixelSize
-    property alias iconScale: icon.scale
-    property alias iconColor: icon.color
-    property alias iconStyle: icon.style
-    property alias iconStyleColor: icon.styleColor
-
-    property alias containsMouse: mouseArea.containsMouse
-    property alias drag: mouseArea.drag
 
     property bool enabled: true
-    property bool transparentBg: false
     property int buttonSize: StudioTheme.Values.height
-    property color normalColor: root.transparentBg ? "transparent" : StudioTheme.Values.themeControlBackground
-    property color hoverColor: root.transparentBg ? "transparent" : StudioTheme.Values.themeControlBackgroundHover
-    property color pressColor: root.transparentBg ? "transparent" : StudioTheme.Values.themeControlBackgroundInteraction
+    property color normalColor: StudioTheme.Values.themeControlBackground
+    property color hoverColor: StudioTheme.Values.themeControlBackgroundHover
+    property color pressColor: StudioTheme.Values.themeControlBackgroundInteraction
 
-    width: root.buttonSize
-    height: root.buttonSize
+    width: buttonSize
+    height: buttonSize
 
-    color: !root.enabled ? root.normalColor
-                         : mouseArea.pressed ? root.pressColor
-                                             : mouseArea.containsMouse ? root.hoverColor
-                                                                       : root.normalColor
+    color: !enabled ? normalColor
+                    : mouseArea.pressed ? pressColor
+                                        : mouseArea.containsMouse ? hoverColor
+                                                                  : normalColor
 
     Text {
         id: icon
-        anchors.centerIn: root
+
         color: root.enabled ? StudioTheme.Values.themeTextColor : StudioTheme.Values.themeTextColorDisabled
         font.family: StudioTheme.Constants.iconFont.family
         font.pixelSize: StudioTheme.Values.baseIconFontSize
+        anchors.centerIn: root
     }
 
     MouseArea {
         id: mouseArea
+
         anchors.fill: parent
-        hoverEnabled: root.visible
-        onClicked: function(mouse) {
+        hoverEnabled: true
+        onClicked: {
             // We need to keep mouse area enabled even when button is disabled to make tooltip work
             if (root.enabled)
-                root.clicked(mouse)
-        }
-
-        onPressed: function(mouse) {
-            if (root.enabled)
-                root.pressed(mouse)
-        }
-
-        onReleased: function(mouse) {
-            if (root.enabled)
-                root.released(mouse)
+                root.clicked()
         }
     }
 
     ToolTip {
         id: toolTip
 
-        visible: mouseArea.containsMouse && toolTip.text !== ""
+        visible: mouseArea.containsMouse
         delay: 1000
     }
 }

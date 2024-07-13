@@ -10,13 +10,11 @@
 
 #include "definitionref_p.h"
 #include "highlightingdata_p.hpp"
-#include "state.h"
 #include "worddelimiters_p.h"
 
 #include <QHash>
-#include <QList>
-#include <QSet>
 #include <QString>
+#include <QVector>
 
 #include <vector>
 
@@ -38,10 +36,7 @@ public:
     DefinitionData(const DefinitionData &) = delete;
     DefinitionData &operator=(const DefinitionData &) = delete;
 
-    static DefinitionData *get(const Definition &def)
-    {
-        return def.d.get();
-    }
+    static DefinitionData *get(const Definition &def);
 
     bool isLoaded() const;
     bool loadMetaData(const QString &definitionFileName);
@@ -69,7 +64,7 @@ public:
     KeywordList *keywordList(const QString &name);
 
     Context *initialContext();
-    Context *contextByName(QStringView name);
+    Context *contextByName(const QString &name);
 
     Format formatByName(const QString &name) const;
 
@@ -78,16 +73,15 @@ public:
     void addImmediateIncludedDefinition(const Definition &def);
 
     DefinitionRef q;
-    uint64_t id = 0;
 
     Repository *repo = nullptr;
     QHash<QString, KeywordList> keywordLists;
     std::vector<Context> contexts;
     QHash<QString, Format> formats;
     // data loaded from xml file and emptied after loading contexts
-    QList<HighlightingContextData> contextDatas;
+    QVector<HighlightingContextData> contextDatas;
     // Definition referenced by IncludeRules and ContextSwitch
-    QList<DefinitionRef> immediateIncludedDefinitions;
+    QVector<DefinitionRef> immediateIncludedDefinitions;
     WordDelimiters wordDelimiters;
     WordDelimiters wordWrapDelimiters;
     bool keywordIsLoaded = false;
@@ -98,28 +92,21 @@ public:
     CommentPosition singleLineCommentPosition = CommentPosition::StartOfLine;
     QString multiLineCommentStartMarker;
     QString multiLineCommentEndMarker;
-    QList<QPair<QChar, QString>> characterEncodings;
+    QVector<QPair<QChar, QString>> characterEncodings;
 
     QString fileName;
     QString name = QStringLiteral(QT_TRANSLATE_NOOP("Language", "None"));
-    QByteArray nameUtf8;
-    mutable QString translatedName;
     QString section;
-    QByteArray sectionUtf8;
-    mutable QString translatedSection;
     QString style;
     QString indenter;
     QString author;
     QString license;
-    QList<QString> mimetypes;
-    QList<QString> extensions;
+    QVector<QString> mimetypes;
+    QVector<QString> extensions;
     Qt::CaseSensitivity caseSensitive = Qt::CaseSensitive;
     int version = 0;
     int priority = 0;
     bool hidden = false;
-
-    // cache that is used to unify states in AbstractHighlighter::highlightLine
-    mutable QSet<State> unify;
 };
 }
 

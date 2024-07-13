@@ -1,83 +1,59 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "codestylesettingspropertiespage.h"
-
 #include "editorconfiguration.h"
 #include "project.h"
-#include "projectexplorertr.h"
-#include "projectpanelfactory.h"
-#include "projectsettingswidget.h"
-
-#include <cppeditor/cppeditorconstants.h>
-
 #include <texteditor/texteditorsettings.h>
 #include <texteditor/icodestylepreferencesfactory.h>
 #include <texteditor/codestyleeditor.h>
 
-#include <utils/layoutbuilder.h>
-
-#include <QComboBox>
-#include <QLabel>
-#include <QLayout>
-#include <QStackedWidget>
-
 using namespace TextEditor;
+using namespace ProjectExplorer;
+using namespace ProjectExplorer::Internal;
 
-namespace ProjectExplorer::Internal {
-
-class CodeStyleSettingsWidget final : public ProjectSettingsWidget
+CodeStyleSettingsWidget::CodeStyleSettingsWidget(Project *project) : ProjectSettingsWidget(), m_project(project)
 {
-public:
-    explicit CodeStyleSettingsWidget(Project *project)
-    {
-        auto languageComboBox = new QComboBox(this);
-        auto stackedWidget = new QStackedWidget(this);
+    m_ui.setupUi(this);
+    setUseGlobalSettingsCheckBoxVisible(false);
+    setUseGlobalSettingsLabelVisible(false);
 
-        setGlobalSettingsId(CppEditor::Constants::CPP_CODE_STYLE_SETTINGS_ID);
-        setUseGlobalSettingsCheckBoxVisible(false);
-        setExpanding(true);
+    const EditorConfiguration *config = m_project->editorConfiguration();
 
-        const EditorConfiguration *config = project->editorConfiguration();
+    for (ICodeStylePreferencesFactory *factory : TextEditorSettings::codeStyleFactories()) {
+        Utils::Id languageId = factory->languageId();
+        ICodeStylePreferences *codeStylePreferences = config->codeStyle(languageId);
 
-        for (ICodeStylePreferencesFactory *factory : TextEditorSettings::codeStyleFactories()) {
-            Utils::Id languageId = factory->languageId();
-            ICodeStylePreferences *codeStylePreferences = config->codeStyle(languageId);
-
-            auto preview = factory->createCodeStyleEditor(codeStylePreferences, project, stackedWidget);
-            if (preview && preview->layout())
-                preview->layout()->setContentsMargins(QMargins());
-            stackedWidget->addWidget(preview);
-            languageComboBox->addItem(factory->displayName());
-        }
-
-        connect(languageComboBox, &QComboBox::currentIndexChanged,
-                stackedWidget, &QStackedWidget::setCurrentIndex);
-
-        using namespace Layouting;
-
-        Column {
-            Row { new QLabel(Tr::tr("Language:")), languageComboBox, st },
-            stackedWidget,
-            noMargin
-        }.attachTo(this);
+        auto preview = factory->createCodeStyleEditor(codeStylePreferences, project, m_ui.stackedWidget);
+        if (preview && preview->layout())
+            preview->layout()->setContentsMargins(QMargins());
+        m_ui.stackedWidget->addWidget(preview);
+        m_ui.languageComboBox->addItem(factory->displayName());
     }
-};
 
-class CodeStyleProjectPanelFactory final : public ProjectPanelFactory
-{
-public:
-    CodeStyleProjectPanelFactory()
-    {
-        setPriority(40);
-        setDisplayName(Tr::tr("Code Style"));
-        setCreateWidgetFunction([](Project *project) { return new CodeStyleSettingsWidget(project); });
-    }
-};
-
-void setupCodeStyleProjectPanel()
-{
-    static CodeStyleProjectPanelFactory theCodeStyleProjectPanelFactory;
+    connect(m_ui.languageComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            m_ui.stackedWidget, &QStackedWidget::setCurrentIndex);
 }
 
-} // ProjectExplorer::Internal

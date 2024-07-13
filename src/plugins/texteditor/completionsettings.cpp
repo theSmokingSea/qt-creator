@@ -1,33 +1,53 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "completionsettings.h"
 
-#include <utils/qtcsettings.h>
+#include <QSettings>
 
-using namespace Utils;
+static const char settingsGroup[]               = "CppTools/Completion";
+static const char caseSensitivityKey[]          = "CaseSensitivity";
+static const char completionTriggerKey[]        = "CompletionTrigger";
+static const char automaticProposalTimeoutKey[] = "AutomaticProposalTimeout";
+static const char characterThresholdKey[]       = "CharacterThreshold";
+static const char autoInsertBracesKey[]         = "AutoInsertBraces";
+static const char surroundingAutoBracketsKey[]  = "SurroundingAutoBrackets";
+static const char autoInsertQuotesKey[]         = "AutoInsertQuotes";
+static const char surroundingAutoQuotesKey[]    = "SurroundingAutoQuotes";
+static const char partiallyCompleteKey[]        = "PartiallyComplete";
+static const char spaceAfterFunctionNameKey[]   = "SpaceAfterFunctionName";
+static const char autoSplitStringsKey[]         = "AutoSplitStrings";
+static const char animateAutoCompleteKey[]      = "AnimateAutoComplete";
+static const char highlightAutoCompleteKey[]    = "HighlightAutoComplete";
+static const char skipAutoCompleteKey[]         = "SkipAutoComplete";
+static const char autoRemoveKey[]               = "AutoRemove";
+static const char overwriteClosingCharsKey[]    = "OverwriteClosingChars";
 
-namespace TextEditor {
+using namespace TextEditor;
 
-const char settingsGroup[]               = "CppTools/Completion";
-const char caseSensitivityKey[]          = "CaseSensitivity";
-const char completionTriggerKey[]        = "CompletionTrigger";
-const char automaticProposalTimeoutKey[] = "AutomaticProposalTimeout";
-const char characterThresholdKey[]       = "CharacterThreshold";
-const char autoInsertBracesKey[]         = "AutoInsertBraces";
-const char surroundingAutoBracketsKey[]  = "SurroundingAutoBrackets";
-const char autoInsertQuotesKey[]         = "AutoInsertQuotes";
-const char surroundingAutoQuotesKey[]    = "SurroundingAutoQuotes";
-const char partiallyCompleteKey[]        = "PartiallyComplete";
-const char spaceAfterFunctionNameKey[]   = "SpaceAfterFunctionName";
-const char autoSplitStringsKey[]         = "AutoSplitStrings";
-const char animateAutoCompleteKey[]      = "AnimateAutoComplete";
-const char highlightAutoCompleteKey[]    = "HighlightAutoComplete";
-const char skipAutoCompleteKey[]         = "SkipAutoComplete";
-const char autoRemoveKey[]               = "AutoRemove";
-const char overwriteClosingCharsKey[]    = "OverwriteClosingChars";
-
-void CompletionSettings::toSettings(QtcSettings *s) const
+void CompletionSettings::toSettings(QSettings *s) const
 {
     s->beginGroup(settingsGroup);
     s->setValue(caseSensitivityKey, (int) m_caseSensitivity);
@@ -49,7 +69,7 @@ void CompletionSettings::toSettings(QtcSettings *s) const
     s->endGroup();
 }
 
-void CompletionSettings::fromSettings(QtcSettings *s)
+void CompletionSettings::fromSettings(QSettings *s)
 {
     *this = CompletionSettings(); // Assign defaults
 
@@ -109,5 +129,3 @@ bool CompletionSettings::equals(const CompletionSettings &cs) const
         && m_overwriteClosingChars          == cs.m_overwriteClosingChars
         ;
 }
-
-} // TextEditor

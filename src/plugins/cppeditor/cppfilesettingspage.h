@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -9,8 +31,9 @@
 
 #include <QDir>
 
-namespace ExtensionSystem { class IPlugin; }
-namespace ProjectExplorer { class Project; }
+QT_BEGIN_NAMESPACE
+class QSettings;
+QT_END_NAMESPACE
 
 namespace CppEditor::Internal {
 
@@ -28,31 +51,27 @@ public:
     QStringList sourceSearchPaths = {QDir::toNativeSeparators("../src"),
                                      QDir::toNativeSeparators("../Src"),
                                      ".."};
-    Utils::FilePath licenseTemplatePath;
-    QString headerGuardTemplate = "%{JS: '%{Header:FileName}'.toUpperCase().replace(/[.]/g, '_')}";
+    QString licenseTemplatePath;
     bool headerPragmaOnce = false;
     bool lowerCaseFiles = Constants::LOWERCASE_CPPFILES_DEFAULT;
 
-    void toSettings(Utils::QtcSettings *) const;
-    void fromSettings(Utils::QtcSettings *);
-    void addMimeInitializer() const;
+    void toSettings(QSettings *) const;
+    void fromSettings(QSettings *);
     bool applySuffixesToMimeDB();
 
     // Convenience to return a license template completely formatted.
-    QString licenseTemplate() const;
-
-    // Expanded headerGuardTemplate.
-    QString headerGuard(const Utils::FilePath &headerFilePath) const;
+    // Currently made public in
+    static QString licenseTemplate();
 
     bool equals(const CppFileSettings &rhs) const;
     bool operator==(const CppFileSettings &s) const { return equals(s); }
     bool operator!=(const CppFileSettings &s) const { return !equals(s); }
 };
 
-CppFileSettings &globalCppFileSettings();
-
-CppFileSettings cppFileSettingsForProject(ProjectExplorer::Project *project);
-
-void setupCppFileSettings(ExtensionSystem::IPlugin &plugin);
+class CppFileSettingsPage : public Core::IOptionsPage
+{
+public:
+    explicit CppFileSettingsPage(CppFileSettings *settings);
+};
 
 } // namespace CppEditor::Internal

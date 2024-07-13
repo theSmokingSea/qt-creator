@@ -1,75 +1,57 @@
-// Copyright (C) 2016 Lorenz Haas
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Lorenz Haas
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "configurationdialog.h"
+#include "ui_configurationdialog.h"
 
-#include "beautifiertool.h"
-#include "beautifiertr.h"
-#include "configurationeditor.h"
+#include "abstractsettings.h"
 
 #include <texteditor/fontsettings.h>
 #include <texteditor/texteditorsettings.h>
 
-#include <utils/layoutbuilder.h>
-
-#include <QDialogButtonBox>
-#include <QLabel>
-#include <QLineEdit>
 #include <QPushButton>
 #include <QRegularExpressionValidator>
-#include <QSplitter>
-#include <QTextEdit>
 
-namespace Beautifier::Internal {
+namespace Beautifier {
+namespace Internal {
 
-ConfigurationDialog::ConfigurationDialog(QWidget *parent)
-    : QDialog(parent)
+ConfigurationDialog::ConfigurationDialog(QWidget *parent) :
+    QDialog(parent),
+    ui(new Ui::ConfigurationDialog)
 {
-    resize(640, 512);
-
-    m_name = new QLineEdit;
-
-    m_editor = new ConfigurationEditor;
-
-    m_documentationHeader = new QLabel;
-
-    m_documentation = new QTextEdit;
-    m_documentation->setReadOnly(true);
-
-    m_buttonBox = new QDialogButtonBox(this);
-    m_buttonBox->setOrientation(Qt::Horizontal);
-    m_buttonBox->setStandardButtons(QDialogButtonBox::Cancel|QDialogButtonBox::Ok);
-
-    using namespace Layouting;
-
-    Column {
-        Group {
-            title(Tr::tr("Name")),
-            Column { m_name }
-        },
-        Group {
-            title(Tr::tr("Value")),
-            Column {
-                m_editor,
-                m_documentationHeader,
-                m_documentation
-            }
-        },
-        m_buttonBox
-    }.attachTo(this);
-
-    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    ui->setupUi(this);
 
     // Filter out characters which are not allowed in a file name
     QRegularExpressionValidator *fileNameValidator = new QRegularExpressionValidator(
-                QRegularExpression("^[^\\/\\\\\\?\\>\\<\\*\\%\\:\\\"\\']*$"), m_name);
-    m_name->setValidator(fileNameValidator);
+                QRegularExpression("^[^\\/\\\\\\?\\>\\<\\*\\%\\:\\\"\\']*$"), ui->name);
+    ui->name->setValidator(fileNameValidator);
 
     updateDocumentation();
-    connect(m_name, &QLineEdit::textChanged, this, &ConfigurationDialog::updateOkButton);
+    connect(ui->name, &QLineEdit::textChanged, this, &ConfigurationDialog::updateOkButton);
     updateOkButton(); // force initial test.
-    connect(m_editor, &ConfigurationEditor::documentationChanged,
+    connect(ui->editor, &ConfigurationEditor::documentationChanged,
             this, &ConfigurationDialog::updateDocumentation);
 
     // Set palette and font according to settings
@@ -84,11 +66,11 @@ ConfigurationDialog::ConfigurationDialog(QWidget *parent)
     if (selectionFormat.background().style() != Qt::NoBrush)
         pal.setColor(QPalette::Highlight, selectionFormat.background().color());
     pal.setBrush(QPalette::HighlightedText, selectionFormat.foreground());
-    m_documentation->setPalette(pal);
-    m_editor->setPalette(pal);
+    ui->documentation->setPalette(pal);
+    ui->editor->setPalette(pal);
 
-    m_documentation->setFont(tf.font());
-    m_editor->setFont(tf.font());
+    ui->documentation->setFont(tf.font());
+    ui->editor->setFont(tf.font());
 
     // Set style sheet for documentation browser
     const QTextCharFormat tfOption = fs.toTextCharFormat(TextEditor::C_FIELD);
@@ -103,59 +85,63 @@ ConfigurationDialog::ConfigurationDialog(QWidget *parent)
             .arg(tfOption.foreground().color().name())
             .arg(tfOption.background().style() == Qt::NoBrush
                  ? QString() : tfOption.background().color().name());
-    m_documentation->document()->setDefaultStyleSheet(css);
+    ui->documentation->document()->setDefaultStyleSheet(css);
 }
 
-ConfigurationDialog::~ConfigurationDialog() = default;
+ConfigurationDialog::~ConfigurationDialog()
+{
+    delete ui;
+}
 
 void ConfigurationDialog::setSettings(AbstractSettings *settings)
 {
     m_settings = settings;
-    m_editor->setSettings(m_settings);
+    ui->editor->setSettings(m_settings);
 }
 
 void ConfigurationDialog::clear()
 {
-    m_name->clear();
-    m_editor->clear();
+    ui->name->clear();
+    ui->editor->clear();
     m_currentKey.clear();
     updateOkButton();
 }
 
 QString ConfigurationDialog::key() const
 {
-    return m_name->text().simplified();
+    return ui->name->text().simplified();
 }
 
 void ConfigurationDialog::setKey(const QString &key)
 {
     m_currentKey = key;
-    m_name->setText(m_currentKey);
+    ui->name->setText(m_currentKey);
     if (m_settings)
-        m_editor->setPlainText(m_settings->style(m_currentKey));
+        ui->editor->setPlainText(m_settings->style(m_currentKey));
     else
-        m_editor->clear();
+        ui->editor->clear();
 }
 
 QString ConfigurationDialog::value() const
 {
-    return m_editor->toPlainText();
+    return ui->editor->toPlainText();
 }
 
 void ConfigurationDialog::updateOkButton()
 {
-    const QString key = m_name->text().simplified();
+    const QString key = ui->name->text().simplified();
     const bool exists = m_settings && key != m_currentKey && m_settings->styleExists(key);
-    m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(!(key.isEmpty() || exists));
+    ui->buttonBox->button(QDialogButtonBox::Ok)->setEnabled(!(key.isEmpty() || exists));
 }
 
 void ConfigurationDialog::updateDocumentation(const QString &word, const QString &docu)
 {
     if (word.isEmpty())
-        m_documentationHeader->setText(Tr::tr("Documentation"));
+        ui->documentationHeader->setText(tr("Documentation"));
     else
-        m_documentationHeader->setText(Tr::tr("Documentation for \"%1\"").arg(word));
-    m_documentation->setHtml(docu);
+        ui->documentationHeader->setText(tr("Documentation for \"%1\"").arg(word));
+    ui->documentation->setHtml(docu);
 }
 
-} // Beautifier::Internal
+} // namespace Internal
+} // namespace Beautifier

@@ -1,9 +1,29 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "openpageswidget.h"
-
-#include "helptr.h"
 
 #include <coreplugin/coreconstants.h>
 #include <utils/stringutils.h>
@@ -65,9 +85,8 @@ void OpenPagesWidget::contextMenuRequested(QPoint pos)
         index = index.sibling(index.row(), 0);
     QMenu contextMenu;
     const QString displayString = Utils::quoteAmpersands(index.data().toString());
-    QAction *closeEditor = contextMenu.addAction(Tr::tr("Close %1").arg(displayString));
-    QAction *closeOtherEditors = contextMenu.addAction(
-        Tr::tr("Close All Except %1").arg(displayString));
+    QAction *closeEditor = contextMenu.addAction(tr("Close %1").arg(displayString));
+    QAction *closeOtherEditors = contextMenu.addAction(tr("Close All Except %1").arg(displayString));
 
     if (model()->rowCount() == 1) {
         closeEditor->setEnabled(false);

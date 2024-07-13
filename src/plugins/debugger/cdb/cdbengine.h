@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -14,17 +36,23 @@
 
 #include <QElapsedTimer>
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
+
+class CdbCommand;
 
 class CdbEngine : public CppDebuggerEngine
 {
     Q_OBJECT
 
 public:
+    using CdbCommandPtr = QSharedPointer<CdbCommand>;
     using CommandHandler = std::function<void (const DebuggerResponse &)>;
 
     explicit CdbEngine();
     ~CdbEngine() override;
+
+    bool canHandleToolTip(const DebuggerToolTipContext &context) const override;
 
     void setupEngine() override;
     void runEngine();
@@ -63,9 +91,9 @@ public:
     void changeMemory(MemoryAgent *, quint64 addr, const QByteArray &data) override;
 
     void reloadModules() override;
-    void loadSymbols(const Utils::FilePath &moduleName) override;
+    void loadSymbols(const QString &moduleName) override;
     void loadAllSymbols() override;
-    void requestModuleSymbols(const Utils::FilePath &moduleName) override;
+    void requestModuleSymbols(const QString &moduleName) override;
 
     void reloadRegisters() override;
     void reloadSourceFiles() override;
@@ -76,14 +104,14 @@ public:
     static QString extensionLibraryName(bool is64Bit, bool isArm = false);
 
 private:
+    void readyReadStandardOut();
+    void readyReadStandardError();
     void processStarted();
     void processDone();
     void runCommand(const DebuggerCommand &cmd) override;
     void adjustOperateByInstruction(bool);
 
     void createFullBacktrace();
-
-    void handleDoInterruptInferior(const QString &errorMessage);
 
     typedef QPair<QString, QString> SourcePathMapping;
     struct NormalizedSourceFileName // Struct for caching mapped/normalized source files.
@@ -108,10 +136,9 @@ private:
     };
     enum CommandFlags {
         NoFlags = 0,
-        Silent = DebuggerCommand::Silent,
-        BuiltinCommand = DebuggerCommand::Silent << 1,
-        ExtensionCommand = DebuggerCommand::Silent << 2,
-        ScriptCommand = DebuggerCommand::Silent << 3
+        BuiltinCommand,
+        ExtensionCommand,
+        ScriptCommand
     };
 
     void init();
@@ -130,13 +157,13 @@ private:
     void doContinueInferior();
     void parseOutputLine(QString line);
     bool isCdbProcessRunning() const { return m_process.state() != QProcess::NotRunning; }
+    bool canInterruptInferior() const;
     inline void postDisassemblerCommand(quint64 address, DisassemblerAgent *agent);
     void postDisassemblerCommand(quint64 address, quint64 endAddress,
                                  DisassemblerAgent *agent);
     void postResolveSymbol(const QString &module, const QString &function,
                            DisassemblerAgent *agent);
     void showScriptMessages(const QString &message) const;
-    void showScriptMessages(const GdbMi &message) const;
     void handleInitialSessionIdle();
     // Builtin commands
     void handleStackTrace(const DebuggerResponse &);
@@ -168,16 +195,13 @@ private:
     unsigned parseStackTrace(const GdbMi &data, bool sourceStepInto);
     void mergeStartParametersSourcePathMap();
     void checkQtSdkPdbFiles(const QString &module);
-    BreakpointParameters parseBreakPoint(const GdbMi &gdbmi);
-
-    void debugLastCommand() final;
-    DebuggerCommand m_lastDebuggableCommand;
 
     const QString m_tokenPrefix;
     void handleSetupFailure(const QString &errorMessage);
 
-    Utils::Process m_process;
+    Utils::QtcProcess m_process;
     DebuggerStartMode m_effectiveStartMode = NoStartMode;
+    QByteArray m_outputBuffer;
     //! Debugger accessible (expecting commands)
     bool m_accessible = false;
     StopMode m_stopMode = NoStopRequested;
@@ -204,6 +228,7 @@ private:
     QSet<Breakpoint> m_pendingBreakpointMap;
     bool m_autoBreakPointCorrection = false;
     QMultiHash<QString, quint64> m_symbolAddressCache;
+    bool m_ignoreCdbOutput = false;
     QList<InterruptCallback> m_interrupCallbacks;
     QList<SourcePathMapping> m_sourcePathMappings;
     QScopedPointer<GdbMi> m_coreStopReason;
@@ -212,4 +237,5 @@ private:
     mutable CPlusPlus::Snapshot m_codeModelSnapshot;
 };
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

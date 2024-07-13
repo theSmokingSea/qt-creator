@@ -1,5 +1,27 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -7,7 +29,9 @@
 
 #include <utils/filepath.h>
 
-namespace Utils { class Process; }
+#include <QUrl>
+
+namespace Utils { class QtcProcess; }
 
 namespace ProjectExplorer {
 
@@ -27,35 +51,28 @@ public:
 
     SshParameters();
 
-    QString host() const { return m_host; }
-    quint16 port() const { return m_port; }
-    QString userName() const { return m_userName; }
-
-    QString userAtHost() const;
-    QString userAtHostAndPort() const;
-
-    void setHost(const QString &host) { m_host = host; }
-    void setPort(int port) { m_port = port; }
-    void setUserName(const QString &name) { m_userName = name; }
+    QString host() const { return url.host(); }
+    quint16 port() const { return url.port(); }
+    QString userName() const { return url.userName(); }
+    QString userAtHost() const { return userName().isEmpty() ? host() : userName() + '@' + host(); }
+    void setHost(const QString &host) { url.setHost(host); }
+    void setPort(int port) { url.setPort(port); }
+    void setUserName(const QString &name) { url.setUserName(name); }
 
     QStringList connectionOptions(const Utils::FilePath &binary) const;
 
+    QUrl url;
     Utils::FilePath privateKeyFile;
     QString x11DisplayName;
     int timeout = 0; // In seconds.
     AuthenticationType authenticationType = AuthenticationTypeAll;
     SshHostKeyCheckingMode hostKeyCheckingMode = SshHostKeyCheckingAllowNoMatch;
 
-    static void setupSshEnvironment(Utils::Process *process);
-
-    friend PROJECTEXPLORER_EXPORT bool operator==(const SshParameters &p1, const SshParameters &p2);
-    friend bool operator!=(const SshParameters &p1, const SshParameters &p2) { return !(p1 == p2); }
-
-private:
-    QString m_host;
-    quint16 m_port = 22;
-    QString m_userName;
+    static bool setupSshEnvironment(Utils::QtcProcess *process);
 };
+
+PROJECTEXPLORER_EXPORT bool operator==(const SshParameters &p1, const SshParameters &p2);
+PROJECTEXPLORER_EXPORT bool operator!=(const SshParameters &p1, const SshParameters &p2);
 
 #ifdef WITH_TESTS
 namespace SshTest {
@@ -64,7 +81,6 @@ quint16 PROJECTEXPLORER_EXPORT getPortFromEnvironment();
 const QString PROJECTEXPLORER_EXPORT getUserFromEnvironment();
 const QString PROJECTEXPLORER_EXPORT getKeyFileFromEnvironment();
 const PROJECTEXPLORER_EXPORT QString userAtHost();
-const PROJECTEXPLORER_EXPORT QString userAtHostAndPort();
 SshParameters PROJECTEXPLORER_EXPORT getParameters();
 bool PROJECTEXPLORER_EXPORT checkParameters(const SshParameters &params);
 void PROJECTEXPLORER_EXPORT printSetupHelp();

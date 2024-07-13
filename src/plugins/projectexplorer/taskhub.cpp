@@ -1,17 +1,40 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "taskhub.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
 
 #include <coreplugin/coreicons.h>
 #include <coreplugin/ioutputpane.h>
 #include <texteditor/textmark.h>
 #include <utils/qtcassert.h>
 #include <utils/theme/theme.h>
-#include <utils/threadutils.h>
 #include <utils/utilsicons.h>
+
+#include <QApplication>
+#include <QThread>
 
 using namespace Utils;
 
@@ -21,17 +44,18 @@ namespace ProjectExplorer {
 const char TASK_MARK_WARNING[] = "Task.Mark.Warning";
 const char TASK_MARK_ERROR[] = "Task.Mark.Error";
 
-static QVector<Id> s_registeredCategories;
+static TaskHub *m_instance = nullptr;
+QVector<Utils::Id> TaskHub::m_registeredCategories;
 
-static TextEditor::TextMarkCategory categoryForType(Task::TaskType type)
+static Utils::Id categoryForType(Task::TaskType type)
 {
     switch (type) {
     case Task::Error:
-        return {::ProjectExplorer::Tr::tr("Taskhub Error"), TASK_MARK_ERROR};
+        return TASK_MARK_ERROR;
     case Task::Warning:
-        return {::ProjectExplorer::Tr::tr("Taskhub Warning"), TASK_MARK_WARNING};
+        return TASK_MARK_WARNING;
     default:
-        return {};
+        return Utils::Id();
     }
 }
 
@@ -42,15 +66,19 @@ public:
         TextMark(task.file, task.line, categoryForType(task.type)),
         m_task(task)
     {
-        setColor(task.type == Task::Error ? Theme::ProjectExplorer_TaskError_TextMarkColor
-                                          : Theme::ProjectExplorer_TaskWarn_TextMarkColor);
-        setDefaultToolTip(task.type == Task::Error ? Tr::tr("Error")
-                                                   : Tr::tr("Warning"));
+        setColor(task.type == Task::Error ? Utils::Theme::ProjectExplorer_TaskError_TextMarkColor
+                                          : Utils::Theme::ProjectExplorer_TaskWarn_TextMarkColor);
+        setDefaultToolTip(task.type == Task::Error ? QApplication::translate("TaskHub", "Error")
+                                                   : QApplication::translate("TaskHub", "Warning"));
         setPriority(task.type == Task::Error ? TextEditor::TextMark::NormalPriority
                                              : TextEditor::TextMark::LowPriority);
-        setToolTip(task.formattedDescription({Task::WithSummary | Task::WithLinks},
-                                             task.category == Constants::TASK_CATEGORY_COMPILE
-                                                 ? Tr::tr("Build Issue") : QString()));
+        if (task.category == Constants::TASK_CATEGORY_COMPILE) {
+            setToolTip("<html><body><b>" + QApplication::translate("TaskHub", "Build Issue")
+                       + "</b><br/><code style=\"white-space:pre;font-family:monospace\">"
+                       + task.description().toHtmlEscaped() + "</code></body></html>");
+        } else {
+            setToolTip(task.description());
+        }
         setIcon(task.icon());
         setVisible(!task.icon().isNull());
     }
@@ -58,7 +86,7 @@ public:
     bool isClickable() const override;
     void clicked() override;
 
-    void updateFilePath(const FilePath &fileName) override;
+    void updateFileName(const FilePath &fileName) override;
     void updateLineNumber(int lineNumber) override;
     void removedFromEditor() override;
 private:
@@ -71,10 +99,10 @@ void TaskMark::updateLineNumber(int lineNumber)
     TextMark::updateLineNumber(lineNumber);
 }
 
-void TaskMark::updateFilePath(const FilePath &fileName)
+void TaskMark::updateFileName(const FilePath &fileName)
 {
     TaskHub::updateTaskFileName(m_task, fileName.toString());
-    TextMark::updateFilePath(FilePath::fromString(fileName.toString()));
+    TextMark::updateFileName(FilePath::fromString(fileName.toString()));
 }
 
 void TaskMark::removedFromEditor()
@@ -94,28 +122,38 @@ void TaskMark::clicked()
 
 TaskHub::TaskHub()
 {
+    m_instance = this;
     qRegisterMetaType<ProjectExplorer::Task>("ProjectExplorer::Task");
     qRegisterMetaType<Tasks >("Tasks");
 }
 
-TaskHub::~TaskHub() = default;
-
-void TaskHub::addCategory(const TaskCategory &category)
+TaskHub::~TaskHub()
 {
-    QTC_CHECK(!category.displayName.isEmpty());
-    QTC_ASSERT(!s_registeredCategories.contains(category.id), return);
-    s_registeredCategories.push_back(category.id);
-    emit taskHub().categoryAdded(category);
+    m_instance = nullptr;
 }
 
-void TaskHub::addTask(Task::TaskType type, const QString &description, Id category)
+void TaskHub::addCategory(Utils::Id categoryId, const QString &displayName, bool visible,
+                          int priority)
+{
+    QTC_CHECK(!displayName.isEmpty());
+    QTC_ASSERT(!m_registeredCategories.contains(categoryId), return);
+    m_registeredCategories.push_back(categoryId);
+    emit m_instance->categoryAdded(categoryId, displayName, visible, priority);
+}
+
+TaskHub *TaskHub::instance()
+{
+    return m_instance;
+}
+
+void TaskHub::addTask(Task::TaskType type, const QString &description, Utils::Id category)
 {
     addTask(Task(type, description, {}, -1, category));
 }
 
 void TaskHub::addTask(Task task)
 {
-    if (!isMainThread()) {
+    if (QThread::currentThread() != qApp->thread()) {
         QMetaObject::invokeMethod(qApp, [task = std::move(task)] {
             TaskHub::addTask(task);
         });
@@ -123,10 +161,10 @@ void TaskHub::addTask(Task task)
         return;
     }
 
-    QTC_ASSERT(s_registeredCategories.contains(task.category), return);
+    QTC_ASSERT(m_registeredCategories.contains(task.category), return);
     QTC_ASSERT(!task.description().isEmpty(), return);
     QTC_ASSERT(!task.isNull(), return);
-    QTC_ASSERT(!task.m_mark, return);
+    QTC_ASSERT(task.m_mark.isNull(), return);
 
     if (task.file.isEmpty() || task.line <= 0)
         task.line = -1;
@@ -134,55 +172,49 @@ void TaskHub::addTask(Task task)
 
     if ((task.options & Task::AddTextMark) && task.line != -1 && task.type != Task::Unknown)
         task.setMark(new TaskMark(task));
-    emit taskHub().taskAdded(task);
+    emit m_instance->taskAdded(task);
 }
 
-void TaskHub::clearTasks(Id categoryId)
+void TaskHub::clearTasks(Utils::Id categoryId)
 {
-    QTC_ASSERT(!categoryId.isValid() || s_registeredCategories.contains(categoryId), return);
-    emit taskHub().tasksCleared(categoryId);
+    QTC_ASSERT(!categoryId.isValid() || m_registeredCategories.contains(categoryId), return);
+    emit m_instance->tasksCleared(categoryId);
 }
 
 void TaskHub::removeTask(const Task &task)
 {
-    emit taskHub().taskRemoved(task);
+    emit m_instance->taskRemoved(task);
 }
 
 void TaskHub::updateTaskFileName(const Task &task, const QString &fileName)
 {
-    emit taskHub().taskFileNameUpdated(task, fileName);
+    emit m_instance->taskFileNameUpdated(task, fileName);
 }
 
 void TaskHub::updateTaskLineNumber(const Task &task, int line)
 {
-    emit taskHub().taskLineNumberUpdated(task, line);
+    emit m_instance->taskLineNumberUpdated(task, line);
 }
 
 void TaskHub::taskMarkClicked(const Task &task)
 {
-    emit taskHub().showTask(task);
+    emit m_instance->showTask(task);
 }
 
 void TaskHub::showTaskInEditor(const Task &task)
 {
-    emit taskHub().openTask(task);
+    emit m_instance->openTask(task);
 }
 
-void TaskHub::setCategoryVisibility(Id categoryId, bool visible)
+void TaskHub::setCategoryVisibility(Utils::Id categoryId, bool visible)
 {
-    QTC_ASSERT(s_registeredCategories.contains(categoryId), return);
-    emit taskHub().categoryVisibilityChanged(categoryId, visible);
+    QTC_ASSERT(m_registeredCategories.contains(categoryId), return);
+    emit m_instance->categoryVisibilityChanged(categoryId, visible);
 }
 
 void TaskHub::requestPopup()
 {
-    emit taskHub().popupRequested(Core::IOutputPane::NoModeSwitch);
-}
-
-TaskHub &taskHub()
-{
-    static TaskHub theTaskHub;
-    return theTaskHub;
+    emit m_instance->popupRequested(Core::IOutputPane::NoModeSwitch);
 }
 
 } // namespace ProjectExplorer

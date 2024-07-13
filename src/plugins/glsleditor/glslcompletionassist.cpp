@@ -1,7 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "glslcompletionassist.h"
+#include "glsleditorconstants.h"
+#include "glsleditorplugin.h"
 
 #include <glsl/glslengine.h>
 #include <glsl/glsllexer.h>
@@ -11,21 +35,25 @@
 #include <glsl/glslastdump.h>
 
 #include <coreplugin/idocument.h>
-
 #include <texteditor/completionsettings.h>
 #include <texteditor/codeassist/assistproposalitem.h>
-#include <texteditor/codeassist/completionassistprovider.h>
-#include <texteditor/codeassist/functionhintproposal.h>
-#include <texteditor/codeassist/genericproposal.h>
 #include <texteditor/codeassist/genericproposalmodel.h>
+#include <texteditor/codeassist/genericproposal.h>
+#include <texteditor/codeassist/functionhintproposal.h>
 #include <texteditor/texteditorsettings.h>
-
 #include <cplusplus/ExpressionUnderCursor.h>
 #include <cplusplus/Icons.h>
 
 #include <utils/icon.h>
+#include <utils/faketooltip.h>
 
 #include <QIcon>
+#include <QPainter>
+#include <QLabel>
+#include <QToolButton>
+#include <QHBoxLayout>
+#include <QApplication>
+#include <QDebug>
 
 using namespace TextEditor;
 
@@ -40,7 +68,7 @@ Document::~Document()
 
 GLSL::Scope *Document::scopeAt(int position) const
 {
-    for (const Range &c : _cursors) {
+    foreach (const Range &c, _cursors) {
         if (position >= c.cursor.selectionStart() && position <= c.cursor.selectionEnd())
             return c.scope;
     }
@@ -159,6 +187,21 @@ static QIcon glslIcon(IconTypes iconType)
 // ----------------------------
 // GlslCompletionAssistProvider
 // ----------------------------
+IAssistProcessor *GlslCompletionAssistProvider::createProcessor(const AssistInterface *) const
+{
+    return new GlslCompletionAssistProcessor;
+}
+
+int GlslCompletionAssistProvider::activationCharSequenceLength() const
+{
+    return 1;
+}
+
+bool GlslCompletionAssistProvider::isActivationCharSequence(const QString &sequence) const
+{
+    return isActivationChar(sequence.at(0));
+}
+
 struct FunctionItem
 {
     FunctionItem() = default;
@@ -258,18 +301,7 @@ int GlslFunctionHintProposalModel::activeArgument(const QString &prefix) const
 // -----------------------------
 // GLSLCompletionAssistProcessor
 // -----------------------------
-
-class GlslCompletionAssistProcessor final : public TextEditor::AsyncProcessor
-{
-public:
-    TextEditor::IAssistProposal *performAsync() final;
-
-private:
-    TextEditor::IAssistProposal *createHintProposal(const QVector<GLSL::Function *> &symbols);
-    bool acceptsIdleEditor() const;
-
-    int m_startPosition = 0;
-};
+GlslCompletionAssistProcessor::~GlslCompletionAssistProcessor() = default;
 
 static AssistProposalItem *createCompletionItem(const QString &text, const QIcon &icon, int order = 0)
 {
@@ -280,17 +312,17 @@ static AssistProposalItem *createCompletionItem(const QString &text, const QIcon
     return item;
 }
 
-IAssistProposal *GlslCompletionAssistProcessor::performAsync()
+IAssistProposal *GlslCompletionAssistProcessor::perform(const AssistInterface *interface)
 {
-    auto interface = static_cast<const GlslCompletionAssistInterface *>(this->interface());
+    m_interface.reset(static_cast<const GlslCompletionAssistInterface *>(interface));
 
     if (interface->reason() == IdleEditor && !acceptsIdleEditor())
         return nullptr;
 
-    int pos = interface->position() - 1;
-    QChar ch = interface->characterAt(pos);
+    int pos = m_interface->position() - 1;
+    QChar ch = m_interface->characterAt(pos);
     while (ch.isLetterOrNumber() || ch == QLatin1Char('_'))
-        ch = interface->characterAt(--pos);
+        ch = m_interface->characterAt(--pos);
 
     CPlusPlus::ExpressionUnderCursor expressionUnderCursor(
                 CPlusPlus::LanguageFeatures::defaultFeatures());
@@ -300,16 +332,16 @@ IAssistProposal *GlslCompletionAssistProcessor::performAsync()
     QStringList specialMembers;
     QList<AssistProposalItemInterface *> m_completions;
 
-    bool functionCall = (ch == QLatin1Char('(') && pos == interface->position() - 1);
+    bool functionCall = (ch == QLatin1Char('(') && pos == m_interface->position() - 1);
 
     if (ch == QLatin1Char(',')) {
-        QTextCursor tc(interface->textDocument());
+        QTextCursor tc(m_interface->textDocument());
         tc.setPosition(pos);
         const int start = expressionUnderCursor.startOfFunctionCall(tc);
         if (start == -1)
             return nullptr;
 
-        if (interface->characterAt(start) == QLatin1Char('(')) {
+        if (m_interface->characterAt(start) == QLatin1Char('(')) {
             pos = start;
             ch = QLatin1Char('(');
             functionCall = true;
@@ -318,7 +350,7 @@ IAssistProposal *GlslCompletionAssistProcessor::performAsync()
 
     if (ch == QLatin1Char('.') || functionCall) {
         const bool memberCompletion = ! functionCall;
-        QTextCursor tc(interface->textDocument());
+        QTextCursor tc(m_interface->textDocument());
         tc.setPosition(pos);
 
         // get the expression under cursor
@@ -327,7 +359,7 @@ IAssistProposal *GlslCompletionAssistProcessor::performAsync()
 
         // parse the expression
         GLSL::Engine engine;
-        GLSL::Parser parser(&engine, code, code.size(), languageVariant(interface->mimeType()));
+        GLSL::Parser parser(&engine, code, code.size(), languageVariant(m_interface->mimeType()));
         GLSL::ExpressionAST *expr = parser.parseExpression();
 
 #if 0
@@ -337,7 +369,7 @@ IAssistProposal *GlslCompletionAssistProcessor::performAsync()
         dump(expr);
 #endif
 
-        if (Document::Ptr doc = interface->glslDocument()) {
+        if (Document::Ptr doc = m_interface->glslDocument()) {
             GLSL::Scope *currentScope = doc->scopeAt(pos);
 
             GLSL::Semantic sem;
@@ -386,7 +418,7 @@ IAssistProposal *GlslCompletionAssistProcessor::performAsync()
 
     } else {
         // it's a global completion
-        if (Document::Ptr doc = interface->glslDocument()) {
+        if (Document::Ptr doc = m_interface->glslDocument()) {
             GLSL::Scope *currentScope = doc->scopeAt(pos);
             bool isGlobal = !currentScope || !currentScope->scope();
 
@@ -425,18 +457,18 @@ IAssistProposal *GlslCompletionAssistProcessor::performAsync()
             }
         }
 
- //       if (m_keywordVariant != languageVariant(interface->mimeType())) {
-            QStringList keywords = GLSL::Lexer::keywords(languageVariant(interface->mimeType()));
+ //       if (m_keywordVariant != languageVariant(m_interface->mimeType())) {
+            QStringList keywords = GLSL::Lexer::keywords(languageVariant(m_interface->mimeType()));
 //            m_keywordCompletions.clear();
             for (int index = 0; index < keywords.size(); ++index)
                 m_completions << createCompletionItem(keywords.at(index), glslIcon(IconTypeKeyword));
-//            m_keywordVariant = languageVariant(interface->mimeType());
+//            m_keywordVariant = languageVariant(m_interface->mimeType());
 //        }
 
   //      m_completions += m_keywordCompletions;
     }
 
-    for (GLSL::Symbol *s : std::as_const(members)) {
+    foreach (GLSL::Symbol *s, members) {
         QIcon icon;
         GLSL::Variable *var = s->asVariable();
         if (var) {
@@ -481,22 +513,22 @@ IAssistProposal *GlslCompletionAssistProcessor::createHintProposal(
 
 bool GlslCompletionAssistProcessor::acceptsIdleEditor() const
 {
-    const int cursorPosition = interface()->position();
-    const QChar ch = interface()->characterAt(cursorPosition - 1);
+    const int cursorPosition = m_interface->position();
+    const QChar ch = m_interface->characterAt(cursorPosition - 1);
 
-    const QChar characterUnderCursor = interface()->characterAt(cursorPosition);
+    const QChar characterUnderCursor = m_interface->characterAt(cursorPosition);
 
     if (isIdentifierChar(ch) && (characterUnderCursor.isSpace() ||
                                  characterUnderCursor.isNull() ||
                                  isDelimiter(characterUnderCursor))) {
-        int pos = interface()->position() - 1;
+        int pos = m_interface->position() - 1;
         for (; pos != -1; --pos) {
-            if (! isIdentifierChar(interface()->characterAt(pos)))
+            if (! isIdentifierChar(m_interface->characterAt(pos)))
                 break;
         }
         ++pos;
 
-        const QString word = interface()->textAt(pos, cursorPosition - pos);
+        const QString word = m_interface->textAt(pos, cursorPosition - pos);
         if (word.length() >= TextEditorSettings::completionSettings().m_characterThreshold
                 && checkStartOfIdentifier(word)) {
             for (auto character : word) {
@@ -522,37 +554,6 @@ GlslCompletionAssistInterface::GlslCompletionAssistInterface(const QTextCursor &
     , m_mimeType(mimeType)
     , m_glslDoc(glslDoc)
 {
-}
-
-// GlslCompletionAssistProvider
-
-class GlslCompletionAssistProvider : public TextEditor::CompletionAssistProvider
-{
-public:
-    TextEditor::IAssistProcessor *createProcessor(const TextEditor::AssistInterface *) const override;
-
-    int activationCharSequenceLength() const override;
-    bool isActivationCharSequence(const QString &sequence) const override;
-};
-
-IAssistProcessor *GlslCompletionAssistProvider::createProcessor(const AssistInterface *) const
-{
-    return new GlslCompletionAssistProcessor;
-}
-
-int GlslCompletionAssistProvider::activationCharSequenceLength() const
-{
-    return 1;
-}
-
-bool GlslCompletionAssistProvider::isActivationCharSequence(const QString &sequence) const
-{
-    return isActivationChar(sequence.at(0));
-}
-
-CompletionAssistProvider *createGlslCompletionAssistProvider()
-{
-    return new GlslCompletionAssistProvider;
 }
 
 } // namespace Internal

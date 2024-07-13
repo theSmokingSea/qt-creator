@@ -11,18 +11,24 @@ QtcPlugin {
     Depends { name: "ProjectExplorer" }
 
     files: [
+        "abstractsettings.h",
+        "abstractsettings.cpp",
         "beautifier.qrc",
+        "beautifierabstracttool.h",
         "beautifierconstants.h",
         "beautifierplugin.cpp",
-        "beautifiertool.h",
-        "beautifiertool.cpp",
-        "beautifiertr.h",
+        "beautifierplugin.h",
         "configurationdialog.cpp",
         "configurationdialog.h",
+        "configurationdialog.ui",
         "configurationeditor.cpp",
         "configurationeditor.h",
         "configurationpanel.cpp",
         "configurationpanel.h",
+        "configurationpanel.ui",
+        "generaloptionspage.cpp",
+        "generaloptionspage.h",
+        "generaloptionspage.ui",
         "generalsettings.cpp",
         "generalsettings.h",
     ]
@@ -33,6 +39,12 @@ QtcPlugin {
         files: [
             "artisticstyle.cpp",
             "artisticstyle.h",
+            "artisticstyleconstants.h",
+            "artisticstyleoptionspage.cpp",
+            "artisticstyleoptionspage.h",
+            "artisticstyleoptionspage.ui",
+            "artisticstylesettings.cpp",
+            "artisticstylesettings.h"
         ]
     }
 
@@ -42,6 +54,12 @@ QtcPlugin {
         files: [
             "clangformat.cpp",
             "clangformat.h",
+            "clangformatconstants.h",
+            "clangformatoptionspage.cpp",
+            "clangformatoptionspage.h",
+            "clangformatoptionspage.ui",
+            "clangformatsettings.cpp",
+            "clangformatsettings.h"
         ]
     }
 
@@ -51,6 +69,12 @@ QtcPlugin {
         files: [
             "uncrustify.cpp",
             "uncrustify.h",
+            "uncrustifyconstants.h",
+            "uncrustifyoptionspage.cpp",
+            "uncrustifyoptionspage.h",
+            "uncrustifyoptionspage.ui",
+            "uncrustifysettings.cpp",
+            "uncrustifysettings.h"
         ]
     }
 }

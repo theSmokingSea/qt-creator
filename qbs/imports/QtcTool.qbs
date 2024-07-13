@@ -1,11 +1,11 @@
+import qbs
 import qbs.FileInfo
 
 QtcProduct {
+    type: ["application"]
     consoleApplication: true
-    type: "application"
-
     installDir:  qtc.ide_libexec_path
-    installTags: type.concat("debuginfo_app")
+    installTags: base.concat(["debuginfo_app"])
     useNonGuiPchFile: true
 
     cpp.rpaths: {

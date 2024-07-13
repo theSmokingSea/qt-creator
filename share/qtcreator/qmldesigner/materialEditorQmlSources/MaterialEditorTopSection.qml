@@ -1,26 +1,44 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Controls
-import QtQuick.Layouts
-import HelperWidgets as HelperWidgets
-import StudioControls as StudioControls
-import StudioTheme as StudioTheme
+import QtQuick 2.15
+import QtQuick.Controls 2.15
+import QtQuick.Layouts 1.15
+import QtQuickDesignerTheme 1.0
+import QtQuick.Templates 2.15 as T
+import HelperWidgets 2.0
+import StudioControls 1.0 as StudioControls
+import StudioTheme 1.0 as StudioTheme
 
 Column {
     id: root
 
+    signal toolBarAction(int action)
+
     property string previewEnv
     property string previewModel
-
-    property real __horizontalSpacing: 5
-
-    property StudioTheme.ControlStyle buttonStyle: StudioTheme.ViewBarButtonStyle {
-        //This is how you can override stuff from the control styles
-        controlSize: Qt.size(previewOptions.width, previewOptions.width)
-        baseIconFontSize: StudioTheme.Values.bigIconFontSize
-    }
 
     function refreshPreview()
     {
@@ -38,7 +56,14 @@ Column {
     anchors.left: parent.left
     anchors.right: parent.right
 
-    Item { width: 1; height: 5 } // spacer
+    MaterialEditorToolBar {
+        width: root.width
+
+        onToolBarAction: (action) => root.toolBarAction(action)
+    }
+
+    Item { width: 1; height: 10 } // spacer
+
 
     StudioControls.Menu {
         id: modelMenu
@@ -123,19 +148,6 @@ Column {
         width: parent.width
         height: previewRect.height
 
-        StudioControls.AbstractButton {
-            id: pinButton
-
-            x: root.__horizontalSpacing
-
-            style: root.buttonStyle
-            iconSize: StudioTheme.Values.bigFont
-            buttonIcon: pinButton.checked ? StudioTheme.Constants.pin : StudioTheme.Constants.unpin
-            checkable: true
-            checked: itemPane.headerDocked
-            onCheckedChanged: itemPane.headerDocked = pinButton.checked
-        }
-
         Rectangle {
             id: previewRect
             anchors.horizontalCenter: parent.horizontalCenter
@@ -150,7 +162,6 @@ Column {
                 anchors.centerIn: parent
                 source: "image://materialEditor/preview"
                 cache: false
-                smooth: true
             }
         }
 
@@ -160,41 +171,41 @@ Column {
             height: previewRect.height
             anchors.top: previewRect.top
             anchors.left: previewRect.right
-            anchors.leftMargin: root.__horizontalSpacing
 
             Column {
                 anchors.horizontalCenter: parent.horizontalCenter
-
-                HelperWidgets.AbstractButton {
-                    style: root.buttonStyle
-                    buttonIcon: StudioTheme.Constants.textures_medium
+                IconButton {
+                    icon: StudioTheme.Constants.materialPreviewEnvironment
+                    iconSize: StudioTheme.Values.bigIconFontSize
+                    buttonSize: previewOptions.width
                     tooltip: qsTr("Select preview environment.")
                     onClicked: envMenu.popup()
                 }
-
-                HelperWidgets.AbstractButton {
-                    style: root.buttonStyle
-                    buttonIcon: StudioTheme.Constants.cube_medium
+                IconButton {
+                    icon: StudioTheme.Constants.materialPreviewModel
+                    iconSize: StudioTheme.Values.bigIconFontSize
+                    buttonSize: previewOptions.width
                     tooltip: qsTr("Select preview model.")
                     onClicked: modelMenu.popup()
                 }
             }
         }
+
     }
 
-    HelperWidgets.Section {
+    Section {
         // Section with hidden header is used so properties are aligned with the other sections' properties
         hideHeader: true
         width: parent.width
         collapsible: false
 
-        HelperWidgets.SectionLayout {
-            HelperWidgets.PropertyLabel { text: qsTr("Name") }
+        SectionLayout {
+            PropertyLabel { text: qsTr("Name") }
 
-            HelperWidgets.SecondColumnLayout {
-                HelperWidgets.Spacer { implicitWidth: StudioTheme.Values.actionIndicatorWidth }
+            SecondColumnLayout {
+                Spacer { implicitWidth: StudioTheme.Values.actionIndicatorWidth }
 
-                HelperWidgets.LineEdit {
+                LineEdit {
                     implicitWidth: StudioTheme.Values.singleControlColumnWidth
                     width: StudioTheme.Values.singleControlColumnWidth
                     backendValue: backendValues.objectName
@@ -205,23 +216,22 @@ Column {
                     showExtendedFunctionButton: false
 
                     // allow only alphanumeric characters, underscores, no space at start, and 1 space between words
-                    validator: HelperWidgets.RegExpValidator { regExp: /^(\w+\s)*\w+$/ }
+                    validator: RegExpValidator { regExp: /^(\w+\s)*\w+$/ }
                 }
 
-                HelperWidgets.ExpandingSpacer {}
+                ExpandingSpacer {}
             }
 
-            HelperWidgets.PropertyLabel { text: qsTr("Type") }
+            PropertyLabel { text: qsTr("Type") }
 
-            HelperWidgets.SecondColumnLayout {
-            HelperWidgets.Spacer { implicitWidth: StudioTheme.Values.actionIndicatorWidth }
+            SecondColumnLayout {
+                Spacer { implicitWidth: StudioTheme.Values.actionIndicatorWidth }
 
-            HelperWidgets.ComboBox {
+                ComboBox {
                     currentIndex: possibleTypeIndex
                     model: possibleTypes
                     showExtendedFunctionButton: false
                     implicitWidth: StudioTheme.Values.singleControlColumnWidth
-                    enabled: possibleTypes.length > 1
 
                     onActivated: changeTypeName(currentValue)
                 }

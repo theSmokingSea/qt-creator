@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "makefileparse.h"
 
@@ -18,19 +40,14 @@ using namespace ProjectExplorer;
 using namespace QtSupport;
 using namespace Utils;
 
-namespace QmakeProjectManager::Internal {
+namespace QmakeProjectManager {
+namespace Internal {
 
 static QString findQMakeLine(const FilePath &makefile, const QString &key)
 {
     QFile fi(makefile.toString());
     if (fi.exists() && fi.open(QFile::ReadOnly)) {
-        static const QString cmakeLine("# CMAKE generated file: DO NOT EDIT!");
         QTextStream ts(&fi);
-        if (!ts.atEnd()) {
-            if (ts.readLine() == cmakeLine)
-                return {};
-            ts.seek(0);
-        }
         while (!ts.atEnd()) {
             const QString line = ts.readLine();
             if (line.startsWith(key))
@@ -53,10 +70,9 @@ void MakeFileParse::parseArgs(const QString &args, const QString &project,
                               QList<QMakeAssignment> *assignments,
                               QList<QMakeAssignment> *afterAssignments)
 {
-    static const QRegularExpression regExp(QLatin1String("^([^\\s\\+-]*)\\s*(\\+=|=|-=|~=)(.*)$"));
+    const QRegularExpression regExp(QLatin1String("^([^\\s\\+-]*)\\s*(\\+=|=|-=|~=)(.*)$"));
     bool after = false;
     bool ignoreNext = false;
-    bool nextIsQtConfArg = false;
     m_unparsedArguments = args;
     ProcessArgs::ArgIterator ait(&m_unparsedArguments);
     while (ait.next()) {
@@ -64,17 +80,10 @@ void MakeFileParse::parseArgs(const QString &args, const QString &project,
             // Ignoring
             ignoreNext = false;
             ait.deleteArg();
-        } else if (nextIsQtConfArg) {
-            nextIsQtConfArg = false;
-            m_qtConfFile = FilePath::fromUserInput(ait.value());
-            ait.deleteArg();
         } else if (ait.value() == project) {
             ait.deleteArg();
         } else if (ait.value() == QLatin1String("-after")) {
             after = true;
-            ait.deleteArg();
-        } else if (ait.value() == "-qtconf") {
-            nextIsQtConfArg = true;
             ait.deleteArg();
         } else if (ait.value().contains(QLatin1Char('='))) {
             const QRegularExpressionMatch match = regExp.match(ait.value());
@@ -110,8 +119,9 @@ void MakeFileParse::parseArgs(const QString &args, const QString &project,
 
 void dumpQMakeAssignments(const QList<QMakeAssignment> &list)
 {
-    for (const QMakeAssignment &qa : list)
+    foreach (const QMakeAssignment &qa, list) {
         qCDebug(MakeFileParse::logging()) << "    " << qa.variable << qa.op << qa.value;
+    }
 }
 
 QList<QMakeAssignment> MakeFileParse::parseAssignments(const QList<QMakeAssignment> &assignments)
@@ -119,11 +129,11 @@ QList<QMakeAssignment> MakeFileParse::parseAssignments(const QList<QMakeAssignme
     bool foundSeparateDebugInfo = false;
     bool foundForceDebugInfo = false;
     QList<QMakeAssignment> filteredAssignments;
-    for (const QMakeAssignment &qa : assignments) {
+    foreach (const QMakeAssignment &qa, assignments) {
         if (qa.variable == QLatin1String("CONFIG")) {
-            const QStringList values = qa.value.split(QLatin1Char(' '));
+            QStringList values = qa.value.split(QLatin1Char(' '));
             QStringList newValues;
-            for (const QString &value : values) {
+            foreach (const QString &value, values) {
                 if (value == QLatin1String("debug")) {
                     if (qa.op == QLatin1String("+=")) {
                         m_qmakeBuildConfig.explicitDebug = true;
@@ -220,7 +230,7 @@ static FilePath findQMakeBinaryFromMakefile(const FilePath &makefile)
     QFile fi(makefile.toString());
     if (fi.exists() && fi.open(QFile::ReadOnly)) {
         QTextStream ts(&fi);
-        static const QRegularExpression r1(QLatin1String("^QMAKE\\s*=(.*)$"));
+        const QRegularExpression r1(QLatin1String("^QMAKE\\s*=(.*)$"));
         while (!ts.atEnd()) {
             QString line = ts.readLine();
             const QRegularExpressionMatch match = r1.match(line);
@@ -238,12 +248,10 @@ static FilePath findQMakeBinaryFromMakefile(const FilePath &makefile)
             }
         }
     }
-    return {};
+    return FilePath();
 }
 
-MakeFileParse::MakeFileParse(const FilePath &makefile, Mode mode,
-                             std::optional<FilePath> projectPath)
-    : m_mode(mode)
+MakeFileParse::MakeFileParse(const FilePath &makefile, Mode mode) : m_mode(mode)
 {
     qCDebug(logging()) << "Parsing makefile" << makefile;
     if (!makefile.exists()) {
@@ -251,6 +259,10 @@ MakeFileParse::MakeFileParse(const FilePath &makefile, Mode mode,
         m_state = MakefileMissing;
         return;
     }
+
+    // Qt Version!
+    m_qmakePath = findQMakeBinaryFromMakefile(makefile);
+    qCDebug(logging()) << "  qmake:" << m_qmakePath;
 
     QString project = findQMakeLine(makefile, QLatin1String("# Project:")).trimmed();
     if (project.isEmpty()) {
@@ -265,14 +277,6 @@ MakeFileParse::MakeFileParse(const FilePath &makefile, Mode mode,
     // Src Pro file
     m_srcProFile = makefile.parentDir().resolvePath(project);
     qCDebug(logging()) << "  source .pro file:" << m_srcProFile;
-    if (projectPath && m_srcProFile != *projectPath) { // shortcut when importing
-        m_state = Okay;
-        return;
-    }
-
-    // Qt Version!
-    m_qmakePath = findQMakeBinaryFromMakefile(makefile);
-    qCDebug(logging()) << "  qmake:" << m_qmakePath;
 
     QString command = findQMakeLine(makefile, QLatin1String("# Command:")).trimmed();
     if (command.isEmpty()) {
@@ -363,35 +367,31 @@ void MakeFileParse::parseCommandLine(const QString &command, const QString &proj
     // Create command line of all unfiltered arguments
     const QList<QMakeAssignment> &assignmentsToUse = m_mode == Mode::FilterKnownConfigValues
             ? filteredAssignments : assignments;
-    for (const QMakeAssignment &qa : assignmentsToUse)
+    foreach (const QMakeAssignment &qa, assignmentsToUse)
         ProcessArgs::addArg(&m_unparsedArguments, qa.variable + qa.op + qa.value);
     if (!afterAssignments.isEmpty()) {
         ProcessArgs::addArg(&m_unparsedArguments, QLatin1String("-after"));
-        for (const QMakeAssignment &qa : std::as_const(afterAssignments))
+        foreach (const QMakeAssignment &qa, afterAssignments)
             ProcessArgs::addArg(&m_unparsedArguments, qa.variable + qa.op + qa.value);
     }
 }
 
-} // QmakeProjectManager::Internal
+} // Internal
+} // QmakeProjectManager
+
+// Unit tests:
 
 #ifdef WITH_TESTS
+#   include <QTest>
 
-#include <projectexplorer/outputparser_test.h>
+#   include "qmakeprojectmanagerplugin.h"
 
-#include <QTest>
+#   include "projectexplorer/outputparser_test.h"
 
-namespace QmakeProjectManager::Internal {
+using namespace QmakeProjectManager::Internal;
+using namespace ProjectExplorer;
 
-class QmakeMakeFileParserTest final : public QObject
-{
-    Q_OBJECT
-
-private slots:
-    void testMakefileParser_data();
-    void testMakefileParser();
-};
-
-void QmakeMakeFileParserTest::testMakefileParser_data()
+void QmakeProjectManagerPlugin::testMakefileParser_data()
 {
     QTest::addColumn<QString>("command");
     QTest::addColumn<QString>("project");
@@ -488,7 +488,7 @@ void QmakeMakeFileParserTest::testMakefileParser_data()
             << true << false << false << 2;
 }
 
-void QmakeMakeFileParserTest::testMakefileParser()
+void QmakeProjectManagerPlugin::testMakefileParser()
 {
     QFETCH(QString, command);
     QFETCH(QString, project);
@@ -502,8 +502,8 @@ void QmakeMakeFileParserTest::testMakefileParser()
     MakeFileParse parser("/tmp/something", MakeFileParse::Mode::FilterKnownConfigValues);
     parser.parseCommandLine(command, project);
 
-    QCOMPARE(ProcessArgs::splitArgs(parser.unparsedArguments(), HostOsInfo::hostOs()),
-             ProcessArgs::splitArgs(unparsedArguments, HostOsInfo::hostOs()));
+    QCOMPARE(Utils::ProcessArgs::splitArgs(parser.unparsedArguments()),
+             Utils::ProcessArgs::splitArgs(unparsedArguments));
     QCOMPARE(parser.effectiveBuildConfig({}), effectiveBuildConfig);
 
     const QMakeStepConfig qmsc = parser.config();
@@ -512,14 +512,4 @@ void QmakeMakeFileParserTest::testMakefileParser()
     QCOMPARE(qmsc.useQtQuickCompiler == TriState::Enabled, useQtQuickCompiler);
     QCOMPARE(qmsc.separateDebugInfo == TriState::Enabled, separateDebugInfo);
 }
-
-QObject *createQmakeMakeFileParserTest()
-{
-    return new QmakeMakeFileParserTest;
-}
-
-} // QmakeProjectManager::Internal
-
 #endif
-
-#include "makefileparse.moc"

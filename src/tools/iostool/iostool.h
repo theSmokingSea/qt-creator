@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -18,8 +40,6 @@ class QmlRelayServer;
 
 class IosTool: public QObject
 {
-    friend class GdbRunner;
-
     Q_OBJECT
 
 public:
@@ -51,19 +71,20 @@ private:
     void readStdin();
 
     QRecursiveMutex m_xmlMutex;
-    int m_maxProgress = 0;
-    int m_operationsRemaining = 0;
-    bool m_debug = false;
-    bool m_inAppOutput = false;
-    bool m_splitAppOutput = true; // as QXmlStreamReader reports the text attributes atomically it is better to split
-    IosDeviceManager::AppOp m_requestedOperation{IosDeviceManager::AppOp::None};
-    QFile m_outputFile;
+    int maxProgress;
+    int opLeft;
+    bool debug;
+    bool inAppOutput;
+    bool splitAppOutput; // as QXmlStreamReader reports the text attributes atomically it is better to split
+    Ios::IosDeviceManager::AppOp appOp;
+    QFile outFile;
     QString m_qmlPort;
     QString m_deltasPath;
-    QXmlStreamWriter m_xmlWriter;
-    std::unique_ptr<GdbRelayServer> m_gdbServer;
-    std::unique_ptr<QmlRelayServer> m_qmlServer;
-    std::unique_ptr<GdbRunner> m_gdbRunner;
+    QXmlStreamWriter out;
+    GdbRelayServer *gdbServer;
+    QmlRelayServer *qmlServer;
+    GdbRunner *gdbRunner;
     bool m_echoRelays = false;
+    friend class GdbRunner;
 };
 }

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "TypePrettyPrinter.h"
 
@@ -290,8 +312,8 @@ void TypePrettyPrinter::visit(PointerToMemberType *type)
 
 void TypePrettyPrinter::prependSpaceBeforeIndirection(const FullySpecifiedType &type)
 {
-    const bool elementTypeIsPointerOrReference = type.type()->asPointerType()
-        || type.type()->asReferenceType();
+    const bool elementTypeIsPointerOrReference = type.type()->isPointerType()
+        || type.type()->isReferenceType();
     const bool elementIsConstPointerOrReference = elementTypeIsPointerOrReference && type.isConst();
     const bool shouldBindToLeftSpecifier = _overview->starBindFlags & Overview::BindToLeftSpecifier;
     if (elementIsConstPointerOrReference && ! shouldBindToLeftSpecifier)
@@ -320,8 +342,8 @@ void TypePrettyPrinter::prependSpaceAfterIndirection(bool hasName)
 
 void TypePrettyPrinter::visit(PointerType *type)
 {
-    const bool isIndirectionToFunction = type->elementType().type()->asFunctionType();
-    const bool isIndirectionToArray = type->elementType().type()->asArrayType();
+    const bool isIndirectionToFunction = type->elementType().type()->isFunctionType();
+    const bool isIndirectionToArray = type->elementType().type()->isArrayType();
 
     visitIndirectionType(aPointerType, type->elementType(),
         isIndirectionToFunction || isIndirectionToArray);
@@ -329,8 +351,8 @@ void TypePrettyPrinter::visit(PointerType *type)
 
 void TypePrettyPrinter::visit(ReferenceType *type)
 {
-    const bool isIndirectionToFunction = type->elementType().type()->asFunctionType();
-    const bool isIndirectionToArray = type->elementType().type()->asArrayType();
+    const bool isIndirectionToFunction = type->elementType().type()->isFunctionType();
+    const bool isIndirectionToArray = type->elementType().type()->isArrayType();
     const IndirectionType indirectionType = type->isRvalueReference()
         ? aRvalueReferenceType : aReferenceType;
 
@@ -361,38 +383,34 @@ static bool endsWithPtrOrRef(const QString &type)
 
 void TypePrettyPrinter::visit(Function *type)
 {
-    bool showTemplateParameters = _overview->showTemplateParameters;
-    QStringList nameParts = _name.split("::");
-    Scope *s = type->enclosingScope();
-    if (s && s->asTemplate())
-        s = s->enclosingScope();
-
-    for (int i = nameParts.length() - 1; s && i >= 0; s = s->enclosingScope()) {
-        if (s->asClass())
-            showTemplateParameters = true;
-
-        if (Template *templ = s->asTemplate(); templ && showTemplateParameters) {
-            QString &n = nameParts[i];
-            const int paramCount = templ->templateParameterCount();
-            if (paramCount > 0) {
-                n += '<';
-                for (int index = 0; index < paramCount; ++index) {
-                    if (index)
-                        n += QLatin1String(", ");
-                    QString arg = _overview->prettyName(templ->templateParameterAt(index)->name());
-                    if (arg.isEmpty()) {
-                        arg += 'T';
-                        arg += QString::number(index + 1);
+    if (_overview->showTemplateParameters) {
+        QStringList nameParts = _name.split("::");
+        int i = nameParts.length() - 1;
+        for (Scope *s = type->enclosingScope(); s && i >= 0; s = s->enclosingScope()) {
+            if (Template *templ = s->asTemplate()) {
+                QString &n = nameParts[i];
+                const int paramCount = templ->templateParameterCount();
+                if (paramCount > 0) {
+                    n += '<';
+                    for (int index = 0; index < paramCount; ++index) {
+                        if (index)
+                            n += QLatin1String(", ");
+                        QString arg = _overview->prettyName(
+                                    templ->templateParameterAt(index)->name());
+                        if (arg.isEmpty()) {
+                            arg += 'T';
+                            arg += QString::number(index + 1);
+                        }
+                        n += arg;
                     }
-                    n += arg;
+                    n += '>';
                 }
-                n += '>';
             }
-        } else if (s->identifier()) {
-            --i;
+            if (s->identifier())
+                --i;
         }
+        _name = nameParts.join("::");
     }
-    _name = nameParts.join("::");
 
     if (_needsParens) {
         _text.prepend(QLatin1Char('('));
@@ -432,31 +450,28 @@ void TypePrettyPrinter::visit(Function *type)
     }
 
     if (_overview->showEnclosingTemplate) {
-        for (auto [s, i] = std::tuple{type->enclosingScope(), nameParts.length() - 1}; s && i >= 0;
-             s = s->enclosingScope()) {
-            if (Template *templ = s->asTemplate()) {
-                QString templateScope = "template<";
-                const int paramCount = templ->templateParameterCount();
-                for (int i = 0; i < paramCount; ++i) {
-                    if (Symbol *param = templ->templateParameterAt(i)) {
-                        if (i > 0)
-                            templateScope.append(", ");
-                        if (TypenameArgument *typenameArg = param->asTypenameArgument()) {
-                            templateScope.append(QLatin1String(
-                                typenameArg->isClassDeclarator() ? "class " : "typename "));
-                            QString name = _overview->prettyName(typenameArg->name());
-                            if (name.isEmpty())
-                                name.append('T').append(QString::number(i + 1));
-                            templateScope.append(name);
-                        } else if (Argument *arg = param->asArgument()) {
-                            templateScope.append(operator()(arg->type(),
-                                                            _overview->prettyName(arg->name())));
-                        }
+        if (Template *templ = type->enclosingTemplate()) {
+            QString templateScope = "template<";
+            const int paramCount = templ->templateParameterCount();
+            for (int i = 0; i < paramCount; ++i) {
+                if (Symbol *param = templ->templateParameterAt(i)) {
+                    if (i > 0)
+                        templateScope.append(", ");
+                    if (TypenameArgument *typenameArg = param->asTypenameArgument()) {
+                        templateScope.append(QLatin1String(typenameArg->isClassDeclarator()
+                                                           ? "class " : "typename "));
+                        QString name = _overview->prettyName(typenameArg->name());
+                        if (name.isEmpty())
+                            name.append('T').append(QString::number(i + 1));
+                        templateScope.append(name);
+                    } else if (Argument *arg = param->asArgument()) {
+                        templateScope.append(operator()(arg->type(),
+                                                        _overview->prettyName(arg->name())));
                     }
                 }
-                if (paramCount > 0)
-                    _text.prepend(templateScope + ">\n");
             }
+            if (paramCount > 0)
+                _text.prepend(templateScope + ">\n");
         }
     }
 

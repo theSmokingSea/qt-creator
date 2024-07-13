@@ -1,42 +1,41 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "findinopenfiles.h"
-
-#include "basefilefind.h"
 #include "textdocument.h"
-#include "texteditortr.h"
+#include "texteditor.h"
 
+#include <utils/filesearch.h>
+#include <coreplugin/icore.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/documentmodel.h>
 
-#include <utils/qtcsettings.h>
+#include <QSettings>
 
-using namespace Utils;
-
-namespace TextEditor::Internal {
-
-class FindInOpenFiles : public BaseFileFind
-{
-public:
-    FindInOpenFiles();
-
-private:
-    QString id() const final;
-    QString displayName() const final;
-    bool isEnabled() const final;
-    Utils::Store save() const final;
-    void restore(const Utils::Store &s) final;
-
-    QString label() const final;
-    QString toolTip() const final;
-
-    FileContainerProvider fileContainerProvider() const final;
-    void updateEnabledState() { emit enabledChanged(isEnabled()); }
-
-    // deprecated
-    QByteArray settingsKey() const final;
-};
+using namespace TextEditor;
+using namespace TextEditor::Internal;
 
 FindInOpenFiles::FindInOpenFiles()
 {
@@ -53,39 +52,49 @@ QString FindInOpenFiles::id() const
 
 QString FindInOpenFiles::displayName() const
 {
-    return Tr::tr("Open Documents");
+    return tr("Open Documents");
 }
 
-FileContainerProvider FindInOpenFiles::fileContainerProvider() const
+Utils::FileIterator *FindInOpenFiles::files(const QStringList &nameFilters,
+                                            const QStringList &exclusionFilters,
+                                            const QVariant &additionalParameters) const
 {
-    return [] {
-        const QMap<FilePath, QTextCodec *> encodings = TextDocument::openedTextDocumentEncodings();
-        FilePaths fileNames;
-        QList<QTextCodec *> codecs;
-        const QList<Core::DocumentModel::Entry *> entries = Core::DocumentModel::entries();
-        for (Core::DocumentModel::Entry *entry : entries) {
-            const FilePath fileName = entry->filePath();
-            if (!fileName.isEmpty()) {
-                fileNames.append(fileName);
-                QTextCodec *codec = encodings.value(fileName);
-                if (!codec)
-                    codec = Core::EditorManager::defaultTextCodec();
-                codecs.append(codec);
-            }
+    Q_UNUSED(nameFilters)
+    Q_UNUSED(exclusionFilters)
+    Q_UNUSED(additionalParameters)
+    QMap<QString, QTextCodec *> openEditorEncodings
+            = TextDocument::openedTextDocumentEncodings();
+    QStringList fileNames;
+    QList<QTextCodec *> codecs;
+    const QList<Core::DocumentModel::Entry *> entries = Core::DocumentModel::entries();
+    for (Core::DocumentModel::Entry *entry : entries) {
+        QString fileName = entry->fileName().toString();
+        if (!fileName.isEmpty()) {
+            fileNames.append(fileName);
+            QTextCodec *codec = openEditorEncodings.value(fileName);
+            if (!codec)
+                codec = Core::EditorManager::defaultTextCodec();
+            codecs.append(codec);
         }
-        return FileListContainer(fileNames, codecs);
-    };
+    }
+
+    return new Utils::FileListIterator(fileNames, codecs);
+}
+
+QVariant FindInOpenFiles::additionalParameters() const
+{
+    return QVariant();
 }
 
 QString FindInOpenFiles::label() const
 {
-    return Tr::tr("Open documents:");
+    return tr("Open documents:");
 }
 
 QString FindInOpenFiles::toolTip() const
 {
     // %1 is filled by BaseFileFind::runNewSearch
-    return Tr::tr("Open Documents\n%1");
+    return tr("Open Documents\n%1");
 }
 
 bool FindInOpenFiles::isEnabled() const
@@ -93,29 +102,21 @@ bool FindInOpenFiles::isEnabled() const
     return Core::DocumentModel::entryCount() > 0;
 }
 
-const char kDefaultInclusion[] = "*";
-const char kDefaultExclusion[] = "";
-
-Store FindInOpenFiles::save() const
+void FindInOpenFiles::writeSettings(QSettings *settings)
 {
-    Store s;
-    writeCommonSettings(s, kDefaultInclusion, kDefaultExclusion);
-    return s;
+    settings->beginGroup(QLatin1String("FindInOpenFiles"));
+    writeCommonSettings(settings);
+    settings->endGroup();
 }
 
-void FindInOpenFiles::restore(const Store &s)
+void FindInOpenFiles::readSettings(QSettings *settings)
 {
-    readCommonSettings(s, kDefaultInclusion, kDefaultExclusion);
+    settings->beginGroup(QLatin1String("FindInOpenFiles"));
+    readCommonSettings(settings, "*", "");
+    settings->endGroup();
 }
 
-QByteArray FindInOpenFiles::settingsKey() const
+void FindInOpenFiles::updateEnabledState()
 {
-    return "FindInOpenFiles";
+    emit enabledChanged(isEnabled());
 }
-
-void setupFindInOpenFiles()
-{
-    static FindInOpenFiles theFindInOpenFiles;
-}
-
-} // TextEditor::Internal

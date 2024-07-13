@@ -1,11 +1,30 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "settingspage.h"
-
-#include "designerconstants.h"
-#include "designertr.h"
-#include "formeditor.h"
+#include "formeditorw.h"
 
 #include <coreplugin/icontext.h>
 
@@ -13,42 +32,47 @@
 
 #include <QDesignerOptionsPageInterface>
 #include <QCoreApplication>
-#include <QVBoxLayout>
 
-namespace Designer::Internal {
+using namespace Designer::Internal;
 
-class SettingsPageWidget : public Core::IOptionsPageWidget
+SettingsPage::SettingsPage(QDesignerOptionsPageInterface *designerPage) :
+    Core::IOptionsPage(nullptr, false),
+    m_designerPage(designerPage)
 {
-public:
-    explicit SettingsPageWidget(QDesignerOptionsPageInterface *designerPage)
-        : m_designerPage(designerPage)
-    {
-        auto vbox = new QVBoxLayout(this);
-        vbox->addWidget(m_designerPage->createPage(nullptr));
-        vbox->setContentsMargins({});
-    }
-
-    void apply() { m_designerPage->apply(); }
-    void finish() { m_designerPage->finish(); }
-
-    QDesignerOptionsPageInterface *m_designerPage;
-};
-
-
-SettingsPage::SettingsPage(QDesignerOptionsPageInterface *designerPage)
-    : Core::IOptionsPage(false)
-{
-    setId(Utils::Id::fromString(designerPage->name()));
-    setDisplayName(designerPage->name());
+    setId(Utils::Id::fromString(m_designerPage->name()));
+    setDisplayName(m_designerPage->name());
     setCategory(Designer::Constants::SETTINGS_CATEGORY);
-    setWidgetCreator([designerPage] { return new SettingsPageWidget(designerPage); });
+}
+
+QWidget *SettingsPage::widget()
+{
+    m_initialized = true;
+    if (!m_widget)
+        m_widget = m_designerPage->createPage(nullptr);
+    return m_widget;
+
+}
+
+void SettingsPage::apply()
+{
+    if (m_initialized)
+        m_designerPage->apply();
+}
+
+void SettingsPage::finish()
+{
+    if (m_initialized)
+        m_designerPage->finish();
+    delete m_widget;
 }
 
 SettingsPageProvider::SettingsPageProvider()
 {
     setCategory(Designer::Constants::SETTINGS_CATEGORY);
-    setDisplayCategory(Tr::tr(Designer::Constants::SETTINGS_TR_CATEGORY));
-    setCategoryIconPath(":/core/images/settingscategory_design.png");
+    setDisplayCategory(QCoreApplication::translate("Designer",
+        Designer::Constants::SETTINGS_TR_CATEGORY));
+    setCategoryIcon(Utils::Icon({{":/core/images/settingscategory_design.png",
+                    Utils::Theme::PanelTextColorDark}}, Utils::Icon::Tint));
 }
 
 QList<Core::IOptionsPage *> SettingsPageProvider::pages() const
@@ -56,9 +80,9 @@ QList<Core::IOptionsPage *> SettingsPageProvider::pages() const
     if (!m_initialized) {
         // get options pages from designer
         m_initialized = true;
-        ensureInitStage(RegisterPlugins);
+        FormEditorW::ensureInitStage(FormEditorW::RegisterPlugins);
     }
-    return optionsPages();
+    return FormEditorW::optionsPages();
 }
 
 bool SettingsPageProvider::matches(const QRegularExpression &regex) const
@@ -94,11 +118,9 @@ bool SettingsPageProvider::matches(const QRegularExpression &regex) const
         for (size_t i = 0; i < itemCount; ++i)
             m_keywords << Utils::stripAccelerator(QCoreApplication::translate(uitext[i].context, uitext[i].value));
     }
-    for (const QString &key : std::as_const(m_keywords)) {
+    for (const QString &key : qAsConst(m_keywords)) {
         if (key.contains(regex))
             return true;
     }
     return false;
 }
-
-} // Designer::Internal

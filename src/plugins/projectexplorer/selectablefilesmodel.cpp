@@ -1,28 +1,47 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "selectablefilesmodel.h"
-
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
 
+#include <coreplugin/fileiconprovider.h>
 #include <coreplugin/icore.h>
 
 #include <utils/algorithm.h>
-#include <utils/async.h>
 #include <utils/fancylineedit.h>
-#include <utils/fsengine/fileiconprovider.h>
 #include <utils/pathchooser.h>
+#include <utils/runextensions.h>
 #include <utils/stringutils.h>
 
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QGridLayout>
+#include <QHBoxLayout>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QTreeView>
-
-using namespace Utils;
 
 namespace ProjectExplorer {
 
@@ -38,6 +57,7 @@ SelectableFilesModel::SelectableFilesModel(QObject *parent) : QAbstractItemModel
 void SelectableFilesModel::setInitialMarkedFiles(const Utils::FilePaths &files)
 {
     m_files = Utils::toSet(files);
+    m_allFiles = files.isEmpty();
 }
 
 void SelectableFilesFromDirModel::startParsing(const Utils::FilePath &baseDir)
@@ -52,13 +72,13 @@ void SelectableFilesFromDirModel::startParsing(const Utils::FilePath &baseDir)
     m_rootForFuture->fullPath = baseDir;
     m_rootForFuture->isDir = true;
 
-    m_watcher.setFuture(Utils::asyncRun(&SelectableFilesFromDirModel::run, this));
+    m_watcher.setFuture(Utils::runAsync(&SelectableFilesFromDirModel::run, this));
 }
 
-void SelectableFilesFromDirModel::run(QPromise<void> &promise)
+void SelectableFilesFromDirModel::run(QFutureInterface<void> &fi)
 {
     m_futureCount = 0;
-    buildTree(m_baseDir, m_rootForFuture, promise, 5);
+    buildTree(m_baseDir, m_rootForFuture, fi, 5);
 }
 
 void SelectableFilesFromDirModel::buildTreeFinished()
@@ -98,7 +118,7 @@ SelectableFilesModel::FilterState SelectableFilesModel::filter(Tree *t)
 }
 
 void SelectableFilesFromDirModel::buildTree(const Utils::FilePath &baseDir, Tree *tree,
-                                            QPromise<void> &promise, int symlinkDepth)
+                                            QFutureInterface<void> &fi, int symlinkDepth)
 {
     if (symlinkDepth == 0)
         return;
@@ -110,24 +130,19 @@ void SelectableFilesFromDirModel::buildTree(const Utils::FilePath &baseDir, Tree
     bool allUnchecked = true;
     for (const QFileInfo &fileInfo : fileInfoList) {
         Utils::FilePath fn = Utils::FilePath::fromFileInfo(fileInfo);
-        if ((m_futureCount % 100) == 0) {
+        if (m_futureCount % 100) {
             emit parsingProgress(fn);
-            if (promise.isCanceled())
+            if (fi.isCanceled())
                 return;
         }
         ++m_futureCount;
         if (fileInfo.isDir()) {
-            if (fileInfo.isSymLink()) {
-                const FilePath target = FilePath::fromString(fileInfo.symLinkTarget());
-                if (target == baseDir || baseDir.isChildOf(target))
-                    continue;
-            }
             auto t = new Tree;
             t->parent = tree;
             t->name = fileInfo.fileName();
             t->fullPath = fn;
             t->isDir = true;
-            buildTree(fn, t, promise, symlinkDepth - fileInfo.isSymLink());
+            buildTree(fn, t, fi, symlinkDepth - fileInfo.isSymLink());
             allChecked &= t->checked == Qt::Checked;
             allUnchecked &= t->checked == Qt::Unchecked;
             tree->childDirectories.append(t);
@@ -135,8 +150,8 @@ void SelectableFilesFromDirModel::buildTree(const Utils::FilePath &baseDir, Tree
             auto t = new Tree;
             t->parent = tree;
             t->name = fileInfo.fileName();
-            const FilterState state = filter(t);
-            t->checked = ((m_files.isEmpty() && state == FilterState::CHECKED)
+            FilterState state = filter(t);
+            t->checked = ((m_allFiles && state == FilterState::CHECKED)
                           || m_files.contains(fn)) ? Qt::Checked : Qt::Unchecked;
             t->fullPath = fn;
             t->isDir = false;
@@ -190,12 +205,12 @@ QModelIndex SelectableFilesModel::index(int row, int column, const QModelIndex &
 QModelIndex SelectableFilesModel::parent(const QModelIndex &child) const
 {
     if (!child.isValid())
-        return {};
+        return QModelIndex();
     if (!child.internalPointer())
-        return {};
+        return QModelIndex();
     auto parent = static_cast<Tree *>(child.internalPointer())->parent;
     if (!parent)
-        return {};
+        return QModelIndex();
     if (!parent->parent) //then the parent is the root
         return createIndex(0, 0, parent);
     // figure out where the parent is
@@ -208,7 +223,7 @@ QModelIndex SelectableFilesModel::parent(const QModelIndex &child) const
 QVariant SelectableFilesModel::data(const QModelIndex &index, int role) const
 {
     if (!index.isValid())
-        return {};
+        return QVariant();
     auto t = static_cast<Tree *>(index.internalPointer());
     if (role == Qt::DisplayRole)
         return t->name;
@@ -216,10 +231,10 @@ QVariant SelectableFilesModel::data(const QModelIndex &index, int role) const
         return t->checked;
     if (role == Qt::DecorationRole) {
         if (t->icon.isNull())
-            t->icon = Utils::FileIconProvider::icon(t->fullPath);
+            t->icon = Core::FileIconProvider::icon(t->fullPath);
         return t->icon;
     }
-    return {};
+    return QVariant();
 }
 
 bool SelectableFilesModel::setData(const QModelIndex &index, const QVariant &value, int role)
@@ -300,7 +315,7 @@ void SelectableFilesModel::collectPaths(Tree *root, Utils::FilePaths *result)  c
     if (root->checked == Qt::Unchecked)
         return;
     result->append(root->fullPath);
-    for (Tree *t : std::as_const(root->childDirectories))
+    for (Tree *t : qAsConst(root->childDirectories))
         collectPaths(t, result);
 }
 
@@ -325,9 +340,9 @@ void SelectableFilesModel::collectFiles(Tree *root, Utils::FilePaths *result) co
 {
     if (root->checked == Qt::Unchecked)
         return;
-    for (Tree *t : std::as_const(root->childDirectories))
+    for (Tree *t : qAsConst(root->childDirectories))
         collectFiles(t, result);
-    for (Tree *t : std::as_const(root->visibleFiles))
+    for (Tree *t : qAsConst(root->visibleFiles))
         if (t->checked == Qt::Checked)
             result->append(t->fullPath);
 }
@@ -379,10 +394,10 @@ void SelectableFilesModel::selectAllFiles(Tree *root)
 {
     root->checked = Qt::Checked;
 
-    for (Tree *t : std::as_const(root->childDirectories))
+    for (Tree *t : qAsConst(root->childDirectories))
         selectAllFiles(t);
 
-    for (Tree *t : std::as_const(root->visibleFiles))
+    for (Tree *t : qAsConst(root->visibleFiles))
         t->checked = Qt::Checked;
 
     emit checkedFilesChanged();
@@ -539,9 +554,9 @@ SelectableFilesWidget::SelectableFilesWidget(QWidget *parent) :
     auto layout = new QGridLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
 
-    m_baseDirLabel->setText(Tr::tr("Source directory:"));
-    m_baseDirChooser->setHistoryCompleter("PE.AddToProjectDir.History");
-    m_startParsingButton->setText(Tr::tr("Start Parsing"));
+    m_baseDirLabel->setText(tr("Source directory:"));
+    m_baseDirChooser->setHistoryCompleter(QLatin1String("PE.AddToProjectDir.History"));
+    m_startParsingButton->setText(tr("Start Parsing"));
     layout->addWidget(m_baseDirLabel, static_cast<int>(SelectableFilesWidgetRows::BaseDirectory), 0);
     layout->addWidget(m_baseDirChooser->lineEdit(), static_cast<int>(SelectableFilesWidgetRows::BaseDirectory), 1);
     layout->addWidget(m_baseDirChooser->buttonAtIndex(0), static_cast<int>(SelectableFilesWidgetRows::BaseDirectory), 2);
@@ -550,19 +565,19 @@ SelectableFilesWidget::SelectableFilesWidget(QWidget *parent) :
     connect(m_baseDirChooser, &Utils::PathChooser::validChanged,
             this, &SelectableFilesWidget::baseDirectoryChanged);
     connect(m_startParsingButton, &QAbstractButton::clicked,
-            this, [this] { startParsing(m_baseDirChooser->filePath()); });
+            this, [this]() { startParsing(m_baseDirChooser->filePath()); });
 
-    m_selectFilesFilterLabel->setText(Tr::tr("Select files matching:"));
+    m_selectFilesFilterLabel->setText(tr("Select files matching:"));
     m_selectFilesFilterEdit->setText(selectFilter);
     layout->addWidget(m_selectFilesFilterLabel, static_cast<int>(SelectableFilesWidgetRows::SelectFileFilter), 0);
     layout->addWidget(m_selectFilesFilterEdit, static_cast<int>(SelectableFilesWidgetRows::SelectFileFilter), 1, 1, 3);
 
-    m_hideFilesFilterLabel->setText(Tr::tr("Hide files matching:"));
+    m_hideFilesFilterLabel->setText(tr("Hide files matching:"));
     m_hideFilesFilterEdit->setText(hideFilter);
     layout->addWidget(m_hideFilesFilterLabel, static_cast<int>(SelectableFilesWidgetRows::HideFileFilter), 0);
     layout->addWidget(m_hideFilesFilterEdit, static_cast<int>(SelectableFilesWidgetRows::HideFileFilter), 1, 1, 3);
 
-    m_applyFiltersButton->setText(Tr::tr("Apply Filters"));
+    m_applyFiltersButton->setText(tr("Apply Filters"));
     layout->addWidget(m_applyFiltersButton, static_cast<int>(SelectableFilesWidgetRows::ApplyButton), 3);
 
     connect(m_applyFiltersButton, &QAbstractButton::clicked,
@@ -644,7 +659,7 @@ void SelectableFilesWidget::cancelParsing()
         m_model->cancel();
 }
 
-void SelectableFilesWidget::enableFilterHistoryCompletion(const Key &keyPrefix)
+void SelectableFilesWidget::enableFilterHistoryCompletion(const QString &keyPrefix)
 {
     m_selectFilesFilterEdit->setHistoryCompleter(keyPrefix + ".select", true);
     m_hideFilesFilterEdit->setHistoryCompleter(keyPrefix + ".hide", true);
@@ -688,7 +703,7 @@ void SelectableFilesWidget::startParsing(const Utils::FilePath &baseDir)
 
 void SelectableFilesWidget::parsingProgress(const Utils::FilePath &fileName)
 {
-    m_progressLabel->setText(Tr::tr("Generating file list...\n\n%1").arg(fileName.toUserOutput()));
+    m_progressLabel->setText(tr("Generating file list...\n\n%1").arg(fileName.toUserOutput()));
 }
 
 void SelectableFilesWidget::parsingFinished()
@@ -699,7 +714,7 @@ void SelectableFilesWidget::parsingFinished()
     smartExpand(m_model->index(0,0, QModelIndex()));
 
     const Utils::FilePaths preservedFiles = m_model->preservedFiles();
-    m_preservedFilesLabel->setText(Tr::tr("Not showing %n files that are outside of the base directory.\n"
+    m_preservedFilesLabel->setText(tr("Not showing %n files that are outside of the base directory.\n"
                                       "These files are preserved.", nullptr, preservedFiles.count()));
 
     enableWidgets(true);
@@ -728,7 +743,7 @@ SelectableFilesDialogEditFiles::SelectableFilesDialogEditFiles(const Utils::File
     QDialog(parent),
     m_filesWidget(new SelectableFilesWidget(path, files))
 {
-    setWindowTitle(Tr::tr("Edit Files"));
+    setWindowTitle(tr("Edit Files"));
 
     auto layout = new QVBoxLayout(this);
     layout->addWidget(m_filesWidget);
@@ -762,7 +777,7 @@ SelectableFilesDialogAddDirectory::SelectableFilesDialogAddDirectory(const Utils
                                                                      QWidget *parent) :
     SelectableFilesDialogEditFiles(path, files, parent)
 {
-    setWindowTitle(Tr::tr("Add Existing Directory"));
+    setWindowTitle(tr("Add Existing Directory"));
 
     m_filesWidget->setBaseDirEditable(true);
 }

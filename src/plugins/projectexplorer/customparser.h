@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Andre Hartmann.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Andre Hartmann.
+** Contact: aha_1980@gmx.de
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -44,8 +66,8 @@ public:
     int messageCap() const;
     void setMessageCap(int messageCap);
 
-    Utils::Store toMap() const;
-    void fromMap(const Utils::Store &map);
+    QVariantMap toMap() const;
+    void fromMap(const QVariantMap &map);
 
 private:
     QRegularExpression m_regExp;
@@ -62,8 +84,8 @@ public:
     bool operator ==(const CustomParserSettings &other) const;
     bool operator !=(const CustomParserSettings &other) const { return !operator==(other); }
 
-    Utils::Store toMap() const;
-    void fromMap(const Utils::Store &map);
+    QVariantMap toMap() const;
+    void fromMap(const QVariantMap &map);
 
     Utils::Id id;
     QString displayName;
@@ -80,20 +102,17 @@ public:
     void setParsers(const QList<Utils::Id> &parsers) { m_parsers = parsers; }
     QList<Utils::Id> parsers() const { return m_parsers; }
 
-
     struct Data : BaseAspect::Data
     {
         QList<Utils::Id> parsers;
     };
 
 private:
-    void fromMap(const Utils::Store &map) override;
-    void toMap(Utils::Store &map) const override;
+    void fromMap(const QVariantMap &map) override;
+    void toMap(QVariantMap &map) const override;
 
     QList<Utils::Id> m_parsers;
 };
-
-PROJECTEXPLORER_EXPORT ProjectExplorer::OutputTaskParser *createCustomParserFromId(Utils::Id id);
 
 namespace Internal {
 
@@ -103,6 +122,8 @@ public:
     CustomParser(const CustomParserSettings &settings = CustomParserSettings());
 
     void setSettings(const CustomParserSettings &settings);
+
+    static CustomParser *createFromId(Utils::Id id);
 
 private:
     Result handleLine(const QString &line, Utils::OutputFormat type) override;

@@ -1,42 +1,48 @@
-QtcLibrary {
+import qbs 1.0
+
+Project {
     name: "ExtensionSystem"
 
-    cpp.defines: base.concat(["EXTENSIONSYSTEM_LIBRARY", "IDE_TEST_DIR=\".\""])
-                     .concat(qtc.withPluginTests ? ["EXTENSIONSYSTEM_WITH_TESTOPTION"] : [])
+    QtcLibrary {
+        cpp.defines: base.concat([
+            "EXTENSIONSYSTEM_LIBRARY",
+            "IDE_TEST_DIR=\".\""
+        ])
 
-    Depends { name: "Qt"; submodules: ["core", "widgets"] }
-    Depends { name: "Qt.testlib"; condition: qtc.withPluginTests }
+        Depends { name: "Qt"; submodules: ["core", "widgets"] }
+        Depends { name: "Aggregation" }
+        Depends { name: "Utils" }
 
-    Depends { name: "Aggregation" }
-    Depends { name: "Utils" }
+        files: [
+            "extensionsystem_global.h",
+            "invoker.cpp",
+            "invoker.h",
+            "iplugin.cpp",
+            "iplugin.h",
+            "iplugin_p.h",
+            "optionsparser.cpp",
+            "optionsparser.h",
+            "plugindetailsview.cpp",
+            "plugindetailsview.h",
+            "plugindetailsview.ui",
+            "pluginerroroverview.cpp",
+            "pluginerroroverview.h",
+            "pluginerroroverview.ui",
+            "pluginerrorview.cpp",
+            "pluginerrorview.h",
+            "pluginerrorview.ui",
+            "pluginmanager.cpp",
+            "pluginmanager.h",
+            "pluginmanager_p.h",
+            "pluginspec.cpp",
+            "pluginspec.h",
+            "pluginspec_p.h",
+            "pluginview.cpp",
+            "pluginview.h",
+        ]
 
-    files: [
-        "extensionsystem_global.h",
-        "extensionsystemtr.h",
-        "invoker.cpp",
-        "invoker.h",
-        "iplugin.cpp",
-        "iplugin.h",
-        "optionsparser.cpp",
-        "optionsparser.h",
-        "plugindetailsview.cpp",
-        "plugindetailsview.h",
-        "pluginerroroverview.cpp",
-        "pluginerroroverview.h",
-        "pluginerrorview.cpp",
-        "pluginerrorview.h",
-        "pluginmanager.cpp",
-        "pluginmanager.h",
-        "pluginmanager_p.h",
-        "pluginspec.cpp",
-        "pluginspec.h",
-        "pluginview.cpp",
-        "pluginview.h",
-    ]
-
-    Export {
-        Depends { name: "Qt.core" }
-        Depends { name: "qtc" }
-        cpp.defines: qtc.withPluginTests ? ["EXTENSIONSYSTEM_WITH_TESTOPTION"] : []
+        Export {
+            Depends { name: "Qt.core" }
+        }
     }
 }

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "modelindexer.h"
 
@@ -18,11 +40,11 @@
 #include "qmt/tasks/findrootdiagramvisitor.h"
 
 #include <projectexplorer/project.h>
-#include <projectexplorer/projectmanager.h>
+#include <projectexplorer/session.h>
 #include <projectexplorer/projectnodes.h>
 
-#include <utils/algorithm.h>
 #include <utils/mimeutils.h>
+#include <utils/porting.h>
 #include <utils/qtcassert.h>
 
 #include <QQueue>
@@ -35,16 +57,12 @@
 #include <QDebug>
 #include <QPointer>
 
-using namespace ProjectExplorer;
-using Utils::FilePath;
-using Utils::FilePaths;
-
 namespace ModelEditor {
 namespace Internal {
 
 class ModelIndexer::QueuedFile
 {
-    friend size_t qHash(const ModelIndexer::QueuedFile &queuedFile);
+    friend Utils::QHashValueType qHash(const ModelIndexer::QueuedFile &queuedFile);
     friend bool operator==(const ModelIndexer::QueuedFile &lhs,
                            const ModelIndexer::QueuedFile &rhs);
 
@@ -81,7 +99,7 @@ bool operator==(const ModelIndexer::QueuedFile &lhs, const ModelIndexer::QueuedF
     return lhs.m_file == rhs.m_file && lhs.m_project == rhs.m_project;
 }
 
-size_t qHash(const ModelIndexer::QueuedFile &queuedFile)
+Utils::QHashValueType qHash(const ModelIndexer::QueuedFile &queuedFile)
 {
     return qHash(queuedFile.m_project) + qHash(queuedFile.m_project);
 }
@@ -277,7 +295,7 @@ void ModelIndexer::IndexerThread::onFilesQueued()
             qmt::ProjectSerializer projectSerializer;
             qmt::Project project;
             try {
-                projectSerializer.load(FilePath::fromString(queuedFile.file()), &project);
+                projectSerializer.load(queuedFile.file(), &project);
             } catch (const qmt::Exception &e) {
                 qWarning() << e.errorMessage();
                 return;
@@ -291,7 +309,8 @@ void ModelIndexer::IndexerThread::onFilesQueued()
             // collect all diagrams of model
             DiagramsCollectorVisitor visitor(indexedModel);
             project.rootPackage()->accept(&visitor);
-            if (m_indexer->d->defaultModelFiles.remove(queuedFile)) {
+            if (m_indexer->d->defaultModelFiles.contains(queuedFile)) {
+                m_indexer->d->defaultModelFiles.remove(queuedFile);
                 // check if model has a diagram which could be opened
                 qmt::FindRootDiagramVisitor diagramVisitor;
                 project.rootPackage()->accept(&diagramVisitor);
@@ -312,9 +331,9 @@ ModelIndexer::ModelIndexer(QObject *parent)
     connect(this, &ModelIndexer::filesQueued,
             d->indexerThread, &ModelIndexer::IndexerThread::onFilesQueued);
     d->indexerThread->start();
-    connect(ProjectExplorer::ProjectManager::instance(), &ProjectExplorer::ProjectManager::projectAdded,
+    connect(ProjectExplorer::SessionManager::instance(), &ProjectExplorer::SessionManager::projectAdded,
             this, &ModelIndexer::onProjectAdded);
-    connect(ProjectExplorer::ProjectManager::instance(), &ProjectExplorer::ProjectManager::aboutToRemoveProject,
+    connect(ProjectExplorer::SessionManager::instance(), &ProjectExplorer::SessionManager::aboutToRemoveProject,
             this, &ModelIndexer::onAboutToRemoveProject);
 }
 
@@ -377,13 +396,13 @@ void ModelIndexer::scanProject(ProjectExplorer::Project *project)
         return;
 
     // TODO harmonize following code with findFirstModel()?
-    const FilePaths files = project->files(ProjectExplorer::Project::SourceFiles);
+    const Utils::FilePaths files = project->files(ProjectExplorer::Project::SourceFiles);
     QQueue<QueuedFile> filesQueue;
     QSet<QueuedFile> filesSet;
 
     const Utils::MimeType modelMimeType = Utils::mimeTypeForName(Constants::MIME_TYPE_MODEL);
     if (modelMimeType.isValid()) {
-        for (const FilePath &file : files) {
+        for (const Utils::FilePath &file : files) {
             if (modelMimeType.suffixes().contains(file.completeSuffix())) {
                 QueuedFile queuedFile(file.toString(), project, file.lastModified());
                 filesQueue.append(queuedFile);
@@ -428,9 +447,10 @@ void ModelIndexer::scanProject(ProjectExplorer::Project *project)
         // queue files
         while (!filesQueue.isEmpty()) {
             QueuedFile queuedFile = filesQueue.takeFirst();
-            if (Utils::insert(d->queuedFilesSet, queuedFile)) {
+            if (!d->queuedFilesSet.contains(queuedFile)) {
                 QMT_CHECK(!d->filesQueue.contains(queuedFile));
                 d->filesQueue.append(queuedFile);
+                d->queuedFilesSet.insert(queuedFile);
                 filesAreQueued = true;
             }
         }
@@ -450,35 +470,34 @@ QString ModelIndexer::findFirstModel(ProjectExplorer::FolderNode *folderNode,
 {
     if (!mimeType.isValid())
         return QString();
-
-    const QStringList suffixes = mimeType.suffixes();
-    FileNode *foundFileNode = folderNode->findChildFileNode([&](FileNode *fn) {
-        return suffixes.contains(fn->filePath().completeSuffix());
-    });
-    if (foundFileNode)
-         return foundFileNode->filePath().toString();
-
-    QString modelFileName;
-    folderNode->findChildFolderNode([&](FolderNode *fn) {
-        modelFileName = findFirstModel(fn, mimeType);
-        return !modelFileName.isEmpty();
-    });
-    return modelFileName;
+    const QList<ProjectExplorer::FileNode *> fileNodes = folderNode->fileNodes();
+    for (const ProjectExplorer::FileNode *fileNode : fileNodes) {
+        if (mimeType.suffixes().contains(fileNode->filePath().completeSuffix()))
+            return fileNode->filePath().toString();
+    }
+    const QList<ProjectExplorer::FolderNode *> subFolderNodes = folderNode->folderNodes();
+    for (ProjectExplorer::FolderNode *subFolderNode : subFolderNodes) {
+        QString modelFileName = findFirstModel(subFolderNode, mimeType);
+        if (!modelFileName.isEmpty())
+            return modelFileName;
+    }
+    return QString();
 }
 
 void ModelIndexer::forgetProject(ProjectExplorer::Project *project)
 {
-    const FilePaths files = project->files(ProjectExplorer::Project::SourceFiles);
+    const Utils::FilePaths files = project->files(ProjectExplorer::Project::SourceFiles);
 
     QMutexLocker locker(&d->indexerMutex);
-    for (const FilePath &file : files) {
+    for (const Utils::FilePath &file : files) {
         const QString fileString = file.toString();
         // remove file from queue
         QueuedFile queuedFile(fileString, project);
-        if (d->queuedFilesSet.remove(queuedFile)) {
+        if (d->queuedFilesSet.contains(queuedFile)) {
             QMT_CHECK(d->filesQueue.contains(queuedFile));
             d->filesQueue.removeOne(queuedFile);
             QMT_CHECK(!d->filesQueue.contains(queuedFile));
+            d->queuedFilesSet.remove(queuedFile);
         }
         removeModelFile(fileString, project);
         removeDiagramReferenceFile(fileString, project);

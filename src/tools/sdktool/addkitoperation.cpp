@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "addkitoperation.h"
 
@@ -15,7 +37,6 @@
 
 #include "settings.h"
 
-#include <QDir>
 #include <QLoggingCategory>
 #include <QRegularExpression>
 
@@ -190,7 +211,7 @@ bool AddKitOperation::setArguments(const QStringList &args)
             ++i; // skip next;
 
             const QString tmp = current.mid(2);
-            const QString tmp2 = tmp.mid(0, tmp.size() - 9 /* toolchain */);
+            const QString tmp2 = tmp.mid(0, tmp.count() - 9 /* toolchain */);
             const QString lang = tmp2.isEmpty() ? QString("Cxx") : tmp2;
 
             if (next.isEmpty()) {
@@ -520,7 +541,7 @@ void AddKitOperation::unittest()
     QVERIFY(data.contains(DEVICE_ID));
     QCOMPARE(data.value(DEVICE_ID).toString(), "{dev-id}");
     QVERIFY(data.contains(SYSROOT));
-    QCOMPARE(data.value(SYSROOT).toString(), "/sys/root");
+    QCOMPARE(data.value(SYSROOT).toString(), "/sys/root//");
     QVERIFY(data.contains(TOOLCHAIN));
     QVERIFY(data.contains(QT));
     QCOMPARE(data.value(QT).toString(), "SDK.{qt-id}");
@@ -686,7 +707,8 @@ QVariantMap AddKitData::addKit(const QVariantMap &map,
     if (!m_buildDevice.isNull())
         data << KeyValuePair({kit, DATA, BUILDDEVICE_ID}, QVariant(m_buildDevice));
     if (!m_sysRoot.isNull())
-        data << KeyValuePair({kit, DATA, SYSROOT}, QVariant(cleanPath(m_sysRoot)));
+        data << KeyValuePair({kit, DATA, SYSROOT},
+                             Utils::FilePath::fromUserInput(m_sysRoot).toVariant());
     for (auto i = m_tcs.constBegin(); i != m_tcs.constEnd(); ++i)
         data << KeyValuePair({kit, DATA, TOOLCHAIN, i.key()}, QVariant(i.value()));
     if (!qtId.isNull())
@@ -715,7 +737,7 @@ QVariantMap AddKitData::addKit(const QVariantMap &map,
     data << KeyValuePair(COUNT, QVariant(count + 1));
 
     KeyValuePairList qtExtraList;
-    for (const KeyValuePair &pair : std::as_const(m_extra))
+    for (const KeyValuePair &pair : qAsConst(m_extra))
         qtExtraList << KeyValuePair(QStringList() << kit << pair.key, pair.value);
     data.append(qtExtraList);
 

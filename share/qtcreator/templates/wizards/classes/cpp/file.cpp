@@ -1,4 +1,4 @@
-%{JS: Cpp.licenseTemplate()}\
+%{Cpp:LicenseTemplate}\
 #include "%{JS: Util.relativeFilePath('%{Path}/%{HdrFileName}', '%{Path}' + '/' + Util.path('%{SrcFileName}'))}"
 %{JS: Cpp.openNamespaces('%{Class}')}
 @if '%{IncludeQSharedData}'

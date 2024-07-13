@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -15,15 +37,15 @@ class BuildInfo;
 class Kit;
 class Project;
 class Target;
-class Toolchain;
+class ToolChain;
 
 // Documentation inside.
 class PROJECTEXPLORER_EXPORT ProjectImporter : public QObject
 {
     Q_OBJECT
 public:
-    struct ToolchainData {
-        QList<Toolchain *> tcs;
+    struct ToolChainData {
+        QList<ToolChain *> tcs;
         bool areTemporary = false;
     };
 
@@ -34,9 +56,8 @@ public:
     const Utils::FilePath projectDirectory() const { return m_projectPath.parentDir(); }
 
     virtual const QList<BuildInfo> import(const Utils::FilePath &importPath, bool silent = false);
-    virtual Utils::FilePaths importCandidates() = 0;
+    virtual QStringList importCandidates() = 0;
     virtual Target *preferredTarget(const QList<Target *> &possibleTargets);
-    virtual bool filter(Kit *) const { return true; }
 
     bool isUpdating() const { return m_isUpdating; }
 
@@ -47,9 +68,6 @@ public:
 
     void addProject(Kit *k) const;
     void removeProject(Kit *k) const;
-
-signals:
-    void cmakePresetsUpdated();
 
 protected:
     class UpdateGuard
@@ -91,14 +109,14 @@ protected:
     // Does *any* kit feature the requested data yet?
     bool hasKitWithTemporaryData(Utils::Id id, const QVariant &data) const;
 
-    ToolchainData findOrCreateToolchains(const ToolchainDescription &tcd) const;
+    ToolChainData findOrCreateToolChains(const ToolChainDescription &tcd) const;
 
 private:
     void markKitAsTemporary(Kit *k) const;
     bool findTemporaryHandler(Utils::Id id) const;
 
-    void cleanupTemporaryToolchains(ProjectExplorer::Kit *k, const QVariantList &vl);
-    void persistTemporaryToolchains(ProjectExplorer::Kit *k, const QVariantList &vl);
+    void cleanupTemporaryToolChains(ProjectExplorer::Kit *k, const QVariantList &vl);
+    void persistTemporaryToolChains(ProjectExplorer::Kit *k, const QVariantList &vl);
 
     const Utils::FilePath m_projectPath;
     mutable bool m_isUpdating = false;

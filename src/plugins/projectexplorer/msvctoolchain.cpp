@@ -1,29 +1,47 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "msvctoolchain.h"
 
-#include "devicesupport/idevice.h"
-#include "abiwidget.h"
 #include "gcctoolchain.h"
 #include "msvcparser.h"
 #include "projectexplorer.h"
 #include "projectexplorerconstants.h"
 #include "projectexplorersettings.h"
-#include "projectexplorertr.h"
 #include "taskhub.h"
 
 #include <coreplugin/icore.h>
 
 #include <utils/algorithm.h>
-#include <utils/async.h>
-#include <utils/datafromprocess.h>
-#include <utils/environment.h>
 #include <utils/hostosinfo.h>
-#include <utils/pathchooser.h>
-#include <utils/qtcprocess.h>
+#include <utils/optional.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
+#include <utils/runextensions.h>
 #include <utils/temporarydirectory.h>
+#include <utils/pathchooser.h>
 #include <utils/winutils.h>
 
 #include <QDir>
@@ -38,14 +56,11 @@
 #include <QVector>
 #include <QVersionNumber>
 
-#include <QComboBox>
-#include <QDateTime>
-#include <QFormLayout>
 #include <QLabel>
+#include <QComboBox>
+#include <QFormLayout>
 
 using namespace Utils;
-
-using namespace std::chrono_literals;
 
 #define KEY_ROOT "ProjectExplorer.MsvcToolChain."
 static const char varsBatKeyC[] = KEY_ROOT "VarsBat";
@@ -54,7 +69,8 @@ static const char environModsKeyC[] = KEY_ROOT "environmentModifications";
 
 static Q_LOGGING_CATEGORY(Log, "qtc.projectexplorer.toolchain.msvc", QtWarningMsg);
 
-namespace ProjectExplorer::Internal {
+namespace ProjectExplorer {
+namespace Internal {
 
 // --------------------------------------------------------------------------
 // Helpers:
@@ -72,29 +88,29 @@ static QThreadPool *envModThreadPool()
 
 struct MsvcPlatform
 {
-    MsvcToolchain::Platform platform;
+    MsvcToolChain::Platform platform;
     const char *name;
     const char *prefix; // VS up until 14.0 (MSVC2015)
     const char *bat;
 };
 
 const MsvcPlatform platforms[]
-    = {{MsvcToolchain::x86, "x86", "/bin", "vcvars32.bat"},
-       {MsvcToolchain::amd64, "amd64", "/bin/amd64", "vcvars64.bat"},
-       {MsvcToolchain::x86_amd64, "x86_amd64", "/bin/x86_amd64", "vcvarsx86_amd64.bat"},
-       {MsvcToolchain::ia64, "ia64", "/bin/ia64", "vcvars64.bat"},
-       {MsvcToolchain::x86_ia64, "x86_ia64", "/bin/x86_ia64", "vcvarsx86_ia64.bat"},
-       {MsvcToolchain::arm, "arm", "/bin/arm", "vcvarsarm.bat"},
-       {MsvcToolchain::x86_arm, "x86_arm", "/bin/x86_arm", "vcvarsx86_arm.bat"},
-       {MsvcToolchain::amd64_arm, "amd64_arm", "/bin/amd64_arm", "vcvarsamd64_arm.bat"},
-       {MsvcToolchain::amd64_x86, "amd64_x86", "/bin/amd64_x86", "vcvarsamd64_x86.bat"},
-       {MsvcToolchain::x86_arm64, "x86_arm64", "/bin/x86_arm64", "vcvarsx86_arm64.bat"},
-       {MsvcToolchain::amd64_arm64, "amd64_arm64", "/bin/amd64_arm64", "vcvarsamd64_arm64.bat"},
-       {MsvcToolchain::arm64, "arm64", "/bin/arm64", "vcvarsarm64.bat"},
-       {MsvcToolchain::arm64_x86, "arm64_x86", "/bin/arm64_x86", "vcvarsarm64_x86.bat"},
-       {MsvcToolchain::arm64_amd64, "arm64_amd64", "/bin/arm64_amd64", "vcvarsarm64_amd64.bat"}};
+    = {{MsvcToolChain::x86, "x86", "/bin", "vcvars32.bat"},
+       {MsvcToolChain::amd64, "amd64", "/bin/amd64", "vcvars64.bat"},
+       {MsvcToolChain::x86_amd64, "x86_amd64", "/bin/x86_amd64", "vcvarsx86_amd64.bat"},
+       {MsvcToolChain::ia64, "ia64", "/bin/ia64", "vcvars64.bat"},
+       {MsvcToolChain::x86_ia64, "x86_ia64", "/bin/x86_ia64", "vcvarsx86_ia64.bat"},
+       {MsvcToolChain::arm, "arm", "/bin/arm", "vcvarsarm.bat"},
+       {MsvcToolChain::x86_arm, "x86_arm", "/bin/x86_arm", "vcvarsx86_arm.bat"},
+       {MsvcToolChain::amd64_arm, "amd64_arm", "/bin/amd64_arm", "vcvarsamd64_arm.bat"},
+       {MsvcToolChain::amd64_x86, "amd64_x86", "/bin/amd64_x86", "vcvarsamd64_x86.bat"},
+       {MsvcToolChain::x86_arm64, "x86_arm64", "/bin/x86_arm64", "vcvarsx86_arm64.bat"},
+       {MsvcToolChain::amd64_arm64, "amd64_arm64", "/bin/amd64_arm64", "vcvarsamd64_arm64.bat"},
+       {MsvcToolChain::arm64, "arm64", "/bin/arm64", "vcvarsarm64.bat"},
+       {MsvcToolChain::arm64_x86, "arm64_x86", "/bin/arm64_x86", "vcvarsarm64_x86.bat"},
+       {MsvcToolChain::arm64_amd64, "arm64_amd64", "/bin/arm64_amd64", "vcvarsarm64_amd64.bat"}};
 
-static QList<const MsvcToolchain *> g_availableMsvcToolchains;
+static QList<const MsvcToolChain *> g_availableMsvcToolchains;
 
 static const MsvcPlatform *platformEntryFromName(const QString &name)
 {
@@ -105,7 +121,7 @@ static const MsvcPlatform *platformEntryFromName(const QString &name)
     return nullptr;
 }
 
-static const MsvcPlatform *platformEntry(MsvcToolchain::Platform t)
+static const MsvcPlatform *platformEntry(MsvcToolChain::Platform t)
 {
     for (const MsvcPlatform &p : platforms) {
         if (p.platform == t)
@@ -114,36 +130,36 @@ static const MsvcPlatform *platformEntry(MsvcToolchain::Platform t)
     return nullptr;
 }
 
-static QString platformName(MsvcToolchain::Platform t)
+static QString platformName(MsvcToolChain::Platform t)
 {
     if (const MsvcPlatform *p = platformEntry(t))
         return QLatin1String(p->name);
-    return {};
+    return QString();
 }
 
-static bool hostPrefersPlatform(MsvcToolchain::Platform platform)
+static bool hostPrefersPlatform(MsvcToolChain::Platform platform)
 {
     switch (HostOsInfo::hostArchitecture()) {
-    case Utils::OsArchAMD64:
-        return platform == MsvcToolchain::amd64 || platform == MsvcToolchain::amd64_arm
-               || platform == MsvcToolchain::amd64_x86 || platform == MsvcToolchain::amd64_arm64;
-    case Utils::OsArchX86:
-        return platform == MsvcToolchain::x86 || platform == MsvcToolchain::x86_amd64
-               || platform == MsvcToolchain::x86_ia64 || platform == MsvcToolchain::x86_arm
-               || platform == MsvcToolchain::x86_arm64;
-    case Utils::OsArchArm:
-        return platform == MsvcToolchain::arm;
-    case Utils::OsArchArm64:
-        return platform == MsvcToolchain::arm64
-               || platform == MsvcToolchain::arm64_x86 || platform == MsvcToolchain::arm64_amd64;
-    case Utils::OsArchItanium:
-        return platform == MsvcToolchain::ia64;
+    case HostOsInfo::HostArchitectureAMD64:
+        return platform == MsvcToolChain::amd64 || platform == MsvcToolChain::amd64_arm
+               || platform == MsvcToolChain::amd64_x86 || platform == MsvcToolChain::amd64_arm64;
+    case HostOsInfo::HostArchitectureX86:
+        return platform == MsvcToolChain::x86 || platform == MsvcToolChain::x86_amd64
+               || platform == MsvcToolChain::x86_ia64 || platform == MsvcToolChain::x86_arm
+               || platform == MsvcToolChain::x86_arm64;
+    case HostOsInfo::HostArchitectureArm:
+        return platform == MsvcToolChain::arm;
+    case HostOsInfo::HostArchitectureArm64:
+        return platform == MsvcToolChain::arm64
+               || platform == MsvcToolChain::arm64_x86 || platform == MsvcToolChain::arm64_amd64;
+    case HostOsInfo::HostArchitectureItanium:
+        return platform == MsvcToolChain::ia64;
     default:
         return false;
     }
 }
 
-static bool hostSupportsPlatform(MsvcToolchain::Platform platform)
+static bool hostSupportsPlatform(MsvcToolChain::Platform platform)
 {
     if (hostPrefersPlatform(platform))
         return true;
@@ -151,16 +167,16 @@ static bool hostSupportsPlatform(MsvcToolchain::Platform platform)
     switch (HostOsInfo::hostArchitecture()) {
     // The x86 host toolchains are not the preferred toolchains on amd64 but they are still
     // supported by that host
-    case Utils::OsArchAMD64:
-        return platform == MsvcToolchain::x86 || platform == MsvcToolchain::x86_amd64
-               || platform == MsvcToolchain::x86_ia64 || platform == MsvcToolchain::x86_arm
-               || platform == MsvcToolchain::x86_arm64;
+    case HostOsInfo::HostArchitectureAMD64:
+        return platform == MsvcToolChain::x86 || platform == MsvcToolChain::x86_amd64
+               || platform == MsvcToolChain::x86_ia64 || platform == MsvcToolChain::x86_arm
+               || platform == MsvcToolChain::x86_arm64;
     // The Arm64 host can run the cross-compilers via emulation of x86 and amd64
-    case Utils::OsArchArm64:
-        return platform == MsvcToolchain::x86_arm || platform == MsvcToolchain::x86_arm64
-               || platform == MsvcToolchain::amd64_arm || platform == MsvcToolchain::amd64_arm64
-               || platform == MsvcToolchain::x86 || platform == MsvcToolchain::x86_amd64
-               || platform == MsvcToolchain::amd64 || platform == MsvcToolchain::amd64_x86;
+    case HostOsInfo::HostArchitectureArm64:
+        return platform == MsvcToolChain::x86_arm || platform == MsvcToolChain::x86_arm64
+               || platform == MsvcToolChain::amd64_arm || platform == MsvcToolChain::amd64_arm64
+               || platform == MsvcToolChain::x86 || platform == MsvcToolChain::x86_amd64
+               || platform == MsvcToolChain::amd64 || platform == MsvcToolChain::amd64_x86;
     default:
         return false;
     }
@@ -202,10 +218,10 @@ static QString windowsProgramFilesDir()
 #else
     const char programFilesC[] = "ProgramFiles";
 #endif
-    return QDir::fromNativeSeparators(qtcEnvironmentVariable(programFilesC));
+    return QDir::fromNativeSeparators(QFile::decodeName(qgetenv(programFilesC)));
 }
 
-static std::optional<VisualStudioInstallation> installationFromPathAndVersion(
+static Utils::optional<VisualStudioInstallation> installationFromPathAndVersion(
     const QString &installationPath, const QVersionNumber &version)
 {
     QString vcVarsPath = QDir::fromNativeSeparators(installationPath);
@@ -220,7 +236,7 @@ static std::optional<VisualStudioInstallation> installationFromPathAndVersion(
     if (!QFileInfo(vcVarsAllPath).isFile()) {
         qWarning().noquote() << "Unable to find MSVC setup script "
                              << QDir::toNativeSeparators(vcVarsPath) << " in version " << version;
-        return std::nullopt;
+        return Utils::nullopt;
     }
 
     const QString versionString = version.toString();
@@ -234,7 +250,7 @@ static std::optional<VisualStudioInstallation> installationFromPathAndVersion(
 }
 
 // Detect build tools introduced with MSVC2017
-static std::optional<VisualStudioInstallation> detectCppBuildTools2017()
+static Utils::optional<VisualStudioInstallation> detectCppBuildTools2017()
 {
     const QString installPath = windowsProgramFilesDir()
                                 + "/Microsoft Visual Studio/2017/BuildTools";
@@ -242,7 +258,7 @@ static std::optional<VisualStudioInstallation> detectCppBuildTools2017()
     const QString vcVarsAllPath = vcVarsPath + "/vcvarsall.bat";
 
     if (!QFileInfo::exists(vcVarsAllPath))
-        return std::nullopt;
+        return Utils::nullopt;
 
     VisualStudioInstallation installation;
     installation.path = installPath;
@@ -257,17 +273,35 @@ static std::optional<VisualStudioInstallation> detectCppBuildTools2017()
 static QVector<VisualStudioInstallation> detectVisualStudioFromVsWhere(const QString &vswhere)
 {
     QVector<VisualStudioInstallation> installations;
-    Process vsWhereProcess;
+    QtcProcess vsWhereProcess;
     vsWhereProcess.setCodec(QTextCodec::codecForName("UTF-8"));
+    const int timeoutS = 5;
+    vsWhereProcess.setTimeoutS(timeoutS);
     vsWhereProcess.setCommand({FilePath::fromString(vswhere),
                         {"-products", "*", "-prerelease", "-legacy", "-format", "json", "-utf8"}});
-    vsWhereProcess.runBlocking(5s);
-    if (vsWhereProcess.result() != ProcessResult::FinishedWithSuccess) {
-        qWarning() << vsWhereProcess.exitMessage();
+    vsWhereProcess.runBlocking();
+    switch (vsWhereProcess.result()) {
+    case ProcessResult::FinishedWithSuccess:
+        break;
+    case ProcessResult::StartFailed:
+        qWarning().noquote() << QDir::toNativeSeparators(vswhere) << "could not be started.";
+        return installations;
+    case ProcessResult::FinishedWithError:
+        qWarning().noquote().nospace() << QDir::toNativeSeparators(vswhere)
+                                       << " finished with exit code "
+                                       << vsWhereProcess.exitCode() << ".";
+        return installations;
+    case ProcessResult::TerminatedAbnormally:
+        qWarning().noquote().nospace()
+            << QDir::toNativeSeparators(vswhere) << " crashed. Exit code: " << vsWhereProcess.exitCode();
+        return installations;
+    case ProcessResult::Hang:
+        qWarning().noquote() << QDir::toNativeSeparators(vswhere) << "did not finish in" << timeoutS
+                             << "seconds.";
         return installations;
     }
 
-    const QByteArray output = vsWhereProcess.cleanedStdOut().toUtf8();
+    QByteArray output = vsWhereProcess.cleanedStdOut().toUtf8();
     QJsonParseError error;
     const QJsonDocument doc = QJsonDocument::fromJson(output, &error);
     if (error.error != QJsonParseError::NoError || doc.isNull()) {
@@ -301,7 +335,7 @@ static QVector<VisualStudioInstallation> detectVisualStudioFromVsWhere(const QSt
             continue;
         }
         const QString installationPath = value.toString();
-        std::optional<VisualStudioInstallation> installation
+        Utils::optional<VisualStudioInstallation> installation
             = installationFromPathAndVersion(installationPath, version);
 
         if (installation)
@@ -328,7 +362,7 @@ static QVector<VisualStudioInstallation> detectVisualStudioFromRegistry()
         if (!version.isNull()) {
             const QString installationPath = fixRegistryPath(vsRegistry.value(vsName).toString());
 
-            std::optional<VisualStudioInstallation> installation
+            Utils::optional<VisualStudioInstallation> installation
                 = installationFromPathAndVersion(installationPath, version);
             if (installation)
                 result.append(*installation);
@@ -357,63 +391,63 @@ static QVector<VisualStudioInstallation> detectVisualStudio()
     return detectVisualStudioFromRegistry();
 }
 
-static unsigned char wordWidthForPlatform(MsvcToolchain::Platform platform)
+static unsigned char wordWidthForPlatform(MsvcToolChain::Platform platform)
 {
     switch (platform) {
-    case ProjectExplorer::Internal::MsvcToolchain::x86:
-    case ProjectExplorer::Internal::MsvcToolchain::arm:
-    case ProjectExplorer::Internal::MsvcToolchain::x86_arm:
-    case ProjectExplorer::Internal::MsvcToolchain::amd64_arm:
-    case ProjectExplorer::Internal::MsvcToolchain::amd64_x86:
-    case ProjectExplorer::Internal::MsvcToolchain::arm64_x86:
+    case ProjectExplorer::Internal::MsvcToolChain::x86:
+    case ProjectExplorer::Internal::MsvcToolChain::arm:
+    case ProjectExplorer::Internal::MsvcToolChain::x86_arm:
+    case ProjectExplorer::Internal::MsvcToolChain::amd64_arm:
+    case ProjectExplorer::Internal::MsvcToolChain::amd64_x86:
+    case ProjectExplorer::Internal::MsvcToolChain::arm64_x86:
         return 32;
-    case ProjectExplorer::Internal::MsvcToolchain::amd64:
-    case ProjectExplorer::Internal::MsvcToolchain::x86_amd64:
-    case ProjectExplorer::Internal::MsvcToolchain::ia64:
-    case ProjectExplorer::Internal::MsvcToolchain::x86_ia64:
-    case ProjectExplorer::Internal::MsvcToolchain::amd64_arm64:
-    case ProjectExplorer::Internal::MsvcToolchain::x86_arm64:
-    case ProjectExplorer::Internal::MsvcToolchain::arm64:
-    case ProjectExplorer::Internal::MsvcToolchain::arm64_amd64:
+    case ProjectExplorer::Internal::MsvcToolChain::amd64:
+    case ProjectExplorer::Internal::MsvcToolChain::x86_amd64:
+    case ProjectExplorer::Internal::MsvcToolChain::ia64:
+    case ProjectExplorer::Internal::MsvcToolChain::x86_ia64:
+    case ProjectExplorer::Internal::MsvcToolChain::amd64_arm64:
+    case ProjectExplorer::Internal::MsvcToolChain::x86_arm64:
+    case ProjectExplorer::Internal::MsvcToolChain::arm64:
+    case ProjectExplorer::Internal::MsvcToolChain::arm64_amd64:
         return 64;
     }
 
     return 0;
 }
 
-static Abi::Architecture archForPlatform(MsvcToolchain::Platform platform)
+static Abi::Architecture archForPlatform(MsvcToolChain::Platform platform)
 {
     switch (platform) {
-    case ProjectExplorer::Internal::MsvcToolchain::x86:
-    case ProjectExplorer::Internal::MsvcToolchain::amd64:
-    case ProjectExplorer::Internal::MsvcToolchain::x86_amd64:
-    case ProjectExplorer::Internal::MsvcToolchain::amd64_x86:
-    case ProjectExplorer::Internal::MsvcToolchain::arm64_x86:
-    case ProjectExplorer::Internal::MsvcToolchain::arm64_amd64:
+    case ProjectExplorer::Internal::MsvcToolChain::x86:
+    case ProjectExplorer::Internal::MsvcToolChain::amd64:
+    case ProjectExplorer::Internal::MsvcToolChain::x86_amd64:
+    case ProjectExplorer::Internal::MsvcToolChain::amd64_x86:
+    case ProjectExplorer::Internal::MsvcToolChain::arm64_x86:
+    case ProjectExplorer::Internal::MsvcToolChain::arm64_amd64:
         return Abi::X86Architecture;
-    case ProjectExplorer::Internal::MsvcToolchain::arm:
-    case ProjectExplorer::Internal::MsvcToolchain::x86_arm:
-    case ProjectExplorer::Internal::MsvcToolchain::amd64_arm:
-    case ProjectExplorer::Internal::MsvcToolchain::x86_arm64:
-    case ProjectExplorer::Internal::MsvcToolchain::amd64_arm64:
-    case ProjectExplorer::Internal::MsvcToolchain::arm64:
+    case ProjectExplorer::Internal::MsvcToolChain::arm:
+    case ProjectExplorer::Internal::MsvcToolChain::x86_arm:
+    case ProjectExplorer::Internal::MsvcToolChain::amd64_arm:
+    case ProjectExplorer::Internal::MsvcToolChain::x86_arm64:
+    case ProjectExplorer::Internal::MsvcToolChain::amd64_arm64:
+    case ProjectExplorer::Internal::MsvcToolChain::arm64:
         return Abi::ArmArchitecture;
-    case ProjectExplorer::Internal::MsvcToolchain::ia64:
-    case ProjectExplorer::Internal::MsvcToolchain::x86_ia64:
+    case ProjectExplorer::Internal::MsvcToolChain::ia64:
+    case ProjectExplorer::Internal::MsvcToolChain::x86_ia64:
         return Abi::ItaniumArchitecture;
     }
 
     return Abi::UnknownArchitecture;
 }
 
-static Abi findAbiOfMsvc(MsvcToolchain::Type type,
-                         MsvcToolchain::Platform platform,
+static Abi findAbiOfMsvc(MsvcToolChain::Type type,
+                         MsvcToolChain::Platform platform,
                          const QString &version)
 {
     Abi::OSFlavor flavor = Abi::UnknownFlavor;
 
     QString msvcVersionString = version;
-    if (type == MsvcToolchain::WindowsSDK) {
+    if (type == MsvcToolChain::WindowsSDK) {
         if (version == QLatin1String("v7.0") || version.startsWith(QLatin1String("6.")))
             msvcVersionString = QLatin1String("9.0");
         else if (version == QLatin1String("v7.0A") || version == QLatin1String("v7.1"))
@@ -447,10 +481,10 @@ static Abi findAbiOfMsvc(MsvcToolchain::Type type,
 }
 
 static QString generateDisplayName(const QString &name,
-                                   MsvcToolchain::Type t,
-                                   MsvcToolchain::Platform p)
+                                   MsvcToolChain::Type t,
+                                   MsvcToolChain::Platform p)
 {
-    if (t == MsvcToolchain::WindowsSDK) {
+    if (t == MsvcToolChain::WindowsSDK) {
         QString sdkName = name;
         sdkName += QString::fromLatin1(" (%1)").arg(platformName(p));
         return sdkName;
@@ -601,28 +635,21 @@ static QByteArray msvcCompilationFile()
 //
 // [1] https://msdn.microsoft.com/en-us/library/b0084kay.aspx
 // [2] http://stackoverflow.com/questions/3665537/how-to-find-out-cl-exes-built-in-macros
-Macros MsvcToolchain::msvcPredefinedMacros(const QStringList &cxxflags,
+Macros MsvcToolChain::msvcPredefinedMacros(const QStringList &cxxflags,
                                            const Utils::Environment &env) const
 {
     Macros predefinedMacros;
 
     QStringList toProcess;
-    for (auto arg = cxxflags.begin(); arg != cxxflags.end(); ++arg) {
-        if (arg->startsWith("/D") || arg->startsWith("-D")) {
-            if (arg->length() > 2)
-                predefinedMacros.append(Macro::fromKeyValue(arg->mid(2)));
-            else if (std::next(arg) != cxxflags.end())
-                predefinedMacros.append(Macro::fromKeyValue(*++arg));
-        } else if (arg->startsWith("/U") || arg->startsWith("-U")) {
-            if (arg->length() > 2) {
-                predefinedMacros.append({arg->mid(2).toLocal8Bit(),
-                                         MacroType::Undefine});
-            } else if (std::next(arg) != cxxflags.end()) {
-                predefinedMacros.append({(++arg)->toLocal8Bit(),
-                                         MacroType::Undefine});
-            }
+    for (const QString &arg : cxxflags) {
+        if (arg.startsWith("/D") || arg.startsWith("-D")) {
+            const QString define = arg.mid(2);
+            predefinedMacros.append(Macro::fromKeyValue(define));
+        } else if (arg.startsWith("/U") || arg.startsWith("-U")) {
+            predefinedMacros.append(
+                {arg.mid(2).toLocal8Bit(), ProjectExplorer::MacroType::Undefine});
         } else {
-            toProcess.append(*arg);
+            toProcess.append(arg);
         }
     }
 
@@ -633,7 +660,7 @@ Macros MsvcToolchain::msvcPredefinedMacros(const QStringList &cxxflags,
         qWarning("%s: %s", Q_FUNC_INFO, qPrintable(saver.errorString()));
         return predefinedMacros;
     }
-    Utils::Process cpp;
+    Utils::QtcProcess cpp;
     cpp.setEnvironment(env);
     cpp.setWorkingDirectory(Utils::TemporaryDirectory::masterDirectoryFilePath());
     QStringList arguments;
@@ -676,7 +703,7 @@ Macros MsvcToolchain::msvcPredefinedMacros(const QStringList &cxxflags,
 //
 // For _MSV_VER values, see https://docs.microsoft.com/en-us/cpp/preprocessor/predefined-macros?view=vs-2017.
 //
-Utils::LanguageVersion MsvcToolchain::msvcLanguageVersion(const QStringList & /*cxxflags*/,
+Utils::LanguageVersion MsvcToolChain::msvcLanguageVersion(const QStringList & /*cxxflags*/,
                                                           const Utils::Id &language,
                                                           const Macros &macros) const
 {
@@ -694,7 +721,7 @@ Utils::LanguageVersion MsvcToolchain::msvcLanguageVersion(const QStringList & /*
 
     if (language == Constants::CXX_LANGUAGE_ID) {
         if (!msvcLang.isEmpty()) // >= Visual Studio 2015 Update 3
-            return Toolchain::cxxLanguageVersion(msvcLang);
+            return ToolChain::cxxLanguageVersion(msvcLang);
         if (mscVer >= 1800) // >= Visual Studio 2013 (12.0)
             return LanguageVersion::CXX14;
         if (mscVer >= 1600) // >= Visual Studio 2010 (10.0)
@@ -732,14 +759,16 @@ static QString winExpandDelayedEnvReferences(QString in, const Utils::Environmen
     return in;
 }
 
-void MsvcToolchain::environmentModifications(QPromise<MsvcToolchain::GenerateEnvResult> &promise,
-                                             QString vcvarsBat, QString varsBatArg)
+void MsvcToolChain::environmentModifications(
+    QFutureInterface<MsvcToolChain::GenerateEnvResult> &future,
+    QString vcvarsBat,
+    QString varsBatArg)
 {
     const Utils::Environment inEnv = Utils::Environment::systemEnvironment();
     Utils::Environment outEnv;
     QMap<QString, QString> envPairs;
     Utils::EnvironmentItems diff;
-    std::optional<QString> error = generateEnvironmentSettings(inEnv,
+    Utils::optional<QString> error = generateEnvironmentSettings(inEnv,
                                                                  vcvarsBat,
                                                                  varsBatArg,
                                                                  envPairs);
@@ -759,27 +788,17 @@ void MsvcToolchain::environmentModifications(QPromise<MsvcToolchain::GenerateEnv
         }
     }
 
-    promise.addResult(MsvcToolchain::GenerateEnvResult{error, diff});
+    future.reportResult({error, diff});
 }
 
-void MsvcToolchain::initEnvModWatcher(const QFuture<GenerateEnvResult> &future)
+void MsvcToolChain::initEnvModWatcher(const QFuture<GenerateEnvResult> &future)
 {
-    connect(&m_envModWatcher, &QFutureWatcher<GenerateEnvResult>::resultReadyAt, this, [this] {
+    QObject::connect(&m_envModWatcher, &QFutureWatcher<GenerateEnvResult>::resultReadyAt, [&]() {
         const GenerateEnvResult &result = m_envModWatcher.result();
         if (result.error) {
-            QString errorMessage = *result.error;
-            if (!errorMessage.isEmpty()) {
-                Task::TaskType severity;
-                if (m_environmentModifications.isEmpty()) {
-                    severity = Task::Error;
-                } else {
-                    severity = Task::Warning;
-                    errorMessage.prepend(
-                        Tr::tr("Falling back to use the cached environment for \"%1\" after:")
-                                .arg(displayName()) + '\n');
-                }
-                TaskHub::addTask(CompileTask(severity, errorMessage));
-            }
+            const QString &errorMessage = *result.error;
+            if (!errorMessage.isEmpty())
+                TaskHub::addTask(CompileTask(Task::Error, errorMessage));
         } else {
             updateEnvironmentModifications(result.environmentItems);
         }
@@ -787,13 +806,13 @@ void MsvcToolchain::initEnvModWatcher(const QFuture<GenerateEnvResult> &future)
     m_envModWatcher.setFuture(future);
 }
 
-void MsvcToolchain::updateEnvironmentModifications(Utils::EnvironmentItems modifications)
+void MsvcToolChain::updateEnvironmentModifications(Utils::EnvironmentItems modifications)
 {
     Utils::EnvironmentItem::sort(&modifications);
     if (modifications != m_environmentModifications) {
         if (Log().isDebugEnabled()) {
             qCDebug(Log) << "Update environment for " << displayName();
-            for (const EnvironmentItem &item : std::as_const(modifications))
+            for (const EnvironmentItem &item : qAsConst(modifications))
                 qCDebug(Log) << '\t' << item;
         }
         m_environmentModifications = modifications;
@@ -804,7 +823,7 @@ void MsvcToolchain::updateEnvironmentModifications(Utils::EnvironmentItems modif
     }
 }
 
-Utils::Environment MsvcToolchain::readEnvironmentSetting(const Utils::Environment &env) const
+Utils::Environment MsvcToolChain::readEnvironmentSetting(const Utils::Environment &env) const
 {
     Utils::Environment resultEnv = env;
     if (m_environmentModifications.isEmpty()) {
@@ -826,10 +845,10 @@ Utils::Environment MsvcToolchain::readEnvironmentSetting(const Utils::Environmen
 }
 
 // --------------------------------------------------------------------------
-// MsvcToolchain
+// MsvcToolChain
 // --------------------------------------------------------------------------
 
-static void addToAvailableMsvcToolchains(const MsvcToolchain *toolchain)
+static void addToAvailableMsvcToolchains(const MsvcToolChain *toolchain)
 {
     if (toolchain->typeId() != Constants::MSVC_TOOLCHAIN_TYPEID)
         return;
@@ -838,16 +857,16 @@ static void addToAvailableMsvcToolchains(const MsvcToolchain *toolchain)
         g_availableMsvcToolchains.push_back(toolchain);
 }
 
-MsvcToolchain::MsvcToolchain(Utils::Id typeId)
-    : Toolchain(typeId)
+MsvcToolChain::MsvcToolChain(Utils::Id typeId)
+    : ToolChain(typeId)
 {
     setDisplayName("Microsoft Visual C++ Compiler");
-    setTypeDisplayName(Tr::tr("MSVC"));
+    setTypeDisplayName(tr("MSVC"));
     addToAvailableMsvcToolchains(this);
     setTargetAbiKey(KEY_ROOT "SupportedAbi");
 }
 
-void MsvcToolchain::inferWarningsForLevel(int warningLevel, WarningFlags &flags)
+void MsvcToolChain::inferWarningsForLevel(int warningLevel, WarningFlags &flags)
 {
     // reset all except unrelated flag
     flags = flags & WarningFlags::AsErrors;
@@ -866,12 +885,12 @@ void MsvcToolchain::inferWarningsForLevel(int warningLevel, WarningFlags &flags)
         flags |= WarningFlags::UnusedParams;
 }
 
-MsvcToolchain::~MsvcToolchain()
+MsvcToolChain::~MsvcToolChain()
 {
     g_availableMsvcToolchains.removeOne(this);
 }
 
-bool MsvcToolchain::isValid() const
+bool MsvcToolChain::isValid() const
 {
     if (m_vcvarsBat.isEmpty())
         return false;
@@ -879,13 +898,13 @@ bool MsvcToolchain::isValid() const
     return fi.isFile() && fi.isExecutable();
 }
 
-QString MsvcToolchain::originalTargetTriple() const
+QString MsvcToolChain::originalTargetTriple() const
 {
     return targetAbi().wordWidth() == 64 ? QLatin1String("x86_64-pc-windows-msvc")
                                          : QLatin1String("i686-pc-windows-msvc");
 }
 
-QStringList MsvcToolchain::suggestedMkspecList() const
+QStringList MsvcToolChain::suggestedMkspecList() const
 {
     // "win32-msvc" is the common MSVC mkspec introduced in Qt 5.8.1
     switch (targetAbi().osFlavor()) {
@@ -927,7 +946,7 @@ QStringList MsvcToolchain::suggestedMkspecList() const
     return {};
 }
 
-Abis MsvcToolchain::supportedAbis() const
+Abis MsvcToolChain::supportedAbis() const
 {
     Abi abi = targetAbi();
     Abis abis = {abi};
@@ -962,40 +981,49 @@ Abis MsvcToolchain::supportedAbis() const
     return abis;
 }
 
-void MsvcToolchain::toMap(Store &data) const
+QVariantMap MsvcToolChain::toMap() const
 {
-    Toolchain::toMap(data);
-    data.insert(varsBatKeyC, m_vcvarsBat);
+    QVariantMap data = ToolChain::toMap();
+    data.insert(QLatin1String(varsBatKeyC), m_vcvarsBat);
     if (!m_varsBatArg.isEmpty())
-        data.insert(varsBatArgKeyC, m_varsBatArg);
-    EnvironmentItem::sort(&m_environmentModifications);
-    data.insert(environModsKeyC, EnvironmentItem::toVariantList(m_environmentModifications));
+        data.insert(QLatin1String(varsBatArgKeyC), m_varsBatArg);
+    Utils::EnvironmentItem::sort(&m_environmentModifications);
+    data.insert(QLatin1String(environModsKeyC),
+                Utils::EnvironmentItem::toVariantList(m_environmentModifications));
+    return data;
 }
 
-void MsvcToolchain::fromMap(const Store &data)
+bool MsvcToolChain::fromMap(const QVariantMap &data)
 {
-    Toolchain::fromMap(data);
-    if (hasError()) {
+    if (!ToolChain::fromMap(data)) {
         g_availableMsvcToolchains.removeOne(this);
-        return;
+        return false;
     }
-    m_vcvarsBat = QDir::fromNativeSeparators(data.value(varsBatKeyC).toString());
-    m_varsBatArg = data.value(varsBatArgKeyC).toString();
+    m_vcvarsBat = QDir::fromNativeSeparators(data.value(QLatin1String(varsBatKeyC)).toString());
+    m_varsBatArg = data.value(QLatin1String(varsBatArgKeyC)).toString();
 
-    m_environmentModifications = EnvironmentItem::itemsFromVariantList(
-        data.value(environModsKeyC).toList());
+    m_environmentModifications = Utils::EnvironmentItem::itemsFromVariantList(
+        data.value(QLatin1String(environModsKeyC)).toList());
     rescanForCompiler();
 
-    initEnvModWatcher(Utils::asyncRun(envModThreadPool(), &MsvcToolchain::environmentModifications,
-                                      m_vcvarsBat, m_varsBatArg));
+    initEnvModWatcher(Utils::runAsync(envModThreadPool(),
+                                      &MsvcToolChain::environmentModifications,
+                                      m_vcvarsBat,
+                                      m_varsBatArg));
 
-    if (m_vcvarsBat.isEmpty() || !targetAbi().isValid()) {
-        reportError();
+    const bool valid = !m_vcvarsBat.isEmpty() && targetAbi().isValid();
+    if (!valid)
         g_availableMsvcToolchains.removeOne(this);
-    }
+
+    return valid;
 }
 
-bool MsvcToolchain::hostPrefersToolchain() const
+std::unique_ptr<ToolChainConfigWidget> MsvcToolChain::createConfigurationWidget()
+{
+    return std::make_unique<MsvcToolChainConfigWidget>(this);
+}
+
+bool MsvcToolChain::hostPrefersToolchain() const
 {
     return hostPrefersPlatform(platform());
 }
@@ -1014,7 +1042,7 @@ bool static hasFlagEffectOnMacros(const QString &flag)
     return true;
 }
 
-Toolchain::MacroInspectionRunner MsvcToolchain::createMacroInspectionRunner() const
+ToolChain::MacroInspectionRunner MsvcToolChain::createMacroInspectionRunner() const
 {
     Utils::Environment env(m_lastEnvironment);
     addToEnvironment(env);
@@ -1027,7 +1055,7 @@ Toolchain::MacroInspectionRunner MsvcToolchain::createMacroInspectionRunner() co
             return hasFlagEffectOnMacros(arg);
         });
 
-        const std::optional<MacroInspectionReport> cachedMacros = macroCache->check(filteredFlags);
+        const Utils::optional<MacroInspectionReport> cachedMacros = macroCache->check(filteredFlags);
         if (cachedMacros)
             return cachedMacros.value();
 
@@ -1041,7 +1069,7 @@ Toolchain::MacroInspectionRunner MsvcToolchain::createMacroInspectionRunner() co
     };
 }
 
-Utils::LanguageExtensions MsvcToolchain::languageExtensions(const QStringList &cxxflags) const
+Utils::LanguageExtensions MsvcToolChain::languageExtensions(const QStringList &cxxflags) const
 {
     using Utils::LanguageExtension;
     Utils::LanguageExtensions extensions(LanguageExtension::Microsoft);
@@ -1055,7 +1083,7 @@ Utils::LanguageExtensions MsvcToolchain::languageExtensions(const QStringList &c
     return extensions;
 }
 
-WarningFlags MsvcToolchain::warningFlags(const QStringList &cflags) const
+WarningFlags MsvcToolChain::warningFlags(const QStringList &cflags) const
 {
     WarningFlags flags = WarningFlags::NoWarnings;
     for (QString flag : cflags) {
@@ -1102,13 +1130,13 @@ WarningFlags MsvcToolchain::warningFlags(const QStringList &cflags) const
     return flags;
 }
 
-FilePaths MsvcToolchain::includedFiles(const QStringList &flags,
-                                       const FilePath &directoryPath) const
+QStringList MsvcToolChain::includedFiles(const QStringList &flags,
+                                         const QString &directoryPath) const
 {
-    return Toolchain::includedFiles("/FI", flags, directoryPath, PossiblyConcatenatedFlag::Yes);
+    return ToolChain::includedFiles("/FI", flags, directoryPath);
 }
 
-Toolchain::BuiltInHeaderPathsRunner MsvcToolchain::createBuiltInHeaderPathsRunner(
+ToolChain::BuiltInHeaderPathsRunner MsvcToolChain::createBuiltInHeaderPathsRunner(
         const Environment &env) const
 {
     Utils::Environment fullEnv = env;
@@ -1125,10 +1153,10 @@ Toolchain::BuiltInHeaderPathsRunner MsvcToolchain::createBuiltInHeaderPathsRunne
     };
 }
 
-void MsvcToolchain::addToEnvironment(Utils::Environment &env) const
+void MsvcToolChain::addToEnvironment(Utils::Environment &env) const
 {
     // We cache the full environment (incoming + modifications by setup script).
-    if (!m_resultEnvironment.hasChanges() || env != m_lastEnvironment) {
+    if (!m_resultEnvironment.isValid() || env != m_lastEnvironment) {
         qCDebug(Log) << "addToEnvironment: " << displayName();
         m_lastEnvironment = env;
         m_resultEnvironment = readEnvironmentSetting(env);
@@ -1149,9 +1177,9 @@ static QString wrappedMakeCommand(const QString &command)
     return wrapperPath;
 }
 
-FilePath MsvcToolchain::makeCommand(const Environment &environment) const
+FilePath MsvcToolChain::makeCommand(const Environment &environment) const
 {
-    const bool useJom = projectExplorerSettings().useJom;
+    bool useJom = ProjectExplorerPlugin::projectExplorerSettings().useJom;
     const QString jom("jom.exe");
     const QString nmake("nmake.exe");
     Utils::FilePath tmp;
@@ -1180,7 +1208,7 @@ FilePath MsvcToolchain::makeCommand(const Environment &environment) const
     return command;
 }
 
-void MsvcToolchain::rescanForCompiler()
+void MsvcToolChain::rescanForCompiler()
 {
     Utils::Environment env = Utils::Environment::systemEnvironment();
     addToEnvironment(env);
@@ -1189,20 +1217,20 @@ void MsvcToolchain::rescanForCompiler()
           env.searchInPath(QLatin1String("cl.exe"), {}, [](const Utils::FilePath &name) {
               QDir dir(QDir::cleanPath(name.toFileInfo().absolutePath() + QStringLiteral("/..")));
               do {
-                  if (QFileInfo::exists(dir.absoluteFilePath(QStringLiteral("vcvarsall.bat")))
-                      || QFileInfo::exists(dir.absolutePath() + "/Auxiliary/Build/vcvarsall.bat"))
+                  if (QFile::exists(dir.absoluteFilePath(QStringLiteral("vcvarsall.bat")))
+                      || QFile::exists(dir.absolutePath() + "/Auxiliary/Build/vcvarsall.bat"))
                       return true;
               } while (dir.cdUp() && !dir.isRoot());
               return false;
           }));
 }
 
-QList<OutputLineParser *> MsvcToolchain::createOutputParsers() const
+QList<OutputLineParser *> MsvcToolChain::createOutputParsers() const
 {
     return {new MsvcParser};
 }
 
-void MsvcToolchain::setupVarsBat(const Abi &abi, const QString &varsBat, const QString &varsBatArg)
+void MsvcToolChain::setupVarsBat(const Abi &abi, const QString &varsBat, const QString &varsBatArg)
 {
     m_lastEnvironment = Utils::Environment::systemEnvironment();
     setTargetAbiNoSignal(abi);
@@ -1210,12 +1238,14 @@ void MsvcToolchain::setupVarsBat(const Abi &abi, const QString &varsBat, const Q
     m_varsBatArg = varsBatArg;
 
     if (!varsBat.isEmpty()) {
-        initEnvModWatcher(Utils::asyncRun(envModThreadPool(),
-                          &MsvcToolchain::environmentModifications, varsBat, varsBatArg));
+        initEnvModWatcher(Utils::runAsync(envModThreadPool(),
+                                          &MsvcToolChain::environmentModifications,
+                                          varsBat,
+                                          varsBatArg));
     }
 }
 
-void MsvcToolchain::resetVarsBat()
+void MsvcToolChain::resetVarsBat()
 {
     m_lastEnvironment = Utils::Environment::systemEnvironment();
     setTargetAbiNoSignal(Abi());
@@ -1223,21 +1253,33 @@ void MsvcToolchain::resetVarsBat()
     m_varsBatArg.clear();
 }
 
-MsvcToolchain::Platform MsvcToolchain::platform() const
+MsvcToolChain::Platform MsvcToolChain::platform() const
 {
     QStringList args = m_varsBatArg.split(' ');
     if (const MsvcPlatform *entry = platformEntryFromName(args.value(0)))
         return entry->platform;
-    return Utils::HostOsInfo::hostArchitecture() == Utils::OsArchAMD64 ? amd64 : x86;
+    return Utils::HostOsInfo::hostArchitecture() == Utils::HostOsInfo::HostArchitectureAMD64 ? amd64
+                                                                                             : x86;
 }
 
 // --------------------------------------------------------------------------
-// MsvcBasedToolchainConfigWidget: Creates a simple GUI without error label
+// MsvcBasedToolChainConfigWidget: Creates a simple GUI without error label
 // to display name and varsBat. Derived classes should add the error label and
-// call setFromMsvcToolchain().
+// call setFromMsvcToolChain().
 // --------------------------------------------------------------------------
 
-static QString msvcVarsToDisplay(const MsvcToolchain &tc)
+MsvcBasedToolChainConfigWidget::MsvcBasedToolChainConfigWidget(ToolChain *tc)
+    : ToolChainConfigWidget(tc)
+    , m_nameDisplayLabel(new QLabel(this))
+    , m_varsBatDisplayLabel(new QLabel(this))
+{
+    m_nameDisplayLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    m_mainLayout->addRow(m_nameDisplayLabel);
+    m_varsBatDisplayLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+    m_mainLayout->addRow(tr("Initialization:"), m_varsBatDisplayLabel);
+}
+
+static QString msvcVarsToDisplay(const MsvcToolChain &tc)
 {
     QString varsBatDisplay = QDir::toNativeSeparators(tc.varsBat());
     if (!tc.varsBatArg().isEmpty()) {
@@ -1247,146 +1289,99 @@ static QString msvcVarsToDisplay(const MsvcToolchain &tc)
     return varsBatDisplay;
 }
 
-class MsvcBasedToolchainConfigWidget : public ToolchainConfigWidget
+void MsvcBasedToolChainConfigWidget::setFromMsvcToolChain()
 {
-public:
-    explicit MsvcBasedToolchainConfigWidget(Toolchain *tc)
-        : ToolchainConfigWidget(tc)
-        , m_nameDisplayLabel(new QLabel(this))
-        , m_varsBatDisplayLabel(new QLabel(this))
-    {
-        m_nameDisplayLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
-        m_mainLayout->addRow(m_nameDisplayLabel);
-        m_varsBatDisplayLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
-        m_mainLayout->addRow(Tr::tr("Initialization:"), m_varsBatDisplayLabel);
-    }
-
-protected:
-    void applyImpl() override {}
-    void discardImpl() override { setFromMsvcToolChain(); }
-    bool isDirtyImpl() const override { return false; }
-    void makeReadOnlyImpl() override {}
-
-    void setFromMsvcToolChain()
-    {
-        const auto *tc = static_cast<const MsvcToolchain *>(toolchain());
-        QTC_ASSERT(tc, return );
-        m_nameDisplayLabel->setText(tc->displayName());
-        m_varsBatDisplayLabel->setText(msvcVarsToDisplay(*tc));
-    }
-
-protected:
-    QLabel *m_nameDisplayLabel;
-    QLabel *m_varsBatDisplayLabel;
-};
+    const auto *tc = static_cast<const MsvcToolChain *>(toolChain());
+    QTC_ASSERT(tc, return );
+    m_nameDisplayLabel->setText(tc->displayName());
+    m_varsBatDisplayLabel->setText(msvcVarsToDisplay(*tc));
+}
 
 // --------------------------------------------------------------------------
-// MsvcToolchainConfigWidget
+// MsvcToolChainConfigWidget
 // --------------------------------------------------------------------------
 
-class MsvcToolchainConfigWidget final : public MsvcBasedToolchainConfigWidget
+MsvcToolChainConfigWidget::MsvcToolChainConfigWidget(ToolChain *tc)
+    : MsvcBasedToolChainConfigWidget(tc)
+    , m_varsBatPathCombo(new QComboBox(this))
+    , m_varsBatArchCombo(new QComboBox(this))
+    , m_varsBatArgumentsEdit(new QLineEdit(this))
+    , m_abiWidget(new AbiWidget)
 {
-public:
-    explicit MsvcToolchainConfigWidget(Toolchain *tc)
-        : MsvcBasedToolchainConfigWidget(tc)
-        , m_varsBatPathCombo(new QComboBox(this))
-        , m_varsBatArchCombo(new QComboBox(this))
-        , m_varsBatArgumentsEdit(new QLineEdit(this))
-        , m_abiWidget(new AbiWidget)
-    {
-        m_mainLayout->removeRow(m_mainLayout->rowCount() - 1);
+    m_mainLayout->removeRow(m_mainLayout->rowCount() - 1);
 
-        QHBoxLayout *hLayout = new QHBoxLayout();
-        m_varsBatPathCombo->setObjectName("varsBatCombo");
-        m_varsBatPathCombo->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
-        m_varsBatPathCombo->setEditable(true);
-        for (const MsvcToolchain *tmpTc : std::as_const(g_availableMsvcToolchains)) {
-            const QString nativeVcVars = QDir::toNativeSeparators(tmpTc->varsBat());
-            if (!tmpTc->varsBat().isEmpty()
+    QHBoxLayout *hLayout = new QHBoxLayout();
+    m_varsBatPathCombo->setObjectName("varsBatCombo");
+    m_varsBatPathCombo->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Fixed);
+    m_varsBatPathCombo->setEditable(true);
+    for (const MsvcToolChain *tmpTc : qAsConst(g_availableMsvcToolchains)) {
+        const QString nativeVcVars = QDir::toNativeSeparators(tmpTc->varsBat());
+        if (!tmpTc->varsBat().isEmpty()
                 && m_varsBatPathCombo->findText(nativeVcVars) == -1) {
-                m_varsBatPathCombo->addItem(nativeVcVars);
-            }
+            m_varsBatPathCombo->addItem(nativeVcVars);
         }
-        const bool isAmd64 = Utils::HostOsInfo::hostArchitecture() == Utils::OsArchAMD64;
-        // TODO: Add missing values to MsvcToolChain::Platform
-        m_varsBatArchCombo->addItem(Tr::tr("<empty>"), isAmd64 ? MsvcToolchain::amd64 : MsvcToolchain::x86);
-        m_varsBatArchCombo->addItem("x86", MsvcToolchain::x86);
-        m_varsBatArchCombo->addItem("amd64", MsvcToolchain::amd64);
-        m_varsBatArchCombo->addItem("arm", MsvcToolchain::arm);
-        m_varsBatArchCombo->addItem("x86_amd64", MsvcToolchain::x86_amd64);
-        m_varsBatArchCombo->addItem("x86_arm", MsvcToolchain::x86_arm);
-        m_varsBatArchCombo->addItem("x86_arm64", MsvcToolchain::x86_arm64);
-        m_varsBatArchCombo->addItem("amd64_x86", MsvcToolchain::amd64_x86);
-        m_varsBatArchCombo->addItem("amd64_arm", MsvcToolchain::amd64_arm);
-        m_varsBatArchCombo->addItem("amd64_arm64", MsvcToolchain::amd64_arm64);
-        m_varsBatArchCombo->addItem("ia64", MsvcToolchain::ia64);
-        m_varsBatArchCombo->addItem("x86_ia64", MsvcToolchain::x86_ia64);
-        m_varsBatArchCombo->addItem("arm64", MsvcToolchain::arm64);
-        m_varsBatArchCombo->addItem("arm64_x86", MsvcToolchain::arm64_x86);
-        m_varsBatArchCombo->addItem("arm64_amd64", MsvcToolchain::arm64_amd64);
-        m_varsBatArgumentsEdit->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
-        m_varsBatArgumentsEdit->setToolTip(Tr::tr("Additional arguments for the vcvarsall.bat call"));
-        hLayout->addWidget(m_varsBatPathCombo);
-        hLayout->addWidget(m_varsBatArchCombo);
-        hLayout->addWidget(m_varsBatArgumentsEdit);
-        m_mainLayout->addRow(Tr::tr("Initialization:"), hLayout);
-        m_mainLayout->addRow(Tr::tr("&ABI:"), m_abiWidget);
-        addErrorLabel();
-        setFromMsvcToolchain();
-
-        connect(m_varsBatPathCombo, &QComboBox::currentTextChanged,
-                this, &MsvcToolchainConfigWidget::handleVcVarsChange);
-        connect(m_varsBatArchCombo, &QComboBox::currentTextChanged,
-                this, &MsvcToolchainConfigWidget::handleVcVarsArchChange);
-        connect(m_varsBatArgumentsEdit, &QLineEdit::textChanged,
-                this, &ToolchainConfigWidget::dirty);
-        connect(m_abiWidget, &AbiWidget::abiChanged, this, &ToolchainConfigWidget::dirty);
     }
+    const bool isAmd64
+            = Utils::HostOsInfo::hostArchitecture() == Utils::HostOsInfo::HostArchitectureAMD64;
+     // TODO: Add missing values to MsvcToolChain::Platform
+    m_varsBatArchCombo->addItem(tr("<empty>"), isAmd64 ? MsvcToolChain::amd64 : MsvcToolChain::x86);
+    m_varsBatArchCombo->addItem("x86", MsvcToolChain::x86);
+    m_varsBatArchCombo->addItem("amd64", MsvcToolChain::amd64);
+    m_varsBatArchCombo->addItem("arm", MsvcToolChain::arm);
+    m_varsBatArchCombo->addItem("x86_amd64", MsvcToolChain::x86_amd64);
+    m_varsBatArchCombo->addItem("x86_arm", MsvcToolChain::x86_arm);
+    m_varsBatArchCombo->addItem("x86_arm64", MsvcToolChain::x86_arm64);
+    m_varsBatArchCombo->addItem("amd64_x86", MsvcToolChain::amd64_x86);
+    m_varsBatArchCombo->addItem("amd64_arm", MsvcToolChain::amd64_arm);
+    m_varsBatArchCombo->addItem("amd64_arm64", MsvcToolChain::amd64_arm64);
+    m_varsBatArchCombo->addItem("ia64", MsvcToolChain::ia64);
+    m_varsBatArchCombo->addItem("x86_ia64", MsvcToolChain::x86_ia64);
+    m_varsBatArchCombo->addItem("arm64", MsvcToolChain::arm64);
+    m_varsBatArchCombo->addItem("arm64_x86", MsvcToolChain::arm64_x86);
+    m_varsBatArchCombo->addItem("arm64_amd64", MsvcToolChain::arm64_amd64);
+    m_varsBatArgumentsEdit->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Fixed);
+    m_varsBatArgumentsEdit->setToolTip(tr("Additional arguments for the vcvarsall.bat call"));
+    hLayout->addWidget(m_varsBatPathCombo);
+    hLayout->addWidget(m_varsBatArchCombo);
+    hLayout->addWidget(m_varsBatArgumentsEdit);
+    m_mainLayout->addRow(tr("Initialization:"), hLayout);
+    m_mainLayout->addRow(tr("&ABI:"), m_abiWidget);
+    addErrorLabel();
+    setFromMsvcToolChain();
 
-private:
-    void applyImpl() final;
-    void discardImpl() final;
-    bool isDirtyImpl() const final;
-    void makeReadOnlyImpl() final;
+    connect(m_varsBatPathCombo, &QComboBox::currentTextChanged,
+            this, &MsvcToolChainConfigWidget::handleVcVarsChange);
+    connect(m_varsBatArchCombo, &QComboBox::currentTextChanged,
+            this, &MsvcToolChainConfigWidget::handleVcVarsArchChange);
+    connect(m_varsBatArgumentsEdit, &QLineEdit::textChanged,
+            this, &ToolChainConfigWidget::dirty);
+    connect(m_abiWidget, &AbiWidget::abiChanged, this, &ToolChainConfigWidget::dirty);
+}
 
-    void setFromMsvcToolchain();
-
-    void updateAbis();
-    void handleVcVarsChange(const QString &vcVars);
-    void handleVcVarsArchChange(const QString &arch);
-
-    QString vcVarsArguments() const;
-
-    QComboBox *m_varsBatPathCombo;
-    QComboBox *m_varsBatArchCombo;
-    QLineEdit *m_varsBatArgumentsEdit;
-    AbiWidget *m_abiWidget;
-};
-
-void MsvcToolchainConfigWidget::applyImpl()
+void MsvcToolChainConfigWidget::applyImpl()
 {
-    auto *tc = static_cast<MsvcToolchain *>(toolchain());
+    auto *tc = static_cast<MsvcToolChain *>(toolChain());
     QTC_ASSERT(tc, return );
     const QString vcVars = QDir::fromNativeSeparators(m_varsBatPathCombo->currentText());
     tc->setupVarsBat(m_abiWidget->currentAbi(), vcVars, vcVarsArguments());
-    setFromMsvcToolchain();
+    setFromMsvcToolChain();
 }
 
-void MsvcToolchainConfigWidget::discardImpl()
+void MsvcToolChainConfigWidget::discardImpl()
 {
-    setFromMsvcToolchain();
+    setFromMsvcToolChain();
 }
 
-bool MsvcToolchainConfigWidget::isDirtyImpl() const
+bool MsvcToolChainConfigWidget::isDirtyImpl() const
 {
-    auto msvcToolchain = static_cast<MsvcToolchain *>(toolchain());
+    auto msvcToolChain = static_cast<MsvcToolChain *>(toolChain());
 
-    return msvcToolchain->varsBat() != QDir::fromNativeSeparators(m_varsBatPathCombo->currentText())
-            || msvcToolchain->varsBatArg() != vcVarsArguments()
-            || msvcToolchain->targetAbi() != m_abiWidget->currentAbi();
+    return msvcToolChain->varsBat() != QDir::fromNativeSeparators(m_varsBatPathCombo->currentText())
+            || msvcToolChain->varsBatArg() != vcVarsArguments()
+            || msvcToolChain->targetAbi() != m_abiWidget->currentAbi();
 }
 
-void MsvcToolchainConfigWidget::makeReadOnlyImpl()
+void MsvcToolChainConfigWidget::makeReadOnlyImpl()
 {
     m_varsBatPathCombo->setEnabled(false);
     m_varsBatArchCombo->setEnabled(false);
@@ -1394,9 +1389,9 @@ void MsvcToolchainConfigWidget::makeReadOnlyImpl()
     m_abiWidget->setEnabled(false);
 }
 
-void MsvcToolchainConfigWidget::setFromMsvcToolchain()
+void MsvcToolChainConfigWidget::setFromMsvcToolChain()
 {
-    const auto *tc = static_cast<const MsvcToolchain *>(toolchain());
+    const auto *tc = static_cast<const MsvcToolChain *>(toolChain());
     QTC_ASSERT(tc, return );
     m_nameDisplayLabel->setText(tc->displayName());
     QString args = tc->varsBatArg();
@@ -1414,12 +1409,12 @@ void MsvcToolchainConfigWidget::setFromMsvcToolchain()
     m_abiWidget->setAbis(tc->supportedAbis(), tc->targetAbi());
 }
 
-void MsvcToolchainConfigWidget::updateAbis()
+void MsvcToolChainConfigWidget::updateAbis()
 {
     const QString normalizedVcVars = QDir::fromNativeSeparators(m_varsBatPathCombo->currentText());
-    const auto *currentTc = static_cast<const MsvcToolchain *>(toolchain());
+    const auto *currentTc = static_cast<const MsvcToolChain *>(toolChain());
     QTC_ASSERT(currentTc, return );
-    const MsvcToolchain::Platform platform = m_varsBatArchCombo->currentData().value<MsvcToolchain::Platform>();
+    const MsvcToolChain::Platform platform = m_varsBatArchCombo->currentData().value<MsvcToolChain::Platform>();
     const Abi::Architecture arch = archForPlatform(platform);
     const unsigned char wordWidth = wordWidthForPlatform(platform);
 
@@ -1428,7 +1423,7 @@ void MsvcToolchainConfigWidget::updateAbis()
     // choose one appropriately.
     Abis supportedAbis;
     Abi targetAbi;
-    for (const MsvcToolchain *tc : std::as_const(g_availableMsvcToolchains)) {
+    for (const MsvcToolChain *tc : qAsConst(g_availableMsvcToolchains)) {
         if (tc->varsBat() == normalizedVcVars && tc->targetAbi().wordWidth() == wordWidth
             && tc->targetAbi().architecture() == arch && tc->language() == currentTc->language()) {
             // We need to filter out duplicates as there might be multiple toolchains with
@@ -1444,8 +1439,8 @@ void MsvcToolchainConfigWidget::updateAbis()
     // If we didn't find an exact match, try to find a fallback according to varsBat only.
     // This can happen when the toolchain does not support user-selected arch/wordWidth.
     if (!targetAbi.isValid()) {
-        const MsvcToolchain *tc = Utils::findOrDefault(g_availableMsvcToolchains,
-                                                       [normalizedVcVars](const MsvcToolchain *tc) {
+        const MsvcToolChain *tc = Utils::findOrDefault(g_availableMsvcToolchains,
+                                                       [normalizedVcVars](const MsvcToolChain *tc) {
                                                            return tc->varsBat() == normalizedVcVars;
                                                        });
         if (tc) {
@@ -1464,153 +1459,148 @@ void MsvcToolchainConfigWidget::updateAbis()
     emit dirty();
 }
 
-void MsvcToolchainConfigWidget::handleVcVarsChange(const QString &)
+void MsvcToolChainConfigWidget::handleVcVarsChange(const QString &)
 {
     updateAbis();
 }
 
-void MsvcToolchainConfigWidget::handleVcVarsArchChange(const QString &)
+void MsvcToolChainConfigWidget::handleVcVarsArchChange(const QString &)
 {
     // supportedAbi list in the widget only contains matching ABIs to whatever arch was selected.
     // We need to reupdate it from scratch with new arch parameters
     updateAbis();
 }
 
-QString MsvcToolchainConfigWidget::vcVarsArguments() const
+QString MsvcToolChainConfigWidget::vcVarsArguments() const
 {
     QString varsBatArg
-            = m_varsBatArchCombo->currentText() == Tr::tr("<empty>")
+            = m_varsBatArchCombo->currentText() == tr("<empty>")
             ? "" : m_varsBatArchCombo->currentText();
     if (!m_varsBatArgumentsEdit->text().isEmpty())
         varsBatArg += QLatin1Char(' ') + m_varsBatArgumentsEdit->text();
     return varsBatArg;
 }
 
-std::unique_ptr<ToolchainConfigWidget> MsvcToolchain::createConfigurationWidget()
-{
-    return std::make_unique<MsvcToolchainConfigWidget>(this);
-}
-
 // --------------------------------------------------------------------------
 // ClangClToolChainConfigWidget
 // --------------------------------------------------------------------------
 
-class ClangClToolchainConfigWidget final : public MsvcBasedToolchainConfigWidget
+ClangClToolChainConfigWidget::ClangClToolChainConfigWidget(ToolChain *tc) :
+    MsvcBasedToolChainConfigWidget(tc),
+    m_varsBatDisplayCombo(new QComboBox(this))
 {
-public:
-    explicit ClangClToolchainConfigWidget(Toolchain *tc)
-        : MsvcBasedToolchainConfigWidget(tc)
-        , m_varsBatDisplayCombo(new QComboBox(this))
-    {
-        m_mainLayout->removeRow(m_mainLayout->rowCount() - 1);
+    m_mainLayout->removeRow(m_mainLayout->rowCount() - 1);
 
-        m_varsBatDisplayCombo->setObjectName("varsBatCombo");
-        m_varsBatDisplayCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
-        m_mainLayout->addRow(Tr::tr("Initialization:"), m_varsBatDisplayCombo);
+    m_varsBatDisplayCombo->setObjectName("varsBatCombo");
+    m_varsBatDisplayCombo->setSizeAdjustPolicy(QComboBox::AdjustToContents);
+    m_mainLayout->addRow(tr("Initialization:"), m_varsBatDisplayCombo);
 
-        if (tc->isAutoDetected()) {
-            m_llvmDirLabel = new QLabel(this);
-            m_llvmDirLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
-            m_mainLayout->addRow(Tr::tr("&Compiler path:"), m_llvmDirLabel);
-        } else {
-            const QStringList gnuVersionArgs = QStringList("--version");
-            m_compilerCommand = new PathChooser(this);
-            m_compilerCommand->setExpectedKind(PathChooser::ExistingCommand);
-            m_compilerCommand->setCommandVersionArguments(gnuVersionArgs);
-            m_compilerCommand->setHistoryCompleter("PE.Clang.Command.History");
-            m_mainLayout->addRow(Tr::tr("&Compiler path:"), m_compilerCommand);
-        }
-        addErrorLabel();
-        setFromClangClToolchain();
-
-        if (m_compilerCommand) {
-            connect(m_compilerCommand,
-                    &Utils::PathChooser::rawPathChanged,
-                    this,
-                    &ClangClToolchainConfigWidget::dirty);
-        }
+    if (tc->isAutoDetected()) {
+        m_llvmDirLabel = new QLabel(this);
+        m_llvmDirLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+        m_mainLayout->addRow(tr("&Compiler path:"), m_llvmDirLabel);
+    } else {
+        const QStringList gnuVersionArgs = QStringList("--version");
+        m_compilerCommand = new Utils::PathChooser(this);
+        m_compilerCommand->setExpectedKind(Utils::PathChooser::ExistingCommand);
+        m_compilerCommand->setCommandVersionArguments(gnuVersionArgs);
+        m_compilerCommand->setHistoryCompleter("PE.Clang.Command.History");
+        m_mainLayout->addRow(tr("&Compiler path:"), m_compilerCommand);
     }
+    addErrorLabel();
+    setFromClangClToolChain();
 
-protected:
-    void applyImpl() final;
-    void discardImpl() final;
-    bool isDirtyImpl() const override { return false; }
-    void makeReadOnlyImpl() final;
+    if (m_compilerCommand) {
+        connect(m_compilerCommand,
+                &Utils::PathChooser::rawPathChanged,
+                this,
+                &ClangClToolChainConfigWidget::dirty);
+    }
+}
 
-private:
-    void setFromClangClToolchain();
-
-    QLabel *m_llvmDirLabel = nullptr;
-    QComboBox *m_varsBatDisplayCombo = nullptr;
-    PathChooser *m_compilerCommand = nullptr;
-};
-
-void ClangClToolchainConfigWidget::setFromClangClToolchain()
+void ClangClToolChainConfigWidget::setFromClangClToolChain()
 {
-    const auto *currentTC = static_cast<const MsvcToolchain *>(toolchain());
+    const auto *currentTC = static_cast<const MsvcToolChain *>(toolChain());
     m_nameDisplayLabel->setText(currentTC->displayName());
     m_varsBatDisplayCombo->clear();
     m_varsBatDisplayCombo->addItem(msvcVarsToDisplay(*currentTC));
-    for (const MsvcToolchain *tc : std::as_const(g_availableMsvcToolchains)) {
+    for (const MsvcToolChain *tc : qAsConst(g_availableMsvcToolchains)) {
         const QString varsToDisplay = msvcVarsToDisplay(*tc);
         if (m_varsBatDisplayCombo->findText(varsToDisplay) == -1)
             m_varsBatDisplayCombo->addItem(varsToDisplay);
     }
 
-    const auto *clangClToolchain = static_cast<const ClangClToolchain *>(toolchain());
-    if (clangClToolchain->isAutoDetected())
-        m_llvmDirLabel->setText(clangClToolchain->clangPath().toUserOutput());
+    const auto *clangClToolChain = static_cast<const ClangClToolChain *>(toolChain());
+    if (clangClToolChain->isAutoDetected())
+        m_llvmDirLabel->setText(clangClToolChain->clangPath().toUserOutput());
     else
-        m_compilerCommand->setFilePath(clangClToolchain->clangPath());
+        m_compilerCommand->setFilePath(clangClToolChain->clangPath());
 }
 
-class ClangClInfo
+static const MsvcToolChain *findMsvcToolChain(unsigned char wordWidth, Abi::OSFlavor flavor)
 {
-public:
-    FilePath filePath() const { return m_filePath; }
-    QVersionNumber version() const { return m_version; }
-    Abi defaultAbi() const { return m_defaultAbi; }
+    return Utils::findOrDefault(g_availableMsvcToolchains,
+                                [wordWidth, flavor](const MsvcToolChain *tc) {
+                                    const Abi abi = tc->targetAbi();
+                                    return abi.osFlavor() == flavor && wordWidth == abi.wordWidth();
+                                });
+}
 
-    static ClangClInfo getInfo(const FilePath &filePath);
-
-private:
-    FilePath m_filePath;
-    QVersionNumber m_version;
-    Abi m_defaultAbi;
-};
-
-static const MsvcToolchain *selectMsvcToolChain(const QString &displayedVarsBat,
-                                                const FilePath &clangClPath)
+static const MsvcToolChain *findMsvcToolChain(const QString &displayedVarsBat)
 {
+    return Utils::findOrDefault(g_availableMsvcToolchains,
+                                [&displayedVarsBat] (const MsvcToolChain *tc) {
+                                    return msvcVarsToDisplay(*tc) == displayedVarsBat;
+                                });
+}
+
+static QVersionNumber clangClVersion(const FilePath &clangClPath)
+{
+    QString error;
+    QString dllversion = winGetDLLVersion(Utils::WinDLLFileVersion, clangClPath.toString(), &error);
+
+    if (!dllversion.isEmpty())
+        return QVersionNumber::fromString(dllversion);
+
+    QtcProcess clangClProcess;
+    clangClProcess.setCommand({clangClPath, {"--version"}});
+    clangClProcess.runBlocking();
+    if (clangClProcess.result() != ProcessResult::FinishedWithSuccess)
+        return {};
+    const QRegularExpressionMatch match = QRegularExpression(
+                                              QStringLiteral("clang version (\\d+(\\.\\d+)+)"))
+                                              .match(clangClProcess.cleanedStdOut());
+    if (!match.hasMatch())
+        return {};
+    return QVersionNumber::fromString(match.captured(1));
+}
+
+static const MsvcToolChain *selectMsvcToolChain(const QString &displayedVarsBat,
+                                                const FilePath &clangClPath,
+                                                unsigned char wordWidth)
+{
+    const MsvcToolChain *toolChain = nullptr;
     if (!displayedVarsBat.isEmpty()) {
-        if (const auto tc = Utils::findOrDefault(g_availableMsvcToolchains,
-                                                 [&displayedVarsBat](const MsvcToolchain *tc) {
-                                                     return msvcVarsToDisplay(*tc)
-                                                            == displayedVarsBat;
-                                                 }))
-            return tc;
+        toolChain = findMsvcToolChain(displayedVarsBat);
+        if (toolChain)
+            return toolChain;
     }
 
     QTC_CHECK(displayedVarsBat.isEmpty());
-    const ClangClInfo clangClInfo = ClangClInfo::getInfo(clangClPath);
-    QList<Abi::OSFlavor> flavors;
-    if (clangClInfo.version().majorVersion() >= 6)
-        flavors << Abi::WindowsMsvc2022Flavor << Abi::WindowsMsvc2019Flavor
-                << Abi::WindowsMsvc2017Flavor;
-    flavors << Abi::WindowsMsvc2015Flavor << Abi::WindowsMsvc2013Flavor;
-    for (const Abi::OSFlavor flavor : flavors) {
-        if (const auto tc = Utils::findOrDefault(g_availableMsvcToolchains,
-                                                 [&clangClInfo, flavor](const MsvcToolchain *tc) {
-                                                     const Abi abi = tc->targetAbi();
-                                                     return abi.osFlavor() == flavor
-                                                            && abi.isCompatibleWith(
-                                                                clangClInfo.defaultAbi())
-                                                            && tc->hostPrefersToolchain();
-                                                 })) {
-            return tc;
-        }
+    const QVersionNumber version = clangClVersion(clangClPath);
+    if (version.majorVersion() >= 6) {
+        toolChain = findMsvcToolChain(wordWidth, Abi::WindowsMsvc2022Flavor);
+        if (!toolChain)
+            toolChain = findMsvcToolChain(wordWidth, Abi::WindowsMsvc2019Flavor);
+        if (!toolChain)
+            toolChain = findMsvcToolChain(wordWidth, Abi::WindowsMsvc2017Flavor);
     }
-    return nullptr;
+    if (!toolChain) {
+        toolChain = findMsvcToolChain(wordWidth, Abi::WindowsMsvc2015Flavor);
+        if (!toolChain)
+            toolChain = findMsvcToolChain(wordWidth, Abi::WindowsMsvc2013Flavor);
+    }
+    return toolChain;
 }
 
 static Toolchains detectClangClToolChainInPath(const FilePath &clangClPath,
@@ -1619,7 +1609,8 @@ static Toolchains detectClangClToolChainInPath(const FilePath &clangClPath,
                                                bool isDefault = false)
 {
     Toolchains res;
-    const MsvcToolchain *toolChain = selectMsvcToolChain(displayedVarsBat, clangClPath);
+    const unsigned char wordWidth = Utils::is64BitWindowsBinary(clangClPath) ? 64 : 32;
+    const MsvcToolChain *toolChain = selectMsvcToolChain(displayedVarsBat, clangClPath, wordWidth);
 
     if (!toolChain) {
         qWarning("Unable to find a suitable MSVC version for \"%s\".",
@@ -1627,29 +1618,31 @@ static Toolchains detectClangClToolChainInPath(const FilePath &clangClPath,
         return res;
     }
 
+    Utils::Environment systemEnvironment = Utils::Environment::systemEnvironment();
     const Abi targetAbi = toolChain->targetAbi();
     const QString name = QString("%1LLVM %2 bit based on %3")
                              .arg(QLatin1String(isDefault ? "Default " : ""))
-                             .arg(targetAbi.wordWidth())
+                             .arg(wordWidth)
                              .arg(Abi::toString(targetAbi.osFlavor()).toUpper());
     for (auto language : {Constants::C_LANGUAGE_ID, Constants::CXX_LANGUAGE_ID}) {
-        ClangClToolchain *tc = static_cast<ClangClToolchain *>(
-            Utils::findOrDefault(alreadyKnown, [&](Toolchain *tc) -> bool {
+        ClangClToolChain *tc = static_cast<ClangClToolChain *>(
+            Utils::findOrDefault(alreadyKnown, [&](ToolChain *tc) -> bool {
                 if (tc->typeId() != Constants::CLANG_CL_TOOLCHAIN_TYPEID)
                     return false;
                 if (tc->targetAbi() != targetAbi)
                     return false;
                 if (tc->language() != language)
                     return false;
-                return tc->compilerCommand().isSameExecutable(clangClPath);
+                return systemEnvironment.isSameExecutable(tc->compilerCommand().toString(),
+                                                          clangClPath.toString());
             }));
         if (tc) {
             res << tc;
         } else {
-            auto cltc = new ClangClToolchain;
+            auto cltc = new ClangClToolChain;
             cltc->setClangPath(clangClPath);
             cltc->setDisplayName(name);
-            cltc->setDetection(Toolchain::AutoDetection);
+            cltc->setDetection(ToolChain::AutoDetection);
             cltc->setLanguage(language);
             cltc->setupVarsBat(toolChain->targetAbi(), toolChain->varsBat(), toolChain->varsBatArg());
             res << cltc;
@@ -1658,15 +1651,15 @@ static Toolchains detectClangClToolChainInPath(const FilePath &clangClPath,
     return res;
 }
 
-void ClangClToolchainConfigWidget::applyImpl()
+void ClangClToolChainConfigWidget::applyImpl()
 {
     Utils::FilePath clangClPath = m_compilerCommand->filePath();
-    auto clangClToolchain = static_cast<ClangClToolchain *>(toolchain());
-    clangClToolchain->setClangPath(clangClPath);
+    auto clangClToolChain = static_cast<ClangClToolChain *>(toolChain());
+    clangClToolChain->setClangPath(clangClPath);
 
     if (clangClPath.fileName() != "clang-cl.exe") {
-        clangClToolchain->resetVarsBat();
-        setFromClangClToolchain();
+        clangClToolChain->resetVarsBat();
+        setFromClangClToolChain();
         return;
     }
 
@@ -1674,27 +1667,27 @@ void ClangClToolchainConfigWidget::applyImpl()
     Toolchains results = detectClangClToolChainInPath(clangClPath, {}, displayedVarsBat);
 
     if (results.isEmpty()) {
-        clangClToolchain->resetVarsBat();
+        clangClToolChain->resetVarsBat();
     } else {
-        for (const Toolchain *toolchain : results) {
-            if (toolchain->language() == clangClToolchain->language()) {
-                auto mstc = static_cast<const MsvcToolchain *>(toolchain);
-                clangClToolchain->setupVarsBat(mstc->targetAbi(), mstc->varsBat(), mstc->varsBatArg());
+        for (const ToolChain *toolchain : results) {
+            if (toolchain->language() == clangClToolChain->language()) {
+                auto mstc = static_cast<const MsvcToolChain *>(toolchain);
+                clangClToolChain->setupVarsBat(mstc->targetAbi(), mstc->varsBat(), mstc->varsBatArg());
                 break;
             }
         }
 
         qDeleteAll(results);
     }
-    setFromClangClToolchain();
+    setFromClangClToolChain();
 }
 
-void ClangClToolchainConfigWidget::discardImpl()
+void ClangClToolChainConfigWidget::discardImpl()
 {
-    setFromClangClToolchain();
+    setFromClangClToolChain();
 }
 
-void ClangClToolchainConfigWidget::makeReadOnlyImpl()
+void ClangClToolChainConfigWidget::makeReadOnlyImpl()
 {
     m_varsBatDisplayCombo->setEnabled(false);
 }
@@ -1704,96 +1697,98 @@ void ClangClToolchainConfigWidget::makeReadOnlyImpl()
 // clang-cl.exe as a [to some extent] compatible drop-in replacement for cl.
 // --------------------------------------------------------------------------
 
-ClangClToolchain::ClangClToolchain()
-    : MsvcToolchain(Constants::CLANG_CL_TOOLCHAIN_TYPEID)
+ClangClToolChain::ClangClToolChain()
+    : MsvcToolChain(Constants::CLANG_CL_TOOLCHAIN_TYPEID)
 {
     setDisplayName("clang-cl");
-    setTypeDisplayName(Tr::tr("Clang"));
+    setTypeDisplayName(QCoreApplication::translate("ProjectExplorer::ClangToolChainFactory", "Clang"));
 }
 
-bool ClangClToolchain::isValid() const
+bool ClangClToolChain::isValid() const
 {
     const FilePath clang = clangPath();
-    return MsvcToolchain::isValid() && clang.exists() && clang.fileName() == "clang-cl.exe";
+    return MsvcToolChain::isValid() && clang.exists() && clang.fileName() == "clang-cl.exe";
 }
 
-void ClangClToolchain::addToEnvironment(Utils::Environment &env) const
+void ClangClToolChain::addToEnvironment(Utils::Environment &env) const
 {
-    MsvcToolchain::addToEnvironment(env);
+    MsvcToolChain::addToEnvironment(env);
     env.prependOrSetPath(m_clangPath.parentDir()); // bin folder
 }
 
-Utils::FilePath ClangClToolchain::compilerCommand() const
+Utils::FilePath ClangClToolChain::compilerCommand() const
 {
     return m_clangPath;
 }
 
-QStringList ClangClToolchain::suggestedMkspecList() const
+QStringList ClangClToolChain::suggestedMkspecList() const
 {
     const QString mkspec = "win32-clang-" + Abi::toString(targetAbi().osFlavor());
     return {mkspec, "win32-clang-msvc"};
 }
 
-QList<OutputLineParser *> ClangClToolchain::createOutputParsers() const
+QList<OutputLineParser *> ClangClToolChain::createOutputParsers() const
 {
     return {new ClangClParser};
 }
 
-static Key llvmDirKey()
+static inline QString llvmDirKey()
 {
-    return "ProjectExplorer.ClangClToolChain.LlvmDir";
+    return QStringLiteral("ProjectExplorer.ClangClToolChain.LlvmDir");
 }
 
-void ClangClToolchain::toMap(Store &data) const
+QVariantMap ClangClToolChain::toMap() const
 {
-    MsvcToolchain::toMap(data);
-    data.insert(llvmDirKey(), m_clangPath.toString());
+    QVariantMap result = MsvcToolChain::toMap();
+    result.insert(llvmDirKey(), m_clangPath.toString());
+    return result;
 }
 
-void ClangClToolchain::fromMap(const Store &data)
+bool ClangClToolChain::fromMap(const QVariantMap &data)
 {
-    MsvcToolchain::fromMap(data);
-    if (hasError())
-        return;
-
+    if (!MsvcToolChain::fromMap(data))
+        return false;
     const QString clangPath = data.value(llvmDirKey()).toString();
-    if (clangPath.isEmpty()) {
-        reportError();
-        return;
-    }
-
+    if (clangPath.isEmpty())
+        return false;
     m_clangPath = FilePath::fromString(clangPath);
+
+    return true;
 }
 
-std::unique_ptr<ToolchainConfigWidget> ClangClToolchain::createConfigurationWidget()
+std::unique_ptr<ToolChainConfigWidget> ClangClToolChain::createConfigurationWidget()
 {
-    return std::make_unique<ClangClToolchainConfigWidget>(this);
+    return std::make_unique<ClangClToolChainConfigWidget>(this);
 }
 
-bool ClangClToolchain::operator==(const Toolchain &other) const
+bool ClangClToolChain::operator==(const ToolChain &other) const
 {
-    if (!MsvcToolchain::operator==(other))
+    if (!MsvcToolChain::operator==(other))
         return false;
 
-    const auto *clangClTc = static_cast<const ClangClToolchain *>(&other);
+    const auto *clangClTc = static_cast<const ClangClToolChain *>(&other);
     return m_clangPath == clangClTc->m_clangPath;
 }
 
-int ClangClToolchain::priority() const
+int ClangClToolChain::priority() const
 {
-    return MsvcToolchain::priority() - 1;
+    return MsvcToolChain::priority() - 1;
 }
 
-Macros ClangClToolchain::msvcPredefinedMacros(const QStringList &cxxflags,
+Macros ClangClToolChain::msvcPredefinedMacros(const QStringList &cxxflags,
                                               const Utils::Environment &env) const
 {
     if (!cxxflags.contains("--driver-mode=g++"))
-        return MsvcToolchain::msvcPredefinedMacros(cxxflags, env);
+        return MsvcToolChain::msvcPredefinedMacros(cxxflags, env);
 
-    Process cpp;
+    QtcProcess cpp;
     cpp.setEnvironment(env);
     cpp.setWorkingDirectory(Utils::TemporaryDirectory::masterDirectoryFilePath());
-    cpp.setCommand({compilerCommand(), {cxxflags, gccPredefinedMacrosOptions(language()), "-"}});
+
+    QStringList arguments = cxxflags;
+    arguments.append(gccPredefinedMacrosOptions(language()));
+    arguments.append("-");
+    cpp.setCommand({compilerCommand(), arguments});
     cpp.runBlocking();
     if (cpp.result() != ProcessResult::FinishedWithSuccess) {
         // Show the warning but still parse the output.
@@ -1803,16 +1798,16 @@ Macros ClangClToolchain::msvcPredefinedMacros(const QStringList &cxxflags,
     return Macro::toMacros(cpp.allRawOutput());
 }
 
-LanguageVersion ClangClToolchain::msvcLanguageVersion(const QStringList &cxxflags,
-                                                      const Id &language,
-                                                      const Macros &macros) const
+Utils::LanguageVersion ClangClToolChain::msvcLanguageVersion(const QStringList &cxxflags,
+                                                             const Utils::Id &language,
+                                                             const Macros &macros) const
 {
     if (cxxflags.contains("--driver-mode=g++"))
-        return Toolchain::languageVersion(language, macros);
-    return MsvcToolchain::msvcLanguageVersion(cxxflags, language, macros);
+        return ToolChain::languageVersion(language, macros);
+    return MsvcToolChain::msvcLanguageVersion(cxxflags, language, macros);
 }
 
-ClangClToolchain::BuiltInHeaderPathsRunner ClangClToolchain::createBuiltInHeaderPathsRunner(
+ClangClToolChain::BuiltInHeaderPathsRunner ClangClToolChain::createBuiltInHeaderPathsRunner(
         const Environment &env) const
 {
     {
@@ -1820,35 +1815,23 @@ ClangClToolchain::BuiltInHeaderPathsRunner ClangClToolchain::createBuiltInHeader
         m_headerPathsPerEnv.clear();
     }
 
-    return MsvcToolchain::createBuiltInHeaderPathsRunner(env);
+    return MsvcToolChain::createBuiltInHeaderPathsRunner(env);
 }
 
 // --------------------------------------------------------------------------
-// MsvcToolchainFactory
+// MsvcToolChainFactory
 // --------------------------------------------------------------------------
 
-class MsvcToolchainFactory : public ToolchainFactory
+MsvcToolChainFactory::MsvcToolChainFactory()
 {
-public:
-    MsvcToolchainFactory()
-    {
-        setDisplayName(Tr::tr("MSVC"));
-        setSupportedToolchainType(Constants::MSVC_TOOLCHAIN_TYPEID);
-        setSupportedLanguages({Constants::C_LANGUAGE_ID, Constants::CXX_LANGUAGE_ID});
-        setToolchainConstructor([] { return new MsvcToolchain(Constants::MSVC_TOOLCHAIN_TYPEID); });
-    }
+    setDisplayName(MsvcToolChain::tr("MSVC"));
+    setSupportedToolChainType(Constants::MSVC_TOOLCHAIN_TYPEID);
+    setSupportedLanguages({Constants::C_LANGUAGE_ID, Constants::CXX_LANGUAGE_ID});
+    setToolchainConstructor([] { return new MsvcToolChain(Constants::MSVC_TOOLCHAIN_TYPEID); });
+}
 
-    Toolchains autoDetect(const ToolchainDetector &detector) const final;
-
-    bool canCreate() const final { return !g_availableMsvcToolchains.isEmpty(); }
-
-    static QString vcVarsBatFor(const QString &basePath,
-                                MsvcToolchain::Platform platform,
-                                const QVersionNumber &v);
-};
-
-QString MsvcToolchainFactory::vcVarsBatFor(const QString &basePath,
-                                           MsvcToolchain::Platform platform,
+QString MsvcToolChainFactory::vcVarsBatFor(const QString &basePath,
+                                           MsvcToolChain::Platform platform,
                                            const QVersionNumber &v)
 {
     QString result;
@@ -1871,20 +1854,20 @@ static Toolchains findOrCreateToolchains(const ToolchainDetector &detector,
 {
     Toolchains res;
     for (auto language : {Constants::C_LANGUAGE_ID, Constants::CXX_LANGUAGE_ID}) {
-        Toolchain *tc = Utils::findOrDefault(detector.alreadyKnown, [&](Toolchain *tc) -> bool {
+        ToolChain *tc = Utils::findOrDefault(detector.alreadyKnown, [&](ToolChain *tc) -> bool {
             if (tc->typeId() != Constants::MSVC_TOOLCHAIN_TYPEID)
                 return false;
             if (tc->targetAbi() != abi)
                 return false;
             if (tc->language() != language)
                 return false;
-            auto mtc = static_cast<MsvcToolchain *>(tc);
+            auto mtc = static_cast<MsvcToolChain *>(tc);
             return mtc->varsBat() == varsBat && mtc->varsBatArg() == varsBatArg;
         });
         if (tc) {
             res << tc;
         } else {
-            auto mstc = new MsvcToolchain(Constants::MSVC_TOOLCHAIN_TYPEID);
+            auto mstc = new MsvcToolChain(Constants::MSVC_TOOLCHAIN_TYPEID);
             mstc->setupVarsBat(abi, varsBat, varsBatArg);
             mstc->setDisplayName(name);
             mstc->setLanguage(language);
@@ -1924,19 +1907,19 @@ static void detectCppBuildTools2015(Toolchains *list)
                       e.format,
                       e.wordSize);
         for (auto language : {Constants::C_LANGUAGE_ID, Constants::CXX_LANGUAGE_ID}) {
-            auto tc = new MsvcToolchain(Constants::MSVC_TOOLCHAIN_TYPEID);
+            auto tc = new MsvcToolChain(Constants::MSVC_TOOLCHAIN_TYPEID);
             tc->setupVarsBat(abi, vcVarsBat, QLatin1String(e.varsBatArg));
             tc->setDisplayName(name + QLatin1String(e.postFix));
-            tc->setDetection(Toolchain::AutoDetection);
+            tc->setDetection(ToolChain::AutoDetection);
             tc->setLanguage(language);
             list->append(tc);
         }
     }
 }
 
-Toolchains MsvcToolchainFactory::autoDetect(const ToolchainDetector &detector) const
+Toolchains MsvcToolChainFactory::autoDetect(const ToolchainDetector &detector) const
 {
-    if (detector.device->type() != ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE) {
+    if (!detector.device.isNull()) {
         // FIXME currently no support for msvc toolchains on a device
         return {};
     }
@@ -1966,19 +1949,19 @@ Toolchains MsvcToolchainFactory::autoDetect(const ToolchainDetector &detector) c
             if (!fi.exists())
                 continue;
 
-            QList<Toolchain *> tmp;
-            const QVector<QPair<MsvcToolchain::Platform, QString>> platforms = {
-                {MsvcToolchain::x86, "x86"},
-                {MsvcToolchain::amd64, "x64"},
-                {MsvcToolchain::ia64, "ia64"},
-                {MsvcToolchain::arm64, "arm64"},
+            QList<ToolChain *> tmp;
+            const QVector<QPair<MsvcToolChain::Platform, QString>> platforms = {
+                {MsvcToolChain::x86, "x86"},
+                {MsvcToolChain::amd64, "x64"},
+                {MsvcToolChain::ia64, "ia64"},
+                {MsvcToolChain::arm64, "arm64"},
             };
             for (const auto &platform : platforms) {
                 tmp.append(findOrCreateToolchains(detector,
                                                   generateDisplayName(name,
-                                                                      MsvcToolchain::WindowsSDK,
+                                                                      MsvcToolChain::WindowsSDK,
                                                                       platform.first),
-                                                  findAbiOfMsvc(MsvcToolchain::WindowsSDK,
+                                                  findAbiOfMsvc(MsvcToolChain::WindowsSDK,
                                                                 platform.first,
                                                                 sdkKey),
                                                   fi.absoluteFilePath(),
@@ -1997,31 +1980,31 @@ Toolchains MsvcToolchainFactory::autoDetect(const ToolchainDetector &detector) c
     // x86_arm was put before amd64_arm as a workaround for auto detected windows phone
     // toolchains. As soon as windows phone builds support x64 cross builds, this change
     // can be reverted.
-    const MsvcToolchain::Platform platforms[] = {MsvcToolchain::x86,
-                                                 MsvcToolchain::amd64_x86,
-                                                 MsvcToolchain::amd64,
-                                                 MsvcToolchain::x86_amd64,
-                                                 MsvcToolchain::arm,
-                                                 MsvcToolchain::x86_arm,
-                                                 MsvcToolchain::amd64_arm,
-                                                 MsvcToolchain::x86_arm64,
-                                                 MsvcToolchain::amd64_arm64,
-                                                 MsvcToolchain::ia64,
-                                                 MsvcToolchain::x86_ia64,
-                                                 MsvcToolchain::arm64,
-                                                 MsvcToolchain::arm64_x86,
-                                                 MsvcToolchain::arm64_amd64};
+    const MsvcToolChain::Platform platforms[] = {MsvcToolChain::x86,
+                                                 MsvcToolChain::amd64_x86,
+                                                 MsvcToolChain::amd64,
+                                                 MsvcToolChain::x86_amd64,
+                                                 MsvcToolChain::arm,
+                                                 MsvcToolChain::x86_arm,
+                                                 MsvcToolChain::amd64_arm,
+                                                 MsvcToolChain::x86_arm64,
+                                                 MsvcToolChain::amd64_arm64,
+                                                 MsvcToolChain::ia64,
+                                                 MsvcToolChain::x86_ia64,
+                                                 MsvcToolChain::arm64,
+                                                 MsvcToolChain::arm64_x86,
+                                                 MsvcToolChain::arm64_amd64};
 
     const QVector<VisualStudioInstallation> studios = detectVisualStudio();
     for (const VisualStudioInstallation &i : studios) {
-        for (MsvcToolchain::Platform platform : platforms) {
+        for (MsvcToolChain::Platform platform : platforms) {
             const bool toolchainInstalled
                 = QFileInfo(vcVarsBatFor(i.vcVarsPath, platform, i.version)).isFile();
             if (hostSupportsPlatform(platform) && toolchainInstalled) {
                 results.append(
                     findOrCreateToolchains(detector,
-                                           generateDisplayName(i.vsName, MsvcToolchain::VS, platform),
-                                           findAbiOfMsvc(MsvcToolchain::VS, platform, i.vsName),
+                                           generateDisplayName(i.vsName, MsvcToolChain::VS, platform),
+                                           findAbiOfMsvc(MsvcToolChain::VS, platform, i.vsName),
                                            i.vcVarsAll,
                                            platformName(platform)));
             }
@@ -2030,192 +2013,28 @@ Toolchains MsvcToolchainFactory::autoDetect(const ToolchainDetector &detector) c
 
     detectCppBuildTools2015(&results);
 
-    for (Toolchain *tc : std::as_const(results))
-        tc->setDetection(Toolchain::AutoDetection);
+    for (ToolChain *tc : qAsConst(results))
+        tc->setDetection(ToolChain::AutoDetection);
 
     return results;
 }
 
-bool MsvcToolchain::operator==(const Toolchain &other) const
+ClangClToolChainFactory::ClangClToolChainFactory()
 {
-    if (!Toolchain::operator==(other))
-        return false;
-
-    const auto *msvcTc = dynamic_cast<const MsvcToolchain *>(&other);
-    return targetAbi() == msvcTc->targetAbi() && m_vcvarsBat == msvcTc->m_vcvarsBat
-           && m_varsBatArg == msvcTc->m_varsBatArg;
+    setDisplayName(ClangClToolChain::tr("clang-cl"));
+    setSupportedLanguages({Constants::C_LANGUAGE_ID, Constants::CXX_LANGUAGE_ID});
+    setSupportedToolChainType(Constants::CLANG_CL_TOOLCHAIN_TYPEID);
+    setToolchainConstructor([] { return new ClangClToolChain; });
 }
 
-int MsvcToolchain::priority() const
+bool ClangClToolChainFactory::canCreate() const
 {
-    return hostPrefersToolchain() ? PriorityHigh : PriorityNormal;
+    return !g_availableMsvcToolchains.isEmpty();
 }
 
-void MsvcToolchain::cancelMsvcToolChainDetection()
+Toolchains ClangClToolChainFactory::autoDetect(const ToolchainDetector &detector) const
 {
-    envModThreadPool()->clear();
-}
-
-std::optional<QString> MsvcToolchain::generateEnvironmentSettings(const Utils::Environment &env,
-                                                                    const QString &batchFile,
-                                                                    const QString &batchArgs,
-                                                                    QMap<QString, QString> &envPairs)
-{
-    const QString marker = "####################";
-    // Create a temporary file name for the output. Use a temporary file here
-    // as I don't know another way to do this in Qt...
-
-    // Create a batch file to create and save the env settings
-    Utils::TempFileSaver saver(Utils::TemporaryDirectory::masterDirectoryPath() + "/XXXXXX.bat");
-
-    QByteArray call = "call ";
-    call += ProcessArgs::quoteArg(batchFile).toLocal8Bit();
-    if (!batchArgs.isEmpty()) {
-        call += ' ';
-        call += batchArgs.toLocal8Bit();
-    }
-
-    if (Utils::HostOsInfo::isWindowsHost())
-        saver.write("chcp 65001\r\n");
-    saver.write("set VSCMD_SKIP_SENDTELEMETRY=1\r\n");
-    saver.write("set CLINK_NOAUTORUN=1\r\n");
-    saver.write("setlocal enableextensions\r\n");
-    saver.write("if defined VCINSTALLDIR (\r\n");
-    saver.write("  if not defined QTC_NO_MSVC_CLEAN_ENV (\r\n");
-    saver.write("    call \"%VCINSTALLDIR%/Auxiliary/Build/vcvarsall.bat\" /clean_env\r\n");
-    saver.write("  )\r\n");
-    saver.write(")\r\n");
-    saver.write(call + "\r\n");
-    saver.write("@echo " + marker.toLocal8Bit() + "\r\n");
-    saver.write("set\r\n");
-    saver.write("@echo " + marker.toLocal8Bit() + "\r\n");
-    if (!saver.finalize()) {
-        qWarning("%s: %s", Q_FUNC_INFO, qPrintable(saver.errorString()));
-        return {};
-    }
-
-    Utils::Process run;
-
-    // As of WinSDK 7.1, there is logic preventing the path from being set
-    // correctly if "ORIGINALPATH" is already set. That can cause problems
-    // if Creator is launched within a session set up by setenv.cmd.
-    Utils::Environment runEnv = env;
-    runEnv.unset(QLatin1String("ORIGINALPATH"));
-    run.setEnvironment(runEnv);
-    Utils::FilePath cmdPath = Utils::FilePath::fromUserInput(qtcEnvironmentVariable("COMSPEC"));
-    if (cmdPath.isEmpty())
-        cmdPath = env.searchInPath(QLatin1String("cmd.exe"));
-    // Windows SDK setup scripts require command line switches for environment expansion.
-    CommandLine cmd(cmdPath, {"/D", "/E:ON", "/V:ON", "/c", saver.filePath().toUserOutput()});
-    qCDebug(Log) << "readEnvironmentSetting: " << call << cmd.toUserOutput()
-                 << " Env: " << runEnv.toStringList().size();
-    run.setCodec(QTextCodec::codecForName("UTF-8"));
-    run.setCommand(cmd);
-    run.runBlocking(1min);
-
-    if (run.result() != ProcessResult::FinishedWithSuccess) {
-        const QString message = !run.cleanedStdErr().isEmpty() ? run.cleanedStdErr() : run.exitMessage();
-        qWarning().noquote() << message;
-        QString command = QDir::toNativeSeparators(batchFile);
-        if (!batchArgs.isEmpty())
-            command += ' ' + batchArgs;
-        return Tr::tr("Failed to retrieve MSVC Environment from \"%1\":\n%2")
-            .arg(command, message);
-    }
-
-    // The SDK/MSVC scripts do not return exit codes != 0. Check on stdout.
-    const QString stdOut = run.cleanedStdOut();
-
-    //
-    // Now parse the file to get the environment settings
-    const int start = stdOut.indexOf(marker);
-    if (start == -1) {
-        qWarning("Could not find start marker in stdout output.");
-        return {};
-    }
-
-    const int end = stdOut.indexOf(marker, start + 1);
-    if (end == -1) {
-        qWarning("Could not find end marker in stdout output.");
-        return {};
-    }
-
-    const QString output = stdOut.mid(start, end - start);
-
-    const QStringList lines = output.split(QLatin1String("\n"));
-    for (const QString &line : lines) {
-        const int pos = line.indexOf('=');
-        if (pos > 0) {
-            const QString varName = line.mid(0, pos);
-            const QString varValue = line.mid(pos + 1);
-            envPairs.insert(varName, varValue);
-        }
-    }
-
-    return std::nullopt;
-}
-
-MsvcToolchain::WarningFlagAdder::WarningFlagAdder(const QString &flag, WarningFlags &flags)
-    : m_flags(flags)
-{
-    if (flag.startsWith(QLatin1String("-wd"))) {
-        m_doesEnable = false;
-    } else if (flag.startsWith(QLatin1String("-w"))) {
-        m_doesEnable = true;
-    } else {
-        m_triggered = true;
-        return;
-    }
-    bool ok = false;
-    if (m_doesEnable)
-        m_warningCode = flag.mid(2).toInt(&ok);
-    else
-        m_warningCode = flag.mid(3).toInt(&ok);
-    if (!ok)
-        m_triggered = true;
-}
-
-void MsvcToolchain::WarningFlagAdder::operator()(int warningCode, WarningFlags flagsSet)
-{
-    if (m_triggered)
-        return;
-    if (warningCode == m_warningCode) {
-        m_triggered = true;
-        if (m_doesEnable)
-            m_flags |= flagsSet;
-        else
-            m_flags &= ~flagsSet;
-    }
-}
-
-bool MsvcToolchain::WarningFlagAdder::triggered() const
-{
-    return m_triggered;
-}
-
-// --------------------------------------------------------------------------
-// ClangClToolchainFactory
-// --------------------------------------------------------------------------
-
-class ClangClToolchainFactory : public ToolchainFactory
-{
-public:
-    ClangClToolchainFactory()
-    {
-        setDisplayName(Tr::tr("clang-cl"));
-        setSupportedLanguages({Constants::C_LANGUAGE_ID, Constants::CXX_LANGUAGE_ID});
-        setSupportedToolchainType(Constants::CLANG_CL_TOOLCHAIN_TYPEID);
-        setToolchainConstructor([] { return new ClangClToolchain; });
-    }
-
-    Toolchains autoDetect(const ToolchainDetector &detector) const final;
-
-    bool canCreate() const final { return !g_availableMsvcToolchains.isEmpty(); }
-};
-
-Toolchains ClangClToolchainFactory::autoDetect(const ToolchainDetector &detector) const
-{
-    if (detector.device->type() != ProjectExplorer::Constants::DESKTOP_DEVICE_TYPE) {
+    if (!detector.device.isNull()) {
         // FIXME currently no support for msvc toolchains on a device
         return {};
     }
@@ -2246,62 +2065,173 @@ Toolchains ClangClToolchainFactory::autoDetect(const ToolchainDetector &detector
         }
     }
 
-    const Environment systemEnvironment = Environment::systemEnvironment();
-    const FilePath clangClPath = systemEnvironment.searchInPath("clang-cl.exe");
+    const Utils::Environment systemEnvironment = Utils::Environment::systemEnvironment();
+    const Utils::FilePath clangClPath = systemEnvironment.searchInPath("clang-cl");
     if (!clangClPath.isEmpty())
         results.append(detectClangClToolChainInPath(clangClPath, known, ""));
 
     return results;
 }
 
-void setupMsvcToolchain()
+bool MsvcToolChain::operator==(const ToolChain &other) const
 {
-#ifdef Q_OS_WIN
-    static MsvcToolchainFactory theMsvcToolChainFactory;
-#endif
+    if (!ToolChain::operator==(other))
+        return false;
+
+    const auto *msvcTc = dynamic_cast<const MsvcToolChain *>(&other);
+    return targetAbi() == msvcTc->targetAbi() && m_vcvarsBat == msvcTc->m_vcvarsBat
+           && m_varsBatArg == msvcTc->m_varsBatArg;
 }
 
-void setupClangClToolchain()
+int MsvcToolChain::priority() const
 {
-#ifdef Q_OS_WIN
-    static ClangClToolchainFactory theClangClToolchainFactory;
-#endif
+    return hostPrefersToolchain() ? PriorityHigh : PriorityNormal;
 }
 
-ClangClInfo ClangClInfo::getInfo(const FilePath &filePath)
+void MsvcToolChain::cancelMsvcToolChainDetection()
 {
-    QTC_ASSERT(!filePath.isEmpty(), return {});
+    envModThreadPool()->clear();
+}
 
-    static const auto parser = [](const QString &stdOut) {
-        ClangClInfo info;
-        const QRegularExpressionMatch versionMatch
-            = QRegularExpression("clang version (\\d+(\\.\\d+)+)").match(stdOut);
-        if (versionMatch.hasMatch())
-            info.m_version = QVersionNumber::fromString(versionMatch.captured(1));
-        const QString targetKey = "Target:";
-        int startOffset = stdOut.indexOf(targetKey);
-        if (startOffset != -1) {
-            startOffset += targetKey.length();
-            const int endOffset = stdOut.indexOf('\n', startOffset);
-            if (endOffset != -1) {
-                const Abi detectedAbi = Abi::abiFromTargetTriplet(
-                    stdOut.mid(startOffset, endOffset - startOffset).trimmed());
+Utils::optional<QString> MsvcToolChain::generateEnvironmentSettings(const Utils::Environment &env,
+                                                                    const QString &batchFile,
+                                                                    const QString &batchArgs,
+                                                                    QMap<QString, QString> &envPairs)
+{
+    const QString marker = "####################";
+    // Create a temporary file name for the output. Use a temporary file here
+    // as I don't know another way to do this in Qt...
 
-                // Abi::fromTargetTriple() always detects clang triples as msys,
-                // but here in clang-cl context we know that's wrong.
-                info.m_defaultAbi = Abi(detectedAbi.architecture(),
-                                        detectedAbi.os(),
-                                        Abi::UnknownFlavor,
-                                        detectedAbi.binaryFormat(),
-                                        detectedAbi.wordWidth());
-            }
+    // Create a batch file to create and save the env settings
+    Utils::TempFileSaver saver(Utils::TemporaryDirectory::masterDirectoryPath() + "/XXXXXX.bat");
+
+    QByteArray call = "call ";
+    call += ProcessArgs::quoteArg(batchFile).toLocal8Bit();
+    if (!batchArgs.isEmpty()) {
+        call += ' ';
+        call += batchArgs.toLocal8Bit();
+    }
+    if (Utils::HostOsInfo::isWindowsHost())
+        saver.write("chcp 65001\r\n");
+    saver.write("set VSCMD_SKIP_SENDTELEMETRY=1\r\n");
+    saver.write(call + "\r\n");
+    saver.write("@echo " + marker.toLocal8Bit() + "\r\n");
+    saver.write("set\r\n");
+    saver.write("@echo " + marker.toLocal8Bit() + "\r\n");
+    if (!saver.finalize()) {
+        qWarning("%s: %s", Q_FUNC_INFO, qPrintable(saver.errorString()));
+        return QString();
+    }
+
+    Utils::QtcProcess run;
+
+    // As of WinSDK 7.1, there is logic preventing the path from being set
+    // correctly if "ORIGINALPATH" is already set. That can cause problems
+    // if Creator is launched within a session set up by setenv.cmd.
+    Utils::Environment runEnv = env;
+    runEnv.unset(QLatin1String("ORIGINALPATH"));
+    run.setEnvironment(runEnv);
+    run.setTimeoutS(60);
+    Utils::FilePath cmdPath = Utils::FilePath::fromUserInput(
+        QString::fromLocal8Bit(qgetenv("COMSPEC")));
+    if (cmdPath.isEmpty())
+        cmdPath = env.searchInPath(QLatin1String("cmd.exe"));
+    // Windows SDK setup scripts require command line switches for environment expansion.
+    CommandLine cmd(cmdPath, {"/E:ON", "/V:ON", "/c", saver.filePath().toUserOutput()});
+    qCDebug(Log) << "readEnvironmentSetting: " << call << cmd.toUserOutput()
+                 << " Env: " << runEnv.toStringList().size();
+    run.setCodec(QTextCodec::codecForName("UTF-8"));
+    run.setCommand(cmd);
+    run.runBlocking();
+
+    if (run.result() != ProcessResult::FinishedWithSuccess) {
+        const QString message = !run.cleanedStdErr().isEmpty() ? run.cleanedStdErr() : run.exitMessage();
+        qWarning().noquote() << message;
+        QString command = QDir::toNativeSeparators(batchFile);
+        if (!batchArgs.isEmpty())
+            command += ' ' + batchArgs;
+        return QCoreApplication::translate("ProjectExplorer::Internal::MsvcToolChain",
+                                           "Failed to retrieve MSVC Environment from \"%1\":\n"
+                                           "%2")
+            .arg(command, message);
+    }
+
+    // The SDK/MSVC scripts do not return exit codes != 0. Check on stdout.
+    const QString stdOut = run.cleanedStdOut();
+
+    //
+    // Now parse the file to get the environment settings
+    const int start = stdOut.indexOf(marker);
+    if (start == -1) {
+        qWarning("Could not find start marker in stdout output.");
+        return QString();
+    }
+
+    const int end = stdOut.indexOf(marker, start + 1);
+    if (end == -1) {
+        qWarning("Could not find end marker in stdout output.");
+        return QString();
+    }
+
+    const QString output = stdOut.mid(start, end - start);
+
+    const QStringList lines = output.split(QLatin1String("\n"));
+    for (const QString &line : lines) {
+        const int pos = line.indexOf('=');
+        if (pos > 0) {
+            const QString varName = line.mid(0, pos);
+            const QString varValue = line.mid(pos + 1);
+            envPairs.insert(varName, varValue);
         }
-        return info;
-    };
-    const auto info = DataFromProcess<ClangClInfo>::getData({{filePath, {"--version"}}, parser});
-    return info ? *info : ClangClInfo();
+    }
+
+    return Utils::nullopt;
 }
 
-} // namespace ProjectExplorer::Internal
+bool MsvcToolChainFactory::canCreate() const
+{
+    return !g_availableMsvcToolchains.isEmpty();
+}
 
-Q_DECLARE_METATYPE(ProjectExplorer::Internal::MsvcToolchain::Platform)
+MsvcToolChain::WarningFlagAdder::WarningFlagAdder(const QString &flag, WarningFlags &flags)
+    : m_flags(flags)
+{
+    if (flag.startsWith(QLatin1String("-wd"))) {
+        m_doesEnable = false;
+    } else if (flag.startsWith(QLatin1String("-w"))) {
+        m_doesEnable = true;
+    } else {
+        m_triggered = true;
+        return;
+    }
+    bool ok = false;
+    if (m_doesEnable)
+        m_warningCode = flag.mid(2).toInt(&ok);
+    else
+        m_warningCode = flag.mid(3).toInt(&ok);
+    if (!ok)
+        m_triggered = true;
+}
+
+void MsvcToolChain::WarningFlagAdder::operator()(int warningCode, WarningFlags flagsSet)
+{
+    if (m_triggered)
+        return;
+    if (warningCode == m_warningCode) {
+        m_triggered = true;
+        if (m_doesEnable)
+            m_flags |= flagsSet;
+        else
+            m_flags &= ~flagsSet;
+    }
+}
+
+bool MsvcToolChain::WarningFlagAdder::triggered() const
+{
+    return m_triggered;
+}
+
+} // namespace Internal
+} // namespace ProjectExplorer
+
+Q_DECLARE_METATYPE(ProjectExplorer::Internal::MsvcToolChain::Platform)

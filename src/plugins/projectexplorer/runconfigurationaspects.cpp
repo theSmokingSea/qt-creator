@@ -1,15 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "runconfigurationaspects.h"
 
 #include "devicesupport/devicemanager.h"
 #include "devicesupport/idevice.h"
 #include "environmentaspect.h"
-#include "kitaspects.h"
+#include "kitinformation.h"
 #include "projectexplorer.h"
 #include "projectexplorersettings.h"
-#include "projectexplorertr.h"
 #include "target.h"
 
 #include <coreplugin/icore.h>
@@ -20,7 +41,6 @@
 #include <utils/layoutbuilder.h>
 #include <utils/pathchooser.h>
 #include <utils/qtcprocess.h>
-#include <utils/qtcassert.h>
 #include <utils/utilsicons.h>
 
 #include <QCheckBox>
@@ -33,7 +53,6 @@
 #include <QPushButton>
 
 using namespace Utils;
-using namespace Layouting;
 
 namespace ProjectExplorer {
 
@@ -47,10 +66,9 @@ namespace ProjectExplorer {
     The initial value is provided as a hint from the build systems.
 */
 
-TerminalAspect::TerminalAspect(AspectContainer *container)
-    : BaseAspect(container)
+TerminalAspect::TerminalAspect()
 {
-    setDisplayName(Tr::tr("Terminal"));
+    setDisplayName(tr("Terminal"));
     setId("TerminalAspect");
     setSettingsKey("RunConfiguration.UseTerminal");
     addDataExtractor(this, &TerminalAspect::useTerminal, &Data::useTerminal);
@@ -63,13 +81,12 @@ TerminalAspect::TerminalAspect(AspectContainer *container)
 /*!
     \reimp
 */
-void TerminalAspect::addToLayoutImpl(Layout &parent)
+void TerminalAspect::addToLayout(LayoutBuilder &builder)
 {
     QTC_CHECK(!m_checkBox);
-    m_checkBox = createSubWidget<QCheckBox>(Tr::tr("Run in terminal"));
+    m_checkBox = new QCheckBox(tr("Run in terminal"));
     m_checkBox->setChecked(m_useTerminal);
-    m_checkBox->setEnabled(isEnabled());
-    parent.addItems({empty, m_checkBox.data()});
+    builder.addItems({{}, m_checkBox.data()});
     connect(m_checkBox.data(), &QAbstractButton::clicked, this, [this] {
         m_userSet = true;
         m_useTerminal = m_checkBox->isChecked();
@@ -80,7 +97,7 @@ void TerminalAspect::addToLayoutImpl(Layout &parent)
 /*!
     \reimp
 */
-void TerminalAspect::fromMap(const Store &map)
+void TerminalAspect::fromMap(const QVariantMap &map)
 {
     if (map.contains(settingsKey())) {
         m_useTerminal = map.value(settingsKey()).toBool();
@@ -96,7 +113,7 @@ void TerminalAspect::fromMap(const Store &map)
 /*!
     \reimp
 */
-void TerminalAspect::toMap(Store &data) const
+void TerminalAspect::toMap(QVariantMap &data) const
 {
     if (m_userSet)
         data.insert(settingsKey(), m_useTerminal);
@@ -107,9 +124,9 @@ void TerminalAspect::calculateUseTerminal()
     if (m_userSet)
         return;
     bool useTerminal;
-    switch (projectExplorerSettings().terminalMode) {
-    case TerminalMode::On: useTerminal = true; break;
-    case TerminalMode::Off: useTerminal = false; break;
+    switch (ProjectExplorerPlugin::projectExplorerSettings().terminalMode) {
+    case Internal::TerminalMode::On: useTerminal = true; break;
+    case Internal::TerminalMode::Off: useTerminal = false; break;
     default: useTerminal = m_useTerminalHint;
     }
     if (m_useTerminal != useTerminal) {
@@ -125,7 +142,7 @@ void TerminalAspect::calculateUseTerminal()
 */
 bool TerminalAspect::useTerminal() const
 {
-    return m_useTerminal && isEnabled();
+    return m_useTerminal;
 }
 
 /*!
@@ -153,28 +170,19 @@ bool TerminalAspect::isUserSet() const
     working directory for running the executable.
 */
 
-WorkingDirectoryAspect::WorkingDirectoryAspect(AspectContainer *container)
-    : BaseAspect(container)
+WorkingDirectoryAspect::WorkingDirectoryAspect(const MacroExpander *expander,
+                                               EnvironmentAspect *envAspect)
+    : m_envAspect(envAspect), m_macroExpander(expander)
 {
-    setDisplayName(Tr::tr("Working Directory"));
+    setDisplayName(tr("Working Directory"));
     setId("WorkingDirectoryAspect");
     setSettingsKey("RunConfiguration.WorkingDirectory");
-}
-
-void WorkingDirectoryAspect::setMacroExpander(const MacroExpander *expander)
-{
-    m_macroExpander = expander;
-}
-
-void WorkingDirectoryAspect::setEnvironment(EnvironmentAspect *envAspect)
-{
-    m_envAspect = envAspect;
 }
 
 /*!
     \reimp
 */
-void WorkingDirectoryAspect::addToLayoutImpl(Layout &builder)
+void WorkingDirectoryAspect::addToLayout(LayoutBuilder &builder)
 {
     QTC_CHECK(!m_chooser);
     m_chooser = new PathChooser;
@@ -182,31 +190,29 @@ void WorkingDirectoryAspect::addToLayoutImpl(Layout &builder)
         m_chooser->setMacroExpander(m_macroExpander);
     m_chooser->setHistoryCompleter(settingsKey());
     m_chooser->setExpectedKind(Utils::PathChooser::Directory);
-    m_chooser->setPromptDialogTitle(Tr::tr("Select Working Directory"));
+    m_chooser->setPromptDialogTitle(tr("Select Working Directory"));
     m_chooser->setBaseDirectory(m_defaultWorkingDirectory);
     m_chooser->setFilePath(m_workingDirectory.isEmpty() ? m_defaultWorkingDirectory : m_workingDirectory);
-    connect(m_chooser.data(), &PathChooser::textChanged, this, [this] {
-        m_workingDirectory = m_chooser->unexpandedFilePath();
-        m_resetButton->setEnabled(m_workingDirectory != m_defaultWorkingDirectory);
-    });
+    connect(m_chooser.data(), &PathChooser::pathChanged, this,
+            [this]() {
+                m_workingDirectory = m_chooser->rawFilePath();
+                m_resetButton->setEnabled(m_workingDirectory != m_defaultWorkingDirectory);
+            });
 
     m_resetButton = new QToolButton;
-    m_resetButton->setToolTip(Tr::tr("Reset to Default"));
+    m_resetButton->setToolTip(tr("Reset to Default"));
     m_resetButton->setIcon(Utils::Icons::RESET.icon());
     connect(m_resetButton.data(), &QAbstractButton::clicked, this, &WorkingDirectoryAspect::resetPath);
     m_resetButton->setEnabled(m_workingDirectory != m_defaultWorkingDirectory);
 
     if (m_envAspect) {
         connect(m_envAspect, &EnvironmentAspect::environmentChanged, m_chooser.data(), [this] {
-            m_chooser->setEnvironment(m_envAspect->environment());
+            m_chooser->setEnvironmentChange(EnvironmentChange::fromFixedEnvironment(m_envAspect->environment()));
         });
-        m_chooser->setEnvironment(m_envAspect->environment());
+        m_chooser->setEnvironmentChange(EnvironmentChange::fromFixedEnvironment(m_envAspect->environment()));
     }
 
-    m_chooser->setReadOnly(isReadOnly());
-    m_resetButton->setEnabled(!isReadOnly());
-
-    builder.addItems({Tr::tr("Working directory:"), m_chooser.data(), m_resetButton.data()});
+    builder.addItems({tr("Working directory:"), m_chooser.data(), m_resetButton.data()});
 }
 
 void WorkingDirectoryAspect::resetPath()
@@ -217,7 +223,7 @@ void WorkingDirectoryAspect::resetPath()
 /*!
     \reimp
 */
-void WorkingDirectoryAspect::fromMap(const Store &map)
+void WorkingDirectoryAspect::fromMap(const QVariantMap &map)
 {
     m_workingDirectory = FilePath::fromString(map.value(settingsKey()).toString());
     m_defaultWorkingDirectory = FilePath::fromString(map.value(settingsKey() + ".default").toString());
@@ -232,7 +238,7 @@ void WorkingDirectoryAspect::fromMap(const Store &map)
 /*!
     \reimp
 */
-void WorkingDirectoryAspect::toMap(Store &data) const
+void WorkingDirectoryAspect::toMap(QVariantMap &data) const
 {
     const QString wd = m_workingDirectory == m_defaultWorkingDirectory
         ? QString() : m_workingDirectory.toString();
@@ -249,13 +255,12 @@ FilePath WorkingDirectoryAspect::workingDirectory() const
 {
     const Environment env = m_envAspect ? m_envAspect->environment()
                                         : Environment::systemEnvironment();
+    FilePath res = m_workingDirectory;
     QString workingDir = m_workingDirectory.path();
     if (m_macroExpander)
         workingDir = m_macroExpander->expandProcessArgs(workingDir);
-
-    QString res = workingDir.isEmpty() ? QString() : QDir::cleanPath(env.expandVariables(workingDir));
-
-    return m_workingDirectory.withNewPath(res);
+    res.setPath(PathChooser::expandedDirectory(workingDir, env, QString()));
+    return res;
 }
 
 FilePath WorkingDirectoryAspect::defaultWorkingDirectory() const
@@ -310,21 +315,16 @@ PathChooser *WorkingDirectoryAspect::pathChooser() const
     arguments for an executable.
 */
 
-ArgumentsAspect::ArgumentsAspect(AspectContainer *container)
-    : BaseAspect(container)
+ArgumentsAspect::ArgumentsAspect(const MacroExpander *macroExpander)
+    : m_macroExpander(macroExpander)
 {
-    setDisplayName(Tr::tr("Arguments"));
+    setDisplayName(tr("Arguments"));
     setId("ArgumentsAspect");
     setSettingsKey("RunConfiguration.Arguments");
 
     addDataExtractor(this, &ArgumentsAspect::arguments, &Data::arguments);
 
-    m_labelText = Tr::tr("Command line arguments:");
-}
-
-void ArgumentsAspect::setMacroExpander(const MacroExpander *expander)
-{
-    m_macroExpander = expander;
+    m_labelText = tr("Command line arguments:");
 }
 
 /*!
@@ -400,11 +400,11 @@ void ArgumentsAspect::resetArguments()
 /*!
     \reimp
 */
-void ArgumentsAspect::fromMap(const Store &map)
+void ArgumentsAspect::fromMap(const QVariantMap &map)
 {
     QVariant args = map.value(settingsKey());
     // Until 3.7 a QStringList was stored for Remote Linux
-    if (args.typeId() == QMetaType::QStringList)
+    if (args.type() == QVariant::StringList)
         m_arguments = ProcessArgs::joinArgs(args.toStringList(), OsTypeLinux);
     else
         m_arguments = args.toString();
@@ -422,7 +422,7 @@ void ArgumentsAspect::fromMap(const Store &map)
 /*!
     \reimp
 */
-void ArgumentsAspect::toMap(Store &map) const
+void ArgumentsAspect::toMap(QVariantMap &map) const
 {
     saveToMap(map, m_arguments, QString(), settingsKey());
     saveToMap(map, m_multiLine, false, settingsKey() + ".multi");
@@ -440,7 +440,6 @@ QWidget *ArgumentsAspect::setupChooser()
                     this, [this] { setArguments(m_multiLineChooser->toPlainText()); });
         }
         m_multiLineChooser->setPlainText(m_arguments);
-        m_multiLineChooser->setReadOnly(isReadOnly());
         return m_multiLineChooser.data();
     }
     if (!m_chooser) {
@@ -449,15 +448,13 @@ QWidget *ArgumentsAspect::setupChooser()
         connect(m_chooser.data(), &QLineEdit::textChanged, this, &ArgumentsAspect::setArguments);
     }
     m_chooser->setText(m_arguments);
-    m_chooser->setReadOnly(isReadOnly());
-
     return m_chooser.data();
 }
 
 /*!
     \reimp
 */
-void ArgumentsAspect::addToLayoutImpl(Layout &builder)
+void ArgumentsAspect::addToLayout(LayoutBuilder &builder)
 {
     QTC_CHECK(!m_chooser && !m_multiLineChooser && !m_multiLineButton);
 
@@ -466,7 +463,7 @@ void ArgumentsAspect::addToLayoutImpl(Layout &builder)
     containerLayout->setContentsMargins(0, 0, 0, 0);
     containerLayout->addWidget(setupChooser());
     m_multiLineButton = new ExpandButton;
-    m_multiLineButton->setToolTip(Tr::tr("Toggle multi-line mode."));
+    m_multiLineButton->setToolTip(tr("Toggle multi-line mode."));
     m_multiLineButton->setChecked(m_multiLine);
     connect(m_multiLineButton, &QCheckBox::clicked, this, [this](bool checked) {
         if (m_multiLine == checked)
@@ -494,7 +491,7 @@ void ArgumentsAspect::addToLayoutImpl(Layout &builder)
 
     if (m_resetter) {
         m_resetButton = new QToolButton;
-        m_resetButton->setToolTip(Tr::tr("Reset to Default"));
+        m_resetButton->setToolTip(tr("Reset to Default"));
         m_resetButton->setIcon(Icons::RESET.icon());
         connect(m_resetButton.data(), &QAbstractButton::clicked,
                 this, &ArgumentsAspect::resetArguments);
@@ -516,16 +513,18 @@ void ArgumentsAspect::addToLayoutImpl(Layout &builder)
     by the build system's parsing results with an optional manual override.
 */
 
-ExecutableAspect::ExecutableAspect(AspectContainer *container)
-    : BaseAspect(container)
+ExecutableAspect::ExecutableAspect(Target *target, ExecutionDeviceSelector selector)
+    : m_target(target), m_selector(selector)
 {
-    setDisplayName(Tr::tr("Executable"));
+    setDisplayName(tr("Executable"));
     setId("ExecutableAspect");
-    setReadOnly(true);
     addDataExtractor(this, &ExecutableAspect::executable, &Data::executable);
 
-    m_executable.setPlaceHolderText(Tr::tr("Enter the path to the executable"));
-    m_executable.setLabelText(Tr::tr("Executable:"));
+    m_executable.setPlaceHolderText(tr("<unknown>"));
+    m_executable.setLabelText(tr("Executable:"));
+    m_executable.setDisplayStyle(StringAspect::LabelDisplay);
+
+    updateDevice();
 
     connect(&m_executable, &StringAspect::changed, this, &ExecutableAspect::changed);
 }
@@ -552,11 +551,8 @@ ExecutableAspect::~ExecutableAspect()
     m_alternativeExecutable = nullptr;
 }
 
-void ExecutableAspect::setDeviceSelector(Target *target, ExecutionDeviceSelector selector)
+void ExecutableAspect::updateDevice()
 {
-    m_target = target;
-    m_selector = selector;
-
     const IDevice::ConstPtr dev = executionDevice(m_target, m_selector);
     const OsType osType = dev ? dev->osType() : HostOsInfo::hostOs();
 
@@ -570,7 +566,7 @@ void ExecutableAspect::setDeviceSelector(Target *target, ExecutionDeviceSelector
 
    \sa Utils::PathChooser::setHistoryCompleter()
 */
-void ExecutableAspect::setHistoryCompleter(const Key &historyCompleterKey)
+void ExecutableAspect::setHistoryCompleter(const QString &historyCompleterKey)
 {
     m_executable.setHistoryCompleter(historyCompleterKey);
     if (m_alternativeExecutable)
@@ -593,18 +589,24 @@ void ExecutableAspect::setExpectedKind(const PathChooser::Kind expectedKind)
    Sets the environment in which paths will be searched when the expected kind
    of paths is chosen as PathChooser::Command or PathChooser::ExistingCommand
    to \a env.
+
+   \sa Utils::StringAspect::setEnvironmentChange()
 */
-void ExecutableAspect::setEnvironment(const Environment &env)
+void ExecutableAspect::setEnvironmentChange(const EnvironmentChange &change)
 {
-    m_executable.setEnvironment(env);
+    m_executable.setEnvironmentChange(change);
     if (m_alternativeExecutable)
-        m_alternativeExecutable->setEnvironment(env);
+        m_alternativeExecutable->setEnvironmentChange(change);
 }
 
-void ExecutableAspect::setReadOnly(bool readOnly)
+/*!
+   Sets the display \a style for aspect.
+
+   \sa Utils::StringAspect::setDisplayStyle()
+*/
+void ExecutableAspect::setDisplayStyle(StringAspect::DisplayStyle style)
 {
-    BaseAspect::setReadOnly(readOnly);
-    m_executable.setReadOnly(readOnly);
+    m_executable.setDisplayStyle(style);
 }
 
 /*!
@@ -616,14 +618,15 @@ void ExecutableAspect::setReadOnly(bool readOnly)
 
    \sa Utils::StringAspect::makeCheckable()
 */
-void ExecutableAspect::makeOverridable(const Key &overridingKey, const Key &useOverridableKey)
+void ExecutableAspect::makeOverridable(const QString &overridingKey, const QString &useOverridableKey)
 {
     QTC_ASSERT(!m_alternativeExecutable, return);
-    m_alternativeExecutable = new FilePathAspect;
-    m_alternativeExecutable->setLabelText(Tr::tr("Alternate executable on device:"));
+    m_alternativeExecutable = new StringAspect;
+    m_alternativeExecutable->setDisplayStyle(StringAspect::LineEditDisplay);
+    m_alternativeExecutable->setLabelText(tr("Alternate executable on device:"));
     m_alternativeExecutable->setSettingsKey(overridingKey);
-    m_alternativeExecutable->makeCheckable(CheckBoxPlacement::Right,
-                                           Tr::tr("Use this command instead"), useOverridableKey);
+    m_alternativeExecutable->makeCheckable(StringAspect::CheckBoxPlacement::Right,
+                                           tr("Use this command instead"), useOverridableKey);
     connect(m_alternativeExecutable, &StringAspect::changed,
             this, &ExecutableAspect::changed);
 }
@@ -638,11 +641,11 @@ void ExecutableAspect::makeOverridable(const Key &overridingKey, const Key &useO
 FilePath ExecutableAspect::executable() const
 {
     FilePath exe = m_alternativeExecutable && m_alternativeExecutable->isChecked()
-            ? (*m_alternativeExecutable)()
-            : m_executable();
+            ? m_alternativeExecutable->filePath()
+            : m_executable.filePath();
 
     if (const IDevice::ConstPtr dev = executionDevice(m_target, m_selector))
-        exe = dev->rootPath().withNewMappedPath(exe);
+        exe = dev->filePath(exe.path());
 
     return exe;
 }
@@ -650,13 +653,11 @@ FilePath ExecutableAspect::executable() const
 /*!
     \reimp
 */
-void ExecutableAspect::addToLayoutImpl(Layout &builder)
+void ExecutableAspect::addToLayout(LayoutBuilder &builder)
 {
-    builder.addItem(m_executable);
-    if (m_alternativeExecutable) {
-        builder.flush();
-        builder.addItem(m_alternativeExecutable);
-    }
+    m_executable.addToLayout(builder);
+    if (m_alternativeExecutable)
+        m_alternativeExecutable->addToLayout(builder.finishRow());
 }
 
 /*!
@@ -686,14 +687,14 @@ void ExecutableAspect::setPlaceHolderText(const QString &placeHolderText)
 */
 void ExecutableAspect::setExecutable(const FilePath &executable)
 {
-   m_executable.setValue(executable);
+   m_executable.setFilePath(executable);
    m_executable.setShowToolTipOnLabel(true);
 }
 
 /*!
     Sets the settings key to \a key.
 */
-void ExecutableAspect::setSettingsKey(const Key &key)
+void ExecutableAspect::setSettingsKey(const QString &key)
 {
     BaseAspect::setSettingsKey(key);
     m_executable.setSettingsKey(key);
@@ -702,7 +703,7 @@ void ExecutableAspect::setSettingsKey(const Key &key)
 /*!
   \reimp
 */
-void ExecutableAspect::fromMap(const Store &map)
+void ExecutableAspect::fromMap(const QVariantMap &map)
 {
     m_executable.fromMap(map);
     if (m_alternativeExecutable)
@@ -712,7 +713,7 @@ void ExecutableAspect::fromMap(const Store &map)
 /*!
    \reimp
 */
-void ExecutableAspect::toMap(Store &map) const
+void ExecutableAspect::toMap(QVariantMap &map) const
 {
     m_executable.toMap(map);
     if (m_alternativeExecutable)
@@ -732,21 +733,20 @@ void ExecutableAspect::toMap(Store &map) const
     on Windows and LD_LIBRARY_PATH everywhere else.
 */
 
-UseLibraryPathsAspect::UseLibraryPathsAspect(AspectContainer *container)
-    : BoolAspect(container)
+UseLibraryPathsAspect::UseLibraryPathsAspect()
 {
     setId("UseLibraryPath");
     setSettingsKey("RunConfiguration.UseLibrarySearchPath");
     if (HostOsInfo::isMacHost()) {
-        setLabel(Tr::tr("Add build library search path to DYLD_LIBRARY_PATH and DYLD_FRAMEWORK_PATH"),
+        setLabel(tr("Add build library search path to DYLD_LIBRARY_PATH and DYLD_FRAMEWORK_PATH"),
                  LabelPlacement::AtCheckBox);
     } else if (HostOsInfo::isWindowsHost()) {
-        setLabel(Tr::tr("Add build library search path to PATH"), LabelPlacement::AtCheckBox);
+        setLabel(tr("Add build library search path to PATH"), LabelPlacement::AtCheckBox);
     } else {
-        setLabel(Tr::tr("Add build library search path to LD_LIBRARY_PATH"),
+        setLabel(tr("Add build library search path to LD_LIBRARY_PATH"),
                  LabelPlacement::AtCheckBox);
     }
-    setValue(projectExplorerSettings().addLibraryPathsToRunEnv);
+    setValue(ProjectExplorerPlugin::projectExplorerSettings().addLibraryPathsToRunEnv);
 }
 
 
@@ -758,12 +758,11 @@ UseLibraryPathsAspect::UseLibraryPathsAspect(AspectContainer *container)
     DYLD_IMAGE_SUFFIX environment variable should be used on Mac.
 */
 
-UseDyldSuffixAspect::UseDyldSuffixAspect(AspectContainer *container)
-    : BoolAspect(container)
+UseDyldSuffixAspect::UseDyldSuffixAspect()
 {
     setId("UseDyldSuffix");
     setSettingsKey("RunConfiguration.UseDyldImageSuffix");
-    setLabel(Tr::tr("Use debug version of frameworks (DYLD_IMAGE_SUFFIX=_debug)"),
+    setLabel(tr("Use debug version of frameworks (DYLD_IMAGE_SUFFIX=_debug)"),
              LabelPlacement::AtCheckBox);
 }
 
@@ -775,16 +774,11 @@ UseDyldSuffixAspect::UseDyldSuffixAspect(AspectContainer *container)
     application should run with root permissions.
 */
 
-RunAsRootAspect::RunAsRootAspect(AspectContainer *container)
-    : BoolAspect(container)
+RunAsRootAspect::RunAsRootAspect()
 {
     setId("RunAsRoot");
     setSettingsKey("RunConfiguration.RunAsRoot");
-    setLabel(Tr::tr("Run as root user"), LabelPlacement::AtCheckBox);
-
-    // Not technically correct, but sensible approximation.
-    // Client code with more context can override.
-    setVisible(HostOsInfo::isAnyUnixHost());
+    setLabel(tr("Run as root user"), LabelPlacement::AtCheckBox);
 }
 
 Interpreter::Interpreter()
@@ -801,210 +795,103 @@ Interpreter::Interpreter(const QString &_id,
     , autoDetected(_autoDetected)
 {}
 
-static QString launcherType2UiString(const QString &type)
-{
-    if (type == "test")
-        return Tr::tr("Test");
-    else if (type == "emulator")
-        return Tr::tr("Emulator");
-    return QString();
-}
-
-Launcher::Launcher(const LauncherInfo &launcherInfo, const FilePath &sourceDirectory)
-    : id(launcherInfo.type)
-    , arguments(launcherInfo.arguments)
-{
-    if (launcherInfo.type != "unused") {
-        command = launcherInfo.command;
-        if (command.isRelativePath())
-            command = sourceDirectory.resolvePath(command);
-        displayName = QString("%1 (%2)").arg(launcherType2UiString(launcherInfo.type),
-                                      CommandLine(command, arguments).displayName());
-    }
-}
-
-Launcher::Launcher(const LauncherInfo &testLauncherInfo, const LauncherInfo &emulatorLauncherInfo, const Utils::FilePath &sourceDirectory)
-    : id(testLauncherInfo.type + " + " + emulatorLauncherInfo.type)
-    , command(testLauncherInfo.command)
-    , arguments(testLauncherInfo.arguments)
-{
-    if (command.isRelativePath())
-        command = sourceDirectory.resolvePath(command);
-    FilePath command1 = emulatorLauncherInfo.command;
-    if (command1.isRelativePath())
-        command1 = sourceDirectory.resolvePath(command1);
-    arguments.append(command1.toString());
-    arguments.append(emulatorLauncherInfo.arguments);
-    displayName = QString("%1 + %2 (%3)").arg(launcherType2UiString(testLauncherInfo.type),
-                                       launcherType2UiString(emulatorLauncherInfo.type),
-                                       CommandLine(command, arguments).displayName());
-}
-
 /*!
-\class ProjectExplorer::LauncherAspect
-\inmodule QtCreator
+    \class ProjectExplorer::InterpreterAspect
+    \inmodule QtCreator
 
-\brief With the LauncherAspect class, a user can specify a launcher program for
-use with executable files for which a launcher program is optionally available.
+    \brief The InterpreterAspect class lets a user specify an interpreter
+    to use with files or projects using an interpreted language.
 */
 
-LauncherAspect::LauncherAspect(AspectContainer *container)
-    : BaseAspect(container)
+InterpreterAspect::InterpreterAspect()
 {
-    addDataExtractor(this, &LauncherAspect::currentLauncher, &Data::launcher);
+    addDataExtractor(this, &InterpreterAspect::currentInterpreter, &Data::interpreter);
 }
 
-Launcher LauncherAspect::currentLauncher() const
+Interpreter InterpreterAspect::currentInterpreter() const
 {
-    return Utils::findOrDefault(m_launchers, Utils::equal(&Launcher::id, m_currentId));
+    return Utils::findOrDefault(m_interpreters, Utils::equal(&Interpreter::id, m_currentId));
 }
 
-void LauncherAspect::updateLaunchers(const QList<Launcher> &launchers)
+void InterpreterAspect::updateInterpreters(const QList<Interpreter> &interpreters)
 {
-    if (m_launchers == launchers)
-        return;
-    m_launchers = launchers;
+    m_interpreters = interpreters;
     if (m_comboBox)
         updateComboBox();
 }
 
-void LauncherAspect::setDefaultLauncher(const Launcher &launcher)
+void InterpreterAspect::setDefaultInterpreter(const Interpreter &interpreter)
 {
-    if (m_defaultId == launcher.id)
-        return;
-    m_defaultId = launcher.id;
+    m_defaultId = interpreter.id;
     if (m_currentId.isEmpty())
-        setCurrentLauncher(launcher);
+        m_currentId = m_defaultId;
 }
 
-void LauncherAspect::setCurrentLauncher(const Launcher &launcher)
+void InterpreterAspect::setCurrentInterpreter(const Interpreter &interpreter)
 {
-    if (m_comboBox) {
-        const int index = m_launchers.indexOf(launcher);
-        if (index < 0 || index >= m_comboBox->count())
-            return;
-        m_comboBox->setCurrentIndex(index);
-    } else {
-        setCurrentLauncherId(launcher.id);
-    }
+    m_currentId = interpreter.id;
+    emit changed();
 }
 
-void LauncherAspect::fromMap(const Store &map)
+void InterpreterAspect::fromMap(const QVariantMap &map)
 {
-    setCurrentLauncherId(map.value(settingsKey(), m_defaultId).toString());
+    m_currentId = map.value(settingsKey(), m_defaultId).toString();
 }
 
-void LauncherAspect::toMap(Store &map) const
+void InterpreterAspect::toMap(QVariantMap &map) const
 {
     if (m_currentId != m_defaultId)
         saveToMap(map, m_currentId, QString(), settingsKey());
 }
 
-void LauncherAspect::addToLayoutImpl(Layout &builder)
+void InterpreterAspect::addToLayout(LayoutBuilder &builder)
 {
     if (QTC_GUARD(m_comboBox.isNull()))
         m_comboBox = new QComboBox;
 
     updateComboBox();
-    connect(m_comboBox, &QComboBox::currentIndexChanged,
-            this, &LauncherAspect::updateCurrentLauncher);
+    connect(m_comboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &InterpreterAspect::updateCurrentInterpreter);
 
-    builder.addItems({Tr::tr("Launcher:"), m_comboBox.data()});
+    auto manageButton = new QPushButton(tr("Manage..."));
+    connect(manageButton, &QPushButton::clicked, [this] {
+        Core::ICore::showOptionsDialog(m_settingsDialogId);
+    });
+
+    builder.addItems({tr("Interpreter"), m_comboBox.data(), manageButton});
 }
 
-void LauncherAspect::setCurrentLauncherId(const QString &id)
-{
-    if (id == m_currentId)
-        return;
-    m_currentId = id;
-    emit changed();
-}
-
-void LauncherAspect::updateCurrentLauncher()
+void InterpreterAspect::updateCurrentInterpreter()
 {
     const int index = m_comboBox->currentIndex();
     if (index < 0)
         return;
-    QTC_ASSERT(index < m_launchers.size(), return);
-    m_comboBox->setToolTip(m_launchers[index].command.toUserOutput());
-    setCurrentLauncherId(m_launchers[index].id);
+    QTC_ASSERT(index < m_interpreters.size(), return);
+    m_currentId = m_interpreters[index].id;
+    m_comboBox->setToolTip(m_interpreters[index].command.toUserOutput());
+    emit changed();
 }
 
-void LauncherAspect::updateComboBox()
+void InterpreterAspect::updateComboBox()
 {
     int currentIndex = -1;
     int defaultIndex = -1;
+    const QString currentId = m_currentId;
     m_comboBox->clear();
-    for (const Launcher &launcher : std::as_const(m_launchers)) {
+    for (const Interpreter &interpreter : qAsConst(m_interpreters)) {
         int index = m_comboBox->count();
-        m_comboBox->addItem(launcher.displayName);
-        m_comboBox->setItemData(index, launcher.command.toUserOutput(), Qt::ToolTipRole);
-        if (launcher.id == m_currentId)
+        m_comboBox->addItem(interpreter.name);
+        m_comboBox->setItemData(index, interpreter.command.toUserOutput(), Qt::ToolTipRole);
+        if (interpreter.id == currentId)
             currentIndex = index;
-        if (launcher.id == m_defaultId)
+        if (interpreter.id == m_defaultId)
             defaultIndex = index;
     }
     if (currentIndex >= 0)
         m_comboBox->setCurrentIndex(currentIndex);
     else if (defaultIndex >= 0)
         m_comboBox->setCurrentIndex(defaultIndex);
-    updateCurrentLauncher();
+    updateCurrentInterpreter();
 }
-
-/*!
-    \class ProjectExplorer::X11ForwardingAspect
-    \inmodule QtCreator
-
-    \brief The X11ForwardingAspect class lets a user specify a display
-     for a remotely running X11 client.
-*/
-
-static QString defaultDisplay()
-{
-    return qtcEnvironmentVariable("DISPLAY");
-}
-
-X11ForwardingAspect::X11ForwardingAspect(AspectContainer *container)
-    : StringAspect(container)
-{
-    setLabelText(Tr::tr("X11 Forwarding:"));
-    setDisplayStyle(LineEditDisplay);
-    setId("X11ForwardingAspect");
-    setSettingsKey("RunConfiguration.X11Forwarding");
-    makeCheckable(CheckBoxPlacement::Right, Tr::tr("Forward to local display"),
-                  "RunConfiguration.UseX11Forwarding");
-    setValue(defaultDisplay());
-
-    addDataExtractor(this, &X11ForwardingAspect::display, &Data::display);
-}
-
-void X11ForwardingAspect::setMacroExpander(const MacroExpander *expander)
-{
-   m_macroExpander = expander;
-}
-
-QString X11ForwardingAspect::display() const
-{
-    QTC_ASSERT(m_macroExpander, return value());
-    return !isChecked() ? QString() : m_macroExpander->expandProcessArgs(value());
-}
-
-
-/*!
-    \class ProjectExplorer::SymbolFileAspect
-    \inmodule QtCreator
-
-    \brief The SymbolFileAspect class lets a user specify a symbol file
-     for debugging.
-*/
-
-
-SymbolFileAspect::SymbolFileAspect(AspectContainer *container)
-    : FilePathAspect(container)
-{}
-
-MainScriptAspect::MainScriptAspect(AspectContainer *container)
-    : FilePathAspect(container)
-{}
 
 } // namespace ProjectExplorer

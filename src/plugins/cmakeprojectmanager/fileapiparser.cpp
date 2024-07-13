@@ -1,31 +1,47 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "fileapiparser.h"
 
-#include "cmakeprocess.h"
-#include "cmakeprojectconstants.h"
-#include "cmakeprojectmanagertr.h"
-
+#include <app/app_version.h>
 #include <coreplugin/messagemanager.h>
 #include <projectexplorer/rawprojectpart.h>
 
 #include <utils/algorithm.h>
-#include <utils/filepath.h>
 #include <utils/qtcassert.h>
 
-#include <QGuiApplication>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLoggingCategory>
-#include <QPromise>
 
-using namespace Utils;
-
-namespace CMakeProjectManager::Internal {
+namespace CMakeProjectManager {
+namespace Internal {
 
 using namespace FileApiDetails;
+using namespace Utils;
 
 const char CMAKE_RELATIVE_REPLY_PATH[] = ".cmake/api/v1/reply";
 const char CMAKE_RELATIVE_QUERY_PATH[] = ".cmake/api/v1/query";
@@ -38,7 +54,7 @@ const QStringList CMAKE_QUERY_FILENAMES = {"cache-v2", "codemodel-v2", "cmakeFil
 // Helper:
 // --------------------------------------------------------------------
 
-FilePath FileApiParser::cmakeReplyDirectory(const FilePath &buildDirectory)
+static FilePath cmakeReplyDirectory(const FilePath &buildDirectory)
 {
     return buildDirectory.pathAppended(CMAKE_RELATIVE_REPLY_PATH);
 }
@@ -46,9 +62,10 @@ FilePath FileApiParser::cmakeReplyDirectory(const FilePath &buildDirectory)
 static void reportFileApiSetupFailure()
 {
     Core::MessageManager::writeFlashing(
-        addCMakePrefix(Tr::tr("Failed to set up CMake file API support. %1 cannot "
-                              "extract project information.")
-                           .arg(QGuiApplication::applicationDisplayName())));
+        QCoreApplication::translate("CMakeProjectManager::Internal",
+                                    "Failed to set up CMake file API support. %1 cannot "
+                                    "extract project information.")
+            .arg(Core::Constants::IDE_DISPLAY_NAME));
 }
 
 static std::pair<int, int> cmakeVersion(const QJsonObject &obj)
@@ -56,7 +73,7 @@ static std::pair<int, int> cmakeVersion(const QJsonObject &obj)
     const QJsonObject version = obj.value("version").toObject();
     const int major = version.value("major").toInt(-1);
     const int minor = version.value("minor").toInt(-1);
-    return {major, minor};
+    return std::make_pair(major, minor);
 }
 
 static bool checkJsonObject(const QJsonObject &obj, const QString &kind, int major, int minor = -1)
@@ -71,7 +88,7 @@ static bool checkJsonObject(const QJsonObject &obj, const QString &kind, int maj
 
 static std::pair<QString, QString> nameValue(const QJsonObject &obj)
 {
-    return {obj.value("name").toString(), obj.value("value").toString()};
+    return std::make_pair(obj.value("name").toString(), obj.value("value").toString());
 }
 
 static QJsonDocument readJsonFile(const FilePath &filePath)
@@ -79,10 +96,7 @@ static QJsonDocument readJsonFile(const FilePath &filePath)
     qCDebug(cmakeFileApi) << "readJsonFile:" << filePath;
     QTC_ASSERT(!filePath.isEmpty(), return {});
 
-    const expected_str<QByteArray> contents = filePath.fileContents();
-    if (!contents)
-        return {};
-    const QJsonDocument doc = QJsonDocument::fromJson(*contents);
+    const QJsonDocument doc = QJsonDocument::fromJson(filePath.fileContents());
 
     return doc;
 }
@@ -93,7 +107,7 @@ std::vector<int> indexList(const QJsonValue &v)
     std::vector<int> result;
     result.reserve(static_cast<size_t>(indexList.count()));
 
-    for (const auto &v : indexList) {
+    for (const QJsonValue &v : indexList) {
         result.push_back(v.toInt(-1));
     }
     return result;
@@ -104,7 +118,8 @@ std::vector<int> indexList(const QJsonValue &v)
 static ReplyFileContents readReplyFile(const FilePath &filePath, QString &errorMessage)
 {
     const QJsonDocument document = readJsonFile(filePath);
-    static const QString msg = Tr::tr("Invalid reply file created by CMake.");
+    static const QString msg = QCoreApplication::translate("CMakeProjectManager::Internal",
+                                                           "Invalid reply file created by CMake.");
 
     ReplyFileContents result;
     if (document.isNull() || document.isEmpty() || !document.isObject()) {
@@ -141,7 +156,7 @@ static ReplyFileContents readReplyFile(const FilePath &filePath, QString &errorM
     bool hadInvalidObject = false;
     {
         const QJsonArray objects = rootObject.value("objects").toArray();
-        for (const auto &v : objects) {
+        for (const QJsonValue &v : objects) {
             const QJsonObject object = v.toObject();
             {
                 ReplyObject r;
@@ -175,12 +190,13 @@ static CMakeConfig readCacheFile(const FilePath &cacheFile, QString &errorMessag
     const QJsonObject root = doc.object();
 
     if (!checkJsonObject(root, "cache", 2)) {
-        errorMessage = Tr::tr("Invalid cache file generated by CMake.");
+        errorMessage = QCoreApplication::translate("CMakeProjectManager::Internal",
+                                                   "Invalid cache file generated by CMake.");
         return {};
     }
 
     const QJsonArray entries = root.value("entries").toArray();
-    for (const auto &v : entries) {
+    for (const QJsonValue &v : entries) {
         CMakeConfigItem item;
 
         const QJsonObject entry = v.toObject();
@@ -192,7 +208,7 @@ static CMakeConfig readCacheFile(const FilePath &cacheFile, QString &errorMessag
 
         {
             const QJsonArray properties = entry.value("properties").toArray();
-            for (const auto &v : properties) {
+            for (const QJsonValue &v : properties) {
                 const QJsonObject prop = v.toObject();
                 auto nv = nameValue(prop);
                 if (nv.first == "ADVANCED") {
@@ -220,19 +236,20 @@ static std::vector<CMakeFileInfo> readCMakeFilesFile(const FilePath &cmakeFilesF
     const QJsonObject root = doc.object();
 
     if (!checkJsonObject(root, "cmakeFiles", 1)) {
-        errorMessage = Tr::tr( "Invalid cmakeFiles file generated by CMake.");
+        errorMessage = QCoreApplication::translate("CMakeProjectManager::Internal",
+                                                   "Invalid cmakeFiles file generated by CMake.");
         return {};
     }
 
     const QJsonArray inputs = root.value("inputs").toArray();
-    for (const auto &v : inputs) {
+    for (const QJsonValue &v : inputs) {
         CMakeFileInfo info;
         const QJsonObject input = v.toObject();
         info.path = cmakeFilesFile.withNewPath(input.value("path").toString());
 
         info.isCMake = input.value("isCMake").toBool();
         const QString filename = info.path.fileName();
-        info.isCMakeListsDotTxt = (filename.compare(Constants::CMAKE_LISTS_TXT,
+        info.isCMakeListsDotTxt = (filename.compare("CMakeLists.txt",
                                                     HostOsInfo::fileNameCaseSensitivity())
                                    == 0);
 
@@ -249,16 +266,18 @@ static std::vector<CMakeFileInfo> readCMakeFilesFile(const FilePath &cmakeFilesF
 std::vector<Directory> extractDirectories(const QJsonArray &directories, QString &errorMessage)
 {
     if (directories.isEmpty()) {
-        errorMessage = Tr::tr(
+        errorMessage = QCoreApplication::translate(
+            "CMakeProjectManager::Internal",
             "Invalid codemodel file generated by CMake: No directories.");
         return {};
     }
 
     std::vector<Directory> result;
-    for (const auto &v : directories) {
+    for (const QJsonValue &v : directories) {
         const QJsonObject obj = v.toObject();
         if (obj.isEmpty()) {
-            errorMessage = Tr::tr(
+            errorMessage = QCoreApplication::translate(
+                "CMakeProjectManager::Internal",
                 "Invalid codemodel file generated by CMake: Empty directory object.");
             continue;
         }
@@ -279,17 +298,19 @@ std::vector<Directory> extractDirectories(const QJsonArray &directories, QString
 static std::vector<Project> extractProjects(const QJsonArray &projects, QString &errorMessage)
 {
     if (projects.isEmpty()) {
-        errorMessage = Tr::tr(
+        errorMessage = QCoreApplication::translate(
+            "CMakeProjectManager::Internal",
             "Invalid codemodel file generated by CMake: No projects.");
         return {};
     }
 
     std::vector<Project> result;
-    for (const auto &v : projects) {
+    for (const QJsonValue &v : projects) {
         const QJsonObject obj = v.toObject();
         if (obj.isEmpty()) {
             qCDebug(cmakeFileApi) << "Empty project skipped!";
-            errorMessage = Tr::tr(
+            errorMessage = QCoreApplication::translate(
+                "CMakeProjectManager::Internal",
                 "Invalid codemodel file generated by CMake: Empty project object.");
             continue;
         }
@@ -302,7 +323,8 @@ static std::vector<Project> extractProjects(const QJsonArray &projects, QString 
 
         if (project.directories.empty()) {
             qCDebug(cmakeFileApi) << "Invalid project skipped!";
-            errorMessage = Tr::tr(
+            errorMessage = QCoreApplication::translate(
+                "CMakeProjectManager::Internal",
                 "Invalid codemodel file generated by CMake: Broken project data.");
             continue;
         }
@@ -316,10 +338,11 @@ static std::vector<Project> extractProjects(const QJsonArray &projects, QString 
 static std::vector<Target> extractTargets(const QJsonArray &targets, QString &errorMessage)
 {
     std::vector<Target> result;
-    for (const auto &v : targets) {
+    for (const QJsonValue &v : targets) {
         const QJsonObject obj = v.toObject();
         if (obj.isEmpty()) {
-            errorMessage = Tr::tr(
+            errorMessage = QCoreApplication::translate(
+                "CMakeProjectManager::Internal",
                 "Invalid codemodel file generated by CMake: Empty target object.");
             continue;
         }
@@ -332,7 +355,8 @@ static std::vector<Target> extractTargets(const QJsonArray &targets, QString &er
 
         if (target.name.isEmpty() || target.id.isEmpty() || target.jsonFile.isEmpty()
             || target.directory == -1 || target.project == -1) {
-            errorMessage = Tr::tr(
+            errorMessage = QCoreApplication::translate(
+                "CMakeProjectManager::Internal",
                 "Invalid codemodel file generated by CMake: Broken target data.");
             continue;
         }
@@ -432,16 +456,18 @@ static std::vector<Configuration> extractConfigurations(const QJsonArray &config
                                                         QString &errorMessage)
 {
     if (configs.isEmpty()) {
-        errorMessage = Tr::tr(
+        errorMessage = QCoreApplication::translate(
+            "CMakeProjectManager::Internal",
             "Invalid codemodel file generated by CMake: No configurations.");
         return {};
     }
 
     std::vector<FileApiDetails::Configuration> result;
-    for (const auto &v : configs) {
+    for (const QJsonValue &v : configs) {
         const QJsonObject obj = v.toObject();
         if (obj.isEmpty()) {
-            errorMessage = Tr::tr(
+            errorMessage = QCoreApplication::translate(
+                "CMakeProjectManager::Internal",
                 "Invalid codemodel file generated by CMake: Empty configuration object.");
             continue;
         }
@@ -453,8 +479,10 @@ static std::vector<Configuration> extractConfigurations(const QJsonArray &config
         config.targets = extractTargets(obj.value("targets").toArray(), errorMessage);
 
         if (!validateIndexes(config)) {
-            errorMessage = Tr::tr("Invalid codemodel file generated by CMake: Broken "
-                                  "indexes in directories, projects, or targets.");
+            errorMessage
+                = QCoreApplication::translate("CMakeProjectManager::Internal",
+                                              "Invalid codemodel file generated by CMake: Broken "
+                                              "indexes in directories, projects, or targets.");
             return {};
         }
 
@@ -470,7 +498,8 @@ static std::vector<Configuration> readCodemodelFile(const FilePath &codemodelFil
     const QJsonObject root = doc.object();
 
     if (!checkJsonObject(root, "codemodel", 2)) {
-        errorMessage = Tr::tr("Invalid codemodel file generated by CMake.");
+        errorMessage = QCoreApplication::translate("CMakeProjectManager::Internal",
+                                                   "Invalid codemodel file generated by CMake.");
         return {};
     }
 
@@ -489,26 +518,6 @@ static std::vector<FileApiDetails::FragmentInfo> extractFragments(const QJsonObj
     });
 }
 
-static void addIncludeInfo(std::vector<IncludeInfo> *includes,
-                           const QJsonObject &compileGroups,
-                           const QString &section)
-{
-    const std::vector<IncludeInfo> add
-        = transform<std::vector>(compileGroups.value(section).toArray(), [](const QJsonValue &v) {
-              const QJsonObject i = v.toObject();
-              const QString path = i.value("path").toString();
-              const bool isSystem = i.value("isSystem").toBool();
-              const ProjectExplorer::HeaderPath hp(path,
-                                                   isSystem
-                                                       ? ProjectExplorer::HeaderPathType::System
-                                                       : ProjectExplorer::HeaderPathType::User);
-
-              return IncludeInfo{ProjectExplorer::RawProjectPart::frameworkDetectionHeuristic(hp),
-                                 i.value("backtrace").toInt(-1)};
-          });
-    std::copy(add.cbegin(), add.cend(), std::back_inserter(*includes));
-}
-
 static TargetDetails extractTargetDetails(const QJsonObject &root, QString &errorMessage)
 {
     TargetDetails t;
@@ -517,7 +526,8 @@ static TargetDetails extractTargetDetails(const QJsonObject &root, QString &erro
     t.type = root.value("type").toString();
 
     if (t.name.isEmpty() || t.id.isEmpty() || t.type.isEmpty()) {
-        errorMessage = Tr::tr("Invalid target file: Information is missing.");
+        errorMessage = QCoreApplication::translate("CMakeProjectManager::Internal",
+                                                   "Invalid target file: Information is missing.");
         return {};
     }
 
@@ -604,10 +614,6 @@ static TargetDetails extractTargetDetails(const QJsonObject &root, QString &erro
         const QJsonArray compileGroups = root.value("compileGroups").toArray();
         t.compileGroups = transform<std::vector>(compileGroups, [](const QJsonValue &v) {
             const QJsonObject o = v.toObject();
-            std::vector<IncludeInfo> includes;
-            addIncludeInfo(&includes, o, "includes");
-            // new in CMake 3.27+:
-            addIncludeInfo(&includes, o, "frameworks");
             return CompileInfo{
                 transform<std::vector>(o.value("sourceIndexes").toArray(),
                                        [](const QJsonValue &v) { return v.toInt(-1); }),
@@ -617,7 +623,21 @@ static TargetDetails extractTargetDetails(const QJsonObject &root, QString &erro
                                      const QJsonObject o = v.toObject();
                                      return o.value("fragment").toString();
                                  }),
-                includes,
+                transform<std::vector>(
+                    o.value("includes").toArray(),
+                    [](const QJsonValue &v) {
+                        const QJsonObject i = v.toObject();
+                        const QString path = i.value("path").toString();
+                        const bool isSystem = i.value("isSystem").toBool();
+                        const ProjectExplorer::HeaderPath
+                            hp(path,
+                               isSystem ? ProjectExplorer::HeaderPathType::System
+                                        : ProjectExplorer::HeaderPathType::User);
+
+                        return IncludeInfo{
+                            ProjectExplorer::RawProjectPart::frameworkDetectionHeuristic(hp),
+                            i.value("backtrace").toInt(-1)};
+                    }),
                 transform<std::vector>(o.value("defines").toArray(),
                                        [](const QJsonValue &v) {
                                            const QJsonObject d = v.toObject();
@@ -650,19 +670,6 @@ static TargetDetails extractTargetDetails(const QJsonObject &root, QString &erro
                                                                 o.value("parent").toInt(-1),
                                                             };
                                                         });
-    }
-    {
-        const QJsonArray launchers = root.value("launchers").toArray();
-        if (launchers.size() > 0) {
-            t.launcherInfos = transform<QList>(launchers, [](const QJsonValue &v) {
-                const QJsonObject o = v.toObject();
-                QList<QString> arguments;
-                for (const QJsonValue &arg : o.value("arguments").toArray())
-                    arguments.append(arg.toString());
-                FilePath command = FilePath::fromString(o.value("command").toString());
-                return ProjectExplorer::LauncherInfo { o.value("type").toString(), command, arguments };
-            });
-        }
     }
 
     return t;
@@ -788,7 +795,8 @@ static TargetDetails readTargetFile(const FilePath &targetFile, QString &errorMe
 
     TargetDetails result = extractTargetDetails(root, errorMessage);
     if (errorMessage.isEmpty() && !validateTargetDetails(result)) {
-        errorMessage = Tr::tr(
+        errorMessage = QCoreApplication::translate(
+            "CMakeProjectManager::Internal",
             "Invalid target file generated by CMake: Broken indexes in target details.");
     }
     return result;
@@ -811,7 +819,7 @@ FilePath FileApiDetails::ReplyFileContents::jsonFile(const QString &kind, const 
 // FileApi:
 // --------------------------------------------------------------------
 
-bool FileApiParser::setupCMakeFileApi(const FilePath &buildDirectory)
+bool FileApiParser::setupCMakeFileApi(const FilePath &buildDirectory, Utils::FileSystemWatcher &watcher)
 {
     // So that we have a directory to watch.
     buildDirectory.pathAppended(CMAKE_RELATIVE_REPLY_PATH).ensureWritableDir();
@@ -834,6 +842,7 @@ bool FileApiParser::setupCMakeFileApi(const FilePath &buildDirectory)
         }
     }
 
+    watcher.addDirectory(cmakeReplyDirectory(buildDirectory).path(), FileSystemWatcher::WatchAllChanges);
     return true;
 }
 
@@ -851,20 +860,20 @@ static QStringList uniqueTargetFiles(const Configuration &config)
     return files;
 }
 
-FileApiData FileApiParser::parseData(QPromise<std::shared_ptr<FileApiQtcData>> &promise,
+FileApiData FileApiParser::parseData(QFutureInterface<std::shared_ptr<FileApiQtcData>> &fi,
                                      const FilePath &replyFilePath,
-                                     const Utils::FilePath &buildDir,
                                      const QString &cmakeBuildType,
                                      QString &errorMessage)
 {
     QTC_CHECK(errorMessage.isEmpty());
+    QTC_CHECK(!replyFilePath.needsDevice());
     const FilePath replyDir = replyFilePath.parentDir();
 
     FileApiData result;
 
-    const auto cancelCheck = [&promise, &errorMessage] {
-        if (promise.isCanceled()) {
-            errorMessage = Tr::tr("CMake parsing was canceled.");
+    const auto cancelCheck = [&fi, &errorMessage]() -> bool {
+        if (fi.isCanceled()) {
+            errorMessage = FileApiParser::tr("CMake parsing was cancelled.");
             return true;
         }
         return false;
@@ -873,11 +882,7 @@ FileApiData FileApiParser::parseData(QPromise<std::shared_ptr<FileApiQtcData>> &
     result.replyFile = readReplyFile(replyFilePath, errorMessage);
     if (cancelCheck())
         return {};
-    const FilePath cachePathFromReply = result.replyFile.jsonFile("cache", replyDir);
-    if (cachePathFromReply.isEmpty())
-        result.cache = CMakeConfig::fromFile(buildDir / Constants::CMAKE_CACHE_TXT, &errorMessage);
-    else
-        result.cache = readCacheFile(cachePathFromReply, errorMessage);
+    result.cache = readCacheFile(result.replyFile.jsonFile("cache", replyDir), errorMessage);
     if (cancelCheck())
         return {};
     result.cmakeFiles = readCMakeFilesFile(result.replyFile.jsonFile("cmakeFiles", replyDir),
@@ -888,30 +893,26 @@ FileApiData FileApiParser::parseData(QPromise<std::shared_ptr<FileApiQtcData>> &
                                          errorMessage);
 
     if (codeModels.size() == 0) {
-        //: General Messages refers to the output view
-        errorMessage = Tr::tr(
-                           "CMake project configuration failed. No CMake configuration for "
-                           "build type \"%1\" found. Check General Messages for more information.")
-                           .arg(cmakeBuildType);
+        errorMessage = "No CMake configuration found!";
         return result;
     }
 
-    auto it = std::find_if(codeModels.begin(), codeModels.end(),
+    auto it = std::find_if(codeModels.cbegin(), codeModels.cend(),
                            [cmakeBuildType](const Configuration& cfg) {
                                return QString::compare(cfg.name, cmakeBuildType, Qt::CaseInsensitive) == 0;
                            });
-    if (it == codeModels.end()) {
+    if (it == codeModels.cend()) {
         QStringList buildTypes;
         for (const Configuration &cfg: codeModels)
             buildTypes << cfg.name;
 
         if (result.replyFile.isMultiConfig) {
-            errorMessage = Tr::tr("No \"%1\" CMake configuration found. Available configurations: \"%2\".\n"
+            errorMessage = tr("No \"%1\" CMake configuration found. Available configurations: \"%2\".\n"
                               "Make sure that CMAKE_CONFIGURATION_TYPES variable contains the \"Build type\" field.")
                            .arg(cmakeBuildType)
                            .arg(buildTypes.join(", "));
         } else {
-            errorMessage = Tr::tr("No \"%1\" CMake configuration found. Available configuration: \"%2\".\n"
+            errorMessage = tr("No \"%1\" CMake configuration found. Available configuration: \"%2\".\n"
                               "Make sure that CMAKE_BUILD_TYPE variable matches the \"Build type\" field.")
                            .arg(cmakeBuildType)
                            .arg(buildTypes.join(", "));
@@ -953,10 +954,11 @@ FilePath FileApiParser::scanForCMakeReplyFile(const FilePath &buildDirectory)
 
 FilePaths FileApiParser::cmakeQueryFilePaths(const FilePath &buildDirectory)
 {
-    const FilePath queryDir = buildDirectory / CMAKE_RELATIVE_QUERY_PATH;
+    FilePath queryDir = buildDirectory / CMAKE_RELATIVE_QUERY_PATH;
     return transform(CMAKE_QUERY_FILENAMES, [&queryDir](const QString &name) {
-        return queryDir.resolvePath(name);
+        return queryDir.resolvePath(FilePath::fromString(name));
     });
 }
 
-} // CMakeProjectManager::Internal
+} // namespace Internal
+} // namespace CMakeProjectManager

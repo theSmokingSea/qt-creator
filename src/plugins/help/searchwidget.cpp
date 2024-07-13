@@ -1,11 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "searchwidget.h"
-
 #include "helpconstants.h"
-#include "helptr.h"
+#include "helpplugin.h"
 #include "localhelpmanager.h"
+#include "openpagesmanager.h"
 
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/icore.h>
@@ -17,6 +39,7 @@
 #include <utils/utilsicons.h>
 
 #include <QApplication>
+#include <QClipboard>
 #include <QHelpEngine>
 #include <QHelpSearchEngine>
 #include <QHelpSearchQueryWidget>
@@ -32,7 +55,7 @@
 #include <QTextBrowser>
 #include <QToolButton>
 
-namespace Help::Internal {
+using namespace Help::Internal;
 
 SearchWidget::SearchWidget() = default;
 
@@ -90,7 +113,7 @@ void SearchWidget::showEvent(QShowEvent *event)
         tbLayout->setSpacing(6);
         tbLayout->setContentsMargins(4, 4, 4, 4);
         tbLayout->addWidget(m_queryWidget);
-        m_indexingDocumentationLabel = new QLabel(Tr::tr("Indexing Documentation"), toolbar);
+        m_indexingDocumentationLabel = new QLabel(tr("Indexing Documentation"), toolbar);
         m_indexingDocumentationLabel->hide();
         tbLayout->addWidget(m_indexingDocumentationLabel);
         toolbar->setLayout(tbLayout);
@@ -157,11 +180,9 @@ void SearchWidget::indexingStarted()
 {
     Q_ASSERT(!m_progress);
     m_progress = new QFutureInterface<void>();
-    Core::ProgressManager::addTask(m_progress->future(),
-                                   Tr::tr("Indexing Documentation"),
-                                   "Help.Indexer");
+    Core::ProgressManager::addTask(m_progress->future(), tr("Indexing Documentation"), "Help.Indexer");
     m_progress->setProgressRange(0, 2);
-    m_progress->setProgressValueAndText(1, Tr::tr("Indexing Documentation"));
+    m_progress->setProgressValueAndText(1, tr("Indexing Documentation"));
     m_progress->reportStarted();
 
     connect(&m_watcher, &QFutureWatcherBase::canceled,
@@ -222,16 +243,13 @@ void SearchWidget::contextMenuEvent(QContextMenuEvent *contextMenuEvent)
     if (!link.isEmpty() && link.isValid()) {
         if (link.isRelative())
             link = browser->source().resolved(link);
-        openLink = menu.addAction(Tr::tr("Open Link"));
-        openLinkInNewTab = menu.addAction(Tr::tr("Open Link as New Page"));
-        copyAnchorAction = menu.addAction(Tr::tr("Copy Link"));
+        openLink = menu.addAction(tr("Open Link"));
+        openLinkInNewTab = menu.addAction(tr("Open Link as New Page"));
+        copyAnchorAction = menu.addAction(tr("Copy Link"));
     } else if (browser->textCursor().hasSelection()) {
-        connect(menu.addAction(Tr::tr("Copy")), &QAction::triggered, browser, &QTextEdit::copy);
+        connect(menu.addAction(tr("Copy")), &QAction::triggered, browser, &QTextEdit::copy);
     } else {
-        connect(menu.addAction(Tr::tr("Reload")),
-                &QAction::triggered,
-                browser,
-                &QTextBrowser::reload);
+        connect(menu.addAction(tr("Reload")), &QAction::triggered, browser, &QTextBrowser::reload);
     }
 
     QAction *usedAction = menu.exec(mapToGlobal(contextMenuEvent->pos()));
@@ -240,7 +258,7 @@ void SearchWidget::contextMenuEvent(QContextMenuEvent *contextMenuEvent)
     else if (usedAction == openLinkInNewTab)
         emit linkActivated(link, currentSearchTerms(), true/*newPage*/);
     else if (usedAction == copyAnchorAction)
-        Utils::setClipboardAndSelection(link.toString());
+        QApplication::clipboard()->setText(link.toString());
 }
 
 QStringList SearchWidget::currentSearchTerms() const
@@ -253,7 +271,7 @@ QStringList SearchWidget::currentSearchTerms() const
 SearchSideBarItem::SearchSideBarItem()
     : SideBarItem(new SearchWidget, Constants::HELP_SEARCH)
 {
-    widget()->setWindowTitle(Tr::tr(Constants::SB_SEARCH));
+    widget()->setWindowTitle(HelpPlugin::tr(Constants::SB_SEARCH));
     connect(static_cast<SearchWidget *>(widget()), &SearchWidget::linkActivated,
             this, &SearchSideBarItem::linkActivated);
 }
@@ -262,10 +280,8 @@ QList<QToolButton *> SearchSideBarItem::createToolBarWidgets()
 {
     auto reindexButton = new QToolButton;
     reindexButton->setIcon(Utils::Icons::RELOAD_TOOLBAR.icon());
-    reindexButton->setToolTip(Tr::tr("Regenerate Index"));
+    reindexButton->setToolTip(tr("Regenerate Index"));
     connect(reindexButton, &QAbstractButton::clicked,
             static_cast<SearchWidget *>(widget()), &SearchWidget::reindexDocumentation);
     return {reindexButton};
 }
-
-} // Help::Internal

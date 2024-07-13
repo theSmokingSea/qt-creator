@@ -1,32 +1,47 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include <qtsupport/qtprojectimporter.h>
 
-#include <utils/temporarydirectory.h>
-
 namespace CMakeProjectManager {
 
-class CMakeProject;
 class CMakeTool;
 
 namespace Internal {
 
-struct DirectoryData;
-
 class CMakeProjectImporter : public QtSupport::QtProjectImporter
 {
+    Q_DECLARE_TR_FUNCTIONS(CMakeProjectManager::Internal::CMakeProjectImporter)
+
 public:
-    CMakeProjectImporter(const Utils::FilePath &path,
-                         const CMakeProjectManager::CMakeProject *project);
+    CMakeProjectImporter(const Utils::FilePath &path);
 
-    Utils::FilePaths importCandidates() final;
-    ProjectExplorer::Target *preferredTarget(const QList<ProjectExplorer::Target *> &possibleTargets) final;
-    bool filter(ProjectExplorer::Kit *k) const final;
+    QStringList importCandidates() final;
 
-    Utils::FilePaths presetCandidates();
 private:
     QList<void *> examineDirectory(const Utils::FilePath &importPath,
                                    QString *warningMessage) const final;
@@ -44,16 +59,7 @@ private:
 
     void cleanupTemporaryCMake(ProjectExplorer::Kit *k, const QVariantList &vl);
     void persistTemporaryCMake(ProjectExplorer::Kit *k, const QVariantList &vl);
-
-    void ensureBuildDirectory(DirectoryData &data, const ProjectExplorer::Kit *k) const;
-
-    const CMakeProject *m_project;
-    Utils::TemporaryDirectory m_presetsTempDir;
 };
-
-#ifdef WITH_TESTS
-QObject *createCMakeProjectImporterTest();
-#endif
 
 } // namespace Internal
 } // namespace CMakeProjectManager

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -12,7 +34,6 @@
 
 #include <utils/environmentfwd.h>
 #include <utils/filepath.h>
-#include <utils/store.h>
 
 #include <QFileSystemModel>
 
@@ -27,7 +48,6 @@ class MacroExpander;
 
 namespace ProjectExplorer {
 
-class BuildConfiguration;
 class BuildInfo;
 class BuildSystem;
 class ContainerNode;
@@ -38,11 +58,11 @@ class ProjectImporter;
 class ProjectNode;
 class ProjectPrivate;
 class Target;
-enum class SetActive : int;
 
 // Documentation inside.
 class PROJECTEXPLORER_EXPORT Project : public QObject
 {
+    friend class SessionManager; // for setActiveTarget
     Q_OBJECT
 
 public:
@@ -50,8 +70,7 @@ public:
     enum ModelRoles {
         // Absolute file path
         FilePathRole = QFileSystemModel::FilePathRole,
-        isParsingRole,
-        UseUnavailableMarkerRole,
+        isParsingRole
     };
 
     Project(const QString &mimeType, const Utils::FilePath &fileName);
@@ -68,8 +87,9 @@ public:
 
     BuildSystem *createBuildSystem(Target *target) const;
 
-    virtual Utils::FilePath projectFilePath() const;
-    virtual Utils::FilePath projectDirectory() const;
+    Utils::FilePath projectFilePath() const;
+    Utils::FilePath projectDirectory() const;
+    static Utils::FilePath projectDirectory(const Utils::FilePath &top);
 
     // This does not affect nodes, only the root path.
     void changeRootProjectDirectory();
@@ -91,12 +111,9 @@ public:
     Target *activeTarget() const;
     Target *target(Utils::Id id) const;
     Target *target(Kit *k) const;
-    void setActiveTarget(Target *target, SetActive cascade);
-
     virtual Tasks projectIssues(const Kit *k) const;
 
     static bool copySteps(Target *sourceTarget, Target *newTarget);
-    bool copySteps(const Utils::Store &store, Kit *targetKit);
 
     void saveSettings();
     enum class RestoreResult { Ok, Error, UserAbort };
@@ -106,23 +123,19 @@ public:
     static const NodeMatcher AllFiles;
     static const NodeMatcher SourceFiles;
     static const NodeMatcher GeneratedFiles;
-    static const NodeMatcher HiddenRccFolders;
 
     Utils::FilePaths files(const NodeMatcher &matcher) const;
     bool isKnownFile(const Utils::FilePath &filename) const;
     const Node *nodeForFilePath(const Utils::FilePath &filePath,
                                 const NodeMatcher &extraMatcher = {}) const;
-    ProjectNode *productNodeForFilePath(
-        const Utils::FilePath &filePath, const NodeMatcher &extraMatcher = {}) const;
-    Utils::FilePaths binariesForSourceFile(const Utils::FilePath &sourceFile) const;
 
-    virtual void toMap(Utils::Store &map) const;
+    virtual QVariantMap toMap() const;
 
     Core::Context projectContext() const;
     Core::Context projectLanguages() const;
 
-    QVariant namedSettings(const Utils::Key &name) const;
-    void setNamedSettings(const Utils::Key &name, const QVariant &value);
+    QVariant namedSettings(const QString &name) const;
+    void setNamedSettings(const QString &name, const QVariant &value);
 
     void setAdditionalEnvironment(const Utils::EnvironmentItems &envItems);
     Utils::EnvironmentItems additionalEnvironment() const;
@@ -137,7 +150,6 @@ public:
     bool hasMakeInstallEquivalent() const;
 
     void setup(const QList<BuildInfo> &infoList);
-    BuildConfiguration *setup(const BuildInfo &info);
     Utils::MacroExpander *macroExpander() const;
 
     ProjectNode *findNodeForBuildKey(const QString &buildKey) const;
@@ -161,8 +173,8 @@ public:
     void setDisplayName(const QString &name);
     void setProjectLanguage(Utils::Id id, bool enabled);
 
-    void setExtraData(const Utils::Key &key, const QVariant &data);
-    QVariant extraData(const Utils::Key &key) const;
+    void setExtraData(const QString &key, const QVariant &data);
+    QVariant extraData(const QString &key) const;
 
     QStringList availableQmlPreviewTranslations(QString *errorMessage);
 
@@ -170,21 +182,6 @@ public:
     bool isModified() const;
 
     virtual bool isEditModePreferred() const;
-
-    void registerGenerator(Utils::Id id, const QString &displayName,
-                           const std::function<void()> &runner);
-    const QList<QPair<Utils::Id, QString>> allGenerators() const;
-    void runGenerator(Utils::Id id);
-
-    static void addVariablesToMacroExpander(const QByteArray &prefix,
-                                            const QString &descriptor,
-                                            Utils::MacroExpander *expander,
-                                            const std::function<Project *()> &projectGetter);
-
-    QList<Utils::Store> vanishedTargets() const;
-    void removeVanishedTarget(int index);
-    void removeAllVanishedTargets();
-    Target *createKitAndTargetFromStore(const Utils::Store &store);
 
 signals:
     void projectFileIsDirty(const Utils::FilePath &path);
@@ -199,8 +196,6 @@ signals:
     void aboutToRemoveTarget(ProjectExplorer::Target *target);
     void removedTarget(ProjectExplorer::Target *target);
     void addedTarget(ProjectExplorer::Target *target);
-
-    void vanishedTargetsChanged();
 
     void settingsLoaded();
     void aboutToSaveSettings();
@@ -217,8 +212,8 @@ signals:
 #endif
 
 protected:
-    virtual RestoreResult fromMap(const Utils::Store &map, QString *errorMessage);
-    void createTargetFromMap(const Utils::Store &map, int index);
+    virtual RestoreResult fromMap(const QVariantMap &map, QString *errorMessage);
+    void createTargetFromMap(const QVariantMap &map, int index);
     virtual bool setupTarget(Target *t);
 
     void setCanBuildProducts();
@@ -242,7 +237,7 @@ private:
     void removeProjectLanguage(Utils::Id id);
 
     void handleSubTreeChanged(FolderNode *node);
-    void setActiveTargetHelper(Target *target);
+    void setActiveTarget(Target *target);
 
     friend class ContainerNode;
     ProjectPrivate *d;

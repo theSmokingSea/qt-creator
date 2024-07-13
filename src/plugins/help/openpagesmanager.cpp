@@ -1,10 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "openpagesmanager.h"
 
 #include "helpconstants.h"
-#include "helptr.h"
 #include "helpviewer.h"
 #include "helpwidget.h"
 #include "localhelpmanager.h"
@@ -26,8 +47,7 @@
 #include <QHelpEngine>
 
 using namespace Core;
-
-namespace Help::Internal {
+using namespace Help::Internal;
 
 // -- OpenPagesManager
 
@@ -37,10 +57,15 @@ OpenPagesManager::OpenPagesManager(HelpWidget *helpWidget)
     m_comboBox = new QComboBox;
     m_comboBox->setModel(m_helpWidget->model());
     m_comboBox->setContextMenuPolicy(Qt::CustomContextMenu);
-    connect(m_comboBox, &QComboBox::activated, m_helpWidget, &HelpWidget::setCurrentIndex);
+    connect(m_comboBox,
+            QOverload<int>::of(&QComboBox::activated),
+            m_helpWidget,
+            &HelpWidget::setCurrentIndex);
     connect(m_helpWidget, &HelpWidget::currentIndexChanged, m_comboBox, &QComboBox::setCurrentIndex);
-    connect(m_comboBox, &QWidget::customContextMenuRequested,
-            this, &OpenPagesManager::openPagesContextMenu);
+    connect(m_comboBox,
+            &QWidget::customContextMenuRequested,
+            this,
+            &OpenPagesManager::openPagesContextMenu);
 
     m_openPagesSwitcher = new OpenPagesSwitcher(m_helpWidget->model());
     connect(m_openPagesSwitcher, &OpenPagesSwitcher::closePage, this,
@@ -224,9 +249,7 @@ void OpenPagesManager::openPagesContextMenu(const QPoint &point)
         return;
 
     QMenu menu;
-    menu.addAction(Tr::tr("Copy Full Path to Clipboard"));
+    menu.addAction(tr("Copy Full Path to Clipboard"));
     if (menu.exec(m_comboBox->mapToGlobal(point)))
-        Utils::setClipboardAndSelection(fileName);
+        QApplication::clipboard()->setText(fileName);
 }
-
-} // Help::Internal

@@ -28,7 +28,7 @@
 **
 ** There is an optional third parameter to determine the datatype of
 ** the C-language array.  Allowed values of the third parameter are
-** 'int32', 'int64', 'double', 'char*', 'struct iovec'.  Example:
+** 'int32', 'int64', 'double', 'char*'.  Example:
 **
 **      SELECT * FROM carray($ptr,10,'char*');
 **
@@ -52,45 +52,26 @@
 ** as the number of elements in the array.  The virtual table steps through
 ** the array, element by element.
 */
+#include "config.h"
 #include "sqlite3ext.h"
 SQLITE_EXTENSION_INIT1
 #include <assert.h>
 #include <string.h>
-#ifdef _WIN32
-  struct iovec {
-    void *iov_base;
-    size_t iov_len;
-  };
-#else
-# include <sys/uio.h>
-#endif
- 
+
 /* Allowed values for the mFlags parameter to sqlite3_carray_bind().
 ** Must exactly match the definitions in carray.h.
 */
-#ifndef CARRAY_INT32
-# define CARRAY_INT32     0      /* Data is 32-bit signed integers */
-# define CARRAY_INT64     1      /* Data is 64-bit signed integers */
-# define CARRAY_DOUBLE    2      /* Data is doubles */
-# define CARRAY_TEXT      3      /* Data is char* */
-# define CARRAY_BLOB      4      /* Data is struct iovec* */
-#endif
-
-#ifndef SQLITE_API
-# ifdef _WIN32
-#  define SQLITE_API __declspec(dllexport)
-# else
-#  define SQLITE_API
-# endif
-#endif
+#define CARRAY_INT32     0      /* Data is 32-bit signed integers */
+#define CARRAY_INT64     1      /* Data is 64-bit signed integers */
+#define CARRAY_DOUBLE    2      /* Data is doubles */
+#define CARRAY_TEXT      3      /* Data is char* */
 
 #ifndef SQLITE_OMIT_VIRTUALTABLE
 
 /*
 ** Names of allowed datatypes
 */
-static const char *azType[] = { "int32", "int64", "double", "char*",
-                                "struct iovec" };
+static const char *azType[] = { "int32", "int64", "double", "char*" };
 
 /*
 ** Structure used to hold the sqlite3_carray_bind() information
@@ -234,12 +215,6 @@ static int carrayColumn(
           sqlite3_result_text(ctx, p[pCur->iRowid-1], -1, SQLITE_TRANSIENT);
           return SQLITE_OK;
         }
-        case CARRAY_BLOB: {
-          const struct iovec *p = (struct iovec*)pCur->pPtr;
-          sqlite3_result_blob(ctx, p[pCur->iRowid-1].iov_base,
-                               (int)p[pCur->iRowid-1].iov_len, SQLITE_TRANSIENT);
-          return SQLITE_OK;
-        }
       }
     }
   }
@@ -284,7 +259,7 @@ static int carrayFilter(
       if( pBind==0 ) break;
       pCur->pPtr = pBind->aData;
       pCur->iCnt = pBind->nData;
-      pCur->eType = pBind->mFlags & 0x07;
+      pCur->eType = pBind->mFlags & 0x03;
       break;
     }
     case 2:
@@ -409,11 +384,6 @@ static sqlite3_module carrayModule = {
   0,                         /* xRollback */
   0,                         /* xFindMethod */
   0,                         /* xRename */
-  0,                         /* xSavepoint */
-  0,                         /* xRelease */
-  0,                         /* xRollbackTo */
-  0,                         /* xShadow */
-  0                          /* xIntegrity */
 };
 
 /*
@@ -431,7 +401,10 @@ static void carrayBindDel(void *pPtr){
 ** Invoke this interface in order to bind to the single-argument
 ** version of CARRAY().
 */
-SQLITE_API int sqlite3_carray_bind(
+#ifdef _WIN32
+__declspec(dllexport)
+#endif
+int sqlite3_carray_bind(
   sqlite3_stmt *pStmt,
   int idx,
   void *aData,
@@ -452,21 +425,16 @@ SQLITE_API int sqlite3_carray_bind(
   pNew->mFlags = mFlags;
   if( xDestroy==SQLITE_TRANSIENT ){
     sqlite3_int64 sz = nData;
-    switch( mFlags & 0x07 ){
-      case CARRAY_INT32:   sz *= 4;                     break;
-      case CARRAY_INT64:   sz *= 8;                     break;
-      case CARRAY_DOUBLE:  sz *= 8;                     break;
-      case CARRAY_TEXT:    sz *= sizeof(char*);         break;
-      case CARRAY_BLOB:    sz *= sizeof(struct iovec);  break;
+    switch( mFlags & 0x03 ){
+      case CARRAY_INT32:   sz *= 4;              break;
+      case CARRAY_INT64:   sz *= 8;              break;
+      case CARRAY_DOUBLE:  sz *= 8;              break;
+      case CARRAY_TEXT:    sz *= sizeof(char*);  break;
     }
-    if( (mFlags & 0x07)==CARRAY_TEXT ){
+    if( (mFlags & 0x03)==CARRAY_TEXT ){
       for(i=0; i<nData; i++){
         const char *z = ((char**)aData)[i];
         if( z ) sz += strlen(z) + 1;
-      }
-    }else if( (mFlags & 0x07)==CARRAY_BLOB ){
-      for(i=0; i<nData; i++){
-        sz += ((struct iovec*)aData)[i].iov_len;
       }
     } 
     pNew->aData = sqlite3_malloc64( sz );
@@ -474,7 +442,7 @@ SQLITE_API int sqlite3_carray_bind(
       sqlite3_free(pNew);
       return SQLITE_NOMEM;
     }
-    if( (mFlags & 0x07)==CARRAY_TEXT ){
+    if( (mFlags & 0x03)==CARRAY_TEXT ){
       char **az = (char**)pNew->aData;
       char *z = (char*)&az[nData];
       for(i=0; i<nData; i++){
@@ -489,18 +457,8 @@ SQLITE_API int sqlite3_carray_bind(
         memcpy(z, zData, n+1);
         z += n+1;
       }
-    }else if( (mFlags & 0x07)==CARRAY_BLOB ){
-      struct iovec *p = (struct iovec*)pNew->aData;
-      unsigned char *z = (unsigned char*)&p[nData];
-      for(i=0; i<nData; i++){
-        size_t n = ((struct iovec*)aData)[i].iov_len;
-        p[i].iov_len = n;
-        p[i].iov_base = z;
-        z += n;
-        memcpy(p[i].iov_base, ((struct iovec*)aData)[i].iov_base, n);
-      }
     }else{
-      memcpy(pNew->aData, aData, sz);
+      memcpy(pNew->aData, aData, sz*nData);
     }
     pNew->xDel = sqlite3_free;
   }else{
@@ -541,7 +499,10 @@ static void inttoptrFunc(
 
 #endif /* SQLITE_OMIT_VIRTUALTABLE */
 
-SQLITE_API int sqlite3_carray_init(
+#ifdef _WIN32
+__declspec(dllexport)
+#endif
+int sqlite3_carray_init(
   sqlite3 *db, 
   char **pzErrMsg, 
   const sqlite3_api_routines *pApi

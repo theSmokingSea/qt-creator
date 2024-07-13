@@ -1,23 +1,48 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cmaketoolsettingsaccessor.h"
 
-#include "cmakeprojectmanagertr.h"
-#include "cmakespecificsettings.h"
 #include "cmaketool.h"
+#include "cmaketoolmanager.h"
 
 #include <coreplugin/icore.h>
 
-#include <utils/algorithm.h>
+#include <app/app_version.h>
 #include <utils/environment.h>
 
+#include <utils/algorithm.h>
+
 #include <QDebug>
-#include <QGuiApplication>
+#include <QDir>
+#include <QFileInfo>
 
 using namespace Utils;
 
-namespace CMakeProjectManager::Internal {
+namespace CMakeProjectManager {
+namespace Internal {
 
 // --------------------------------------------------------------------
 // CMakeToolSettingsUpgraders:
@@ -30,7 +55,7 @@ public:
     CMakeToolSettingsUpgraderV0() : VersionUpgrader(0, "4.6") { }
 
     // NOOP
-    Store upgrade(const Store &data) final { return data; }
+    QVariantMap upgrade(const QVariantMap &data) final { return data; }
 };
 
 // --------------------------------------------------------------------
@@ -44,32 +69,48 @@ const char CMAKE_TOOL_FILENAME[] = "cmaketools.xml";
 
 static std::vector<std::unique_ptr<CMakeTool>> autoDetectCMakeTools()
 {
-    FilePaths extraDirs;
+    Environment env = Environment::systemEnvironment();
+
+    FilePaths path = env.path();
+    path = Utils::filteredUnique(path);
 
     if (HostOsInfo::isWindowsHost()) {
-        for (const auto &envVar : QStringList{"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"}) {
-            if (qtcEnvironmentVariableIsSet(envVar)) {
-                const QString progFiles = qtcEnvironmentVariable(envVar);
-                extraDirs.append(FilePath::fromUserInput(progFiles + "/CMake"));
-                extraDirs.append(FilePath::fromUserInput(progFiles + "/CMake/bin"));
+        for (auto envVar : {"ProgramFiles", "ProgramFiles(x86)", "ProgramW6432"}) {
+            if (qEnvironmentVariableIsSet(envVar)) {
+                const QString progFiles = qEnvironmentVariable(envVar);
+                path.append(FilePath::fromUserInput(progFiles + "/CMake"));
+                path.append(FilePath::fromUserInput(progFiles + "/CMake/bin"));
             }
         }
     }
 
     if (HostOsInfo::isMacHost()) {
-        extraDirs.append("/Applications/CMake.app/Contents/bin");
-        extraDirs.append("/usr/local/bin");    // homebrew intel
-        extraDirs.append("/opt/homebrew/bin"); // homebrew arm
-        extraDirs.append("/opt/local/bin");    // macports
+        path.append("/Applications/CMake.app/Contents/bin");
+        path.append("/usr/local/bin");
+        path.append("/opt/local/bin");
     }
 
-    const FilePaths suspects = FilePath("cmake").searchAllInPath(extraDirs);
+    const QStringList execs = env.appendExeExtensions(QLatin1String("cmake"));
+
+    FilePaths suspects;
+    for (const FilePath &base : qAsConst(path)) {
+        if (base.isEmpty())
+            continue;
+
+        QFileInfo fi;
+        for (const QString &exec : execs) {
+            fi.setFile(QDir(base.toString()), exec);
+            if (fi.exists() && fi.isFile() && fi.isExecutable())
+                suspects << FilePath::fromString(fi.absoluteFilePath());
+        }
+    }
 
     std::vector<std::unique_ptr<CMakeTool>> found;
-    for (const FilePath &command : std::as_const(suspects)) {
+    for (const FilePath &command : qAsConst(suspects)) {
         auto item = std::make_unique<CMakeTool>(CMakeTool::AutoDetection, CMakeTool::createId());
         item->setFilePath(command);
-        item->setDisplayName(Tr::tr("System CMake at %1").arg(command.toUserOutput()));
+        item->setDisplayName(::CMakeProjectManager::CMakeToolManager::tr("System CMake at %1")
+                                 .arg(command.toUserOutput()));
 
         found.emplace_back(std::move(item));
     }
@@ -128,10 +169,11 @@ mergeTools(std::vector<std::unique_ptr<CMakeTool>> &sdkTools,
 // CMakeToolSettingsAccessor:
 // --------------------------------------------------------------------
 
-CMakeToolSettingsAccessor::CMakeToolSettingsAccessor()
+CMakeToolSettingsAccessor::CMakeToolSettingsAccessor() :
+    UpgradingSettingsAccessor("QtCreatorCMakeTools",
+                              QCoreApplication::translate("CMakeProjectManager::CMakeToolManager", "CMake"),
+                              Core::Constants::IDE_DISPLAY_NAME)
 {
-    setDocType("QtCreatorCMakeTools");
-    setApplicationDisplayName(QGuiApplication::applicationDisplayName());
     setBaseFilePath(Core::ICore::userResourcePath(CMAKE_TOOL_FILENAME));
 
     addVersionUpgrader(std::make_unique<CMakeToolSettingsUpgraderV0>());
@@ -170,37 +212,38 @@ void CMakeToolSettingsAccessor::saveCMakeTools(const QList<CMakeTool *> &cmakeTo
                                                const Id &defaultId,
                                                QWidget *parent)
 {
-    Store data;
-    data.insert(CMAKE_TOOL_DEFAULT_KEY, defaultId.toSetting());
+    QVariantMap data;
+    data.insert(QLatin1String(CMAKE_TOOL_DEFAULT_KEY), defaultId.toSetting());
 
     int count = 0;
-    for (CMakeTool *item : cmakeTools) {
+    for (const CMakeTool *item : cmakeTools) {
         Utils::FilePath fi = item->cmakeExecutable();
+
         if (fi.needsDevice() || fi.isExecutableFile()) { // be graceful for device related stuff
-            Store tmp = item->toMap();
+            QVariantMap tmp = item->toMap();
             if (tmp.isEmpty())
                 continue;
-            data.insert(numberedKey(CMAKE_TOOL_DATA_KEY, count), variantFromStore(tmp));
+            data.insert(QString::fromLatin1(CMAKE_TOOL_DATA_KEY) + QString::number(count), tmp);
             ++count;
         }
     }
-    data.insert(CMAKE_TOOL_COUNT_KEY, count);
+    data.insert(QLatin1String(CMAKE_TOOL_COUNT_KEY), count);
 
     saveSettings(data, parent);
 }
 
 CMakeToolSettingsAccessor::CMakeTools
-CMakeToolSettingsAccessor::cmakeTools(const Store &data, bool fromSdk) const
+CMakeToolSettingsAccessor::cmakeTools(const QVariantMap &data, bool fromSdk) const
 {
     CMakeTools result;
 
-    int count = data.value(CMAKE_TOOL_COUNT_KEY, 0).toInt();
+    int count = data.value(QLatin1String(CMAKE_TOOL_COUNT_KEY), 0).toInt();
     for (int i = 0; i < count; ++i) {
-        const Key key = numberedKey(CMAKE_TOOL_DATA_KEY, i);
+        const QString key = QString::fromLatin1(CMAKE_TOOL_DATA_KEY) + QString::number(i);
         if (!data.contains(key))
             continue;
 
-        const Store dbMap = storeFromVariant(data.value(key));
+        const QVariantMap dbMap = data.value(key).toMap();
         auto item = std::make_unique<CMakeTool>(dbMap, fromSdk);
         const FilePath cmakeExecutable = item->cmakeExecutable();
         if (item->isAutoDetected() && !cmakeExecutable.needsDevice() && !cmakeExecutable.isExecutableFile()) {
@@ -217,4 +260,5 @@ CMakeToolSettingsAccessor::cmakeTools(const Store &data, bool fromSdk) const
     return result;
 }
 
-} // CMakeProjectManager::Internal
+} // namespace Internal
+} // namespace CMakeProjectManager

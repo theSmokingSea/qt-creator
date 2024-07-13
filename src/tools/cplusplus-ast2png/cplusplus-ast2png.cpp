@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include <cplusplus/AST.h>
 #include <cplusplus/ASTMatcher.h>
@@ -17,7 +39,6 @@
 #include <cplusplus/TranslationUnit.h>
 
 #include <utils/hostosinfo.h>
-#include <utils/filepath.h>
 
 #include "utils.h"
 
@@ -76,7 +97,7 @@ public:
 
         typedef QPair<QByteArray, QByteArray> Pair;
 
-        for (const Pair &conn : std::as_const(_connections))
+        for (const Pair &conn : qAsConst(_connections))
             out << conn.first.constData() << " -> " << conn.second.constData() << std::endl;
 
         alignTerminals();
@@ -92,7 +113,7 @@ public:
 protected:
     void alignTerminals() {
         out<<"{ rank=same;" << std::endl;
-        for (const QByteArray &terminalShape : std::as_const(_terminalShapes)) {
+        for (const QByteArray &terminalShape : qAsConst(_terminalShapes)) {
             out << "  " << std::string(terminalShape.constData(), terminalShape.size()).c_str() << ";" << std::endl;
         }
         out<<"}"<<std::endl;
@@ -281,9 +302,9 @@ protected:
     virtual bool visit(Declaration *symbol) {
         out << _id[symbol].constData() << " [label=\"";
         out << "Declaration\\n";
-        out << qPrintable(o.prettyName(symbol->name()));
+        out << qPrintable(o(symbol->name()));
         out << ": ";
-        out << qPrintable(o.prettyType(symbol->type()));
+        out << qPrintable(o(symbol->type()));
         if (symbol->isDeprecated())
             out << "\\n(deprecated)";
         if (Function *funTy = symbol->type()->asFunctionType()) {
@@ -309,7 +330,7 @@ protected:
 
     virtual bool visit(BaseClass *symbol) {
         out << _id[symbol].constData() << " [label=\"BaseClass\\n";
-        out << qPrintable(o.prettyName(symbol->name()));
+        out << qPrintable(o(symbol->name()));
         if (symbol->isDeprecated())
             out << "\\n(deprecated)";
         out << "\"];" << std::endl;
@@ -426,7 +447,7 @@ static Document::Ptr parse(const QString &fileName, const QByteArray &source,
         if (verbose)
             std::cout << "Parsing as " << qPrintable(parseModeToString(parseMode)) << "...";
 
-        Document::Ptr doc = Document::create(Utils::FilePath::fromUserInput(fileName));
+        Document::Ptr doc = Document::create(fileName);
         doc->control()->setDiagnosticClient(errorHandler);
         doc->setUtf8Source(source);
         const bool parsed = doc->parse(parseMode);
@@ -511,9 +532,11 @@ int main(int argc, char *argv[])
     }
 
     // Process options & arguments
-    if (args.contains(QLatin1String("-h")) || args.contains(QLatin1String("-help"))) {
+    const bool helpRequested = args.contains(QLatin1String("-h"))
+        || args.contains(QLatin1String("-help"));
+    if (helpRequested) {
         printUsage();
-        return EXIT_SUCCESS;
+        return helpRequested ? EXIT_SUCCESS : EXIT_FAILURE;
     }
 
     if (args.contains(QLatin1String("-v"))) {
@@ -554,7 +577,7 @@ int main(int argc, char *argv[])
     // Process files
     const QStringList files = args;
     for (const QString &fileName : files) {
-        if (! QFileInfo::exists(fileName)) {
+        if (! QFile::exists(fileName)) {
             std::cerr << "Error: File \"" << qPrintable(fileName) << "\" does not exist."
                       << std::endl;
             exit(EXIT_FAILURE);
@@ -615,7 +638,7 @@ int main(int argc, char *argv[])
                                           QString(fileName + QLatin1String(".ast.png"))));
         inputOutputFiles.append(qMakePair(QString(fileName + QLatin1String(".symbols.dot")),
                                           QString(fileName + QLatin1String(".symbols.png"))));
-        for (const Pair &pair : std::as_const(inputOutputFiles)) {
+        for (const Pair &pair : qAsConst(inputOutputFiles)) {
             createImageFromDot(pair.first, pair.second, optionVerbose);
             std::cout << qPrintable(QDir::toNativeSeparators(pair.second)) << std::endl;
         }

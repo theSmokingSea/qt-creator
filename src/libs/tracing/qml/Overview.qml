@@ -1,8 +1,30 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtCreator.Tracing
+import QtQuick 2.1
+import QtCreator.Tracing 1.0
 
 Rectangle {
     id: overview
@@ -46,8 +68,8 @@ Rectangle {
     }
 
     Connections {
-        target: overview.zoomer
-        function onRangeChanged() { overview.updateRangeMover(); }
+        target: zoomer
+        function onRangeChanged() { updateRangeMover(); }
     }
 
     TimeDisplay {
@@ -59,9 +81,9 @@ Rectangle {
         height: 10
         fontSize: 6
         labelsHeight: 10
-        windowStart: overview.zoomer.traceStart
-        alignedWindowStart: overview.zoomer.traceStart
-        rangeDuration: overview.zoomer.traceDuration
+        windowStart: zoomer.traceStart
+        alignedWindowStart: zoomer.traceStart
+        rangeDuration: zoomer.traceDuration
         contentX: 0
         offsetX: 0
     }
@@ -75,35 +97,35 @@ Rectangle {
         id: renderArea
 
         Repeater {
-            model: overview.modelProxy.models
+            model: modelProxy.models
             TimelineOverviewRenderer {
                 model: modelData
                 zoomer: overview.zoomer
-                notes: overview.modelProxy.notes
+                notes: modelProxy.notes
                 width: renderArea.width
-                height: renderArea.height / overview.modelProxy.models.length
+                height: renderArea.height / modelProxy.models.length
             }
         }
     }
 
     Repeater {
         id: noteSigns
-        property var modelsById: overview.modelProxy.models.reduce(function(prev, model) {
+        property var modelsById: modelProxy.models.reduce(function(prev, model) {
             prev[model.modelId] = model;
             return prev;
         }, {});
 
         property int vertSpace: renderArea.height / 7
         property color noteColor: Theme.color(Theme.Timeline_HighlightColor)
-        readonly property double spacing: parent.width / overview.zoomer.traceDuration
+        readonly property double spacing: parent.width / zoomer.traceDuration
 
-        model: overview.modelProxy.notes ? overview.modelProxy.notes.count : 0
+        model: modelProxy.notes ? modelProxy.notes.count : 0
         Item {
-            property int timelineIndex: overview.modelProxy.notes.timelineIndex(index)
-            property int timelineModel: overview.modelProxy.notes.timelineModel(index)
+            property int timelineIndex: modelProxy.notes.timelineIndex(index)
+            property int timelineModel: modelProxy.notes.timelineModel(index)
             property double startTime: noteSigns.modelsById[timelineModel].startTime(timelineIndex)
             property double endTime: noteSigns.modelsById[timelineModel].endTime(timelineIndex)
-            x: ((startTime + endTime) / 2 - overview.zoomer.traceStart) * noteSigns.spacing
+            x: ((startTime + endTime) / 2 - zoomer.traceStart) * noteSigns.spacing
             y: timebar.height + noteSigns.vertSpace
             height: noteSigns.vertSpace * 5
             width: 2
@@ -156,7 +178,7 @@ Rectangle {
 
     RangeMover {
         id: rangeMover
-        visible: overview.modelProxy.height > 0
+        visible: modelProxy.height > 0
         onRangeLeftChanged: overview.updateZoomer()
         onRangeRightChanged: overview.updateZoomer()
     }

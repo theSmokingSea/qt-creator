@@ -1,20 +1,43 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "breakpoint.h"
-#include "debugger_global.h"
 #include "debuggerprotocol.h"
 
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/treemodel.h>
 
+#include <QCoreApplication>
 #include <QPointer>
 
 namespace Utils { class ItemViewEvent; }
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 class BreakHandler;
 class BreakpointItem;
@@ -41,6 +64,8 @@ using SubBreakpoint = QPointer<SubBreakpointItem>;
 
 class GlobalBreakpointItem : public QObject, public Utils::TreeItem
 {
+    Q_DECLARE_TR_FUNCTIONS(Debugger::Internal::BreakHandler)
+
 public:
     explicit GlobalBreakpointItem();
     ~GlobalBreakpointItem() override;
@@ -90,6 +115,8 @@ using GlobalBreakpoints = QList<GlobalBreakpoint>;
 
 class BreakpointItem final : public QObject, public Utils::TypedTreeItem<SubBreakpointItem>
 {
+    Q_DECLARE_TR_FUNCTIONS(Debugger::Internal::BreakHandler)
+
 public:
     explicit BreakpointItem(const GlobalBreakpoint &gbp);
     ~BreakpointItem() final;
@@ -98,8 +125,7 @@ public:
 
     QIcon icon(bool withLocationMarker = false) const;
 
-    void setMarkerFileAndPosition(const Utils::FilePath &fileName,
-                                  const Utils::Text::Position &textPosition);
+    void setMarkerFileAndLine(const Utils::FilePath &fileName, int lineNumber);
     bool needsChange() const;
 
     SubBreakpoint findOrCreateSubBreakpoint(const QString &responseId);
@@ -107,10 +133,8 @@ public:
     int markerLineNumber() const;
 
     const BreakpointParameters &requestedParameters() const;
-    void addToCommand(DebuggerCommand *cmd,
-                      BreakpointPathUsage defaultPathUsage
-                      = BreakpointPathUsage::BreakpointUseFullPath) const;
-    void updateFromGdbOutput(const GdbMi &bkpt, const Utils::FilePath &fileRoot);
+    void addToCommand(DebuggerCommand *cmd) const;
+    void updateFromGdbOutput(const GdbMi &bkpt);
 
     int modelId() const;
     QString responseId() const { return m_responseId; }
@@ -131,14 +155,14 @@ public:
     QString message() const { return m_parameters.message; }
     QString command() const { return m_parameters.command; }
     quint64 address() const { return m_parameters.address; }
-    Utils::Text::Position textPosition() const { return m_parameters.textPosition; }
+    int lineNumber() const { return m_parameters.lineNumber; }
     bool isEnabled() const { return m_parameters.enabled; }
     bool isWatchpoint() const { return m_parameters.isWatchpoint(); }
     bool isTracepoint() const { return m_parameters.isTracepoint(); }
     bool isOneShot() const { return m_parameters.oneShot; }
     bool isPending() const { return m_parameters.pending; }
 
-    void setTextPosition(const Utils::Text::Position pos) { m_parameters.textPosition = pos; }
+    void setLineNumber(int lineNumber) { m_parameters.lineNumber = lineNumber; }
     void setFileName(const Utils::FilePath &fileName) { m_parameters.fileName = fileName; }
     void setFunctionName(const QString &functionName) { m_parameters.functionName = functionName; }
     void setPending(bool pending);
@@ -205,6 +229,8 @@ inline auto qHash(const Debugger::Internal::GlobalBreakpoint &b) { return qHash(
 
 class BreakHandler : public BreakHandlerModel
 {
+    Q_OBJECT
+
 public:
     explicit BreakHandler(DebuggerEngine *engine);
 
@@ -263,8 +289,10 @@ private:
     DebuggerEngine * const m_engine;
 };
 
-class DEBUGGER_EXPORT BreakpointManager : public BreakpointManagerModel
+class BreakpointManager : public BreakpointManagerModel
 {
+    Q_OBJECT
+
 public:
     BreakpointManager();
 
@@ -300,4 +328,6 @@ private:
     void editBreakpoints(const GlobalBreakpoints &gbps, QWidget *parent);
 };
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger
+

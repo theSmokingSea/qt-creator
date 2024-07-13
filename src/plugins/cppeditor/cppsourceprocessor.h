@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -31,6 +53,8 @@ public:
     using DocumentCallback = std::function<void (const CPlusPlus::Document::Ptr &)>;
 
 public:
+    static QString cleanPath(const QString &path);
+
     CppSourceProcessor(const CPlusPlus::Snapshot &snapshot, DocumentCallback documentFinished);
     ~CppSourceProcessor() override;
 
@@ -43,8 +67,8 @@ public:
     void setFileSizeLimitInMb(int fileSizeLimitInMb);
     void setTodo(const QSet<QString> &files);
 
-    void run(const Utils::FilePath &filePath, const Utils::FilePaths &initialIncludes = {});
-    void removeFromCache(const Utils::FilePath &filePath);
+    void run(const QString &fileName, const QStringList &initialIncludes = QStringList());
+    void removeFromCache(const QString &fileName);
     void resetEnvironment();
 
     CPlusPlus::Snapshot snapshot() const { return m_snapshot; }
@@ -57,18 +81,17 @@ private:
 
     CPlusPlus::Document::Ptr switchCurrentDocument(CPlusPlus::Document::Ptr doc);
 
-    bool getFileContents(const Utils::FilePath &absoluteFilePath, QByteArray *contents,
+    bool getFileContents(const QString &absoluteFilePath, QByteArray *contents,
                          unsigned *revision) const;
-    bool checkFile(const Utils::FilePath &absoluteFilePath) const;
-    Utils::FilePath resolveFile(const Utils::FilePath &filePath, IncludeType type);
-    Utils::FilePath resolveFile_helper(const Utils::FilePath &filePath,
-                                       ProjectExplorer::HeaderPaths::Iterator headerPathsIt);
+    bool checkFile(const QString &absoluteFilePath) const;
+    QString resolveFile(const QString &fileName, IncludeType type);
+    QString resolveFile_helper(const QString &fileName,
+                               ProjectExplorer::HeaderPaths::Iterator headerPathsIt);
 
     void mergeEnvironment(CPlusPlus::Document::Ptr doc);
 
     // Client interface
     void macroAdded(const CPlusPlus::Macro &macro) override;
-    void pragmaAdded(const CPlusPlus::Pragma &pragma) override;
     void passedMacroDefinitionCheck(int bytesOffset, int utf16charsOffset,
                                     int line, const CPlusPlus::Macro &macro) override;
     void failedMacroDefinitionCheck(int bytesOffset, int utf16charOffset,
@@ -82,8 +105,8 @@ private:
     void markAsIncludeGuard(const QByteArray &macroName) override;
     void startSkippingBlocks(int utf16charsOffset) override;
     void stopSkippingBlocks(int utf16charsOffset) override;
-    void sourceNeeded(int line, const Utils::FilePath &filePath, IncludeType type,
-                      const Utils::FilePaths &initialIncludes) override;
+    void sourceNeeded(int line, const QString &fileName, IncludeType type,
+                      const QStringList &initialIncludes) override;
 
 private:
     CPlusPlus::Snapshot m_snapshot;
@@ -94,13 +117,13 @@ private:
     ProjectExplorer::HeaderPaths m_headerPaths;
     CPlusPlus::LanguageFeatures m_languageFeatures;
     WorkingCopy m_workingCopy;
-    QSet<Utils::FilePath> m_included;
+    QSet<QString> m_included;
     CPlusPlus::Document::Ptr m_currentDoc;
     QSet<QString> m_todo;
-    QSet<Utils::FilePath> m_processed;
-    QHash<Utils::FilePath, Utils::FilePath> m_fileNameCache;
+    QSet<QString> m_processed;
+    QHash<QString, QString> m_fileNameCache;
     int m_fileSizeLimitInMb = -1;
     QTextCodec *m_defaultCodec;
 };
 
-} // CppEditor::Internal
+} // namespace CppEditor::Internal

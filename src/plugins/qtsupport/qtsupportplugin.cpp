@@ -1,18 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
+
+#include "qtsupportplugin.h"
 
 #include "codegenerator.h"
-#include "externaleditors.h"
+#include "codegensettingspage.h"
 #include "gettingstartedwelcomepage.h"
 #include "profilereader.h"
 #include "qscxmlcgenerator.h"
-#include "qtkitaspect.h"
+#include "qtkitinformation.h"
 #include "qtoptionspage.h"
 #include "qtoutputformatter.h"
-#include "qtparser.h"
-#include "qtprojectimporter.h"
-#include "qtsupporttr.h"
-#include "qttestparser.h"
+#include "qtsupportconstants.h"
 #include "qtversionmanager.h"
 #include "qtversions.h"
 #include "translationwizardpage.h"
@@ -21,130 +42,67 @@
 #include <coreplugin/icore.h>
 #include <coreplugin/jsexpander.h>
 
-#include <extensionsystem/iplugin.h>
-
 #include <projectexplorer/jsonwizard/jsonwizardfactory.h>
-#include <projectexplorer/buildpropertiessettings.h>
 #include <projectexplorer/project.h>
-#include <projectexplorer/projectmanager.h>
+#include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projecttree.h>
+#include <projectexplorer/runcontrol.h>
+#include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
 
-#include <proparser/qmakeevaluator.h>
-
-#include <utils/filepath.h>
 #include <utils/infobar.h>
 #include <utils/macroexpander.h>
-#include <utils/qtcprocess.h>
-
-#include <QInputDialog>
 
 using namespace Core;
-using namespace Utils;
 using namespace ProjectExplorer;
 
-namespace QtSupport::Internal {
+namespace QtSupport {
+namespace Internal {
 
-static void processRunnerCallback(ProcessData *data)
+class QtSupportPluginPrivate
 {
-    FilePath rootPath = FilePath::fromString(data->deviceRoot);
+public:
+    QtVersionManager qtVersionManager;
 
-    Process proc;
-    proc.setProcessChannelMode(data->processChannelMode);
-    proc.setCommand({rootPath.withNewPath("/bin/sh"), {QString("-c"), data->command}});
-    proc.setWorkingDirectory(FilePath::fromString(data->workingDirectory));
-    proc.setEnvironment(Environment(data->environment.toStringList(), OsTypeLinux));
+    DesktopQtVersionFactory desktopQtVersionFactory;
+    EmbeddedLinuxQtVersionFactory embeddedLinuxQtVersionFactory;
 
-    proc.runBlocking();
+    CodeGenSettingsPage codeGenSettingsPage;
+    QtOptionsPage qtOptionsPage;
 
-    data->exitCode = proc.exitCode();
-    data->exitStatus = proc.exitStatus();
-    data->stdErr = proc.rawStdErr();
-    data->stdOut = proc.rawStdOut();
-}
+    ExamplesWelcomePage examplesPage{true};
+    ExamplesWelcomePage tutorialPage{false};
 
-class QtSupportPlugin final : public ExtensionSystem::IPlugin
-{
-    Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "QtSupport.json")
+    QtKitAspect qtKiAspect;
 
-    void initialize() final;
-    void extensionsInitialized() final;
-    ShutdownFlag aboutToShutdown() final;
+    QtOutputFormatterFactory qtOutputFormatterFactory;
+
+    UicGeneratorFactory uicGeneratorFactory;
+    QScxmlcGeneratorFactory qscxmlcGeneratorFactory;
 };
 
-void QtSupportPlugin::initialize()
+QtSupportPlugin::~QtSupportPlugin()
 {
-#ifdef WITH_TESTS
-    addTestCreator(createQtOutputFormatterTest);
-    addTestCreator(createQtBuildStringParserTest);
-    addTestCreator(createQtOutputParserTest);
-    addTestCreator(createQtTestParserTest);
-    addTestCreator(createQtProjectImporterTest);
-#endif
+    delete d;
+}
 
-    setupQtVersionManager(this);
-
-    setupDesktopQtVersion();
-    setupEmbeddedLinuxQtVersion();
-    setupGettingStartedWelcomePage();
-    setupQtSettingsPage();
-    setupQtOutputFormatter();
-    setupUicGenerator(this);
-    setupQScxmlcGenerator(this);
-
-    setupExternalDesigner(this);
-    setupExternalLinguist();
-
-    setupTranslationWizardPage();
-
-    theProcessRunner() = processRunnerCallback;
-
-    thePrompter() = [this](const QString &msg, const QStringList &context) -> std::optional<QString> {
-        std::optional<QString> res;
-        QEventLoop loop;
-
-        QMetaObject::invokeMethod(this, [msg, context, &res, &loop] {
-            QString text;
-            if (!context.isEmpty()) {
-                text = "Preceding lines:<i><br>&nbsp;&nbsp;&nbsp;..."
-                       + context.join("<br>&nbsp;&nbsp;&nbsp;")
-                       + "</i><p>";
-            }
-            text += msg;
-            bool ok = false;
-            const QString line = QInputDialog::getText(
-                ICore::dialogParent(),
-                /*title*/ "QMake Prompt",
-                /*label*/ text,
-                /*echo mode*/ QLineEdit::Normal,
-                /*text*/ QString(),
-                /*ok*/ &ok,
-                /*flags*/ Qt::WindowFlags(),
-                /*QInputMethodHints*/ Qt::ImhNone);
-            if (ok)
-                res = line;
-            loop.quit();
-        }, Qt::QueuedConnection);
-        loop.exec(QEventLoop::ExcludeUserInputEvents);
-        return res;
-    };
-
+bool QtSupportPlugin::initialize(const QStringList &arguments, QString *errorMessage)
+{
+    Q_UNUSED(arguments)
+    Q_UNUSED(errorMessage)
     QMakeParser::initialize();
     ProFileEvaluator::initialize();
     new ProFileCacheManager(this);
 
     JsExpander::registerGlobalObject<CodeGenerator>("QtSupport");
+    ProjectExplorer::JsonWizardFactory::registerPageFactory(new TranslationWizardPageFactory);
+    ProjectExplorerPlugin::showQtSettings();
 
-    BuildPropertiesSettings::showQtSettings();
+    d = new QtSupportPluginPrivate;
 
     QtVersionManager::initialized();
-}
 
-ExtensionSystem::IPlugin::ShutdownFlag QtSupportPlugin::aboutToShutdown()
-{
-    QtVersionManager::shutdown();
-    return SynchronousShutdown;
+    return true;
 }
 
 const char kLinkWithQtInstallationSetting[] = "LinkWithQtInstallation";
@@ -153,19 +111,19 @@ static void askAboutQtInstallation()
 {
     // if the install settings exist, the Qt Creator installation is (probably) already linked to
     // a Qt installation, so don't ask
-    if (!LinkWithQtSupport::canLinkWithQt() || LinkWithQtSupport::isLinkedWithQt()
+    if (!QtOptionsPage::canLinkWithQt() || QtOptionsPage::isLinkedWithQt()
         || !ICore::infoBar()->canInfoBeAdded(kLinkWithQtInstallationSetting))
         return;
 
     Utils::InfoBarEntry info(
         kLinkWithQtInstallationSetting,
-        Tr::tr(
+        QtSupportPlugin::tr(
             "Link with a Qt installation to automatically register Qt versions and kits? To do "
             "this later, select Edit > Preferences > Kits > Qt Versions > Link with Qt."),
         Utils::InfoBarEntry::GlobalSuppression::Enabled);
-    info.addCustomButton(Tr::tr("Link with Qt"), [] {
+    info.addCustomButton(QtSupportPlugin::tr("Link with Qt"), [] {
         ICore::infoBar()->removeInfo(kLinkWithQtInstallationSetting);
-        QTimer::singleShot(0, ICore::dialogParent(), &LinkWithQtSupport::linkWithQt);
+        QTimer::singleShot(0, ICore::dialogParent(), &QtOptionsPage::linkWithQt);
     });
     ICore::infoBar()->addInfo(info);
 }
@@ -183,8 +141,8 @@ void QtSupportPlugin::extensionsInitialized()
     static const char kCurrentHostBins[] = "CurrentDocument:Project:QT_HOST_BINS";
     expander->registerVariable(
         kCurrentHostBins,
-        Tr::tr("Full path to the host bin directory of the Qt version in the active kit "
-               "of the project containing the current document."),
+        tr("Full path to the host bin directory of the Qt version in the active kit "
+           "of the project containing the current document."),
         []() {
             const QtVersion * const qt = currentQtVersion();
             return qt ? qt->hostBinPath().toUserOutput() : QString();
@@ -192,8 +150,8 @@ void QtSupportPlugin::extensionsInitialized()
 
     expander->registerVariable(
         "CurrentDocument:Project:QT_INSTALL_BINS",
-        Tr::tr("Full path to the target bin directory of the Qt version in the active kit "
-               "of the project containing the current document.<br>You probably want %1 instead.")
+        tr("Full path to the target bin directory of the Qt version in the active kit "
+           "of the project containing the current document.<br>You probably want %1 instead.")
             .arg(QString::fromLatin1(kCurrentHostBins)),
         []() {
             const QtVersion * const qt = currentQtVersion();
@@ -202,15 +160,15 @@ void QtSupportPlugin::extensionsInitialized()
 
     expander->registerVariable(
         "CurrentDocument:Project:QT_HOST_LIBEXECS",
-        Tr::tr("Full path to the host libexec directory of the Qt version in the active kit "
-               "of the project containing the current document."),
+        tr("Full path to the host libexec directory of the Qt version in the active kit "
+           "of the project containing the current document."),
         []() {
             const QtVersion *const qt = currentQtVersion();
             return qt ? qt->hostLibexecPath().toUserOutput() : QString();
         });
 
     static const auto activeQtVersion = []() -> const QtVersion * {
-        ProjectExplorer::Project *project = ProjectManager::startupProject();
+        ProjectExplorer::Project *project = SessionManager::startupProject();
         if (!project || !project->activeTarget())
             return nullptr;
         return QtKitAspect::qtVersion(project->activeTarget()->kit());
@@ -218,8 +176,8 @@ void QtSupportPlugin::extensionsInitialized()
     static const char kActiveHostBins[] = "ActiveProject:QT_HOST_BINS";
     expander->registerVariable(
         kActiveHostBins,
-        Tr::tr("Full path to the host bin directory of the Qt version in the active kit "
-               "of the active project."),
+        tr("Full path to the host bin directory of the Qt version in the active kit "
+           "of the active project."),
         []() {
             const QtVersion * const qt = activeQtVersion();
             return qt ? qt->hostBinPath().toUserOutput() : QString();
@@ -227,8 +185,8 @@ void QtSupportPlugin::extensionsInitialized()
 
     expander->registerVariable(
         "ActiveProject:QT_INSTALL_BINS",
-        Tr::tr("Full path to the target bin directory of the Qt version in the active kit "
-               "of the active project.<br>You probably want %1 instead.")
+        tr("Full path to the target bin directory of the Qt version in the active kit "
+           "of the active project.<br>You probably want %1 instead.")
             .arg(QString::fromLatin1(kActiveHostBins)),
         []() {
             const QtVersion * const qt = activeQtVersion();
@@ -237,63 +195,15 @@ void QtSupportPlugin::extensionsInitialized()
 
     expander->registerVariable(
         "ActiveProject::QT_HOST_LIBEXECS",
-        Tr::tr("Full path to the libexec directory of the Qt version in the active kit "
-               "of the active project."),
+        tr("Full path to the libexec bin directory of the Qt version in the active kit "
+           "of the active project."),
         []() {
             const QtVersion *const qt = activeQtVersion();
             return qt ? qt->hostLibexecPath().toUserOutput() : QString();
         });
 
-    HelpItem::setLinkNarrower([](const HelpItem &item, const HelpItem::Links &links) {
-        const FilePath filePath = item.filePath();
-        if (filePath.isEmpty())
-            return links;
-        const Project *project = ProjectManager::projectForFile(filePath);
-        Target *target = project ? project->activeTarget() : nullptr;
-        QtVersion *qt = target ? QtKitAspect::qtVersion(target->kit()) : nullptr;
-        if (!qt)
-            return links;
-
-        // Find best-suited documentation version, so
-        // sort into buckets of links with exact, same minor, and same major, and return the first
-        // that has entries.
-        const QVersionNumber qtVersion = qt->qtVersion();
-        HelpItem::Links exactVersion;
-        HelpItem::Links sameMinor;
-        HelpItem::Links sameMajor;
-        bool hasExact = false;
-        bool hasSameMinor = false;
-        bool hasSameMajor = false;
-        for (const HelpItem::Link &link : links) {
-            const QUrl url = link.second;
-            const QVersionNumber version = HelpItem::extractQtVersionNumber(url).second;
-            // version.isNull() means it's not a Qt documentation URL, so include regardless
-            if (version.isNull() || version.majorVersion() == qtVersion.majorVersion()) {
-                sameMajor.push_back(link);
-                hasSameMajor = true;
-                if (version.isNull() || version.minorVersion() == qtVersion.minorVersion()) {
-                    sameMinor.push_back(link);
-                    hasSameMinor = true;
-                    if (version.isNull() || version.microVersion() == qtVersion.microVersion()) {
-                        exactVersion.push_back(link);
-                        hasExact = true;
-                    }
-                }
-            }
-        }
-        // HelpItem itself finds the highest version within sameMinor/Major/etc itself
-        if (hasExact)
-            return exactVersion;
-        if (hasSameMinor)
-            return sameMinor;
-        if (hasSameMajor)
-            return sameMajor;
-        return links;
-    });
-
     askAboutQtInstallation();
 }
 
-} // QtSupport::Internal
-
-#include "qtsupportplugin.moc"
+} // Internal
+} // QtSupport

@@ -1,69 +1,109 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "uicontroller.h"
 
-#include <coreplugin/icore.h>
+#include "modeleditor_constants.h"
 
-#include <utils/qtcsettings.h>
-
-using namespace Utils;
+#include <QSettings>
 
 namespace ModelEditor {
 namespace Internal {
 
-// Settings entries
-const char SETTINGS_RIGHT_SPLITTER[] = "ModelEditorPlugin/RightSplitter";
-const char SETTINGS_RIGHT_HORIZ_SPLITTER[] = "ModelEditorPlugin/RightHorizSplitter";
+class UiController::UiControllerPrivate
+{
+public:
+    QByteArray rightSplitterState;
+    QByteArray rightHorizSplitterState;
+};
+
+UiController::UiController()
+    : d(new UiControllerPrivate)
+{
+}
+
+UiController::~UiController()
+{
+    delete d;
+}
 
 bool UiController::hasRightSplitterState() const
 {
-    return !m_rightSplitterState.isEmpty();
+    return !d->rightSplitterState.isEmpty();
 }
 
 QByteArray UiController::rightSplitterState() const
 {
-    return m_rightSplitterState;
+    return d->rightSplitterState;
 }
 
 bool UiController::hasRightHorizSplitterState() const
 {
-    return  !m_rightHorizSplitterState.isEmpty();
+    return  !d->rightHorizSplitterState.isEmpty();
 }
 
 QByteArray UiController::rightHorizSplitterState() const
 {
-    return m_rightHorizSplitterState;
+    return d->rightHorizSplitterState;
 }
 
 void UiController::onRightSplitterChanged(const QByteArray &state)
 {
-    m_rightSplitterState = state;
+    d->rightSplitterState = state;
     emit rightSplitterChanged(state);
 }
 
 void UiController::onRightHorizSplitterChanged(const QByteArray &state)
 {
-    m_rightHorizSplitterState = state;
+    d->rightHorizSplitterState = state;
     emit rightHorizSplitterChanged(state);
 }
 
-void UiController::saveSettings()
+void UiController::saveSettings(QSettings *settings)
 {
-    QtcSettings *settings = Core::ICore::settings();
-    if (hasRightSplitterState())
-        settings->setValue(SETTINGS_RIGHT_SPLITTER, m_rightSplitterState);
-    if (hasRightHorizSplitterState())
-        settings->setValue(SETTINGS_RIGHT_HORIZ_SPLITTER, m_rightHorizSplitterState);
+    if (hasRightSplitterState()) {
+        settings->setValue(
+                    QLatin1String(Constants::SETTINGS_RIGHT_SPLITTER), d->rightSplitterState);
+    }
+    if (hasRightHorizSplitterState()) {
+        settings->setValue(
+                    QLatin1String(Constants::SETTINGS_RIGHT_HORIZ_SPLITTER),
+                    d->rightHorizSplitterState);
+    }
 }
 
-void UiController::loadSettings()
+void UiController::loadSettings(QSettings *settings)
 {
-    QtcSettings *settings = Core::ICore::settings();
-    if (settings->contains(SETTINGS_RIGHT_SPLITTER))
-        m_rightSplitterState = settings->value(SETTINGS_RIGHT_SPLITTER).toByteArray();
-    if (settings->contains(SETTINGS_RIGHT_HORIZ_SPLITTER))
-        m_rightHorizSplitterState = settings->value(SETTINGS_RIGHT_HORIZ_SPLITTER).toByteArray();
+    if (settings->contains(QLatin1String(Constants::SETTINGS_RIGHT_SPLITTER))) {
+        d->rightSplitterState = settings->value(
+                    QLatin1String(Constants::SETTINGS_RIGHT_SPLITTER)).toByteArray();
+    }
+    if (settings->contains(QLatin1String(Constants::SETTINGS_RIGHT_HORIZ_SPLITTER))) {
+        d->rightHorizSplitterState = settings->value(
+                    QLatin1String(Constants::SETTINGS_RIGHT_HORIZ_SPLITTER)).toByteArray();
+    }
 }
 
 } // namespace Internal

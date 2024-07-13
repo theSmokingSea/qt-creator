@@ -8,11 +8,11 @@
 #define KSYNTAXHIGHLIGHTING_REPOSITORY_P_H
 
 #include <QHash>
-#include <QList>
-#include <QMap>
-#include <QString>
+#include <QVector>
 
-#include "dynamicregexpcache_p.h"
+QT_BEGIN_NAMESPACE
+class QString;
+QT_END_NAMESPACE
 
 namespace KSyntaxHighlighting
 {
@@ -29,31 +29,29 @@ public:
 
     void load(Repository *repo);
     void loadSyntaxFolder(Repository *repo, const QString &path);
-    bool loadSyntaxFolderFromIndex(Repository *repo, const QString &path);
+    void loadSyntaxFolderFromIndex(Repository *repo, const QString &path);
 
     void addDefinition(const Definition &def);
 
     void loadThemeFolder(const QString &path);
     void addTheme(const Theme &theme);
 
-    int foldingRegionId(const QString &defName, const QString &foldName);
-    int nextFormatId();
+    quint16 foldingRegionId(const QString &defName, const QString &foldName);
+    quint16 nextFormatId();
 
-    QList<QString> m_customSearchPaths;
+    QVector<QString> m_customSearchPaths;
 
     // sorted map to have deterministic iteration order for e.g. definitionsForFileName
     QMap<QString, Definition> m_defs;
 
     // this vector is sorted by translated sections/names
-    QList<Definition> m_sortedDefs;
+    QVector<Definition> m_sortedDefs;
 
-    QList<Theme> m_themes;
+    QVector<Theme> m_themes;
 
-    QHash<QPair<QString, QString>, int> m_foldingRegionIds;
-    int m_foldingRegionId = 0;
-    int m_formatId = 0;
-
-    DynamicRegexpCache m_dynamicRegexpCache;
+    QHash<QPair<QString, QString>, quint16> m_foldingRegionIds;
+    quint16 m_foldingRegionId = 0;
+    quint16 m_formatId = 0;
 };
 }
 

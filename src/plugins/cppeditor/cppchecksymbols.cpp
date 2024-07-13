@@ -1,15 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppchecksymbols.h"
 
 #include "cpplocalsymbols.h"
 
-#include "cppeditortr.h"
-
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 
+#include <QCoreApplication>
 #include <QDebug>
 
 // This is for experimeting highlighting ctors/dtors as functions (instead of types).
@@ -73,7 +94,9 @@ protected:
     {
         if (!doc)
             return;
-        if (Utils::insert(*processed, doc->globalNamespace())) {
+        if (!processed->contains(doc->globalNamespace())) {
+            processed->insert(doc->globalNamespace());
+
             const QList<Document::Include> includes = doc->resolvedIncludes();
             for (const Document::Include &i : includes)
                 process(_snapshot.document(i.resolvedFileName()), processed);
@@ -167,12 +190,12 @@ protected:
         if (symbol->enclosingEnum() != nullptr)
             addStatic(symbol->name());
 
-        if (symbol->type()->asFunctionType())
+        if (symbol->type()->isFunctionType())
             addFunction(symbol->name());
 
         if (symbol->isTypedef())
             addType(symbol->name());
-        else if (!symbol->type()->asFunctionType() && symbol->enclosingScope()->asClass())
+        else if (!symbol->type()->isFunctionType() && symbol->enclosingScope()->asClass())
             addField(symbol->name());
 
         return true;
@@ -270,40 +293,28 @@ static bool acceptName(NameAST *ast, unsigned *referenceToken)
             && !ast->asOperatorFunctionId();
 }
 
-CheckSymbols::Future CheckSymbols::go(Document::Ptr doc,
-                                      const QString &content,
-                                      const LookupContext &context,
-                                      const QList<CheckSymbols::Result> &macroUses)
+CheckSymbols::Future CheckSymbols::go(Document::Ptr doc, const LookupContext &context, const QList<CheckSymbols::Result> &macroUses)
 {
     QTC_ASSERT(doc, return Future());
     QTC_ASSERT(doc->translationUnit(), return Future());
     QTC_ASSERT(doc->translationUnit()->ast(), return Future());
 
-    return (new CheckSymbols(doc, content, context, macroUses))->start();
+    return (new CheckSymbols(doc, context, macroUses))->start();
 }
 
-CheckSymbols *CheckSymbols::create(Document::Ptr doc,
-                                   const QString &content,
-                                   const LookupContext &context,
-                                   const QList<CheckSymbols::Result> &macroUses)
+CheckSymbols * CheckSymbols::create(Document::Ptr doc, const LookupContext &context,
+                                    const QList<CheckSymbols::Result> &macroUses)
 {
     QTC_ASSERT(doc, return nullptr);
     QTC_ASSERT(doc->translationUnit(), return nullptr);
     QTC_ASSERT(doc->translationUnit()->ast(), return nullptr);
 
-    return new CheckSymbols(doc, content, context, macroUses);
+    return new CheckSymbols(doc, context, macroUses);
 }
 
-CheckSymbols::CheckSymbols(Document::Ptr doc,
-                           const QString &content,
-                           const LookupContext &context,
-                           const QList<CheckSymbols::Result> &macroUses)
-    : ASTVisitor(doc->translationUnit())
-    , _doc(doc)
-    , _content(content)
-    , _context(context)
-    , _lineOfLastUsage(0)
-    , _macroUses(macroUses)
+CheckSymbols::CheckSymbols(Document::Ptr doc, const LookupContext &context, const QList<CheckSymbols::Result> &macroUses)
+    : ASTVisitor(doc->translationUnit()), _doc(doc), _context(context)
+    , _lineOfLastUsage(0), _macroUses(macroUses)
 {
     int line = 0;
     getTokenEndPosition(translationUnit()->ast()->lastToken(), &line, nullptr);
@@ -323,7 +334,7 @@ void CheckSymbols::run()
 {
     CollectSymbols collectTypes(_doc, _context.snapshot());
 
-    _filePath = _doc->filePath();
+    _fileName = _doc->fileName();
     _potentialTypes = collectTypes.types();
     _potentialFields = collectTypes.fields();
     _potentialFunctions = collectTypes.functions();
@@ -345,7 +356,7 @@ void CheckSymbols::run()
 
 bool CheckSymbols::warning(unsigned line, unsigned column, const QString &text, unsigned length)
 {
-    Document::DiagnosticMessage m(Document::DiagnosticMessage::Warning, _filePath, line, column, text, length);
+    Document::DiagnosticMessage m(Document::DiagnosticMessage::Warning, _fileName, line, column, text, length);
     _diagMsgs.append(m);
     return false;
 }
@@ -514,9 +525,11 @@ bool CheckSymbols::visit(SimpleDeclarationAST *ast)
                         // Add a diagnostic message if non-virtual function has override/final marker
                         if ((_usages.back().kind != SemanticHighlighter::VirtualFunctionDeclarationUse)) {
                             if (funTy->isOverride())
-                                warning(declrIdNameAST, Tr::tr("Only virtual functions can be marked 'override'"));
+                                warning(declrIdNameAST, QCoreApplication::translate(
+                                            "CPlusplus::CheckSymbols", "Only virtual functions can be marked 'override'"));
                             else if (funTy->isFinal())
-                                warning(declrIdNameAST, Tr::tr("Only virtual functions can be marked 'final'"));
+                                warning(declrIdNameAST, QCoreApplication::translate(
+                                            "CPlusPlus::CheckSymbols", "Only virtual functions can be marked 'final'"));
                         }
                     }
                 }
@@ -785,7 +798,8 @@ void CheckSymbols::checkNamespace(NameAST *name)
 
     const unsigned length = tokenAt(name->lastToken() - 1).utf16charsEnd()
             - tokenAt(name->firstToken()).utf16charsBegin();
-    warning(line, column, Tr::tr( "Expected a namespace-name"), length);
+    warning(line, column, QCoreApplication::translate("CPlusPlus::CheckSymbols",
+                                                      "Expected a namespace-name"), length);
 }
 
 bool CheckSymbols::hasVirtualDestructor(Class *klass) const
@@ -816,7 +830,8 @@ bool CheckSymbols::hasVirtualDestructor(ClassOrNamespace *binding) const
 
     while (!todo.isEmpty()) {
         ClassOrNamespace *b = todo.takeFirst();
-        if (b && Utils::insert(processed, b)) {
+        if (b && !processed.contains(b)) {
+            processed.insert(b);
             const QList<Symbol *> symbols = b->symbols();
             for (Symbol *s : symbols) {
                 if (Class *k = s->asClass()) {
@@ -1126,8 +1141,8 @@ bool CheckSymbols::visit(FunctionDefinitionAST *ast)
     accept(ast->ctor_initializer);
     accept(ast->function_body);
 
-    const Internal::LocalSymbols locals(_doc, _content, ast);
-    for (const QList<Result> &uses : std::as_const(locals.uses)) {
+    const Internal::LocalSymbols locals(_doc, ast);
+    for (const QList<Result> &uses : qAsConst(locals.uses)) {
         for (const Result &u : uses)
             addUse(u);
     }
@@ -1298,7 +1313,7 @@ bool CheckSymbols::maybeAddField(const QList<LookupItem> &candidates, NameAST *a
             return false;
         if (!(c->enclosingScope() && c->enclosingScope()->asClass()))
             return false; // shadowed
-        if (c->isTypedef() || (c->type() && c->type()->asFunctionType()))
+        if (c->isTypedef() || (c->type() && c->type()->isFunctionType()))
             return false; // shadowed
 
         int line, column;
@@ -1405,9 +1420,9 @@ bool CheckSymbols::maybeAddFunction(const QList<LookupItem> &candidates, NameAST
 
         // Add a diagnostic message if argument count does not match
         if (matchType == Match_TooFewArgs)
-            warning(line, column, Tr::tr("Too few arguments"), length);
+            warning(line, column, QCoreApplication::translate("CplusPlus::CheckSymbols", "Too few arguments"), length);
         else if (matchType == Match_TooManyArgs)
-            warning(line, column, Tr::tr("Too many arguments"), length);
+            warning(line, column, QCoreApplication::translate("CPlusPlus::CheckSymbols", "Too many arguments"), length);
 
         const Result use(line, column, length, kind);
         addUse(use);

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmakeevaluator.h"
 
@@ -287,7 +309,7 @@ QMakeEvaluator::quoteValue(const ProString &val)
                 break;
             case 32:
                 quote = true;
-                [[fallthrough]];
+                // fallthrough
             default:
                 ret += c;
                 break;
@@ -419,9 +441,8 @@ QMakeEvaluator::VisitReturn
 QMakeEvaluator::writeFile(const QString &ctx, const QString &fn, QIODevice::OpenMode mode,
                           QMakeVfs::VfsFlags flags, const QString &contents)
 {
-    const QString fileName = deviceRoot() + fn;
-    int oldId = m_vfs->idForFileName(fileName, flags | QMakeVfs::VfsAccessedOnly);
-    int id = m_vfs->idForFileName(fileName, flags | QMakeVfs::VfsCreate);
+    int oldId = m_vfs->idForFileName(fn, flags | QMakeVfs::VfsAccessedOnly);
+    int id = m_vfs->idForFileName(fn, flags | QMakeVfs::VfsCreate);
     QString errStr;
     if (!m_vfs->writeFile(id, mode, flags, contents, &errStr)) {
         evalError(fL1S("Cannot write %1file %2: %3")
@@ -431,72 +452,6 @@ QMakeEvaluator::writeFile(const QString &ctx, const QString &fn, QIODevice::Open
     if (oldId)
         m_parser->discardFileFromCache(oldId);
     return ReturnTrue;
-}
-
-// This is the global callback
-
-QMAKE_EXPORT std::function<void(ProcessData *data)> &theProcessRunner()
-{
-    static std::function<void(ProcessData *)> runner;
-    return runner;
-}
-
-QMAKE_EXPORT std::function<std::optional<QString>(const QString &, const QStringList &)>
-    &thePrompter()
-{
-    static std::function<std::optional<QString>(const QString &, const QStringList &)> prompter;
-    return prompter;
-}
-
-void QMakeEvaluator::runProcessHelper(ProcessData *data) const
-{
-    const QString root = deviceRoot();
-    if (root.isEmpty()) {
-
-        // The "normal" setup.
-        QProcess proc;
-
-        proc.setProcessChannelMode(data->processChannelMode);
-
-        runProcess(&proc, data->command);
-
-        data->exitCode = proc.exitCode();
-        data->exitStatus = proc.exitStatus();
-        data->stdOut = proc.readAllStandardOutput();
-        data->stdErr = proc.readAllStandardError();
-
-    } else {
-
-        // "Remote"
-        const std::function<void(ProcessData *data)> &runner = theProcessRunner();
-        if (!runner) {
-            qWarning("Missing qmake process callback");
-            data->exitCode = -1;
-            data->exitStatus = QProcess::CrashExit;
-            return;
-        }
-
-        data->workingDirectory = currentDirectory();
-# ifdef PROEVALUATOR_SETENV
-        if (!m_option->environment.isEmpty()) {
-            QProcessEnvironment env = m_option->environment;
-            static const QString dummyVar = "__qtc_dummy";
-            static const QString notSetValue = "not set";
-            const QString oldValue = env.value(dummyVar, notSetValue); // Just in case.
-            env.insert(dummyVar, "QTCREATORBUG-23504"); // Force detach.
-            if (oldValue == notSetValue)
-                env.remove(dummyVar);
-            else
-                env.insert(dummyVar, oldValue);
-            data->environment = env;
-        }
-# endif
-
-        data->deviceRoot = root;
-
-        runner(data);
-
-    }
 }
 
 #ifndef QT_BOOTSTRAPPED
@@ -552,15 +507,10 @@ QByteArray QMakeEvaluator::getCommandOutput(const QString &args, int *exitCode) 
 {
     QByteArray out;
 #ifndef QT_BOOTSTRAPPED
-    ProcessData data;
-    data.command = args;
-
-    runProcessHelper(&data);
-
-    *exitCode = data.exitStatus == QProcess::NormalExit ? data.exitCode : -1;
-    QByteArray errout = data.stdErr;
-
-
+    QProcess proc;
+    runProcess(&proc, args);
+    *exitCode = (proc.exitStatus() == QProcess::NormalExit) ? proc.exitCode() : -1;
+    QByteArray errout = proc.isReadable() ? proc.readAllStandardError() : QByteArray();
 # ifdef PROEVALUATOR_FULL
     // FIXME: Qt really should have the option to set forwarding per channel
     fputs(errout.constData(), stderr);
@@ -573,7 +523,7 @@ QByteArray QMakeEvaluator::getCommandOutput(const QString &args, int *exitCode) 
             QString::fromLocal8Bit(errout));
     }
 # endif
-    out = data.stdOut;
+    out = proc.isReadable() ? proc.readAllStandardOutput() : QByteArray();
 # ifdef Q_OS_WIN
     // FIXME: Qt's line end conversion on sequential files should really be fixed
     out.replace("\r\n", "\n");
@@ -618,7 +568,7 @@ void QMakeEvaluator::populateDeps(
             if (depends.isEmpty()) {
                 rootSet.insert(first(ProKey(prefix + item + priosfx)).toInt(), item);
             } else {
-                for (const ProString &dep : std::as_const(depends)) {
+                foreach (const ProString &dep, depends) {
                     dset.insert(dep.toKey());
                     dependees[dep.toKey()] << item;
                 }
@@ -771,7 +721,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
             evalError(fL1S("num_add(num, ...) requires at least one argument."));
         } else {
             qlonglong sum = 0;
-            for (const ProString &arg : args) {
+            foreach (const ProString &arg, args) {
                 if (arg.contains(QLatin1Char('.'))) {
                     evalError(fL1S("num_add(): floats are currently not supported."));
                     goto nafail;
@@ -935,7 +885,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
                             ret += ProString(stream.readLine());
                         } else {
                             const QString &line = stream.readLine();
-                            ret += split_value_list(QStringView(line).trimmed());
+                            ret += split_value_list(Utils::make_stringview(line).trimmed());
                             if (!singleLine)
                                 ret += ProString("\n");
                         }
@@ -1022,7 +972,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
                         output.replace(QLatin1Char('\t'), QLatin1Char(' '));
                         if (singleLine)
                             output.replace(QLatin1Char('\n'), QLatin1Char(' '));
-                        ret += split_value_list(QStringView(output));
+                        ret += split_value_list(Utils::make_stringview(output));
                     }
                 }
             }
@@ -1132,7 +1082,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
             QString r = m_option->expandEnvVars(args.at(0).toQString(m_tmp1))
                         .replace(QLatin1Char('\\'), QLatin1Char('/'));
             QString pfx;
-            if (IoUtils::isRelativePath(deviceRoot(), r)) {
+            if (IoUtils::isRelativePath(r)) {
                 pfx = currentDirectory();
                 if (!pfx.endsWith(QLatin1Char('/')))
                     pfx += QLatin1Char('/');
@@ -1153,12 +1103,12 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
             }
             for (int d = 0; d < dirs.count(); d++) {
                 QString dir = dirs[d];
-                QDir qdir(deviceRoot() + pfx + dir);
+                QDir qdir(pfx + dir);
                 for (int i = 0; i < (int)qdir.count(); ++i) {
                     if (qdir[i] == statics.strDot || qdir[i] == statics.strDotDot)
                         continue;
                     QString fname = dir + qdir[i];
-                    if (IoUtils::fileType(deviceRoot(), pfx + fname) == IoUtils::FileIsDir) {
+                    if (IoUtils::fileType(pfx + fname) == IoUtils::FileIsDir) {
                         if (recursive)
                             dirs.append(fname + QLatin1Char('/'));
                     }
@@ -1168,12 +1118,12 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
             }
         }
         break;
-//#ifdef PROEVALUATOR_FULL
+#ifdef PROEVALUATOR_FULL
     case E_PROMPT: {
         if (args.count() != 1 && args.count() != 2) {
             evalError(fL1S("prompt(question, [decorate=true]) requires one or two arguments."));
-        } else if (currentFileName() == QLatin1String("-")) {
-            evalError(fL1S("prompt(question) cannot be used when '-o -' is used"));
+//        } else if (currentFileName() == QLatin1String("-")) {
+//            evalError(fL1S("prompt(question) cannot be used when '-o -' is used"));
         } else {
             QString msg = m_option->expandEnvVars(args.at(0).toQString(m_tmp1));
             bool decorate = true;
@@ -1186,32 +1136,20 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
             } else {
                 fputs(qPrintable(msg), stderr);
             }
-
-            if (thePrompter()) {
-                std::optional<QString> line = thePrompter()(msg, m_logBuffer);
-                m_logBuffer.clear();
-                if (!line) {
+            QFile qfile;
+            if (qfile.open(stdin, QIODevice::ReadOnly)) {
+                QTextStream t(&qfile);
+                const QString &line = t.readLine();
+                if (t.atEnd()) {
                     fputs("\n", stderr);
                     evalError(fL1S("Unexpected EOF."));
                     return ReturnError;
                 }
-                ret = split_value_list(QStringView(*line));
-             } else {
-                QFile qfile;
-                if (qfile.open(stdin, QIODevice::ReadOnly)) {
-                    QTextStream t(&qfile);
-                    const QString &line = t.readLine();
-                    if (t.atEnd()) {
-                        fputs("\n", stderr);
-                        evalError(fL1S("Unexpected EOF."));
-                        return ReturnError;
-                    }
-                    ret = split_value_list(QStringView(line));
-                }
-             }
+                ret = split_value_list(Utils::make_stringview(line));
+            }
         }
         break; }
-//#endif
+#endif
     case E_REPLACE:
         if (args.count() != 3 ) {
             evalError(fL1S("replace(var, before, after) requires three arguments."));
@@ -1258,7 +1196,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
                 rootSet.erase(it);
                 if ((func_t == E_RESOLVE_DEPENDS) || orgList.contains(item))
                     ret.prepend(item);
-                for (const ProString &dep : std::as_const(dependees[item.toKey()])) {
+                foreach (const ProString &dep, dependees[item.toKey()]) {
                     QSet<ProKey> &dset = dependencies[dep.toKey()];
                     dset.remove(item.toKey());
                     if (dset.isEmpty())
@@ -1269,11 +1207,11 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
         break;
     case E_ENUMERATE_VARS: {
         QSet<ProString> keys;
-        for (const ProValueMap &vmap : std::as_const(m_valuemapStack))
+        foreach (const ProValueMap &vmap, m_valuemapStack)
             for (ProValueMap::ConstIterator it = vmap.constBegin(); it != vmap.constEnd(); ++it)
                 keys.insert(it.key());
         ret.reserve(keys.size());
-        for (const ProString &key : std::as_const(keys))
+        foreach (const ProString &key, keys)
             ret << key;
         break; }
     case E_SHADOWED:
@@ -1292,7 +1230,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
         } else {
             QString arg = args.at(0).toQString(m_tmp1);
             QString baseDir = args.count() > 1 ? args.at(1).toQString(m_tmp2) : currentDirectory();
-            QString rstr = arg.isEmpty() ? baseDir : IoUtils::resolvePath(deviceRoot(), baseDir, arg);
+            QString rstr = arg.isEmpty() ? baseDir : IoUtils::resolvePath(baseDir, arg);
             ret << (rstr.isSharedWith(m_tmp1)
                         ? args.at(0)
                         : args.count() > 1 && rstr.isSharedWith(m_tmp2)
@@ -1306,7 +1244,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinExpand(
         } else {
             QString arg = args.at(0).toQString(m_tmp1);
             QString baseDir = args.count() > 1 ? args.at(1).toQString(m_tmp2) : currentDirectory();
-            QString absArg = arg.isEmpty() ? baseDir : IoUtils::resolvePath(deviceRoot(), baseDir, arg);
+            QString absArg = arg.isEmpty() ? baseDir : IoUtils::resolvePath(baseDir, arg);
             QString rstr = QDir(baseDir).relativeFilePath(absArg);
             ret << (rstr.isSharedWith(m_tmp1) ? args.at(0) : ProString(rstr).setSource(args.at(0)));
         }
@@ -1489,7 +1427,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
         }
         QString fn = resolvePath(args.at(0).toQString(m_tmp1));
         QMakeVfs::VfsFlags flags = (m_cumulative ? QMakeVfs::VfsCumulative : QMakeVfs::VfsExact);
-        int pro = m_vfs->idForFileName(deviceRoot() + fn, flags | QMakeVfs::VfsAccessedOnly);
+        int pro = m_vfs->idForFileName(fn, flags | QMakeVfs::VfsAccessedOnly);
         if (!pro)
             return ReturnFalse;
         ProValueMap &vmap = m_valuemapStack.front();
@@ -1565,8 +1503,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
     case T_EVAL: {
             VisitReturn ret = ReturnFalse;
             QString contents = args.join(statics.field_sep);
-            ProFile *pro = m_parser->parsedProBlock(m_current.pro->device(),
-                                                    QStringView(contents),
+            ProFile *pro = m_parser->parsedProBlock(Utils::make_stringview(contents),
                                                     0, m_current.pro->fileName(), m_current.line);
             if (m_cumulative || pro->isOk()) {
                 m_locationStack.push(m_current);
@@ -1846,9 +1783,6 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
         const QString &msg = m_option->expandEnvVars(args.at(0).toQString(m_tmp2));
         if (!m_skipLevel) {
             if (func_t == T_LOG) {
-                m_logBuffer.append(msg);
-                if (m_logBuffer.size() > 15)
-                    m_logBuffer.takeFirst();
 #ifdef PROEVALUATOR_FULL
                 fputs(msg.toLatin1().constData(), stderr);
 #endif
@@ -1873,11 +1807,10 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
         if (m_cumulative) // Anything else would be insanity
             return ReturnFalse;
 #ifndef QT_BOOTSTRAPPED
-        ProcessData data;
-        data.command = args.at(0).toQString();
-        data.processChannelMode = QProcess::ForwardedChannels;
-        runProcessHelper(&data);
-        return returnBool(data.exitStatus == QProcess::NormalExit && data.exitCode == 0);
+        QProcess proc;
+        proc.setProcessChannelMode(QProcess::ForwardedChannels);
+        runProcess(&proc, args.at(0).toQString());
+        return returnBool(proc.exitStatus() == QProcess::NormalExit && proc.exitCode() == 0);
 #else
         int ec = system((QLatin1String("cd ")
                          + IoUtils::shellQuote(QDir::toNativeSeparators(currentDirectory()))
@@ -1906,7 +1839,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
         // Don't use VFS here:
         // - it supports neither listing nor even directories
         // - it's unlikely that somebody would test for files they created themselves
-        if (IoUtils::exists(deviceRoot(), file))
+        if (IoUtils::exists(file))
             return ReturnTrue;
         int slsh = file.lastIndexOf(QLatin1Char('/'));
         QString fn = file.mid(slsh+1);
@@ -2141,7 +2074,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateBuiltinConditional(
             fn = m_stashfile;
             if (fn.isEmpty())
                 fn = QDir::cleanPath(m_outputDir + QLatin1String("/.qmake.stash"));
-            if (!m_vfs->exists(deviceRoot(), fn, flags)) {
+            if (!m_vfs->exists(fn, flags)) {
                 printf("Info: creating stash file %s\n", qPrintable(QDir::toNativeSeparators(fn)));
                 valuesRef(ProKey("_QMAKE_STASH_")) << ProString(fn);
             }

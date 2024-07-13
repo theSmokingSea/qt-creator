@@ -1,22 +1,46 @@
-// Copyright (C) 2016 Denis Mingulov
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Denis Mingulov
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "classviewnavigationwidget.h"
-
-#include "classviewconstants.h"
 #include "classviewmanager.h"
-#include "classviewtr.h"
+#include "classviewsymbollocation.h"
+#include "classviewsymbolinformation.h"
 #include "classviewutils.h"
+#include "classviewconstants.h"
 
 #include <coreplugin/find/itemviewfind.h>
+
 #include <cplusplus/Icons.h>
+
 #include <utils/navigationtreeview.h>
 #include <utils/qtcassert.h>
 
 #include <QDebug>
-#include <QElapsedTimer>
 #include <QVariant>
 #include <QVBoxLayout>
+#include <QElapsedTimer>
 
 enum { debug = false };
 
@@ -122,7 +146,7 @@ QList<QToolButton *> NavigationWidget::createToolButtons()
         fullProjectsModeButton->setIcon(
                     ::Utils::CodeModelIcon::iconForType(::Utils::CodeModelIcon::Class));
         fullProjectsModeButton->setCheckable(true);
-        fullProjectsModeButton->setToolTip(Tr::tr("Show Subprojects"));
+        fullProjectsModeButton->setToolTip(tr("Show Subprojects"));
 
         // by default - not a flat mode
         setFlatMode(false);
@@ -211,9 +235,9 @@ void NavigationWidget::onItemDoubleClicked(const QModelIndex &index)
     model root item. The function does nothing if null is passed.
 */
 
-void NavigationWidget::onDataUpdate(std::shared_ptr<QStandardItem> result)
+void NavigationWidget::onDataUpdate(QSharedPointer<QStandardItem> result)
 {
-    if (!result)
+    if (result.isNull())
         return;
 
     QElapsedTimer timer;
@@ -223,9 +247,9 @@ void NavigationWidget::onDataUpdate(std::shared_ptr<QStandardItem> result)
     // might be just a root - if a lazy data population is enabled.
     // so expanded items must be parsed and 'fetched'
 
-    fetchExpandedItems(result.get(), treeModel->invisibleRootItem());
+    fetchExpandedItems(result.data(), treeModel->invisibleRootItem());
 
-    treeModel->moveRootToTarget(result.get());
+    treeModel->moveRootToTarget(result.data());
 
     // expand top level projects
     QModelIndex sessionIndex;

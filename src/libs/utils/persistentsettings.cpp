@@ -1,12 +1,34 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "persistentsettings.h"
 
 #include "fileutils.h"
 #include "qtcassert.h"
-#include "utilstr.h"
 
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDebug>
 #include <QDir>
@@ -50,7 +72,6 @@ static QRect stringToRectangle(const QString &v)
 
 /*!
     \class Utils::PersistentSettingsReader
-    \inmodule QtCreator
 
     \brief The PersistentSettingsReader class reads a QVariantMap of arbitrary,
     nested data structures from an XML file.
@@ -95,44 +116,48 @@ static QRect stringToRectangle(const QString &v)
 
 namespace Utils {
 
-const QString qtCreatorElement("qtcreator");
-const QString dataElement("data");
-const QString variableElement("variable");
-const QString typeAttribute("type");
-const QString valueElement("value");
-const QString valueListElement("valuelist");
-const QString valueMapElement("valuemap");
-const QString keyAttribute("key");
+struct Context // Basic context containing element name string constants.
+{
+    Context() {}
+    const QString qtCreatorElement = QString("qtcreator");
+    const QString dataElement = QString("data");
+    const QString variableElement = QString("variable");
+    const QString typeAttribute = QString("type");
+    const QString valueElement = QString("value");
+    const QString valueListElement = QString("valuelist");
+    const QString valueMapElement = QString("valuemap");
+    const QString keyAttribute = QString("key");
+};
 
 struct ParseValueStackEntry
 {
-    explicit ParseValueStackEntry(QMetaType::Type t = QMetaType::UnknownType, const QString &k = {}) : typeId(t), key(k) {}
+    explicit ParseValueStackEntry(QVariant::Type t = QVariant::Invalid, const QString &k = QString()) : type(t), key(k) {}
     explicit ParseValueStackEntry(const QVariant &aSimpleValue, const QString &k);
 
     QVariant value() const;
     void addChild(const QString &key, const QVariant &v);
 
-    QMetaType::Type typeId;
+    QVariant::Type type;
     QString key;
     QVariant simpleValue;
     QVariantList listValue;
     QVariantMap mapValue;
 };
 
-ParseValueStackEntry::ParseValueStackEntry(const QVariant &aSimpleValue, const QString &k)
-    : typeId(QMetaType::Type(aSimpleValue.typeId())), key(k), simpleValue(aSimpleValue)
+ParseValueStackEntry::ParseValueStackEntry(const QVariant &aSimpleValue, const QString &k) :
+    type(aSimpleValue.type()), key(k), simpleValue(aSimpleValue)
 {
     QTC_ASSERT(simpleValue.isValid(), return);
 }
 
 QVariant ParseValueStackEntry::value() const
 {
-    switch (typeId) {
-    case QMetaType::UnknownType:
+    switch (type) {
+    case QVariant::Invalid:
         return QVariant();
-    case QMetaType::QVariantMap:
+    case QVariant::Map:
         return QVariant(mapValue);
-    case QMetaType::QVariantList:
+    case QVariant::List:
         return QVariant(listValue);
     default:
         break;
@@ -142,30 +167,36 @@ QVariant ParseValueStackEntry::value() const
 
 void ParseValueStackEntry::addChild(const QString &key, const QVariant &v)
 {
-    switch (typeId) {
-    case QMetaType::QVariantMap:
+    switch (type) {
+    case QVariant::Map:
         mapValue.insert(key, v);
         break;
-    case QMetaType::QVariantList:
+    case QVariant::List:
         listValue.push_back(v);
         break;
     default:
         qWarning() << "ParseValueStackEntry::Internal error adding " << key << v << " to "
-                 << QMetaType(typeId).name() << value();
+                 << QVariant::typeToName(type) << value();
         break;
     }
 }
 
-class ParseContext
+class ParseContext : public Context
 {
 public:
     QVariantMap parse(const FilePath &file);
 
 private:
+    enum Element { QtCreatorElement, DataElement, VariableElement,
+                   SimpleValueElement, ListValueElement, MapValueElement, UnknownElement };
+
+    Element element(const StringView &r) const;
+    static inline bool isValueElement(Element e)
+        { return e == SimpleValueElement || e == ListValueElement || e == MapValueElement; }
     QVariant readSimpleValue(QXmlStreamReader &r, const QXmlStreamAttributes &attributes) const;
 
     bool handleStartElement(QXmlStreamReader &r);
-    bool handleEndElement(const QStringView name);
+    bool handleEndElement(const StringView &name);
 
     static QString formatWarning(const QXmlStreamReader &r, const QString &message);
 
@@ -176,7 +207,7 @@ private:
 
 QVariantMap ParseContext::parse(const FilePath &file)
 {
-    QXmlStreamReader r(file.fileContents().value_or(QByteArray()));
+    QXmlStreamReader r(file.fileContents());
 
     m_result.clear();
     m_currentVariableName.clear();
@@ -194,7 +225,7 @@ QVariantMap ParseContext::parse(const FilePath &file)
         case QXmlStreamReader::Invalid:
             qWarning("Error reading %s:%d: %s", qPrintable(file.fileName()),
                      int(r.lineNumber()), qPrintable(r.errorString()));
-            return {};
+            return QVariantMap();
         default:
             break;
         } // switch token
@@ -204,15 +235,20 @@ QVariantMap ParseContext::parse(const FilePath &file)
 
 bool ParseContext::handleStartElement(QXmlStreamReader &r)
 {
-    const QStringView name = r.name();
-    if (name == variableElement) {
+    const StringView name = r.name();
+    const Element e = element(name);
+    if (e == VariableElement) {
         m_currentVariableName = r.readElementText();
         return false;
     }
-    if (name == valueElement) {
-        const QXmlStreamAttributes attributes = r.attributes();
-        const QString key = attributes.hasAttribute(keyAttribute) ?
-                    attributes.value(keyAttribute).toString() : QString();
+    if (!ParseContext::isValueElement(e))
+        return false;
+
+    const QXmlStreamAttributes attributes = r.attributes();
+    const QString key = attributes.hasAttribute(keyAttribute) ?
+                attributes.value(keyAttribute).toString() : QString();
+    switch (e) {
+    case SimpleValueElement: {
         // This reads away the end element, so, handle end element right here.
         const QVariant v = readSimpleValue(r, attributes);
         if (!v.isValid()) {
@@ -222,26 +258,22 @@ bool ParseContext::handleStartElement(QXmlStreamReader &r)
         m_valueStack.push_back(ParseValueStackEntry(v, key));
         return handleEndElement(name);
     }
-    if (name == valueListElement) {
-        const QXmlStreamAttributes attributes = r.attributes();
-        const QString key = attributes.hasAttribute(keyAttribute) ?
-                    attributes.value(keyAttribute).toString() : QString();
-        m_valueStack.push_back(ParseValueStackEntry(QMetaType::QVariantList, key));
-        return false;
-    }
-    if (name == valueMapElement) {
-        const QXmlStreamAttributes attributes = r.attributes();
-        const QString key = attributes.hasAttribute(keyAttribute) ?
-                    attributes.value(keyAttribute).toString() : QString();
-        m_valueStack.push_back(ParseValueStackEntry(QMetaType::QVariantMap, key));
-        return false;
+    case ListValueElement:
+        m_valueStack.push_back(ParseValueStackEntry(QVariant::List, key));
+        break;
+    case MapValueElement:
+        m_valueStack.push_back(ParseValueStackEntry(QVariant::Map, key));
+        break;
+    default:
+        break;
     }
     return false;
 }
 
-bool ParseContext::handleEndElement(const QStringView name)
+bool ParseContext::handleEndElement(const StringView &name)
 {
-    if (name == valueElement || name == valueListElement || name == valueMapElement) {
+    const Element e = element(name);
+    if (ParseContext::isValueElement(e)) {
         QTC_ASSERT(!m_valueStack.isEmpty(), return true);
         const ParseValueStackEntry top = m_valueStack.pop();
         if (m_valueStack.isEmpty()) { // Last element? -> Done with that variable.
@@ -251,9 +283,8 @@ bool ParseContext::handleEndElement(const QStringView name)
             return false;
         }
         m_valueStack.top().addChild(top.key, top.value());
-        return false;
     }
-    return name == qtCreatorElement;
+    return e == QtCreatorElement;
 }
 
 QString ParseContext::formatWarning(const QXmlStreamReader &r, const QString &message)
@@ -268,10 +299,27 @@ QString ParseContext::formatWarning(const QXmlStreamReader &r, const QString &me
     return result;
 }
 
+ParseContext::Element ParseContext::element(const StringView &r) const
+{
+    if (r == valueElement)
+        return SimpleValueElement;
+    if (r == valueListElement)
+        return ListValueElement;
+    if (r == valueMapElement)
+        return MapValueElement;
+    if (r == qtCreatorElement)
+        return QtCreatorElement;
+    if (r == dataElement)
+        return DataElement;
+    if (r == variableElement)
+        return VariableElement;
+    return UnknownElement;
+}
+
 QVariant ParseContext::readSimpleValue(QXmlStreamReader &r, const QXmlStreamAttributes &attributes) const
 {
     // Simple value
-    const QStringView type = attributes.value(typeAttribute);
+    const StringView type = attributes.value(typeAttribute);
     const QString text = r.readElementText();
     if (type == QLatin1String("QChar")) { // Workaround: QTBUG-12345
         QTC_ASSERT(text.size() == 1, return QVariant());
@@ -283,7 +331,7 @@ QVariant ParseContext::readSimpleValue(QXmlStreamReader &r, const QXmlStreamAttr
     }
     QVariant value;
     value.setValue(text);
-    value.convert(QMetaType::fromName(type.toLatin1().constData()));
+    value.convert(QMetaType::type(type.toLatin1().constData()));
     return value;
 }
 
@@ -291,16 +339,16 @@ QVariant ParseContext::readSimpleValue(QXmlStreamReader &r, const QXmlStreamAttr
 
 PersistentSettingsReader::PersistentSettingsReader() = default;
 
-QVariant PersistentSettingsReader::restoreValue(const Key &variable, const QVariant &defaultValue) const
+QVariant PersistentSettingsReader::restoreValue(const QString &variable, const QVariant &defaultValue) const
 {
-    if (m_valueMap.contains(stringFromKey(variable)))
-        return m_valueMap.value(stringFromKey(variable));
+    if (m_valueMap.contains(variable))
+        return m_valueMap.value(variable);
     return defaultValue;
 }
 
-Store PersistentSettingsReader::restoreValues() const
+QVariantMap PersistentSettingsReader::restoreValues() const
 {
-    return storeFromMap(m_valueMap);
+    return m_valueMap;
 }
 
 bool PersistentSettingsReader::load(const FilePath &fileName)
@@ -310,67 +358,57 @@ bool PersistentSettingsReader::load(const FilePath &fileName)
     if (fileName.fileSize() == 0) // skip empty files
         return false;
 
-    m_filePath = fileName.parentDir();
     ParseContext ctx;
     m_valueMap = ctx.parse(fileName);
     return true;
 }
 
-FilePath PersistentSettingsReader::filePath()
-{
-    return m_filePath;
-}
-
 /*!
     \class Utils::PersistentSettingsWriter
-    \inmodule QtCreator
 
-    \brief The PersistentSettingsWriter class serializes a Store of
+    \brief The PersistentSettingsWriter class serializes a QVariantMap of
     arbitrary, nested data structures to an XML file.
     \sa Utils::PersistentSettingsReader
 */
 
-#if QT_VERSION < QT_VERSION_CHECK(6, 5, 0)
-static QString xmlAttrFromKey(const QString &key) { return key; }
-#else
-static QString xmlAttrFromKey(const QString &key) { return key; }
-#endif
-
-static void writeVariantValue(QXmlStreamWriter &w, const QVariant &variant, const QString &key = {})
+static void writeVariantValue(QXmlStreamWriter &w, const Context &ctx,
+                              const QVariant &variant, const QString &key = QString())
 {
-    static const int storeId = qMetaTypeId<Store>();
-
-    const int variantType = variant.typeId();
-    if (variantType == QMetaType::QStringList || variantType == QMetaType::QVariantList) {
-        w.writeStartElement(valueListElement);
-        w.writeAttribute(typeAttribute, "QVariantList");
+    switch (static_cast<int>(variant.type())) {
+    case static_cast<int>(QVariant::StringList):
+    case static_cast<int>(QVariant::List): {
+        w.writeStartElement(ctx.valueListElement);
+        w.writeAttribute(ctx.typeAttribute, QLatin1String(QVariant::typeToName(QVariant::List)));
         if (!key.isEmpty())
-            w.writeAttribute(keyAttribute, xmlAttrFromKey(key));
+            w.writeAttribute(ctx.keyAttribute, key);
         const QList<QVariant> list = variant.toList();
         for (const QVariant &var : list)
-            writeVariantValue(w, var);
+            writeVariantValue(w, ctx, var);
         w.writeEndElement();
-    } else if (variantType == storeId || variantType == QMetaType::QVariantMap) {
-        w.writeStartElement(valueMapElement);
-        w.writeAttribute(typeAttribute, "QVariantMap");
+        break;
+    }
+    case static_cast<int>(QVariant::Map): {
+        w.writeStartElement(ctx.valueMapElement);
+        w.writeAttribute(ctx.typeAttribute, QLatin1String(QVariant::typeToName(QVariant::Map)));
         if (!key.isEmpty())
-            w.writeAttribute(keyAttribute, xmlAttrFromKey(key));
+            w.writeAttribute(ctx.keyAttribute, key);
         const QVariantMap varMap = variant.toMap();
-        const auto cend = varMap.constEnd();
-        for (auto i = varMap.constBegin(); i != cend; ++i)
-            writeVariantValue(w, i.value(), i.key());
+        const QVariantMap::const_iterator cend = varMap.constEnd();
+        for (QVariantMap::const_iterator i = varMap.constBegin(); i != cend; ++i)
+            writeVariantValue(w, ctx, i.value(), i.key());
         w.writeEndElement();
-    } else if (variantType == QMetaType::QObjectStar) {
-        // ignore QObjects
-    } else if (variantType == QMetaType::VoidStar) {
-        // ignore void pointers
-    } else {
-        w.writeStartElement(valueElement);
-        w.writeAttribute(typeAttribute, QLatin1String(variant.typeName()));
+    }
+    break;
+    case static_cast<int>(QMetaType::QObjectStar): // ignore QObjects!
+    case static_cast<int>(QMetaType::VoidStar): // ignore void pointers!
+        break;
+    default:
+        w.writeStartElement(ctx.valueElement);
+        w.writeAttribute(ctx.typeAttribute, QLatin1String(variant.typeName()));
         if (!key.isEmpty())
-            w.writeAttribute(keyAttribute, xmlAttrFromKey(key));
-        switch (variant.typeId()) {
-        case QMetaType::QRect:
+            w.writeAttribute(ctx.keyAttribute, key);
+        switch (variant.type()) {
+        case QVariant::Rect:
             w.writeCharacters(rectangleToString(variant.toRect()));
             break;
         default:
@@ -378,6 +416,7 @@ static void writeVariantValue(QXmlStreamWriter &w, const QVariant &variant, cons
             break;
         }
         w.writeEndElement();
+        break;
     }
 }
 
@@ -385,7 +424,7 @@ PersistentSettingsWriter::PersistentSettingsWriter(const FilePath &fileName, con
     m_fileName(fileName), m_docType(docType)
 { }
 
-bool PersistentSettingsWriter::save(const Store &data, QString *errorString) const
+bool PersistentSettingsWriter::save(const QVariantMap &data, QString *errorString) const
 {
     if (data == m_savedData)
         return true;
@@ -393,12 +432,14 @@ bool PersistentSettingsWriter::save(const Store &data, QString *errorString) con
 }
 
 #ifdef QT_GUI_LIB
-bool PersistentSettingsWriter::save(const Store &data, QWidget *parent) const
+bool PersistentSettingsWriter::save(const QVariantMap &data, QWidget *parent) const
 {
     QString errorString;
     const bool success = save(data, &errorString);
     if (!success)
-        QMessageBox::critical(parent, Tr::tr("File Error"), errorString);
+        QMessageBox::critical(parent,
+                              QCoreApplication::translate("Utils::FileSaverBase", "File Error"),
+                              errorString);
     return success;
 }
 #endif // QT_GUI_LIB
@@ -407,16 +448,17 @@ FilePath PersistentSettingsWriter::fileName() const
 { return m_fileName; }
 
 //** * @brief Set contents of file (e.g. from data read from it). */
-void PersistentSettingsWriter::setContents(const Store &data)
+void PersistentSettingsWriter::setContents(const QVariantMap &data)
 {
     m_savedData = data;
 }
 
-bool PersistentSettingsWriter::write(const Store &data, QString *errorString) const
+bool PersistentSettingsWriter::write(const QVariantMap &data, QString *errorString) const
 {
     m_fileName.parentDir().ensureWritableDir();
     FileSaver saver(m_fileName, QIODevice::Text);
     if (!saver.hasError()) {
+        const Context ctx;
         QXmlStreamWriter w(saver.file());
         w.setAutoFormatting(true);
         w.setAutoFormattingIndent(1); // Historical, used to be QDom.
@@ -426,12 +468,12 @@ bool PersistentSettingsWriter::write(const Store &data, QString *errorString) co
                        arg(QCoreApplication::applicationName(),
                            QCoreApplication::applicationVersion(),
                            QDateTime::currentDateTime().toString(Qt::ISODate)));
-        w.writeStartElement(qtCreatorElement);
-        const QVariantMap map = mapFromStore(data);
-        for (auto it = map.constBegin(), cend = map.constEnd(); it != cend; ++it) {
-            w.writeStartElement(dataElement);
-            w.writeTextElement(variableElement, it.key());
-            writeVariantValue(w, it.value());
+        w.writeStartElement(ctx.qtCreatorElement);
+        const QVariantMap::const_iterator cend = data.constEnd();
+        for (QVariantMap::const_iterator it =  data.constBegin(); it != cend; ++it) {
+            w.writeStartElement(ctx.dataElement);
+            w.writeTextElement(ctx.variableElement, it.key());
+            writeVariantValue(w, ctx, it.value());
             w.writeEndElement();
         }
         w.writeEndDocument();

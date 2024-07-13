@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "latchcontroller.h"
 
@@ -119,8 +141,8 @@ void LatchController::handleLatches()
     if (horizAction != ILatchable::Move || vertAction != ILatchable::Move)
         return;
 
-    const QList<ILatchable::Latch> palpedHorizontals = palpedLatchable->horizontalLatches(horizAction, true);
-    const QList<ILatchable::Latch> palpedVerticals = palpedLatchable->verticalLatches(vertAction, true);
+    QList<ILatchable::Latch> palpedHorizontals = palpedLatchable->horizontalLatches(horizAction, true);
+    QList<ILatchable::Latch> palpedVerticals = palpedLatchable->verticalLatches(vertAction, true);
 
     qreal horizMinDist = 10.0;
     ILatchable::Latch bestHorizLatch;
@@ -129,12 +151,12 @@ void LatchController::handleLatches()
     ILatchable::Latch bestVertLatch;
     bool foundBestVert = false;
 
-    for (QGraphicsItem *item : m_diagramSceneModel->graphicsItems()) {
+    foreach (QGraphicsItem *item, m_diagramSceneModel->graphicsItems()) {
         if (item != m_diagramSceneModel->focusItem() && !m_diagramSceneModel->isSelectedItem(item)) {
             if (auto latchable = dynamic_cast<ILatchable *>(item)) {
-                const QList<ILatchable::Latch> horizontals = latchable->horizontalLatches(horizAction, false);
-                for (const ILatchable::Latch &palpedLatch : palpedHorizontals) {
-                    for (const ILatchable::Latch &latch : horizontals) {
+                QList<ILatchable::Latch> horizontals = latchable->horizontalLatches(horizAction, false);
+                foreach (const ILatchable::Latch &palpedLatch, palpedHorizontals) {
+                    foreach (const ILatchable::Latch &latch, horizontals) {
                         if (palpedLatch.m_latchType == latch.m_latchType) {
                             // calculate distance and minimal distance with sign
                             // because this is needed later to move the objects
@@ -147,9 +169,9 @@ void LatchController::handleLatches()
                         }
                     }
                 }
-                const QList<ILatchable::Latch> verticals = latchable->verticalLatches(vertAction, false);
-                for (const ILatchable::Latch &palpedLatch : palpedVerticals) {
-                    for (const ILatchable::Latch &latch : verticals) {
+                QList<ILatchable::Latch> verticals = latchable->verticalLatches(vertAction, false);
+                foreach (const ILatchable::Latch &palpedLatch, palpedVerticals) {
+                    foreach (const ILatchable::Latch &latch, verticals) {
                         if (palpedLatch.m_latchType == latch.m_latchType) {
                             // calculate distance and minimal distance with sign
                             // because this is needed later to move the objects
@@ -227,7 +249,7 @@ void LatchController::applyLatches()
         case ILatchable::Left:
         case ILatchable::Right:
         case ILatchable::Hcenter:
-            for (QGraphicsItem *item : m_diagramSceneModel->selectedItems()) {
+            foreach (QGraphicsItem *item, m_diagramSceneModel->selectedItems()) {
                 DElement *element = m_diagramSceneModel->element(item);
                 if (auto selectedObject = dynamic_cast<DObject *>(element)) {
                     m_diagramSceneModel->diagramController()->startUpdateElement(selectedObject, m_diagramSceneModel->diagram(), DiagramController::UpdateGeometry);
@@ -252,7 +274,7 @@ void LatchController::applyLatches()
         case ILatchable::Top:
         case ILatchable::Bottom:
         case ILatchable::Vcenter:
-            for (QGraphicsItem *item : m_diagramSceneModel->selectedItems()) {
+            foreach (QGraphicsItem *item, m_diagramSceneModel->selectedItems()) {
                 DElement *element = m_diagramSceneModel->element(item);
                 if (auto selectedObject = dynamic_cast<DObject *>(element)) {
                     m_diagramSceneModel->diagramController()->startUpdateElement(selectedObject, m_diagramSceneModel->diagram(), DiagramController::UpdateGeometry);

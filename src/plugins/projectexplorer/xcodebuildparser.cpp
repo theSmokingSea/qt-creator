@@ -1,9 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "xcodebuildparser.h"
 
-#include "projectexplorertr.h"
+#include "projectexplorerconstants.h"
 #include "task.h"
 
 #include <utils/qtcassert.h>
@@ -53,12 +75,11 @@ OutputLineParser::Result XcodebuildParser::handleLine(const QString &line, Outpu
                 const int filePathEndPos = lne.size()
                         - QLatin1String(signatureChangeEndsWithPattern).size();
                 CompileTask task(Task::Warning,
-                                 Tr::tr("Replacing signature"),
+                                 tr("Replacing signature"),
                                  absoluteFilePath(FilePath::fromString(
                                      lne.left(filePathEndPos))));
                 LinkSpecs linkSpecs;
-                addLinkSpecForAbsoluteFilePath(linkSpecs, task.file, task.line, task.column, 0,
-                                               filePathEndPos);
+                addLinkSpecForAbsoluteFilePath(linkSpecs, task.file, task.line, 0, filePathEndPos);
                 scheduleTask(task, 1);
                 return {Status::Done, linkSpecs};
             }
@@ -69,7 +90,7 @@ OutputLineParser::Result XcodebuildParser::handleLine(const QString &line, Outpu
     if (match.hasMatch()) {
         ++m_fatalErrorCount;
         m_xcodeBuildParserState = UnknownXcodebuildState;
-        scheduleTask(CompileTask(Task::Error, Tr::tr("Xcodebuild failed.")), 1);
+        scheduleTask(CompileTask(Task::Error, tr("Xcodebuild failed.")), 1);
     }
     if (m_xcodeBuildParserState == OutsideXcodebuild)
         return Status::NotHandled;
@@ -89,31 +110,23 @@ bool XcodebuildParser::hasDetectedRedirection() const
 #   include <QTest>
 
 #   include "outputparser_test.h"
-#   include "projectexplorer_test.h"
+#   include "projectexplorer.h"
+
+using namespace ProjectExplorer;
 
 Q_DECLARE_METATYPE(ProjectExplorer::XcodebuildParser::XcodebuildStatus)
 
-namespace ProjectExplorer::Internal {
+XcodebuildParserTester::XcodebuildParserTester(XcodebuildParser *p, QObject *parent) :
+    QObject(parent),
+    parser(p)
+{ }
 
-class XcodebuildParserTester : public QObject
+void XcodebuildParserTester::onAboutToDeleteParser()
 {
-public:
-    explicit XcodebuildParserTester(XcodebuildParser *p, QObject *parent = nullptr) :
-        QObject(parent),
-        parser(p)
-    { }
+    QCOMPARE(parser->m_xcodeBuildParserState, expectedFinalState);
+}
 
-    XcodebuildParser *parser;
-    XcodebuildParser::XcodebuildStatus expectedFinalState = XcodebuildParser::OutsideXcodebuild;
-
-public:
-    void onAboutToDeleteParser()
-    {
-        QCOMPARE(parser->m_xcodeBuildParserState, expectedFinalState);
-    }
-};
-
-void ProjectExplorerTest::testXcodebuildParserParsing_data()
+void ProjectExplorerPlugin::testXcodebuildParserParsing_data()
 {
     QTest::addColumn<ProjectExplorer::XcodebuildParser::XcodebuildStatus>("initialStatus");
     QTest::addColumn<QString>("input");
@@ -214,7 +227,8 @@ void ProjectExplorerTest::testXcodebuildParserParsing_data()
             << OutputParserTester::STDERR
             << QString() << QString()
             << (Tasks()
-                << CompileTask(Task::Error, Tr::tr("Xcodebuild failed.")))
+                << CompileTask(Task::Error,
+                               XcodebuildParser::tr("Xcodebuild failed.")))
             << QString()
             << XcodebuildParser::UnknownXcodebuildState;
 
@@ -226,7 +240,8 @@ void ProjectExplorerTest::testXcodebuildParserParsing_data()
             << OutputParserTester::STDERR
             << QString() << QString::fromLatin1("outErr\n")
             << (Tasks()
-                << CompileTask(Task::Error, Tr::tr("Xcodebuild failed.")))
+                << CompileTask(Task::Error,
+                               XcodebuildParser::tr("Xcodebuild failed.")))
             << QString()
             << XcodebuildParser::UnknownXcodebuildState;
 
@@ -236,7 +251,8 @@ void ProjectExplorerTest::testXcodebuildParserParsing_data()
             << QString() << QString()
             << (Tasks()
                 << CompileTask(Task::Warning,
-                               Tr::tr("Replacing signature"), "/somepath/somefile.app"))
+                               XcodebuildParser::tr("Replacing signature"),
+                               "/somepath/somefile.app"))
             << QString()
             << XcodebuildParser::InXcodebuild;
 
@@ -249,7 +265,7 @@ void ProjectExplorerTest::testXcodebuildParserParsing_data()
             << XcodebuildParser::OutsideXcodebuild;
 }
 
-void ProjectExplorerTest::testXcodebuildParserParsing()
+void ProjectExplorerPlugin::testXcodebuildParserParsing()
 {
     OutputParserTester testbench;
     auto *childParser = new XcodebuildParser;
@@ -277,7 +293,5 @@ void ProjectExplorerTest::testXcodebuildParserParsing()
     delete tester;
 }
 
-} // ProjectExplorer::Internal
-
-#endif // WITH_TESTS
+#endif
 

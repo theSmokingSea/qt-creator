@@ -51,7 +51,7 @@ QtcPlugin {
         "modeleditor.cpp",
         "modeleditorfactory.cpp",
         "modeleditorfactory.h",
-        "modeleditor_global.h", "modeleditortr.h",
+        "modeleditor_global.h",
         "modeleditor.h",
         "modeleditor_plugin.cpp",
         "modeleditor_plugin.h",
@@ -70,6 +70,8 @@ QtcPlugin {
         "pxnodeutilities.cpp",
         "pxnodeutilities.h",
         "resources/modeleditor.qrc",
+        "settingscontroller.cpp",
+        "settingscontroller.h",
         "uicontroller.cpp",
         "uicontroller.h",
     ]

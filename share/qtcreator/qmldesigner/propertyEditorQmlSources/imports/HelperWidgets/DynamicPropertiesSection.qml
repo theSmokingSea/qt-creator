@@ -266,6 +266,7 @@ Section {
 
             ItemFilterComboBox {
                 typeFilter: "QtQuick3D.TextureInput"
+                validator: RegExpValidator { regExp: /(^$|^[a-z_]\w*)/ }
                 backendValue: layoutTextureInput.backendValue
                 implicitWidth: StudioTheme.Values.singleControlColumnWidth
                                + StudioTheme.Values.actionIndicatorWidth
@@ -291,64 +292,53 @@ Section {
             property int vecSize: 0
             property var proxyValues: []
             property var spinBoxes: [boxX, boxY, boxZ, boxW]
-            property bool block: false
 
             signal remove
 
-            onVecSizeChanged: layoutVector.updateProxyValues()
+            onVecSizeChanged: updateProxyValues()
 
-            spacing: StudioTheme.Values.sectionRowSpacing
+            spacing: StudioTheme.Values.sectionRowSpacing / 2
 
             function isValidValue(v) {
                 return !(v === undefined || isNaN(v))
             }
 
-            function updateExpressionFromExpression() {
-                if (layoutVector.block)
-                    return
-
-                layoutVector.backendValue.expression = layoutVector.proxyValues[0].expression
-                // Only the first proxy value has an expression editor enabled
-            }
-
-            function updateExpressionFromValue() {
-                if (layoutVector.block)
-                    return
-
+            function updateExpression() {
                 for (let i = 0; i < vecSize; ++i) {
-                    if (!layoutVector.isValidValue(layoutVector.proxyValues[i].value))
+                    if (!isValidValue(proxyValues[i].value))
                         return
                 }
 
-                let expStr = "Qt.vector" + layoutVector.vecSize + "d(" + layoutVector.proxyValues[0].value
-                for (let j=1; j < layoutVector.vecSize; ++j)
-                    expStr += ", " + layoutVector.proxyValues[j].value
+                let expStr = "Qt.vector" + vecSize + "d("+proxyValues[0].value
+                for (let j=1; j < vecSize; ++j)
+                    expStr += ", " + proxyValues[j].value
                 expStr += ")"
 
                 layoutVector.backendValue.expression = expStr
             }
 
             function updateProxyValues() {
-                if (!layoutVector.backendValue)
+                if (!backendValue)
                     return;
 
-                let vals = layoutVector.backendValue.getExpressionAsVector()
+                const startIndex = backendValue.expression.indexOf('(')
+                const endIndex = backendValue.expression.indexOf(')')
+                if (startIndex === -1 || endIndex === -1 || endIndex < startIndex)
+                    return
+                const numberStr = backendValue.expression.slice(startIndex + 1, endIndex)
+                const numbers = numberStr.split(",")
+                if (!Array.isArray(numbers) || numbers.length !== vecSize)
+                    return
 
-                layoutVector.block = true
-
-                if (layoutVector.vecSize === vals.length) {
-                    for (let j = 0; j < layoutVector.vecSize; ++j) {
-                        layoutVector.proxyValues[j].setForceBound(false)
-                        layoutVector.proxyValues[j].value = vals[j]
-                    }
-                } else {
-                    for (let j = 0; j < layoutVector.vecSize; ++j) {
-                        layoutVector.proxyValues[j].setForceBound(true) // Required since the backendValue is just proxied
-                        layoutVector.proxyValues[j].expression = layoutVector.backendValue.expression
-                    }
+                let vals = []
+                for (let i = 0; i < vecSize; ++i) {
+                    vals[i] = parseFloat(numbers[i])
+                    if (!isValidValue(vals[i]))
+                        return
                 }
 
-                layoutVector.block = false
+                for (let j = 0; j < vecSize; ++j)
+                    proxyValues[j].value = vals[j]
             }
 
             SecondColumnLayout {
@@ -368,18 +358,15 @@ Section {
                     tooltip: "X"
                 }
 
-                Spacer {
-                    implicitWidth: StudioTheme.Values.controlGap
-                                   + StudioTheme.Values.actionIndicatorWidth
-                }
+                Spacer { implicitWidth: StudioTheme.Values.controlGap }
 
                 SpinBox {
                     id: boxY
-                    actionIndicatorVisible: false
                     minimumValue: -9999999
                     maximumValue: 9999999
                     decimals: 2
                     implicitWidth: StudioTheme.Values.twoControlColumnWidth
+                                   + StudioTheme.Values.actionIndicatorWidth
                 }
 
                 Spacer { implicitWidth: StudioTheme.Values.controlLabelGap }
@@ -400,16 +387,14 @@ Section {
             }
 
             SecondColumnLayout {
-                visible: layoutVector.vecSize > 2
-                Spacer { implicitWidth: StudioTheme.Values.actionIndicatorWidth }
-
+                visible: vecSize > 2
                 SpinBox {
                     id: boxZ
-                    actionIndicatorVisible: false
                     minimumValue: -9999999
                     maximumValue: 9999999
                     decimals: 2
                     implicitWidth: StudioTheme.Values.twoControlColumnWidth
+                                   + StudioTheme.Values.actionIndicatorWidth
                 }
 
                 Spacer { implicitWidth: StudioTheme.Values.controlLabelGap }
@@ -417,22 +402,19 @@ Section {
                 ControlLabel {
                     text: "Z"
                     tooltip: "Z"
-                    visible: layoutVector.vecSize > 2
+                    visible: vecSize > 2
                 }
 
-                Spacer {
-                    implicitWidth: StudioTheme.Values.controlGap
-                                   + StudioTheme.Values.actionIndicatorWidth
-                }
+                Spacer { implicitWidth: StudioTheme.Values.controlGap }
 
                 SpinBox {
                     id: boxW
-                    actionIndicatorVisible: false
                     minimumValue: -9999999
                     maximumValue: 9999999
                     decimals: 2
                     implicitWidth: StudioTheme.Values.twoControlColumnWidth
-                    visible: layoutVector.vecSize > 3
+                                   + StudioTheme.Values.actionIndicatorWidth
+                    visible: vecSize > 3
                 }
 
                 Spacer { implicitWidth: StudioTheme.Values.controlLabelGap }
@@ -440,7 +422,7 @@ Section {
                 ControlLabel {
                     text: "W"
                     tooltip: "W"
-                    visible: layoutVector.vecSize > 3
+                    visible: vecSize > 3
                 }
 
                 Spacer { implicitWidth: StudioTheme.Values.controlGap }
@@ -449,7 +431,7 @@ Section {
                     height: 10
                     implicitWidth: StudioTheme.Values.twoControlColumnWidth
                                   + StudioTheme.Values.actionIndicatorWidth
-                    visible: layoutVector.vecSize === 2 // Placeholder for last spinbox
+                    visible: vecSize === 2 // Placeholder for last spinbox
                 }
 
                 Spacer { implicitWidth: StudioTheme.Values.twoControlColumnGap }
@@ -505,12 +487,9 @@ Section {
                     model: root.propertiesModel
                     row: index
                 }
-
                 PropertyLabel {
                     text: propertyName
                     tooltip: propertyType
-                    Layout.alignment: Qt.AlignTop
-                    Layout.topMargin: 6
                 }
 
                 Loader {
@@ -528,8 +507,6 @@ Section {
                             return intEditor
                         if (propertyType == "real")
                             return realEditor
-                        if (propertyType == "double")
-                            return realEditor
                         if (propertyType == "string")
                             return stringEditor
                         if (propertyType == "bool")
@@ -539,8 +516,6 @@ Section {
                         if (propertyType == "alias")
                             return aliasEditor
                         if (propertyType == "variant")
-                            return readonlyEditor
-                        if (propertyType == "var")
                             return readonlyEditor
                         if (propertyType == "TextureInput")
                             return textureInputEditor
@@ -564,8 +539,7 @@ Section {
                             for (let i = 0; i < vecSize; ++i) {
                                 var newProxyValue = propertyRow.createProxyBackendValue()
                                 loader.item.proxyValues.push(newProxyValue)
-                                newProxyValue.valueChangedQml.connect(loader.item.updateExpressionFromValue)
-                                newProxyValue.expressionChangedQml.connect(loader.item.updateExpressionFromExpression)
+                                newProxyValue.valueChangedQml.connect(loader.item.updateExpression)
                                 loader.item.spinBoxes[i].backendValue = newProxyValue
                             }
                             propertyRow.backendValue.expressionChanged.connect(loader.item.updateProxyValues)
@@ -710,7 +684,7 @@ Section {
                     StudioControls.ComboBox {
                         id: comboBox
                         actionIndicator.visible: false
-                        model: ["int", "real", "double", "color", "string", "bool", "url", "alias", "signal",
+                        model: ["int", "real", "color", "string", "bool", "url", "alias",
                                 "TextureInput", "vector2d", "vector3d", "vector4d"]
                         width: cePopup.itemWidth
                     }

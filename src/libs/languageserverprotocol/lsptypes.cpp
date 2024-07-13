@@ -1,12 +1,31 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "lsptypes.h"
-
-#include "languageserverprotocoltr.h"
 #include "lsputils.h"
 
-#include <utils/algorithm.h>
 #include <utils/textutils.h>
 
 #include <QFile>
@@ -20,24 +39,24 @@
 
 namespace LanguageServerProtocol {
 
-std::optional<DiagnosticSeverity> Diagnostic::severity() const
+Utils::optional<DiagnosticSeverity> Diagnostic::severity() const
 {
     if (auto val = optionalValue<int>(severityKey))
-        return std::make_optional(static_cast<DiagnosticSeverity>(*val));
-    return std::nullopt;
+        return Utils::make_optional(static_cast<DiagnosticSeverity>(*val));
+    return Utils::nullopt;
 }
 
-std::optional<Diagnostic::Code> Diagnostic::code() const
+Utils::optional<Diagnostic::Code> Diagnostic::code() const
 {
     QJsonValue codeValue = value(codeKey);
     auto it = find(codeKey);
     if (codeValue.isUndefined())
-        return std::nullopt;
+        return Utils::nullopt;
     QJsonValue::Type type = it.value().type();
     if (type != QJsonValue::String && type != QJsonValue::Double)
-        return std::make_optional(Code(QString()));
-    return std::make_optional(codeValue.isDouble() ? Code(codeValue.toInt())
-                                                   : Code(codeValue.toString()));
+        return Utils::make_optional(Code(QString()));
+    return Utils::make_optional(codeValue.isDouble() ? Code(codeValue.toInt())
+                                                     : Code(codeValue.toString()));
 }
 
 void Diagnostic::setCode(const Diagnostic::Code &code)
@@ -45,16 +64,16 @@ void Diagnostic::setCode(const Diagnostic::Code &code)
     insertVariant<int, QString>(codeKey, code);
 }
 
-std::optional<WorkspaceEdit::Changes> WorkspaceEdit::changes() const
+Utils::optional<WorkspaceEdit::Changes> WorkspaceEdit::changes() const
 {
     auto it = find(changesKey);
     if (it == end())
-        return std::nullopt;
+        return Utils::nullopt;
     const QJsonObject &changesObject = it.value().toObject();
     Changes changesResult;
     for (const QString &key : changesObject.keys())
         changesResult[DocumentUri::fromProtocol(key)] = LanguageClientArray<TextEdit>(changesObject.value(key)).toList();
-    return std::make_optional(changesResult);
+    return Utils::make_optional(changesResult);
 }
 
 void WorkspaceEdit::setChanges(const Changes &changes)
@@ -65,7 +84,7 @@ void WorkspaceEdit::setChanges(const Changes &changes)
         QJsonArray edits;
         for (const TextEdit &edit : it.value())
             edits.append(QJsonValue(edit));
-        changesObject.insert(QJsonValue(it.key()).toString(), edits);
+        changesObject.insert(it.key().toFilePath().toString(), edits);
     }
     insert(changesKey, changesObject);
 }
@@ -76,16 +95,16 @@ WorkSpaceFolder::WorkSpaceFolder(const DocumentUri &uri, const QString &name)
     setName(name);
 }
 
-MarkupOrString::MarkupOrString(const std::variant<QString, MarkupContent> &val)
-    : std::variant<QString, MarkupContent>(val)
+MarkupOrString::MarkupOrString(const Utils::variant<QString, MarkupContent> &val)
+    : Utils::variant<QString, MarkupContent>(val)
 { }
 
 MarkupOrString::MarkupOrString(const QString &val)
-    : std::variant<QString, MarkupContent>(val)
+    : Utils::variant<QString, MarkupContent>(val)
 { }
 
 MarkupOrString::MarkupOrString(const MarkupContent &val)
-    : std::variant<QString, MarkupContent>(val)
+    : Utils::variant<QString, MarkupContent>(val)
 { }
 
 MarkupOrString::MarkupOrString(const QJsonValue &val)
@@ -101,10 +120,10 @@ MarkupOrString::MarkupOrString(const QJsonValue &val)
 
 QJsonValue MarkupOrString::toJson() const
 {
-    if (const auto s = std::get_if<QString>(this))
-        return *s;
-    if (const auto c = std::get_if<MarkupContent>(this))
-        return QJsonValue(*c);
+    if (Utils::holds_alternative<QString>(*this))
+        return Utils::get<QString>(*this);
+    if (Utils::holds_alternative<MarkupContent>(*this))
+        return QJsonValue(Utils::get<MarkupContent>(*this));
     return {};
 }
 
@@ -262,7 +281,7 @@ int Position::toPositionInDocument(const QTextDocument *doc) const
     if (!block.isValid())
         return -1;
     if (block.length() <= character())
-        return block.position() + block.length() - 1;
+        return block.position() + block.length();
     return block.position() + character();
 }
 
@@ -278,7 +297,7 @@ Position Position::withOffset(int offset, const QTextDocument *doc) const
     int line;
     int character;
     Utils::Text::convertPosition(doc, toPositionInDocument(doc) + offset, &line, &character);
-    return Position(line - 1, character);
+    return Position(line - 1, character - 1);
 }
 
 Range::Range(const Position &start, const Position &end)
@@ -291,13 +310,13 @@ Range::Range(const QTextCursor &cursor)
 {
     int line, character = 0;
     Utils::Text::convertPosition(cursor.document(), cursor.selectionStart(), &line, &character);
-    if (line <= 0 || character < 0)
+    if (line <= 0 || character <= 0)
         return;
-    setStart(Position(line - 1, character));
+    setStart(Position(line - 1, character - 1));
     Utils::Text::convertPosition(cursor.document(), cursor.selectionEnd(), &line, &character);
-    if (line <= 0 || character < 0)
+    if (line <= 0 || character <= 0)
         return;
-    setEnd(Position(line - 1, character));
+    setEnd(Position(line - 1, character - 1));
 }
 
 bool Range::contains(const Range &other) const
@@ -314,16 +333,6 @@ bool Range::overlaps(const Range &range) const
     return !isLeftOf(range) && !range.isLeftOf(*this);
 }
 
-QTextCursor Range::toSelection(QTextDocument *doc) const
-{
-    QTC_ASSERT(doc, return {});
-    if (!isValid())
-        return {};
-    QTextCursor cursor = start().toTextCursor(doc);
-    cursor.setPosition(end().toPositionInDocument(doc), QTextCursor::KeepAnchor);
-    return cursor;
-}
-
 QString expressionForGlob(QString globPattern)
 {
     const QString anySubDir("qtc_anysubdir_id");
@@ -338,7 +347,7 @@ QString expressionForGlob(QString globPattern)
 
 bool DocumentFilter::applies(const Utils::FilePath &fileName, const Utils::MimeType &mimeType) const
 {
-    if (std::optional<QString> _pattern = pattern()) {
+    if (Utils::optional<QString> _pattern = pattern()) {
         QRegularExpression::PatternOption option = QRegularExpression::NoPatternOption;
         if (fileName.caseSensitivity() == Qt::CaseInsensitive)
             option = QRegularExpression::CaseInsensitiveOption;
@@ -346,7 +355,7 @@ bool DocumentFilter::applies(const Utils::FilePath &fileName, const Utils::MimeT
         if (regexp.isValid() && regexp.match(fileName.toString()).hasMatch())
             return true;
     }
-    if (std::optional<QString> _lang = language()) {
+    if (Utils::optional<QString> _lang = language()) {
         auto match = [&_lang](const Utils::MimeType &mimeType){
             return *_lang == TextDocumentItem::mimeTypeToLanguageId(mimeType);
         };
@@ -358,46 +367,36 @@ bool DocumentFilter::applies(const Utils::FilePath &fileName, const Utils::MimeT
     return !contains(schemeKey) && !contains(languageKey) && !contains(patternKey);
 }
 
-Utils::Link Location::toLink(const DocumentUri::PathMapper &mapToHostPath) const
+Utils::Link Location::toLink() const
 {
     if (!isValid())
         return Utils::Link();
 
-    return Utils::Link(uri().toFilePath(mapToHostPath),
+    // Ensure %xx like %20 are really decoded using fromPercentEncoding
+    // Else, a path with spaces would keep its %20 which would cause failure
+    // to open the file by the text editor. This is the cases with compilers in
+    // C:\Programs Files on Windows.
+    auto file = uri().toString(QUrl::PrettyDecoded | QUrl::PreferLocalFile);
+    // fromPercentEncoding convert %xx encoding to raw values and then interpret
+    // the result as utf-8, so toUtf8() must be used here.
+    file = QUrl::fromPercentEncoding(file.toUtf8());
+    return Utils::Link(Utils::FilePath::fromString(file),
                        range().start().line() + 1,
                        range().start().character());
 }
 
-// Ensure %xx like %20 are really decoded using fromPercentEncoding
-// Else, a path with spaces would keep its %20 which would cause failure
-// to open the file by the text editor. This is the cases with compilers in
-// C:\Programs Files on Windows.
 DocumentUri::DocumentUri(const QString &other)
     : QUrl(QUrl::fromPercentEncoding(other.toUtf8()))
 { }
 
-DocumentUri::DocumentUri(const Utils::FilePath &other, const PathMapper &mapToServerPath)
-    : QUrl(QUrl::fromLocalFile(mapToServerPath(other).path()))
+DocumentUri::DocumentUri(const Utils::FilePath &other)
+    : QUrl(QUrl::fromLocalFile(other.toString()))
 { }
 
-Utils::FilePath DocumentUri::toFilePath(const PathMapper &mapToHostPath) const
+Utils::FilePath DocumentUri::toFilePath() const
 {
-    if (isLocalFile()) {
-        const Utils::FilePath serverPath = Utils::FilePath::fromUserInput(toLocalFile());
-        QTC_ASSERT(mapToHostPath, return serverPath);
-        return mapToHostPath(serverPath);
-    }
-    return {};
-}
-
-DocumentUri DocumentUri::fromProtocol(const QString &uri)
-{
-    return DocumentUri(uri);
-}
-
-DocumentUri DocumentUri::fromFilePath(const Utils::FilePath &file, const PathMapper &mapToServerPath)
-{
-    return DocumentUri(file, mapToServerPath);
+    return isLocalFile() ? Utils::FilePath::fromUserInput(QUrl(*this).toLocalFile())
+                         : Utils::FilePath();
 }
 
 MarkupKind::MarkupKind(const QJsonValue &value)
@@ -416,99 +415,12 @@ LanguageServerProtocol::MarkupKind::operator QJsonValue() const
     return {};
 }
 
-DocumentChange::DocumentChange(const QJsonValue &value)
+Utils::Text::Replacement TextEdit::toReplacement(QTextDocument *document) const
 {
-    const QString kind = value["kind"].toString();
-    if (kind == "create")
-        emplace<CreateFileOperation>(value);
-    else if (kind == "rename")
-        emplace<RenameFileOperation>(value);
-    else if (kind == "delete")
-        emplace<DeleteFileOperation>(value);
-    else
-        emplace<TextDocumentEdit>(value);
+    const Range &range = this->range();
+    const int start = range.start().toPositionInDocument(document);
+    const int end = range.end().toPositionInDocument(document);
+    return Utils::Text::Replacement(start, end - start, newText());
 }
 
-using DocumentChangeBase = std::variant<TextDocumentEdit, CreateFileOperation, RenameFileOperation, DeleteFileOperation>;
-
-bool DocumentChange::isValid() const
-{
-    return std::visit([](const auto &v) { return v.isValid(); }, DocumentChangeBase(*this));
-}
-
-DocumentChange::operator const QJsonValue () const
-{
-    return std::visit([](const auto &v) { return QJsonValue(v); }, DocumentChangeBase(*this));
-}
-
-CreateFileOperation::CreateFileOperation()
-{
-    insert(kindKey, "create");
-}
-
-QString CreateFileOperation::message(const DocumentUri::PathMapper &mapToHostPath) const
-{
-    return Tr::tr("Create %1").arg(uri().toFilePath(mapToHostPath).toUserOutput());
-}
-
-bool LanguageServerProtocol::CreateFileOperation::isValid() const
-{
-    return contains(uriKey) && value(kindKey) == "create";
-}
-
-RenameFileOperation::RenameFileOperation()
-{
-    insert(kindKey, "rename");
-}
-
-QString RenameFileOperation::message(const DocumentUri::PathMapper &mapToHostPath) const
-{
-    return Tr::tr("Rename %1 to %2")
-        .arg(oldUri().toFilePath(mapToHostPath).toUserOutput(),
-             newUri().toFilePath(mapToHostPath).toUserOutput());
-}
-
-bool RenameFileOperation::isValid() const
-{
-    return contains(oldUriKey) && contains(newUriKey) && value(kindKey) == "rename";
-}
-
-DeleteFileOperation::DeleteFileOperation()
-{
-    insert(kindKey, "delete");
-}
-
-QString DeleteFileOperation::message(const DocumentUri::PathMapper &mapToHostPath) const
-{
-    return Tr::tr("Delete %1").arg(uri().toFilePath(mapToHostPath).toUserOutput());
-}
-
-bool DeleteFileOperation::isValid() const
-{
-    return contains(uriKey) && value(kindKey) == "delete";
-}
-
-namespace Internal {
-std::optional<QList<SymbolTag>> getSymbolTags(const JsonObject &o)
-{
-    const QJsonObject &obj = o;
-    const QJsonValue &val = obj.value(tagsKey);
-    if (val.isUndefined() || !val.isArray())
-        return std::nullopt;
-
-    return Utils::transform<QList<SymbolTag>>(val.toArray(), [](const QJsonValue &v) {
-        return static_cast<SymbolTag>(v.toInt());
-    });
-}
-} // namespace Internal
-
-std::optional<QList<SymbolTag>> SymbolInformation::symbolTags() const
-{
-    return Internal::getSymbolTags(*this);
-}
-
-std::optional<QList<SymbolTag>> DocumentSymbol::symbolTags() const
-{
-    return Internal::getSymbolTags(*this);
-}
 } // namespace LanguageServerProtocol

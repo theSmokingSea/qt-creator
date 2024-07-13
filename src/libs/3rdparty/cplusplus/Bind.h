@@ -77,9 +77,7 @@ protected:
 
     const Name *objCSelectorArgument(ObjCSelectorArgumentAST *ast, bool *hasArg);
     void attribute(GnuAttributeAST *ast);
-    FullySpecifiedType declarator(DeclaratorAST *ast, const FullySpecifiedType &init,
-                                  DeclaratorIdAST **declaratorId,
-                                  DecompositionDeclaratorAST **decompDeclarator = nullptr);
+    FullySpecifiedType declarator(DeclaratorAST *ast, const FullySpecifiedType &init, DeclaratorIdAST **declaratorId);
     void qtInterfaceName(QtInterfaceNameAST *ast);
     void baseSpecifier(BaseSpecifierAST *ast, int colon_token, Class *klass);
     void ctorInitializer(CtorInitializerAST *ast, Function *fun);
@@ -128,7 +126,6 @@ protected:
     bool visit(NewTypeIdAST *ast) override;
     bool visit(OperatorAST *ast) override;
     bool visit(ParameterDeclarationClauseAST *ast) override;
-    bool visit(RequiresExpressionAST *ast) override;
     bool visit(TranslationUnitAST *ast) override;
     bool visit(ObjCProtocolRefsAST *ast) override;
     bool visit(ObjCMessageArgumentAST *ast) override;
@@ -230,7 +227,6 @@ protected:
     bool visit(TemplateDeclarationAST *ast) override;
     bool visit(TypenameTypeParameterAST *ast) override;
     bool visit(TemplateTypeParameterAST *ast) override;
-    bool visit(TypeConstraintAST *ast) override;
     bool visit(UsingAST *ast) override;
     bool visit(UsingDirectiveAST *ast) override;
     bool visit(ObjCClassForwardDeclarationAST *ast) override;
@@ -279,7 +275,6 @@ protected:
 
     // CoreDeclaratorAST
     bool visit(DeclaratorIdAST *ast) override;
-    bool visit(DecompositionDeclaratorAST *ast) override;
     bool visit(NestedDeclaratorAST *ast) override;
 
     // PostfixDeclaratorAST
@@ -296,13 +291,11 @@ private:
     const Name *_name;
     FullySpecifiedType _type;
     DeclaratorIdAST **_declaratorId;
-    DecompositionDeclaratorAST **_decompositionDeclarator;
     int _visibility;
     int _objcVisibility;
     int _methodKey;
     bool _skipFunctionBodies;
     int _depth;
-    bool _typeWasUnsignedOrSigned = false;
 };
 
 } // namespace CPlusPlus

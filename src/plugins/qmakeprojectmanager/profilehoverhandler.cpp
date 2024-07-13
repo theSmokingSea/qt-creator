@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "profilehoverhandler.h"
 #include "profilecompletionassist.h"
@@ -8,13 +30,12 @@
 #include <coreplugin/helpmanager.h>
 #include <texteditor/texteditor.h>
 #include <utils/htmldocextractor.h>
+#include <utils/executeondestruction.h>
 
-#include <QScopeGuard>
 #include <QTextBlock>
 #include <QUrl>
 
 using namespace Core;
-using namespace Utils;
 
 namespace QmakeProjectManager {
 namespace Internal {
@@ -28,7 +49,7 @@ void ProFileHoverHandler::identifyMatch(TextEditor::TextEditorWidget *editorWidg
                                         int pos,
                                         ReportPriority report)
 {
-    const QScopeGuard cleanup([this, report] { report(priority()); });
+    Utils::ExecuteOnDestruction reportPriority([this, report](){ report(priority()); });
 
     m_docFragment.clear();
     m_manualKind = UnknownManual;
@@ -115,8 +136,8 @@ void ProFileHoverHandler::identifyDocFragment(ProFileHoverHandler::ManualKind ma
         QUrl url(QString::fromLatin1("qthelp://org.qt-project.qmake/qmake/qmake-%1-reference.html").arg(manualName()));
         const QByteArray html = Core::HelpManager::fileData(url);
 
-        HtmlDocExtractor htmlExtractor;
-        htmlExtractor.setMode(HtmlDocExtractor::FirstParagraph);
+        Utils::HtmlDocExtractor htmlExtractor;
+        htmlExtractor.setMode(Utils::HtmlDocExtractor::FirstParagraph);
 
         // Document fragment of qmake function is retrieved from docs.
         // E.g. in case of the keyword "find" the document fragment

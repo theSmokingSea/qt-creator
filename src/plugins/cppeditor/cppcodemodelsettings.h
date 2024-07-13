@@ -1,95 +1,203 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
+#include "clangdiagnosticconfig.h"
 #include "cppeditor_global.h"
 
-#include <utils/store.h>
+#include <utils/fileutils.h>
+#include <utils/id.h>
+
+#include <QObject>
+#include <QStringList>
+#include <QVersionNumber>
+
+QT_BEGIN_NAMESPACE
+class QSettings;
+QT_END_NAMESPACE
 
 namespace ProjectExplorer { class Project; }
-namespace Utils {
-class FilePath;
-class QtcSettings;
-}
 
 namespace CppEditor {
-enum class UsePrecompiledHeaders;
 
-class CPPEDITOR_EXPORT CppCodeModelSettings
+class CPPEDITOR_EXPORT CppCodeModelSettings : public QObject
 {
+    Q_OBJECT
+
 public:
     enum PCHUsage {
         PchUse_None = 1,
         PchUse_BuildSystem = 2
     };
 
-    CppCodeModelSettings() = default;
-    CppCodeModelSettings(const Utils::Store &store) { fromMap(store); }
+public:
+    void fromSettings(QSettings *s);
+    void toSettings(QSettings *s);
 
-    friend bool operator==(const CppCodeModelSettings &s1, const CppCodeModelSettings &s2);
-    friend bool operator!=(const CppCodeModelSettings &s1, const CppCodeModelSettings &s2)
-    {
-        return !(s1 == s2);
-    }
+public:
+    bool enableLowerClazyLevels() const;
+    void setEnableLowerClazyLevels(bool yesno);
 
-    Utils::Store toMap() const;
-    void fromMap(const Utils::Store &store);
+    PCHUsage pchUsage() const;
+    void setPCHUsage(PCHUsage pchUsage);
 
-    static CppCodeModelSettings settingsForProject(const ProjectExplorer::Project *project);
-    static CppCodeModelSettings settingsForProject(const Utils::FilePath &projectFile);
-    static CppCodeModelSettings settingsForFile(const Utils::FilePath &file);
-    static bool hasCustomSettings(const ProjectExplorer::Project *project);
-    static void setSettingsForProject(ProjectExplorer::Project *project,
-                                      const CppCodeModelSettings &settings);
+    bool interpretAmbigiousHeadersAsCHeaders() const;
+    void setInterpretAmbigiousHeadersAsCHeaders(bool yesno);
 
-    static const CppCodeModelSettings &global() { return globalInstance(); }
-    static void setGlobal(const CppCodeModelSettings &settings);
+    bool skipIndexingBigFiles() const;
+    void setSkipIndexingBigFiles(bool yesno);
 
-    static PCHUsage pchUsageForProject(const ProjectExplorer::Project *project);
-    UsePrecompiledHeaders usePrecompiledHeaders() const;
-    static UsePrecompiledHeaders usePrecompiledHeaders(const ProjectExplorer::Project *project);
+    int indexerFileSizeLimitInMb() const;
+    void setIndexerFileSizeLimitInMb(int sizeInMB);
 
-    int effectiveIndexerFileSizeLimitInMb() const;
+    void setCategorizeFindReferences(bool categorize) { m_categorizeFindReferences = categorize; }
+    bool categorizeFindReferences() const { return m_categorizeFindReferences; }
 
-    static bool categorizeFindReferences();
-    static void setCategorizeFindReferences(bool categorize);
-
-    static bool isInteractiveFollowSymbol();
-    static void setInteractiveFollowSymbol(bool interactive);
-
-    QString ignorePattern;
-    PCHUsage pchUsage = PchUse_BuildSystem;
-    int indexerFileSizeLimitInMb = 5;
-    bool interpretAmbigiousHeadersAsC = false;
-    bool skipIndexingBigFiles = true;
-    bool useBuiltinPreprocessor = true;
-    bool ignoreFiles = false;
-    bool enableIndexing = true;
-
-    // Ephemeral!
-    bool m_categorizeFindReferences = false;
-    bool interactiveFollowSymbol = true;
+signals:
+    void clangDiagnosticConfigsInvalidated(const QVector<Utils::Id> &configId);
+    void changed();
 
 private:
-    CppCodeModelSettings(Utils::QtcSettings *s) { fromSettings(s); }
-    static CppCodeModelSettings &globalInstance();
-
-    void toSettings(Utils::QtcSettings *s);
-    void fromSettings(Utils::QtcSettings *s);
+    PCHUsage m_pchUsage = PchUse_BuildSystem;
+    bool m_interpretAmbigiousHeadersAsCHeaders = false;
+    bool m_skipIndexingBigFiles = true;
+    int m_indexerFileSizeLimitInMB = 5;
+    bool m_enableLowerClazyLevels = true; // For UI behavior only
+    bool m_categorizeFindReferences = false; // Ephemeral!
 };
 
-namespace Internal {
-void setupCppCodeModelSettingsPage();
-void setupCppCodeModelProjectSettingsPanel();
+class CPPEDITOR_EXPORT ClangdSettings : public QObject
+{
+    Q_OBJECT
+public:
+    class CPPEDITOR_EXPORT Data
+    {
+    public:
+        QVariantMap toMap() const;
+        void fromMap(const QVariantMap &map);
 
-class NonInteractiveFollowSymbolMarker
+        friend bool operator==(const Data &s1, const Data &s2)
+        {
+            return s1.useClangd == s2.useClangd
+                    && s1.executableFilePath == s2.executableFilePath
+                    && s1.sessionsWithOneClangd == s2.sessionsWithOneClangd
+                    && s1.customDiagnosticConfigs == s2.customDiagnosticConfigs
+                    && s1.diagnosticConfigId == s2.diagnosticConfigId
+                    && s1.workerThreadLimit == s2.workerThreadLimit
+                    && s1.enableIndexing == s2.enableIndexing
+                    && s1.autoIncludeHeaders == s2.autoIncludeHeaders
+                    && s1.documentUpdateThreshold == s2.documentUpdateThreshold
+                    && s1.sizeThresholdEnabled == s2.sizeThresholdEnabled
+                    && s1.sizeThresholdInKb == s2.sizeThresholdInKb
+                    && s1.haveCheckedHardwareReqirements == s2.haveCheckedHardwareReqirements;
+        }
+        friend bool operator!=(const Data &s1, const Data &s2) { return !(s1 == s2); }
+
+        Utils::FilePath executableFilePath;
+        QStringList sessionsWithOneClangd;
+        ClangDiagnosticConfigs customDiagnosticConfigs;
+        Utils::Id diagnosticConfigId;
+        int workerThreadLimit = 0;
+        int documentUpdateThreshold = 500;
+        qint64 sizeThresholdInKb = 1024;
+        bool useClangd = true;
+        bool enableIndexing = true;
+        bool autoIncludeHeaders = false;
+        bool sizeThresholdEnabled = false;
+        bool haveCheckedHardwareReqirements = false;
+    };
+
+    ClangdSettings(const Data &data) : m_data(data) {}
+
+    static ClangdSettings &instance();
+    bool useClangd() const;
+    static void setUseClangd(bool use);
+
+    static bool hardwareFulfillsRequirements();
+    static bool haveCheckedHardwareRequirements();
+
+    static void setDefaultClangdPath(const Utils::FilePath &filePath);
+    static void setCustomDiagnosticConfigs(const ClangDiagnosticConfigs &configs);
+    Utils::FilePath clangdFilePath() const;
+    bool indexingEnabled() const { return m_data.enableIndexing; }
+    bool autoIncludeHeaders() const { return m_data.autoIncludeHeaders; }
+    int workerThreadLimit() const { return m_data.workerThreadLimit; }
+    int documentUpdateThreshold() const { return m_data.documentUpdateThreshold; }
+    qint64 sizeThresholdInKb() const { return m_data.sizeThresholdInKb; }
+    bool sizeThresholdEnabled() const { return m_data.sizeThresholdEnabled; }
+    bool sizeIsOkay(const Utils::FilePath &fp) const;
+    ClangDiagnosticConfigs customDiagnosticConfigs() const;
+    Utils::Id diagnosticConfigId() const;
+    ClangDiagnosticConfig diagnosticConfig() const;
+
+    enum class Granularity { Project, Session };
+    Granularity granularity() const;
+
+    void setData(const Data &data);
+    Data data() const { return m_data; }
+
+    static QVersionNumber clangdVersion(const Utils::FilePath &clangdFilePath);
+    QVersionNumber clangdVersion() const { return clangdVersion(clangdFilePath()); }
+    Utils::FilePath clangdIncludePath() const;
+    static Utils::FilePath clangdUserConfigFilePath();
+
+#ifdef WITH_TESTS
+    static void setClangdFilePath(const Utils::FilePath &filePath);
+#endif
+
+signals:
+    void changed();
+
+private:
+    ClangdSettings();
+
+    void loadSettings();
+    void saveSettings();
+
+    Data m_data;
+};
+
+class CPPEDITOR_EXPORT ClangdProjectSettings
 {
 public:
-    NonInteractiveFollowSymbolMarker() { CppCodeModelSettings::setInteractiveFollowSymbol(false); }
-    ~NonInteractiveFollowSymbolMarker() { CppCodeModelSettings::setInteractiveFollowSymbol(true); }
-};
+    ClangdProjectSettings(ProjectExplorer::Project *project);
 
-} // namespace Internal
+    ClangdSettings::Data settings() const;
+    void setSettings(const ClangdSettings::Data &data);
+    bool useGlobalSettings() const { return m_useGlobalSettings; }
+    void setUseGlobalSettings(bool useGlobal);
+    void setDiagnosticConfigId(Utils::Id configId);
+
+private:
+    void loadSettings();
+    void saveSettings();
+
+    ProjectExplorer::Project * const m_project;
+    ClangdSettings::Data m_customSettings;
+    bool m_useGlobalSettings = true;
+};
 
 } // namespace CppEditor

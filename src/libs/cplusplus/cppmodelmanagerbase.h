@@ -1,30 +1,55 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include <cplusplus/CppDocument.h>
 
-namespace Utils { class FilePath; }
+#include <QObject>
+#include <QList>
 
-namespace CPlusPlus::CppModelManagerBase {
+QT_BEGIN_NAMESPACE
+class QString;
+QT_END_NAMESPACE
 
-CPLUSPLUS_EXPORT bool trySetExtraDiagnostics
-    (const Utils::FilePath &filePath, const QString &, const QList<Document::DiagnosticMessage> &);
+namespace CPlusPlus {
 
-CPLUSPLUS_EXPORT bool setSetExtraDiagnostics
-    (const Utils::FilePath &, const QString &, const QList<Document::DiagnosticMessage> &);
+class CPLUSPLUS_EXPORT CppModelManagerBase : public QObject
+{
+    Q_OBJECT
+public:
+    CppModelManagerBase(QObject *parent = nullptr);
+    ~CppModelManagerBase();
 
-CPLUSPLUS_EXPORT bool hasSnapshots();
+    static CppModelManagerBase *instance();
+    static bool trySetExtraDiagnostics(const QString &fileName, const QString &kind,
+                                       const QList<Document::DiagnosticMessage> &diagnostics);
 
-CPLUSPLUS_EXPORT CPlusPlus::Snapshot snapshot();
+    virtual bool setExtraDiagnostics(const QString &fileName, const QString &kind,
+                                     const QList<Document::DiagnosticMessage> &diagnostics);
+    virtual CPlusPlus::Snapshot snapshot() const;
+};
 
-
-// These callback are provided by the CppEditor plugin.
-
-CPLUSPLUS_EXPORT void registerSnapshotCallback(CPlusPlus::Snapshot (*)(void));
-
-CPLUSPLUS_EXPORT void registerSetExtraDiagnosticsCallback(
-    bool(*)(const Utils::FilePath &, const QString &, const QList<Document::DiagnosticMessage> &));
-
-} // CPlusPlus::CppModelManagerBase
+} // namespace CPlusPlus

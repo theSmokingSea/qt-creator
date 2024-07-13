@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "outputformatter.h"
 
@@ -8,8 +30,7 @@
 #include "fileinprojectfinder.h"
 #include "link.h"
 #include "qtcassert.h"
-#include "stringutils.h"
-#include "stylehelper.h"
+#include "qtcprocess.h"
 #include "theme/theme.h"
 
 #include <QDir>
@@ -58,7 +79,7 @@ Link OutputLineParser::parseLinkTarget(const QString &target)
         return {};
     return Link(FilePath::fromString(parts.first()),
                 parts.length() > 1 ? parts.at(1).toInt() : 0,
-                parts.length() > 2 ? parts.at(2).toInt() - 1 : 0);
+                parts.length() > 2 ? parts.at(2).toInt() : 0);
 }
 
 // The redirection mechanism is needed for broken build tools (e.g. xcodebuild) that get invoked
@@ -116,13 +137,13 @@ FilePath OutputLineParser::absoluteFilePath(const FilePath &filePath) const
 {
     if (filePath.isEmpty())
         return filePath;
-    if (filePath.isAbsolutePath())
+    if (filePath.toFileInfo().isAbsolute())
         return filePath.cleanPath();
     FilePaths candidates;
     for (const FilePath &dir : searchDirectories()) {
-        FilePath candidate = dir.resolvePath(filePath);
+        FilePath candidate = dir.pathAppended(filePath.toString());
         if (candidate.exists() || d->skipFileExistsCheck) {
-            candidate = candidate.cleanPath();
+            candidate = FilePath::fromString(QDir::cleanPath(candidate.toString()));
             if (!candidates.contains(candidate))
                 candidates << candidate;
         }
@@ -141,39 +162,26 @@ FilePath OutputLineParser::absoluteFilePath(const FilePath &filePath) const
     return filePath;
 }
 
-void OutputLineParser::addLinkSpecForAbsoluteFilePath(
-    OutputLineParser::LinkSpecs &linkSpecs,
-    const FilePath &filePath,
-    int lineNo,
-    int column,
-    int pos,
-    int len)
+void OutputLineParser::addLinkSpecForAbsoluteFilePath(OutputLineParser::LinkSpecs &linkSpecs,
+        const FilePath &filePath, int lineNo, int pos, int len)
 {
     if (filePath.toFileInfo().isAbsolute())
-        linkSpecs.append({pos, len, createLinkTarget(filePath, lineNo, column)});
+        linkSpecs.append({pos, len, createLinkTarget(filePath, lineNo)});
 }
 
-void OutputLineParser::addLinkSpecForAbsoluteFilePath(
-    OutputLineParser::LinkSpecs &linkSpecs,
-    const FilePath &filePath,
-    int lineNo,
-    int column,
-    const QRegularExpressionMatch &match,
-    int capIndex)
+void OutputLineParser::addLinkSpecForAbsoluteFilePath(OutputLineParser::LinkSpecs &linkSpecs,
+        const FilePath &filePath, int lineNo, const QRegularExpressionMatch &match,
+        int capIndex)
 {
-    addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, column,
-                                   match.capturedStart(capIndex), match.capturedLength(capIndex));
+    addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, match.capturedStart(capIndex),
+                                   match.capturedLength(capIndex));
 }
-void OutputLineParser::addLinkSpecForAbsoluteFilePath(
-    OutputLineParser::LinkSpecs &linkSpecs,
-    const FilePath &filePath,
-    int lineNo,
-    int column,
-    const QRegularExpressionMatch &match,
-    const QString &capName)
+void OutputLineParser::addLinkSpecForAbsoluteFilePath(OutputLineParser::LinkSpecs &linkSpecs,
+        const FilePath &filePath, int lineNo, const QRegularExpressionMatch &match,
+                                                      const QString &capName)
 {
-    addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, column,
-                                   match.capturedStart(capName), match.capturedLength(capName));
+    addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, match.capturedStart(capName),
+                                   match.capturedLength(capName));
 }
 
 bool Utils::OutputLineParser::fileExists(const FilePath &fp) const
@@ -211,7 +219,7 @@ public:
     QTextCursor cursor;
     AnsiEscapeCodeHandler escapeCodeHandler;
     QPair<QString, OutputFormat> incompleteLine;
-    std::optional<QTextCharFormat> formatOverride;
+    optional<QTextCharFormat> formatOverride;
     QList<OutputLineParser *> lineParsers;
     OutputLineParser *nextParser = nullptr;
     FileInProjectFinder fileFinder;
@@ -254,7 +262,7 @@ void OutputFormatter::setLineParsers(const QList<OutputLineParser *> &parsers)
 
 void OutputFormatter::addLineParsers(const QList<OutputLineParser *> &parsers)
 {
-    for (OutputLineParser * const p : std::as_const(parsers))
+    for (OutputLineParser * const p : qAsConst(parsers))
         addLineParser(p);
 }
 
@@ -278,21 +286,13 @@ void OutputFormatter::setFileFinder(const FileInProjectFinder &finder)
 
 void OutputFormatter::setDemoteErrorsToWarnings(bool demote)
 {
-    for (OutputLineParser * const p : std::as_const(d->lineParsers))
+    for (OutputLineParser * const p : qAsConst(d->lineParsers))
         p->setDemoteErrorsToWarnings(demote);
 }
 
 void OutputFormatter::overridePostPrintAction(const PostPrintAction &postPrintAction)
 {
     d->postPrintAction = postPrintAction;
-}
-
-static void checkAndFineTuneColors(QTextCharFormat *format)
-{
-    QTC_ASSERT(format, return);
-    const QColor fgColor = StyleHelper::ensureReadableOn(format->background().color(),
-                                                         format->foreground().color());
-    format->setForeground(fgColor);
 }
 
 void OutputFormatter::doAppendMessage(const QString &text, OutputFormat format)
@@ -314,7 +314,6 @@ void OutputFormatter::doAppendMessage(const QString &text, OutputFormat format)
                 ? *res.formatOverride : outputTypeForParser(involvedParsers.last(), format);
         if (formatForParser != format && cleanLine == text && formattedText.length() == 1) {
             charFmt = charFormat(formatForParser);
-            checkAndFineTuneColors(&charFmt);
             formattedText.first().format = charFmt;
         }
     }
@@ -325,14 +324,12 @@ void OutputFormatter::doAppendMessage(const QString &text, OutputFormat format)
     }
 
     const QList<FormattedText> linkified = linkifiedText(formattedText, res.linkSpecs);
-    for (FormattedText output : linkified) {
-        checkAndFineTuneColors(&output.format);
+    for (const FormattedText &output : linkified)
         append(output.text, output.format);
-    }
     if (linkified.isEmpty())
         append({}, charFmt); // This might cause insertion of a newline character.
 
-    for (OutputLineParser * const p : std::as_const(involvedParsers)) {
+    for (OutputLineParser * const p : qAsConst(involvedParsers)) {
         if (d->postPrintAction)
             d->postPrintAction(p);
         else
@@ -355,7 +352,6 @@ OutputLineParser::Result OutputFormatter::handleMessage(const QString &text, Out
                 = d->nextParser->handleLine(text, outputTypeForParser(d->nextParser, format));
         switch (res.status) {
         case OutputLineParser::Status::Done:
-            d->nextParser->flush();
             d->nextParser = nullptr;
             return res;
         case OutputLineParser::Status::InProgress:
@@ -366,14 +362,13 @@ OutputLineParser::Result OutputFormatter::handleMessage(const QString &text, Out
         }
     }
     QTC_CHECK(!d->nextParser);
-    for (OutputLineParser * const parser : std::as_const(d->lineParsers)) {
+    for (OutputLineParser * const parser : qAsConst(d->lineParsers)) {
         if (parser == oldNextParser) // We tried that one already.
             continue;
         const OutputLineParser::Result res
                 = parser->handleLine(text, outputTypeForParser(parser, format));
         switch (res.status) {
         case OutputLineParser::Status::Done:
-            parser->flush();
             involvedParsers << parser;
             return res;
         case OutputLineParser::Status::InProgress:
@@ -417,32 +412,23 @@ const QList<FormattedText> OutputFormatter::linkifiedText(
         }
 
         for (int nextLocalTextPos = 0; nextLocalTextPos < t.text.size(); ) {
-            const auto copyRestOfSegmentAsIs = [&] {
+
+            // There are no more links in this part, so copy the rest of the text as-is.
+            if (nextLinkSpecIndex >= linkSpecs.size()) {
                 linkified << FormattedText(t.text.mid(nextLocalTextPos), t.format);
                 totalTextLengthSoFar += t.text.length() - nextLocalTextPos;
-            };
-
-            // We are out of links.
-            if (nextLinkSpecIndex >= linkSpecs.size()) {
-                copyRestOfSegmentAsIs();
                 break;
             }
 
             const OutputLineParser::LinkSpec &linkSpec = linkSpecs.at(nextLinkSpecIndex);
             const int localLinkStartPos = linkSpec.startPos - totalPreviousTextLength;
-
-            // There are more links, but not in this segment.
-            if (localLinkStartPos >= t.text.size()) {
-                copyRestOfSegmentAsIs();
-                break;
-            }
-
             ++nextLinkSpecIndex;
 
             // We ignore links that would cross format boundaries.
             if (localLinkStartPos < nextLocalTextPos
                     || localLinkStartPos + linkSpec.length > t.text.length()) {
-                copyRestOfSegmentAsIs();
+                linkified << FormattedText(t.text.mid(nextLocalTextPos), t.format);
+                totalTextLengthSoFar += t.text.length() - nextLocalTextPos;
                 break;
             }
 
@@ -473,14 +459,14 @@ void OutputFormatter::append(const QString &text, const QTextCharFormat &format)
         d->cursor.movePosition(QTextCursor::StartOfBlock, QTextCursor::KeepAnchor);
         startPos = crPos + 1;
     }
-    if (startPos < text.size())
+    if (startPos < text.count())
         d->cursor.insertText(text.mid(startPos), format);
 }
 
 QTextCharFormat OutputFormatter::linkFormat(const QTextCharFormat &inputFormat, const QString &href)
 {
     QTextCharFormat result = inputFormat;
-    result.setForeground(creatorColor(Theme::TextColorLink));
+    result.setForeground(creatorTheme()->color(Theme::TextColorLink));
     result.setUnderlineStyle(QTextCharFormat::SingleUnderline);
     result.setAnchor(true);
     result.setAnchorHref(href);
@@ -515,13 +501,14 @@ void OutputFormatter::initFormats()
     if (!plainTextEdit())
         return;
 
-    d->formats[NormalMessageFormat].setForeground(creatorColor(Theme::OutputPanes_NormalMessageTextColor));
-    d->formats[ErrorMessageFormat].setForeground(creatorColor(Theme::OutputPanes_ErrorMessageTextColor));
-    d->formats[LogMessageFormat].setForeground(creatorColor(Theme::OutputPanes_WarningMessageTextColor));
-    d->formats[StdOutFormat].setForeground(creatorColor(Theme::OutputPanes_StdOutTextColor));
-    d->formats[StdErrFormat].setForeground(creatorColor(Theme::OutputPanes_StdErrTextColor));
-    d->formats[DebugFormat].setForeground(creatorColor(Theme::OutputPanes_DebugTextColor));
-    d->formats[GeneralMessageFormat].setForeground(creatorColor(Theme::OutputPanes_DebugTextColor));
+    Theme *theme = creatorTheme();
+    d->formats[NormalMessageFormat].setForeground(theme->color(Theme::OutputPanes_NormalMessageTextColor));
+    d->formats[ErrorMessageFormat].setForeground(theme->color(Theme::OutputPanes_ErrorMessageTextColor));
+    d->formats[LogMessageFormat].setForeground(theme->color(Theme::OutputPanes_WarningMessageTextColor));
+    d->formats[StdOutFormat].setForeground(theme->color(Theme::OutputPanes_StdOutTextColor));
+    d->formats[StdErrFormat].setForeground(theme->color(Theme::OutputPanes_StdErrTextColor));
+    d->formats[DebugFormat].setForeground(theme->color(Theme::OutputPanes_DebugTextColor));
+    d->formats[GeneralMessageFormat].setForeground(theme->color(Theme::OutputPanes_DebugTextColor));
     setBoldFontEnabled(d->boldFontEnabled);
 }
 
@@ -567,7 +554,7 @@ void OutputFormatter::handleLink(const QString &href)
     // to the line parsers.
     if (handleFileLink(href))
         return;
-    for (OutputLineParser * const f : std::as_const(d->lineParsers)) {
+    for (OutputLineParser * const f : qAsConst(d->lineParsers)) {
         if (f->handleLink(href))
             return;
     }
@@ -610,7 +597,7 @@ void OutputFormatter::flush()
         flushIncompleteLine();
     flushTrailingNewline();
     d->escapeCodeHandler.endFormatScope();
-    for (OutputLineParser * const p : std::as_const(d->lineParsers))
+    for (OutputLineParser * const p : qAsConst(d->lineParsers))
         p->flush();
     if (d->nextParser)
         d->nextParser->runPostPrintActions(plainTextEdit());
@@ -625,13 +612,13 @@ bool OutputFormatter::hasFatalErrors() const
 
 void OutputFormatter::addSearchDir(const FilePath &dir)
 {
-    for (OutputLineParser * const p : std::as_const(d->lineParsers))
+    for (OutputLineParser * const p : qAsConst(d->lineParsers))
         p->addSearchDir(dir);
 }
 
 void OutputFormatter::dropSearchDir(const FilePath &dir)
 {
-    for (OutputLineParser * const p : std::as_const(d->lineParsers))
+    for (OutputLineParser * const p : qAsConst(d->lineParsers))
         p->dropSearchDir(dir);
 }
 
@@ -659,7 +646,7 @@ void OutputFormatter::appendMessage(const QString &text, OutputFormat format)
         d->prependCarriageReturn = false;
         out.prepend('\r');
     }
-    out = Utils::normalizeNewlines(out);
+    out = QtcProcess::normalizeNewlines(out);
     if (out.endsWith('\r')) {
         d->prependCarriageReturn = true;
         out.chop(1);

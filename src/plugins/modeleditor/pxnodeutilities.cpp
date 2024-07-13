@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "pxnodeutilities.h"
 
@@ -15,12 +37,10 @@
 #include <utils/qtcassert.h>
 
 #include <QFileInfo>
-#include <QList>
+#include <QQueue>
 #include <QPair>
 
 #include <typeinfo>
-
-using Utils::FilePath;
 
 namespace ModelEditor {
 namespace Internal {
@@ -53,8 +73,7 @@ QString PxNodeUtilities::calcRelativePath(const ProjectExplorer::Node *node,
             ? node->filePath().toFileInfo().path()
             : node->filePath().toString();
 
-    return qmt::NameController::calcRelativePath(FilePath::fromString(nodePath),
-                                                 FilePath::fromString(anchorFolder)).toString();
+    return qmt::NameController::calcRelativePath(nodePath, anchorFolder);
 }
 
 QString PxNodeUtilities::calcRelativePath(const QString &filePath, const QString &anchorFolder)
@@ -66,8 +85,7 @@ QString PxNodeUtilities::calcRelativePath(const QString &filePath, const QString
         path = fileInfo.path();
     else
         path = filePath;
-    return qmt::NameController::calcRelativePath(FilePath::fromString(path),
-                                                 FilePath::fromString(anchorFolder)).toString();
+    return qmt::NameController::calcRelativePath(path, anchorFolder);
 }
 
 qmt::MPackage *PxNodeUtilities::createBestMatchingPackagePath(
@@ -80,8 +98,8 @@ qmt::MPackage *PxNodeUtilities::createBestMatchingPackagePath(
         suggestedParent = dynamic_cast<qmt::MPackage *>(suggestedParent->owner());
     }
 
-    QList<QPair<qmt::MPackage *, int>>
-            roots{{d->diagramSceneController->modelController()->rootPackage(), 0}};
+    QQueue<QPair<qmt::MPackage *, int> > roots;
+    roots.append(qMakePair(d->diagramSceneController->modelController()->rootPackage(), 0));
 
     int maxChainLength = -1;
     int minChainDepth = -1;
@@ -98,7 +116,7 @@ qmt::MPackage *PxNodeUtilities::createBestMatchingPackagePath(
                 if (auto childPackage = dynamic_cast<qmt::MPackage *>(handle.target())) {
                     // only accept root packages in the same path as the suggested parent package
                     if (suggestedParents.contains(childPackage)) {
-                        roots.push_back({childPackage, depth + 1});
+                        roots.append(qMakePair(childPackage, depth + 1));
                         break;
                     }
                 }
@@ -164,7 +182,8 @@ qmt::MPackage *PxNodeUtilities::createBestMatchingPackagePath(
 qmt::MObject *PxNodeUtilities::findSameObject(const QStringList &relativeElements,
                                               const qmt::MObject *object)
 {
-    QList<qmt::MPackage *> roots{d->diagramSceneController->modelController()->rootPackage()};
+    QQueue<qmt::MPackage *> roots;
+    roots.append(d->diagramSceneController->modelController()->rootPackage());
 
     while (!roots.isEmpty()) {
         qmt::MPackage *package = roots.takeFirst();
@@ -220,14 +239,15 @@ qmt::MObject *PxNodeUtilities::findSameObject(const QStringList &relativeElement
 
 bool PxNodeUtilities::isProxyHeader(const QString &file) const
 {
-    CPlusPlus::Snapshot snapshot = CppEditor::CppModelManager::snapshot();
+    CppEditor::CppModelManager *cppModelManager = CppEditor::CppModelManager::instance();
+    CPlusPlus::Snapshot snapshot = cppModelManager->snapshot();
 
-    CPlusPlus::Document::Ptr document = snapshot.document(FilePath::fromString(file));
+    CPlusPlus::Document::Ptr document = snapshot.document(file);
     if (document) {
         QList<CPlusPlus::Document::Include> includes = document->resolvedIncludes();
         if (includes.count() != 1)
             return false;
-        return includes.at(0).resolvedFileName().fileName() == QFileInfo(file).fileName();
+        return QFileInfo(includes.at(0).resolvedFileName()).fileName() == QFileInfo(file).fileName();
     }
     return false;
 }

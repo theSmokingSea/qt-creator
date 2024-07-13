@@ -1,49 +1,85 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cpplocatorfilter.h"
 
 #include "cppeditorconstants.h"
-#include "cppeditortr.h"
-#include "cpplocatordata.h"
 #include "cppmodelmanager.h"
 
 #include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/editormanager/ieditor.h>
-
 #include <utils/algorithm.h>
-#include <utils/async.h>
-#include <utils/fuzzymatcher.h>
 
 #include <QRegularExpression>
 
-using namespace Core;
-using namespace CPlusPlus;
-using namespace Utils;
+#include <algorithm>
+#include <numeric>
 
 namespace CppEditor {
 
-using EntryFromIndex = std::function<LocatorFilterEntry(const IndexItem::Ptr &)>;
-
-void matchesFor(QPromise<void> &promise, const LocatorStorage &storage,
-                IndexItem::ItemType wantedType, const EntryFromIndex &converter)
+CppLocatorFilter::CppLocatorFilter(CppLocatorData *locatorData)
+    : m_data(locatorData)
 {
-    const QString input = storage.input();
-    LocatorFilterEntries entries[int(ILocatorFilter::MatchLevel::Count)];
-    const Qt::CaseSensitivity caseSensitivityForPrefix = ILocatorFilter::caseSensitivity(input);
-    const QRegularExpression regexp = ILocatorFilter::createRegExp(input);
-    if (!regexp.isValid())
-        return;
+    setId(Constants::LOCATOR_FILTER_ID);
+    setDisplayName(Constants::LOCATOR_FILTER_DISPLAY_NAME);
+    setDefaultShortcutString(":");
+    setDefaultIncludedByDefault(false);
+}
 
-    const bool hasColonColon = input.contains("::");
-    const QRegularExpression shortRegexp = hasColonColon
-            ? ILocatorFilter::createRegExp(input.mid(input.lastIndexOf("::") + 2)) : regexp;
-    CppLocatorData *locatorData = CppModelManager::locatorData();
-    locatorData->filterAllFiles([&](const IndexItem::Ptr &info) {
-        if (promise.isCanceled())
+CppLocatorFilter::~CppLocatorFilter() = default;
+
+Core::LocatorFilterEntry CppLocatorFilter::filterEntryFromIndexItem(IndexItem::Ptr info)
+{
+    const QVariant id = QVariant::fromValue(info);
+    Core::LocatorFilterEntry filterEntry(this, info->scopedSymbolName(), id, info->icon());
+    if (info->type() == IndexItem::Class || info->type() == IndexItem::Enum)
+        filterEntry.extraInfo = info->shortNativeFilePath();
+    else
+        filterEntry.extraInfo = info->symbolType();
+
+    return filterEntry;
+}
+
+QList<Core::LocatorFilterEntry> CppLocatorFilter::matchesFor(
+        QFutureInterface<Core::LocatorFilterEntry> &future, const QString &entry)
+{
+    QList<Core::LocatorFilterEntry> entries[int(MatchLevel::Count)];
+    const Qt::CaseSensitivity caseSensitivityForPrefix = caseSensitivity(entry);
+    const IndexItem::ItemType wanted = matchTypes();
+
+    const QRegularExpression regexp = createRegExp(entry);
+    if (!regexp.isValid())
+        return {};
+    const bool hasColonColon = entry.contains("::");
+    const QRegularExpression shortRegexp =
+            hasColonColon ? createRegExp(entry.mid(entry.lastIndexOf("::") + 2)) : regexp;
+
+    m_data->filterAllFiles([&](const IndexItem::Ptr &info) -> IndexItem::VisitorResult {
+        if (future.isCanceled())
             return IndexItem::Break;
         const IndexItem::ItemType type = info->type();
-        if (type & wantedType) {
+        if (type & wanted) {
             const QString symbolName = info->symbolName();
             QString matchString = hasColonColon ? info->scopedSymbolName() : symbolName;
             int matchOffset = hasColonColon ? matchString.size() - symbolName.size() : 0;
@@ -56,7 +92,7 @@ void matchesFor(QPromise<void> &promise, const LocatorStorage &storage,
             }
 
             if (match.hasMatch()) {
-                LocatorFilterEntry filterEntry = converter(info);
+                Core::LocatorFilterEntry filterEntry = filterEntryFromIndexItem(info);
 
                 // Highlight the matched characters, therefore it may be necessary
                 // to update the match if the displayName is different from matchString
@@ -64,323 +100,106 @@ void matchesFor(QPromise<void> &promise, const LocatorStorage &storage,
                     match = shortRegexp.match(filterEntry.displayName);
                     matchOffset = 0;
                 }
-                filterEntry.highlightInfo = ILocatorFilter::highlightInfo(match);
-                if (matchInParameterList && filterEntry.highlightInfo.startsDisplay.isEmpty()) {
+                filterEntry.highlightInfo = highlightInfo(match);
+                if (matchInParameterList && filterEntry.highlightInfo.starts.isEmpty()) {
                     match = regexp.match(filterEntry.extraInfo);
-                    filterEntry.highlightInfo = ILocatorFilter::highlightInfo(
-                        match, LocatorFilterEntry::HighlightInfo::ExtraInfo);
+                    filterEntry.highlightInfo = highlightInfo(match);
+                    filterEntry.highlightInfo.dataType =
+                            Core::LocatorFilterEntry::HighlightInfo::ExtraInfo;
                 } else if (matchOffset > 0) {
-                    for (int &start : filterEntry.highlightInfo.startsDisplay)
+                    for (int &start : filterEntry.highlightInfo.starts)
                         start -= matchOffset;
                 }
 
                 if (matchInParameterList)
-                    entries[int(ILocatorFilter::MatchLevel::Normal)].append(filterEntry);
-                else if (filterEntry.displayName.startsWith(input, caseSensitivityForPrefix))
-                    entries[int(ILocatorFilter::MatchLevel::Best)].append(filterEntry);
-                else if (filterEntry.displayName.contains(input, caseSensitivityForPrefix))
-                    entries[int(ILocatorFilter::MatchLevel::Better)].append(filterEntry);
+                    entries[int(MatchLevel::Normal)].append(filterEntry);
+                else if (filterEntry.displayName.startsWith(entry, caseSensitivityForPrefix))
+                    entries[int(MatchLevel::Best)].append(filterEntry);
+                else if (filterEntry.displayName.contains(entry, caseSensitivityForPrefix))
+                    entries[int(MatchLevel::Better)].append(filterEntry);
                 else
-                    entries[int(ILocatorFilter::MatchLevel::Good)].append(filterEntry);
+                    entries[int(MatchLevel::Good)].append(filterEntry);
             }
         }
 
         if (info->type() & IndexItem::Enum)
             return IndexItem::Continue;
-        return IndexItem::Recurse;
+        else
+            return IndexItem::Recurse;
     });
 
     for (auto &entry : entries) {
         if (entry.size() < 1000)
-            Utils::sort(entry, LocatorFilterEntry::compareLexigraphically);
+            Utils::sort(entry, Core::LocatorFilterEntry::compareLexigraphically);
     }
 
-    storage.reportOutput(std::accumulate(std::begin(entries), std::end(entries),
-                                      LocatorFilterEntries()));
+    return std::accumulate(std::begin(entries), std::end(entries), QList<Core::LocatorFilterEntry>());
 }
 
-LocatorMatcherTask locatorMatcher(IndexItem::ItemType type, const EntryFromIndex &converter)
+void CppLocatorFilter::accept(const Core::LocatorFilterEntry &selection,
+                              QString *newText, int *selectionStart, int *selectionLength) const
 {
-    using namespace Tasking;
-
-    Storage<LocatorStorage> storage;
-
-    const auto onSetup = [=](Async<void> &async) {
-        async.setConcurrentCallData(matchesFor, *storage, type, converter);
-    };
-    return {AsyncTask<void>(onSetup), storage};
+    Q_UNUSED(newText)
+    Q_UNUSED(selectionStart)
+    Q_UNUSED(selectionLength)
+    IndexItem::Ptr info = qvariant_cast<IndexItem::Ptr>(selection.internalData);
+    Core::EditorManager::openEditorAt({Utils::FilePath::fromString(info->fileName()),
+                                       info->line(),
+                                       info->column()},
+                                      {},
+                                      Core::EditorManager::AllowExternalEditor);
 }
 
-LocatorMatcherTask allSymbolsMatcher()
-{
-    const auto converter = [](const IndexItem::Ptr &info) {
-        LocatorFilterEntry filterEntry;
-        filterEntry.displayName = info->symbolName();
-        filterEntry.displayIcon = info->icon();
-        filterEntry.linkForEditor = {info->filePath(), info->line(), info->column()};
-        if (!info->symbolScope().isEmpty())
-            filterEntry.extraInfo = info->symbolScope();
-        else if (info->type() == IndexItem::Class || info->type() == IndexItem::Enum)
-            filterEntry.extraInfo = info->shortNativeFilePath();
-        else
-            filterEntry.extraInfo = info->symbolType();
-        return filterEntry;
-    };
-    return locatorMatcher(IndexItem::All, converter);
-}
-
-LocatorMatcherTask classMatcher()
-{
-    const auto converter = [](const IndexItem::Ptr &info) {
-        LocatorFilterEntry filterEntry;
-        filterEntry.displayName = info->symbolName();
-        filterEntry.displayIcon = info->icon();
-        filterEntry.linkForEditor = {info->filePath(), info->line(), info->column()};
-        filterEntry.extraInfo = info->symbolScope().isEmpty()
-                                    ? info->shortNativeFilePath()
-                                    : info->symbolScope();
-        filterEntry.filePath = info->filePath();
-        return filterEntry;
-    };
-    return locatorMatcher(IndexItem::Class, converter);
-}
-
-LocatorMatcherTask functionMatcher()
-{
-    const auto converter = [](const IndexItem::Ptr &info) {
-        QString name = info->symbolName();
-        QString extraInfo = info->symbolScope();
-        info->unqualifiedNameAndScope(name, &name, &extraInfo);
-        if (extraInfo.isEmpty())
-            extraInfo = info->shortNativeFilePath();
-        else
-            extraInfo.append(" (" + info->filePath().fileName() + ')');
-        LocatorFilterEntry filterEntry;
-        filterEntry.displayName = name + info->symbolType();
-        filterEntry.displayIcon = info->icon();
-        filterEntry.linkForEditor = {info->filePath(), info->line(), info->column()};
-        filterEntry.extraInfo = extraInfo;
-
-        return filterEntry;
-    };
-    return locatorMatcher(IndexItem::Function, converter);
-}
-
-QList<IndexItem::Ptr> itemsOfCurrentDocument(const FilePath &currentFileName)
-{
-    if (currentFileName.isEmpty())
-        return {};
-
-    QList<IndexItem::Ptr> results;
-    const Snapshot snapshot = CppModelManager::snapshot();
-    if (const Document::Ptr thisDocument = snapshot.document(currentFileName)) {
-        SearchSymbols search;
-        search.setSymbolsToSearchFor(SymbolSearcher::Declarations |
-                                     SymbolSearcher::Enums |
-                                     SymbolSearcher::Functions |
-                                     SymbolSearcher::Classes);
-        IndexItem::Ptr rootNode = search(thisDocument);
-        rootNode->visitAllChildren([&](const IndexItem::Ptr &info) {
-            results.append(info);
-            return IndexItem::Recurse;
-        });
-    }
-    return results;
-}
-
-LocatorFilterEntry::HighlightInfo highlightInfo(const QRegularExpressionMatch &match,
-                                  LocatorFilterEntry::HighlightInfo::DataType dataType)
-{
-    const FuzzyMatcher::HighlightingPositions positions =
-        FuzzyMatcher::highlightingPositions(match);
-
-    return LocatorFilterEntry::HighlightInfo(positions.starts, positions.lengths, dataType);
-}
-
-void matchesForCurrentDocument(QPromise<void> &promise, const LocatorStorage &storage,
-                               const FilePath &currentFileName)
-{
-    const QString input = storage.input();
-    const QRegularExpression regexp = ILocatorFilter::createRegExp(input);
-    if (!regexp.isValid())
-        return;
-
-    struct Entry
-    {
-        LocatorFilterEntry entry;
-        IndexItem::Ptr info;
-    };
-    QList<Entry> goodEntries;
-    QList<Entry> betterEntries;
-    const QList<IndexItem::Ptr> items = itemsOfCurrentDocument(currentFileName);
-    for (const IndexItem::Ptr &info : items) {
-        if (promise.isCanceled())
-            break;
-
-        QString matchString = info->symbolName();
-        if (info->type() == IndexItem::Declaration)
-            matchString = info->representDeclaration();
-        else if (info->type() == IndexItem::Function)
-            matchString += info->symbolType();
-
-        QRegularExpressionMatch match = regexp.match(matchString);
-        if (match.hasMatch()) {
-            const bool betterMatch = match.capturedStart() == 0;
-            QString name = matchString;
-            QString extraInfo = info->symbolScope();
-            if (info->type() == IndexItem::Function) {
-                if (info->unqualifiedNameAndScope(matchString, &name, &extraInfo)) {
-                    name += info->symbolType();
-                    match = regexp.match(name);
-                }
-            }
-
-            LocatorFilterEntry filterEntry;
-            filterEntry.displayName = name;
-            filterEntry.displayIcon = info->icon();
-            filterEntry.linkForEditor = {info->filePath(), info->line(), info->column()};
-            filterEntry.extraInfo = extraInfo;
-            if (match.hasMatch()) {
-                filterEntry.highlightInfo = highlightInfo(match,
-                            LocatorFilterEntry::HighlightInfo::DisplayName);
-            } else {
-                match = regexp.match(extraInfo);
-                filterEntry.highlightInfo =
-                    highlightInfo(match, LocatorFilterEntry::HighlightInfo::ExtraInfo);
-            }
-
-            if (betterMatch)
-                betterEntries.append({filterEntry, info});
-            else
-                goodEntries.append({filterEntry, info});
-        }
-    }
-
-    // entries are unsorted by design!
-    betterEntries += goodEntries;
-
-    QHash<QString, QList<Entry>> possibleDuplicates;
-    for (const Entry &e : std::as_const(betterEntries))
-        possibleDuplicates[e.info->scopedSymbolName() + e.info->symbolType()] << e;
-    for (auto it = possibleDuplicates.cbegin(); it != possibleDuplicates.cend(); ++it) {
-        const QList<Entry> &duplicates = it.value();
-        if (duplicates.size() == 1)
-            continue;
-        QList<Entry> declarations;
-        QList<Entry> definitions;
-        for (const Entry &candidate : duplicates) {
-            const IndexItem::Ptr info = candidate.info;
-            if (info->type() != IndexItem::Function)
-                break;
-            if (info->isFunctionDefinition())
-                definitions << candidate;
-            else
-                declarations << candidate;
-        }
-        if (definitions.size() == 1
-            && declarations.size() + definitions.size() == duplicates.size()) {
-            for (const Entry &decl : std::as_const(declarations)) {
-                Utils::erase(betterEntries, [&decl](const Entry &e) {
-                    return e.info == decl.info;
-                });
-            }
-        }
-    }
-    storage.reportOutput(Utils::transform(betterEntries,
-                                       [](const Entry &entry) { return entry.entry; }));
-}
-
-FilePath currentFileName()
-{
-    IEditor *currentEditor = EditorManager::currentEditor();
-    return currentEditor ? currentEditor->document()->filePath() : FilePath();
-}
-
-LocatorMatcherTask currentDocumentMatcher()
-{
-    using namespace Tasking;
-
-    Storage<LocatorStorage> storage;
-
-    const auto onSetup = [=](Async<void> &async) {
-        async.setConcurrentCallData(matchesForCurrentDocument, *storage, currentFileName());
-    };
-    return {AsyncTask<void>(onSetup), storage};
-}
-
-using MatcherCreator = std::function<Core::LocatorMatcherTask()>;
-
-static MatcherCreator creatorForType(MatcherType type)
-{
-    switch (type) {
-    case MatcherType::AllSymbols: return &allSymbolsMatcher;
-    case MatcherType::Classes: return &classMatcher;
-    case MatcherType::Functions: return &functionMatcher;
-    case MatcherType::CurrentDocumentSymbols: return &currentDocumentMatcher;
-    }
-    return {};
-}
-
-LocatorMatcherTasks cppMatchers(MatcherType type)
-{
-    const MatcherCreator creator = creatorForType(type);
-    if (!creator)
-        return {};
-    return {creator()};
-}
-
-CppAllSymbolsFilter::CppAllSymbolsFilter()
-{
-    setId(Constants::LOCATOR_FILTER_ID);
-    setDisplayName(Tr::tr(Constants::LOCATOR_FILTER_DISPLAY_NAME));
-    setDescription(Tr::tr(Constants::LOCATOR_FILTER_DESCRIPTION));
-    setDefaultShortcutString(":");
-}
-
-LocatorMatcherTasks CppAllSymbolsFilter::matchers()
-{
-    return {allSymbolsMatcher()};
-}
-
-
-CppClassesFilter::CppClassesFilter()
+CppClassesFilter::CppClassesFilter(CppLocatorData *locatorData)
+    : CppLocatorFilter(locatorData)
 {
     setId(Constants::CLASSES_FILTER_ID);
-    setDisplayName(Tr::tr(Constants::CLASSES_FILTER_DISPLAY_NAME));
-    setDescription(Tr::tr(Constants::CLASSES_FILTER_DESCRIPTION));
+    setDisplayName(Constants::CLASSES_FILTER_DISPLAY_NAME);
     setDefaultShortcutString("c");
+    setDefaultIncludedByDefault(false);
 }
 
-LocatorMatcherTasks CppClassesFilter::matchers()
+CppClassesFilter::~CppClassesFilter() = default;
+
+Core::LocatorFilterEntry CppClassesFilter::filterEntryFromIndexItem(IndexItem::Ptr info)
 {
-    return {classMatcher()};
+    const QVariant id = QVariant::fromValue(info);
+    Core::LocatorFilterEntry filterEntry(this, info->symbolName(), id, info->icon());
+    filterEntry.extraInfo = info->symbolScope().isEmpty()
+        ? info->shortNativeFilePath()
+        : info->symbolScope();
+    filterEntry.filePath = Utils::FilePath::fromString(info->fileName());
+    return filterEntry;
 }
 
-CppFunctionsFilter::CppFunctionsFilter()
+CppFunctionsFilter::CppFunctionsFilter(CppLocatorData *locatorData)
+    : CppLocatorFilter(locatorData)
 {
     setId(Constants::FUNCTIONS_FILTER_ID);
-    setDisplayName(Tr::tr(Constants::FUNCTIONS_FILTER_DISPLAY_NAME));
-    setDescription(Tr::tr(Constants::FUNCTIONS_FILTER_DESCRIPTION));
+    setDisplayName(Constants::FUNCTIONS_FILTER_DISPLAY_NAME);
     setDefaultShortcutString("m");
+    setDefaultIncludedByDefault(false);
 }
 
-LocatorMatcherTasks CppFunctionsFilter::matchers()
-{
-    return {functionMatcher()};
-}
+CppFunctionsFilter::~CppFunctionsFilter() = default;
 
-CppCurrentDocumentFilter::CppCurrentDocumentFilter()
+Core::LocatorFilterEntry CppFunctionsFilter::filterEntryFromIndexItem(IndexItem::Ptr info)
 {
-    setId(Constants::CURRENT_DOCUMENT_FILTER_ID);
-    setDisplayName(Tr::tr(Constants::CURRENT_DOCUMENT_FILTER_DISPLAY_NAME));
-    setDescription(Tr::tr(Constants::CURRENT_DOCUMENT_FILTER_DESCRIPTION));
-    setDefaultShortcutString(".");
-    setPriority(High);
-}
+    const QVariant id = QVariant::fromValue(info);
 
-LocatorMatcherTasks CppCurrentDocumentFilter::matchers()
-{
-    return {currentDocumentMatcher()};
+    QString name = info->symbolName();
+    QString extraInfo = info->symbolScope();
+    info->unqualifiedNameAndScope(name, &name, &extraInfo);
+    if (extraInfo.isEmpty()) {
+        extraInfo = info->shortNativeFilePath();
+    } else {
+        extraInfo.append(" (" + Utils::FilePath::fromString(info->fileName()).fileName() + ')');
+    }
+
+    Core::LocatorFilterEntry filterEntry(this, name + info->symbolType(), id, info->icon());
+    filterEntry.extraInfo = extraInfo;
+
+    return filterEntry;
 }
 
 } // namespace CppEditor

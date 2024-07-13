@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 /* A debug dispatcher for Windows that can be registered for calls with crashed
  * processes. It offers debugging using either Qt Creator or
@@ -23,9 +45,6 @@
 
 #include <registryaccess.h>
 
-#ifdef QTCREATOR_PCH_H
-#define CALLBACK WINAPI
-#endif
 #include <windows.h>
 #include <psapi.h>
 
@@ -520,7 +539,7 @@ int main(int argc, char *argv[])
     }
     if (debug)
         qDebug() << "Mode=" << optMode << " PID=" << argProcessId << " Evt=" << argWinCrashEvent;
-    int ex = 0;
+    bool ex = 0;
     switch (optMode) {
     case HelpMode:
         usage(QCoreApplication::applicationFilePath(), errorMessage);

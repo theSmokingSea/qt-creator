@@ -1,12 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "core_global.h"
 #include "icontext.h"
 
-#include <utils/storekey.h>
 #include <utils/outputformat.h>
 
 #include <QPlainTextEdit>
@@ -33,7 +54,7 @@ public:
     };
     Q_DECLARE_FLAGS(FilterModeFlags, FilterModeFlag)
 
-    OutputWindow(Context context, const Utils::Key &settingsKey, QWidget *parent = nullptr);
+    OutputWindow(Context context, const QString &settingsKey, QWidget *parent = nullptr);
     ~OutputWindow() override;
 
     void setLineParsers(const QList<Utils::OutputLineParser *> &parsers);
@@ -65,11 +86,7 @@ public:
             const QString &filterText,
             Qt::CaseSensitivity caseSensitivity,
             bool regexp,
-            bool isInverted,
-            int beforeContext,
-            int afterContext);
-
-    void setOutputFileNameHint(const QString &fileName);
+            bool isInverted);
 
 signals:
     void wheelZoom();
@@ -79,7 +96,6 @@ public slots:
 
 protected:
     virtual void handleLink(const QPoint &pos);
-    virtual void adaptContextMenu(QMenu *menu, const QPoint &pos);
 
 private:
     QMimeData *createMimeDataFromSelection() const override;
@@ -90,7 +106,6 @@ private:
     void resizeEvent(QResizeEvent *e) override;
     void showEvent(QShowEvent *) override;
     void wheelEvent(QWheelEvent *e) override;
-    void contextMenuEvent(QContextMenuEvent *event) override;
 
     using QPlainTextEdit::setFont; // call setBaseFont instead, which respects the zoom factor
     void enableUndoRedo();
@@ -98,9 +113,6 @@ private:
     void handleNextOutputChunk();
     void handleOutputChunk(const QString &output, Utils::OutputFormat format);
     void updateAutoScroll();
-
-    using TextMatchingFunction = std::function<bool(const QString &text)>;
-    TextMatchingFunction makeMatchingFunction() const;
 
     Internal::OutputWindowPrivate *d = nullptr;
 };

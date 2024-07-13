@@ -1,10 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "texteditor_global.h"
 
+#include "blockrange.h"
 #include "codeassist/assistenums.h"
 #include "indenter.h"
 #include "refactoroverlay.h"
@@ -18,15 +41,12 @@
 #include <utils/elidinglabel.h>
 #include <utils/link.h>
 #include <utils/multitextcursor.h>
-#include <utils/textutils.h>
+#include <utils/porting.h>
 #include <utils/uncommentselection.h>
 
 #include <QPlainTextEdit>
 #include <QSharedPointer>
-#include <QToolButton>
-
 #include <functional>
-#include <memory>
 
 QT_BEGIN_NAMESPACE
 class QToolBar;
@@ -43,22 +63,20 @@ class HighlightScrollBarController;
 }
 
 namespace TextEditor {
-class AssistInterface;
-class BaseHoverHandler;
-class CompletionAssistProvider;
-class IAssistProvider;
-class ICodeStylePreferences;
-class RefactorOverlay;
-class SyntaxHighlighter;
 class TextDocument;
 class TextMark;
-class TextSuggestion;
+class BaseHoverHandler;
+class RefactorOverlay;
+class SyntaxHighlighter;
+class AssistInterface;
+class IAssistProvider;
+class ICodeStylePreferences;
+class CompletionAssistProvider;
 using RefactorMarkers = QList<RefactorMarker>;
 using TextMarks = QList<TextMark *>;
 
 namespace Internal {
 class BaseTextEditorPrivate;
-class LineColumnButtonPrivate;
 class TextEditorFactoryPrivate;
 class TextEditorWidgetPrivate;
 class TextEditorOverlay;
@@ -85,22 +103,6 @@ enum TextMarkRequestKind
     BookmarkRequest,
     TaskMarkRequest
 };
-
-namespace OptionalActions {
-enum Mask {
-    None = 0,
-    Format = 1,
-    UnCommentSelection = 2,
-    UnCollapseAll = 4,
-    FollowSymbolUnderCursor = 8,
-    FollowTypeUnderCursor = 16,
-    JumpToFileUnderCursor = 32,
-    RenameSymbol = 64,
-    FindUsage = 128,
-    CallHierarchy = 256,
-    TypeHierarchy = 512,
-};
-} // namespace OptionalActions
 
 class TEXTEDITOR_EXPORT BaseTextEditor : public Core::IEditor
 {
@@ -129,11 +131,14 @@ public:
     // IEditor
     Core::IDocument *document() const override;
 
-    BaseTextEditor *duplicate() override;
+    IEditor *duplicate() override;
 
     QByteArray saveState() const override;
     void restoreState(const QByteArray &state) override;
     QWidget *toolBar() override;
+
+    void contextHelp(const HelpCallback &callback) const override; // from IContext
+    void setContextHelp(const Core::HelpItem &item) override;
 
     int currentLine() const override;
     int currentColumn() const override;
@@ -167,13 +172,9 @@ public:
 private:
     friend class TextEditorFactory;
     friend class Internal::TextEditorFactoryPrivate;
-
-    void saveCurrentStateForNavigationHistory();
-    void addSavedStateToNavigationHistory();
-    void addCurrentStateToNavigationHistory();
-
     Internal::BaseTextEditorPrivate *d;
 };
+
 
 class TEXTEDITOR_EXPORT TextEditorWidget : public QPlainTextEdit
 {
@@ -194,14 +195,11 @@ public:
     void gotoLine(int line, int column = 0, bool centerLine = true, bool animate = false);
     int position(TextPositionOperation posOp = CurrentPosition,
          int at = -1) const;
-    QTextCursor textCursorAt(int position) const;
-    Utils::Text::Position lineColumn() const;
     void convertPosition(int pos, int *line, int *column) const;
     using QPlainTextEdit::cursorRect;
     QRect cursorRect(int pos) const;
     void setCursorPosition(int pos);
-    QWidget *toolBarWidget() const;
-    QToolBar *toolBar() const;
+    QToolBar *toolBar();
 
     void print(QPrinter *);
 
@@ -266,9 +264,9 @@ public:
     int columnCount() const;
     int rowCount() const;
 
-    // replaces the text from the current cursor position to the base position with the snippet
-    // and starts the snippet replacement mode
-    void insertCodeSnippet(int basePosition,
+    void setReadOnly(bool b);
+
+    void insertCodeSnippet(const QTextCursor &cursor,
                            const QString &snippet,
                            const SnippetParser &parse);
 
@@ -284,8 +282,8 @@ public:
 
     void invokeAssist(AssistKind assistKind, IAssistProvider *provider = nullptr);
 
-    virtual std::unique_ptr<AssistInterface> createAssistInterface(AssistKind assistKind,
-                                                                   AssistReason assistReason) const;
+    virtual TextEditor::AssistInterface *createAssistInterface(AssistKind assistKind,
+                                                    AssistReason assistReason) const;
     static QMimeData *duplicateMimeData(const QMimeData *source);
 
     static QString msgTextTooLarge(quint64 size);
@@ -299,7 +297,6 @@ public:
     virtual void extraAreaContextMenuEvent(QContextMenuEvent *);
     virtual void extraAreaMouseEvent(QMouseEvent *);
     void updateFoldingHighlight(const QPoint &pos);
-    void updateFoldingHighlight(const QTextCursor &cursor);
 
     void setLanguageSettingsId(Utils::Id settingsId);
     Utils::Id languageSettingsId() const;
@@ -333,13 +330,9 @@ public:
 
     RefactorMarkers refactorMarkers() const;
     void setRefactorMarkers(const RefactorMarkers &markers);
-    void setRefactorMarkers(const RefactorMarkers &markers, const Utils::Id &type);
-    void clearRefactorMarkers(const Utils::Id &type);
 
     enum Side { Left, Right };
     QAction *insertExtraToolBarWidget(Side side, QWidget *widget);
-    void setToolbarOutline(QWidget* widget);
-    const QWidget *toolbarOutlineWidget();
 
     // keep the auto completion even if the focus is lost
     void keepAutoCompletionHighlight(bool keepHighlight);
@@ -370,14 +363,11 @@ public:
     void pasteWithoutFormat();
     void switchUtf8bom();
 
-    void increaseFontZoom();
-    void decreaseFontZoom();
     void zoomF(float delta);
     void zoomReset();
 
     void cutLine();
     void copyLine();
-    void copyWithHtml();
     void duplicateSelection();
     void duplicateSelectionAndComment();
     void deleteLine();
@@ -388,16 +378,13 @@ public:
     void deleteStartOfWord();
     void deleteStartOfWordCamelCase();
     void unfoldAll();
-    void fold(const QTextBlock &block);
-    void foldCurrentBlock();
-    void unfold(const QTextBlock &block);
-    void unfoldCurrentBlock();
+    void fold();
+    void unfold();
     void selectEncoding();
     void updateTextCodecLabel();
-    void selectLineEnding(Utils::TextFileFormat::LineTerminationMode lineEnding);
+    void selectLineEnding(int index);
     void updateTextLineEndingLabel();
     void addSelectionNextFindMatch();
-    void addCursorsToLineEnds();
 
     void gotoBlockStart();
     void gotoBlockEnd();
@@ -452,27 +439,21 @@ public:
     void uppercaseSelection();
     void lowercaseSelection();
 
-    void sortLines();
+    void sortSelectedLines();
 
     void cleanWhitespace();
 
     void indent();
     void unindent();
 
-    virtual void undo();
-    virtual void redo();
-
-    virtual bool isUndoAvailable() const;
-    virtual bool isRedoAvailable() const;
+    void undo();
+    void redo();
 
     void openLinkUnderCursor();
     void openLinkUnderCursorInNextSplit();
-    void openTypeUnderCursor();
-    void openTypeUnderCursorInNextSplit();
 
     virtual void findUsages();
     virtual void renameSymbolUnderCursor();
-    virtual void openCallHierarchy();
 
     /// Abort code assistant if it is running.
     void abortAssist();
@@ -482,9 +463,6 @@ public:
     void configureGenericHighlighter();
     /// Overwrite the current highlighter with a new generic highlighter based on the given mimetype
     void configureGenericHighlighter(const Utils::MimeType &mimeType);
-
-    /// Overwrite the current highlighter with a new generic highlighter based on the given definition
-    Utils::expected_str<void> configureGenericHighlighter(const QString &definitionName);
 
     Q_INVOKABLE void inSnippetMode(bool *active); // Used by FakeVim.
 
@@ -508,40 +486,21 @@ public:
     void addHoverHandler(BaseHoverHandler *handler);
     void removeHoverHandler(BaseHoverHandler *handler);
 
-    void insertSuggestion(std::unique_ptr<TextSuggestion> &&suggestion);
-    void clearSuggestion();
-    TextSuggestion *currentSuggestion() const;
-    bool suggestionVisible() const;
-    bool suggestionsBlocked() const;
-
-    using SuggestionBlocker = std::shared_ptr<void>;
-    // Returns an object that blocks suggestions until it is destroyed.
-    SuggestionBlocker blockSuggestions();
-
-    QList<QTextCursor> autoCompleteHighlightPositions() const;
-
 #ifdef WITH_TESTS
     void processTooltipRequest(const QTextCursor &c);
 #endif
 
 signals:
     void assistFinished(); // Used in tests.
+    void readOnlyChanged();
 
     void requestBlockUpdate(const QTextBlock &);
 
     void requestLinkAt(const QTextCursor &cursor, const Utils::LinkHandler &callback,
                        bool resolveTarget, bool inNextSplit);
-    void requestTypeAt(const QTextCursor &cursor, const Utils::LinkHandler &callback,
-                       bool resolveTarget, bool inNextSplit);
     void requestUsages(const QTextCursor &cursor);
     void requestRename(const QTextCursor &cursor);
-    void requestCallHierarchy(const QTextCursor &cursor);
-    void toolbarOutlineChanged(QWidget *newOutline);
-
-    // used by the IEditor
-    void saveCurrentStateForNavigationHistory();
-    void addSavedStateToNavigationHistory();
-    void addCurrentStateToNavigationHistory();
+    void optionalActionMaskChanged();
 
 protected:
     QTextBlock blockForVisibleRow(int row) const;
@@ -572,7 +531,6 @@ protected:
     void dragEnterEvent(QDragEnterEvent *e) override;
 
     QMimeData *createMimeDataFromSelection() const override;
-    QMimeData *createMimeDataFromSelection(bool withHtml) const;
     bool canInsertFromMimeData(const QMimeData *source) const override;
     void insertFromMimeData(const QMimeData *source) override;
     void dragLeaveEvent(QDragLeaveEvent *e) override;
@@ -581,6 +539,7 @@ protected:
 
     virtual QString plainTextFromSelection(const QTextCursor &cursor) const;
     virtual QString plainTextFromSelection(const Utils::MultiTextCursor &cursor) const;
+    static QString convertToPlainText(const QString &txt);
 
     virtual QString lineNumber(int blockNumber) const;
     virtual int lineNumberDigits() const;
@@ -596,10 +555,6 @@ protected:
     virtual void finalizeInitializationAfterDuplication(TextEditorWidget *) {}
     static QTextCursor flippedCursor(const QTextCursor &cursor);
 
-    void setVisualIndentOffset(int offset);
-
-    void updateUndoRedoActions();
-
 public:
     QString selectedText() const;
 
@@ -608,7 +563,6 @@ public:
 
     void remove(int length);
     void replace(int length, const QString &string);
-    void replace(int pos, int length, const QString &string);
     QChar characterAt(int pos) const;
     QString textAt(int from, int to) const;
 
@@ -628,11 +582,6 @@ protected:
        (it isn't until the link is used).
      */
     virtual void findLinkAt(const QTextCursor &,
-                            const Utils::LinkHandler &processLinkCallback,
-                            bool resolveTarget = true,
-                            bool inNextSplit = false);
-
-    virtual void findTypeAt(const QTextCursor &,
                             const Utils::LinkHandler &processLinkCallback,
                             bool resolveTarget = true,
                             bool inNextSplit = false);
@@ -669,14 +618,14 @@ protected:
     virtual void slotCodeStyleSettingsChanged(const QVariant &); // Used in CppEditor
 
 private:
-    std::unique_ptr<Internal::TextEditorWidgetPrivate> d;
+    Internal::TextEditorWidgetPrivate *d;
+    friend class BaseTextEditor;
     friend class TextEditorFactory;
     friend class Internal::TextEditorFactoryPrivate;
     friend class Internal::TextEditorWidgetPrivate;
     friend class Internal::TextEditorOverlay;
     friend class RefactorOverlay;
 
-    bool singleShotAfterHighlightingDone(std::function<void()> &&f);
     void updateVisualWrapColumn();
 };
 
@@ -720,7 +669,7 @@ public:
     void setSyntaxHighlighterCreator(const SyntaxHighLighterCreator &creator);
     void setUseGenericHighlighter(bool enabled);
     void setAutoCompleterCreator(const AutoCompleterCreator &creator);
-    void setOptionalActionMask(int optionalActions);
+    void setEditorActionHandlers(uint optionalActions);
 
     void addHoverHandler(BaseHoverHandler *handler);
     void setCompletionAssistProvider(CompletionAssistProvider *provider);
@@ -737,25 +686,10 @@ private:
     Internal::TextEditorFactoryPrivate *d;
 };
 
-class TEXTEDITOR_EXPORT LineColumnButton : public QToolButton
-{
-public:
-    LineColumnButton(TextEditorWidget *parent);
-    ~LineColumnButton();
-
-private:
-    void update();
-    bool event(QEvent *event) override;
-    QSize sizeHint() const override;
-
-private:
-    std::unique_ptr<Internal::LineColumnButtonPrivate> m_d;
-};
-
 } // namespace TextEditor
 
 QT_BEGIN_NAMESPACE
 
-size_t qHash(const QColor &color);
+Utils::QHashValueType qHash(const QColor &color);
 
 QT_END_NAMESPACE

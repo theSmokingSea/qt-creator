@@ -1,14 +1,34 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "qmakeprojectmanager_global.h"
 
-#include <projectexplorer/buildaspects.h>
 #include <projectexplorer/buildconfiguration.h>
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtbuildaspects.h>
 
 #include <utils/aspects.h>
 
@@ -67,27 +87,26 @@ public:
             QString *arguments, const Utils::FilePath &directory, const QtSupport::QtVersion *version,
             QStringList *outArgs = nullptr);
 
-    void toMap(Utils::Store &map) const override;
+    QVariantMap toMap() const override;
 
     BuildType buildType() const override;
 
     void addToEnvironment(Utils::Environment &env) const override;
 
     static QString unalignedBuildDirWarning();
-    static bool isBuildDirAtSafeLocation(const Utils::FilePath &sourceDir,
-                                         const Utils::FilePath &buildDir);
+    static bool isBuildDirAtSafeLocation(const QString &sourceDir, const QString &buildDir);
     bool isBuildDirAtSafeLocation() const;
 
+    Utils::TriState separateDebugInfo() const;
     void forceSeparateDebugInfo(bool sepDebugInfo);
+
+    Utils::TriState qmlDebugging() const;
     void forceQmlDebugging(bool enable);
+
+    Utils::TriState useQtQuickCompiler() const;
     void forceQtQuickCompiler(bool enable);
 
-    ProjectExplorer::SeparateDebugInfoAspect separateDebugInfo{this};
-    QtSupport::QmlDebuggingAspect qmlDebugging{this};
-    QtSupport::QtQuickCompilerAspect useQtQuickCompiler{this};
-    Utils::SelectionAspect runSystemFunctions{this};
-
-    bool runQmakeSystemFunctions() const;
+    bool runSystemFunction() const;
 
 signals:
     /// emitted for setQMakeBuildConfig, not emitted for Qt version changes, even
@@ -99,14 +118,14 @@ signals:
     void useQtQuickCompilerChanged();
 
 protected:
-    void fromMap(const Utils::Store &map) override;
+    bool fromMap(const QVariantMap &map) override;
     bool regenerateBuildFiles(ProjectExplorer::Node *node = nullptr) override;
 
 private:
     void restrictNextBuild(const ProjectExplorer::RunConfiguration *rc) override;
 
     void kitChanged();
-    void toolChainUpdated(ProjectExplorer::Toolchain *tc);
+    void toolChainUpdated(ProjectExplorer::ToolChain *tc);
     void qtVersionsChanged(const QList<int> &, const QList<int> &, const QList<int> &changed);
     void updateProblemLabel();
 

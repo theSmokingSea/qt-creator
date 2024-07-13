@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -21,7 +43,8 @@
 #include <QTextCodec>
 #include <QTimer>
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 class BreakpointParameters;
 class DebugInfoTask;
@@ -37,12 +60,14 @@ struct CoreInfo
     Utils::FilePath foundExecutableName; // empty if no corresponding exec could be found
     bool isCore = false;
 
-    static CoreInfo readExecutableNameFromCore(const Utils::ProcessRunData &debugger,
+    static CoreInfo readExecutableNameFromCore(const ProjectExplorer::Runnable &debugger,
                                                const Utils::FilePath &coreFile);
 };
 
 class GdbEngine final : public CppDebuggerEngine
 {
+    Q_OBJECT
+
 public:
     GdbEngine();
     ~GdbEngine() final;
@@ -116,6 +141,7 @@ private: ////////// General Interface //////////
 
     QHash<int, DebuggerCommand> m_commandForToken;
     QHash<int, int> m_flagsForToken;
+    int commandTimeoutTime() const;
     QTimer m_commandTimer;
 
     QString m_pendingConsoleStreamOutput;
@@ -129,19 +155,17 @@ private: ////////// General Interface //////////
 
     bool m_rerunPending = false;
     bool m_ignoreNextTrap = false;
-    bool m_detectTargetIncompat = false;
 
     ////////// Gdb Output, State & Capability Handling //////////
 
     Q_INVOKABLE void handleResponse(const QString &buff);
-    void handleAsyncOutput(const QStringView asyncClass, const GdbMi &result);
+    void handleAsyncOutput(const QString &asyncClass, const GdbMi &result);
     void handleStopResponse(const GdbMi &data);
     void handleResultRecord(DebuggerResponse *response);
     void handleStop1(const GdbMi &data);
     void handleStop2(const GdbMi &data);
     void handleStop3();
     void resetCommandQueue();
-    void updateStateForStop();
 
     // Gdb initialization sequence
     void handleShowVersion(const DebuggerResponse &response);
@@ -210,23 +234,23 @@ private: ////////// General Interface //////////
     void handleBkpt(const GdbMi &bkpt, const Breakpoint &bp);
     QString breakpointLocation(const BreakpointParameters &data); // For gdb/MI.
     QString breakpointLocation2(const BreakpointParameters &data); // For gdb/CLI fallback.
-    QString breakLocation(const Utils::FilePath &file) const;
+    QString breakLocation(const QString &file) const;
     void updateTracepointCaptures(const Breakpoint &bp);
 
     //
     // Modules specific stuff
     //
-    void loadSymbols(const Utils::FilePath &moduleName) final;
+    void loadSymbols(const QString &moduleName) final;
     void loadAllSymbols() final;
     void loadSymbolsForStack() final;
-    void requestModuleSymbols(const Utils::FilePath &moduleName) final;
-    void requestModuleSections(const Utils::FilePath &moduleName) final;
+    void requestModuleSymbols(const QString &moduleName) final;
+    void requestModuleSections(const QString &moduleName) final;
     void reloadModules() final;
     void examineModules() final;
 
     void reloadModulesInternal();
     void handleModulesList(const DebuggerResponse &response);
-    void handleShowModuleSections(const DebuggerResponse &response, const Utils::FilePath &moduleName);
+    void handleShowModuleSections(const DebuggerResponse &response, const QString &moduleName);
 
     //
     // Snapshot specific stuff
@@ -265,13 +289,13 @@ private: ////////// General Interface //////////
     void reloadSourceFilesInternal();
     void handleQuerySources(const DebuggerResponse &response);
 
-    Utils::FilePath fullName(const QString &fileName);
-    Utils::FilePath cleanupFullName(const QString &fileName);
+    QString fullName(const QString &fileName);
+    QString cleanupFullName(const QString &fileName);
 
     // awful hack to keep track of used files
-    QMap<QString, Utils::FilePath> m_shortToFullName;
-    QMap<Utils::FilePath, QString> m_fullToShortName;
-    QMultiMap<QString, Utils::FilePath> m_baseNameToFullName;
+    QMap<QString, QString> m_shortToFullName;
+    QMap<QString, QString> m_fullToShortName;
+    QMultiMap<QString, QString> m_baseNameToFullName;
 
     bool m_sourcesListUpdating = false;
 
@@ -405,9 +429,10 @@ private: ////////// General Interface //////////
 
     bool usesOutputCollector() const;
 
-    Utils::Process m_gdbProc;
+    Utils::QtcProcess m_gdbProc;
     OutputCollector m_outputCollector;
     QString m_errorString;
 };
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

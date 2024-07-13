@@ -1,24 +1,43 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Window
-import QtQuick.Templates as T
+import QtQuick 2.15
+import QtQuick.Window 2.15
+import QtQuick.Templates 2.15 as T
 import StudioTheme 1.0 as StudioTheme
 
 T.ComboBox {
-    id: control
-
-    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
+    id: myComboBox
 
     property alias actionIndicator: actionIndicator
     property alias labelColor: comboBoxInput.color
-    property alias textElidable: comboBoxInput.elidable
 
     // This property is used to indicate the global hover state
     property bool hover: (comboBoxInput.hover || actionIndicator.hover || popupIndicator.hover)
-                         && control.enabled
-    property bool edit: control.activeFocus && control.editable
+                         && myComboBox.enabled
+    property bool edit: myComboBox.activeFocus && myComboBox.editable
     property bool open: comboBoxPopup.opened
     property bool hasActiveDrag: false // an item that can be dropped on the combobox is being dragged
     property bool hasActiveHoverDrag: false // an item that can be dropped on the combobox is being hovered on the combobox
@@ -26,187 +45,171 @@ T.ComboBox {
     property bool dirty: false // user modification flag
 
     property alias actionIndicatorVisible: actionIndicator.visible
-    property real __actionIndicatorWidth: control.style.actionIndicatorSize.width
-    property real __actionIndicatorHeight: control.style.actionIndicatorSize.height
+    property real __actionIndicatorWidth: StudioTheme.Values.actionIndicatorWidth
+    property real __actionIndicatorHeight: StudioTheme.Values.actionIndicatorHeight
 
     property alias textInput: comboBoxInput
-    property alias suffix: comboBoxInput.suffix
-
-    property int maximumPopupHeight: control.style.maxComboBoxPopupHeight
-
-    property string preFocusText: ""
-
-    property string tooltipRole: ""
 
     signal compressedActivated(int index, int reason)
 
     enum ActivatedReason { EditingFinished, Other }
 
-    width: control.style.controlSize.width
-    height: control.style.controlSize.height
+    width: StudioTheme.Values.defaultControlWidth
+    height: StudioTheme.Values.defaultControlHeight
 
     leftPadding: actionIndicator.width
-    rightPadding: popupIndicator.width + control.style.borderWidth
-    font.pixelSize: control.style.baseFontSize
+    rightPadding: popupIndicator.width + StudioTheme.Values.border
+    font.pixelSize: StudioTheme.Values.myFontSize
     wheelEnabled: false
 
     onFocusChanged: {
-        if (!control.focus)
+        if (!myComboBox.focus)
             comboBoxPopup.close()
     }
 
     onActiveFocusChanged: {
-        if (control.activeFocus)
-            control.preFocusText = control.editText
+        if (myComboBox.activeFocus)
+            comboBoxInput.preFocusText = myComboBox.editText
     }
 
     ActionIndicator {
         id: actionIndicator
-        style: control.style
-        __parentControl: control
+        myControl: myComboBox
         x: 0
         y: 0
-        width: actionIndicator.visible ? control.__actionIndicatorWidth : 0
-        height: actionIndicator.visible ? control.__actionIndicatorHeight : 0
+        width: actionIndicator.visible ? myComboBox.__actionIndicatorWidth : 0
+        height: actionIndicator.visible ? myComboBox.__actionIndicatorHeight : 0
     }
 
     contentItem: ComboBoxInput {
         id: comboBoxInput
 
-        style: control.style
-        __parentControl: control
-        text: control.editText
+        property string preFocusText: ""
+
+        myControl: myComboBox
+        text: myComboBox.editText
 
         onEditingFinished: {
             comboBoxInput.deselect()
             comboBoxInput.focus = false
-            control.focus = false
+            myComboBox.focus = false
 
             // Only trigger the signal, if the value was modified
-            if (control.dirty) {
-                timer.stop()
-                control.dirty = false
-                control.accepted()
+            if (myComboBox.dirty) {
+                myTimer.stop()
+                myComboBox.dirty = false
+                myComboBox.accepted()
             }
         }
-        onTextEdited: control.dirty = true
+        onTextEdited: myComboBox.dirty = true
     }
 
     indicator: CheckIndicator {
         id: popupIndicator
-        style: control.style
-        __parentControl: control
-        __parentPopup: control.popup
+        myControl: myComboBox
+        myPopup: myComboBox.popup
         x: comboBoxInput.x + comboBoxInput.width
-        y: control.style.borderWidth
-        width: control.style.squareControlSize.width - control.style.borderWidth
-        height: control.style.squareControlSize.height - control.style.borderWidth * 2
+        y: StudioTheme.Values.border
+        width: StudioTheme.Values.checkIndicatorWidth - StudioTheme.Values.border
+        height: StudioTheme.Values.checkIndicatorHeight - StudioTheme.Values.border * 2
     }
 
     background: Rectangle {
         id: comboBoxBackground
-        color: control.style.background.idle
-        border.color: control.style.border.idle
-        border.width: control.style.borderWidth
+        color: StudioTheme.Values.themeControlBackground
+        border.color: StudioTheme.Values.themeControlOutline
+        border.width: StudioTheme.Values.border
         x: actionIndicator.width
-        width: control.width - actionIndicator.width
-        height: control.height
+        width: myComboBox.width - actionIndicator.width
+        height: myComboBox.height
     }
 
     Timer {
-        id: timer
+        id: myTimer
         property int activatedIndex
         repeat: false
         running: false
         interval: 100
-        onTriggered: control.compressedActivated(timer.activatedIndex,
-                                                 ComboBox.ActivatedReason.Other)
+        onTriggered: myComboBox.compressedActivated(myTimer.activatedIndex,
+                                                    ComboBox.ActivatedReason.Other)
     }
 
     onActivated: function(index) {
-        timer.activatedIndex = index
-        timer.restart()
+        myTimer.activatedIndex = index
+        myTimer.restart()
     }
 
     delegate: ItemDelegate {
-        id: itemDelegate
+        id: myItemDelegate
 
         width: comboBoxPopup.width - comboBoxPopup.leftPadding - comboBoxPopup.rightPadding
-        height: control.style.controlSize.height - 2 * control.style.borderWidth
+               - (comboBoxPopupScrollBar.visible ? comboBoxPopupScrollBar.contentItem.implicitWidth
+                                                   + 2 : 0) // TODO Magic number
+        height: StudioTheme.Values.height - 2 * StudioTheme.Values.border
         padding: 0
         enabled: model.enabled === undefined ? true : model.enabled
 
         contentItem: Text {
-            leftPadding: 8
-            rightPadding: verticalScrollBar.style.scrollBarThicknessHover
-            text: control.textRole ? (Array.isArray(control.model)
-                                      ? modelData[control.textRole]
-                                      : model[control.textRole])
-                                   : modelData
+            leftPadding: itemDelegateIconArea.width
+            text: myComboBox.textRole ? (Array.isArray(myComboBox.model) ? modelData[myComboBox.textRole]
+                                                                         : model[myComboBox.textRole]) : modelData
             color: {
-                if (!itemDelegate.enabled)
-                    return control.style.text.disabled
+                if (!myItemDelegate.enabled)
+                    return StudioTheme.Values.themeTextColorDisabled
 
-                if (control.currentIndex === index)
-                    return control.style.text.selectedText
-
-                return control.style.text.idle
+                return myItemDelegate.highlighted ? StudioTheme.Values.themeTextSelectedTextColor
+                                                  : StudioTheme.Values.themeTextColor
             }
-            font: control.font
+            font: myComboBox.font
             elide: Text.ElideRight
             verticalAlignment: Text.AlignVCenter
+        }
 
-            ToolTipArea {
+        Item {
+            id: itemDelegateIconArea
+            width: myItemDelegate.height
+            height: myItemDelegate.height
+
+            T.Label {
+                id: itemDelegateIcon
+                text: StudioTheme.Constants.tickIcon
+                color: myItemDelegate.highlighted ? StudioTheme.Values.themeTextSelectedTextColor
+                                                  : StudioTheme.Values.themeTextColor
+                font.family: StudioTheme.Constants.iconFont.family
+                font.pixelSize: StudioTheme.Values.spinControlIconSizeMulti
+                visible: myComboBox.currentIndex === index ? true : false
                 anchors.fill: parent
-                text: control.tooltipRole ? (Array.isArray(control.model)
-                                             ? modelData[control.tooltipRole]
-                                             : model[control.tooltipRole])
-                                          : ""
-                enabled: text
-                onClicked: itemDelegate.clicked()
-                onDoubleClicked: itemDelegate.doubleClicked()
+                renderType: Text.NativeRendering
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
             }
         }
 
-        highlighted: control.highlightedIndex === index
+        highlighted: myComboBox.highlightedIndex === index
 
         background: Rectangle {
             id: itemDelegateBackground
             x: 0
             y: 0
-            width: itemDelegate.width
-            height: itemDelegate.height
-            color: {
-                if (!itemDelegate.enabled)
-                    return "transparent"
-
-                if (itemDelegate.hovered && control.currentIndex === index)
-                    return control.style.interactionHover
-
-                if (control.currentIndex === index)
-                    return control.style.interaction
-
-                if (itemDelegate.hovered)
-                    return control.style.background.hover
-
-                return "transparent"
-            }
+            width: myItemDelegate.width
+            height: myItemDelegate.height
+            color: myItemDelegate.highlighted ? StudioTheme.Values.themeInteraction : "transparent"
         }
     }
 
     popup: T.Popup {
         id: comboBoxPopup
-        x: actionIndicator.width
-        y: control.height
-        width: control.width - actionIndicator.width
+        x: actionIndicator.width + StudioTheme.Values.border
+        y: myComboBox.height
+        width: myComboBox.width - actionIndicator.width - StudioTheme.Values.border * 2
         // TODO Setting the height on the popup solved the problem with the popup of height 0,
         // but it has the problem that it sometimes extend over the border of the actual window
         // and is then cut off.
         height: Math.min(contentItem.implicitHeight + comboBoxPopup.topPadding
                          + comboBoxPopup.bottomPadding,
-                         control.Window.height - topMargin - bottomMargin,
-                         control.maximumPopupHeight)
-        padding: control.style.borderWidth
+                         myComboBox.Window.height - topMargin - bottomMargin,
+                         StudioTheme.Values.maxComboBoxPopupHeight)
+        padding: StudioTheme.Values.border
         margins: 0 // If not defined margin will be -1
         closePolicy: T.Popup.CloseOnPressOutside | T.Popup.CloseOnPressOutsideParent
                      | T.Popup.CloseOnEscape | T.Popup.CloseOnReleaseOutside
@@ -216,27 +219,17 @@ T.ComboBox {
             id: listView
             clip: true
             implicitHeight: listView.contentHeight
-            model: control.popup.visible ? control.delegateModel : null
-            currentIndex: control.highlightedIndex
+            model: myComboBox.popup.visible ? myComboBox.delegateModel : null
+            currentIndex: myComboBox.highlightedIndex
             boundsBehavior: Flickable.StopAtBounds
-
-            HoverHandler { id: hoverHandler }
-
-            ScrollBar.vertical: TransientScrollBar {
-                id: verticalScrollBar
-                parent: listView
-                x: listView.width - verticalScrollBar.width
-                y: 0
-                height: listView.availableHeight
-                orientation: Qt.Vertical
-
-                show: (hoverHandler.hovered || verticalScrollBar.inUse)
-                      && verticalScrollBar.isNeeded
+            ScrollBar.vertical: ScrollBar {
+                id: comboBoxPopupScrollBar
+                visible: listView.height < listView.contentHeight
             }
         }
 
         background: Rectangle {
-            color: control.style.popup.background
+            color: StudioTheme.Values.themePopupBackground
             border.width: 0
         }
 
@@ -247,10 +240,10 @@ T.ComboBox {
     states: [
         State {
             name: "default"
-            when: control.enabled && !control.hover && !control.edit && !control.open
-                  && !control.activeFocus && !control.hasActiveDrag
+            when: myComboBox.enabled && !myComboBox.hover && !myComboBox.edit && !myComboBox.open
+                  && !myComboBox.activeFocus && !myComboBox.hasActiveDrag
             PropertyChanges {
-                target: control
+                target: myComboBox
                 wheelEnabled: false
             }
             PropertyChanges {
@@ -259,41 +252,34 @@ T.ComboBox {
             }
             PropertyChanges {
                 target: comboBoxBackground
-                border.color: control.style.border.idle
-            }
-        },
-        State {
-            name: "hover"
-            when: control.enabled && control.hover && !control.edit && !control.open
-                  && !control.activeFocus && !control.hasActiveDrag
-            PropertyChanges {
-                target: comboBoxBackground
-                border.color: control.style.border.hover
+                color: StudioTheme.Values.themeControlBackground
             }
         },
         State {
             name: "acceptsDrag"
-            when: control.enabled && control.hasActiveDrag && !control.hasActiveHoverDrag
+            when: myComboBox.enabled && myComboBox.hasActiveDrag && !myComboBox.hasActiveHoverDrag
             PropertyChanges {
                 target: comboBoxBackground
-                border.color: control.style.border.interaction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
         },
         State {
             name: "dragHover"
-            when: control.enabled && control.hasActiveHoverDrag
+            when: myComboBox.enabled && myComboBox.hasActiveHoverDrag
             PropertyChanges {
                 target: comboBoxBackground
-                border.color: control.style.border.interaction
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
         },
         // This state is intended for ComboBoxes which aren't editable, but have focus e.g. via
         // tab focus. It is therefor possible to use the mouse wheel to scroll through the items.
         State {
             name: "focus"
-            when: control.enabled && control.activeFocus && !control.editable && !control.open
+            when: myComboBox.enabled && myComboBox.activeFocus && !myComboBox.editable
+                  && !myComboBox.open
             PropertyChanges {
-                target: control
+                target: myComboBox
                 wheelEnabled: true
             }
             PropertyChanges {
@@ -303,9 +289,9 @@ T.ComboBox {
         },
         State {
             name: "edit"
-            when: control.enabled && control.edit && !control.open
+            when: myComboBox.enabled && myComboBox.edit && !myComboBox.open
             PropertyChanges {
-                target: control
+                target: myComboBox
                 wheelEnabled: true
             }
             PropertyChanges {
@@ -315,7 +301,8 @@ T.ComboBox {
             }
             PropertyChanges {
                 target: comboBoxBackground
-                border.color: control.style.border.interaction
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
             StateChangeScript {
                 script: comboBoxPopup.close()
@@ -323,9 +310,9 @@ T.ComboBox {
         },
         State {
             name: "popup"
-            when: control.enabled && control.open
+            when: myComboBox.enabled && myComboBox.open
             PropertyChanges {
-                target: control
+                target: myComboBox
                 wheelEnabled: true
             }
             PropertyChanges {
@@ -335,24 +322,26 @@ T.ComboBox {
             }
             PropertyChanges {
                 target: comboBoxBackground
-                border.color: control.style.border.interaction
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
         },
         State {
             name: "disable"
-            when: !control.enabled
+            when: !myComboBox.enabled
             PropertyChanges {
                 target: comboBoxBackground
-                border.color: control.style.border.disabled
+                color: StudioTheme.Values.themeControlBackgroundDisabled
+                border.color: StudioTheme.Values.themeControlOutlineDisabled
             }
         }
     ]
 
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Escape) {
-            control.editText = control.preFocusText
-            control.dirty = false
-            control.focus = false
+            myComboBox.editText = comboBoxInput.preFocusText
+            myComboBox.dirty = true
+            myComboBox.focus = false
         }
     }
 }

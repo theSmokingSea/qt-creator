@@ -1,10 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "colorscheme.h"
 
 #include "texteditorconstants.h"
-#include "texteditortr.h"
 
 #include <utils/fileutils.h>
 
@@ -12,14 +33,13 @@
 #include <QCoreApplication>
 #include <QXmlStreamWriter>
 
-using namespace Utils;
+using namespace TextEditor;
 
-namespace TextEditor {
-
-const char trueString[] = "true";
-const char falseString[] = "false";
+static const char trueString[] = "true";
+static const char falseString[] = "false";
 
 // Format
+
 
 Format::Format(const QColor &foreground, const QColor &background) :
     m_foreground(foreground),
@@ -216,9 +236,9 @@ void ColorScheme::clear()
     m_formats.clear();
 }
 
-bool ColorScheme::save(const FilePath &filePath, QWidget *parent) const
+bool ColorScheme::save(const QString &fileName, QWidget *parent) const
 {
-    FileSaver saver(filePath);
+    Utils::FileSaver saver(Utils::FilePath::fromString(fileName));
     if (!saver.hasError()) {
         QXmlStreamWriter w(saver.file());
         w.setAutoFormatting(true);
@@ -270,8 +290,8 @@ namespace {
 class ColorSchemeReader : public QXmlStreamReader
 {
 public:
-    bool read(const FilePath &filePath, ColorScheme *scheme);
-    QString readName(const FilePath &filePath);
+    bool read(const QString &fileName, ColorScheme *scheme);
+    QString readName(const QString &fileName);
 
 private:
     bool readNextStartElement();
@@ -283,14 +303,14 @@ private:
     QString m_name;
 };
 
-bool ColorSchemeReader::read(const FilePath &filePath, ColorScheme *scheme)
+bool ColorSchemeReader::read(const QString &fileName, ColorScheme *scheme)
 {
     m_scheme = scheme;
 
     if (m_scheme)
         m_scheme->clear();
 
-    QFile file(filePath.toString());
+    QFile file(fileName);
     if (!file.open(QFile::ReadOnly | QFile::Text))
         return false;
 
@@ -299,14 +319,14 @@ bool ColorSchemeReader::read(const FilePath &filePath, ColorScheme *scheme)
     if (readNextStartElement() && name() == QLatin1String("style-scheme"))
         readStyleScheme();
     else
-        raiseError(Tr::tr("Not a color scheme file."));
+        raiseError(QCoreApplication::translate("TextEditor::Internal::ColorScheme", "Not a color scheme file."));
 
     return true;
 }
 
-QString ColorSchemeReader::readName(const FilePath &filePath)
+QString ColorSchemeReader::readName(const QString &fileName)
 {
-    read(filePath, nullptr);
+    read(fileName, nullptr);
     return m_name;
 }
 
@@ -399,15 +419,13 @@ void ColorSchemeReader::readStyle()
 } // anonymous namespace
 
 
-bool ColorScheme::load(const FilePath &filePath)
+bool ColorScheme::load(const QString &fileName)
 {
     ColorSchemeReader reader;
-    return reader.read(filePath, this) && !reader.hasError();
+    return reader.read(fileName, this) && !reader.hasError();
 }
 
-QString ColorScheme::readNameOfScheme(const FilePath &filePath)
+QString ColorScheme::readNameOfScheme(const QString &fileName)
 {
-    return ColorSchemeReader().readName(filePath);
+    return ColorSchemeReader().readName(fileName);
 }
-
-} // TextEdito

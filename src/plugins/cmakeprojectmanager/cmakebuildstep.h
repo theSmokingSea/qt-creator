@@ -1,11 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
-#include <qglobal.h>
-
-#include "cmakeabstractprocessstep.h"
+#include <projectexplorer/abstractprocessstep.h>
 #include <utils/treemodel.h>
 
 namespace Utils {
@@ -13,7 +33,8 @@ class CommandLine;
 class StringAspect;
 } // Utils
 
-namespace CMakeProjectManager::Internal {
+namespace CMakeProjectManager {
+namespace Internal {
 
 class CMakeBuildStep;
 
@@ -33,7 +54,7 @@ private:
     bool m_special = false;
 };
 
-class CMakeBuildStep : public CMakeAbstractProcessStep
+class CMakeBuildStep : public ProjectExplorer::AbstractProcessStep
 {
     Q_OBJECT
 
@@ -41,12 +62,12 @@ public:
     CMakeBuildStep(ProjectExplorer::BuildStepList *bsl, Utils::Id id);
 
     QStringList buildTargets() const;
-    void setBuildTargets(const QStringList &target) override;
+    void setBuildTargets(const QStringList &target);
 
     bool buildsBuildTarget(const QString &target) const;
     void setBuildsBuildTarget(const QString &target, bool on);
 
-    void toMap(Utils::Store &map) const override;
+    QVariantMap toMap() const override;
 
     QString cleanTarget() const;
     QString allTarget() const ;
@@ -55,69 +76,49 @@ public:
 
     QString activeRunConfigTarget() const;
 
-    void setBuildPreset(const QString &preset);
-
-    Utils::Environment environment() const;
-    void setUserEnvironmentChanges(const Utils::EnvironmentItems &diff);
-    Utils::EnvironmentItems userEnvironmentChanges() const;
-    bool useClearEnvironment() const;
-    void setUseClearEnvironment(bool b);
-    void updateAndEmitEnvironmentChanged();
-
-    Utils::Environment baseEnvironment() const;
-    QString baseEnvironmentText() const;
-
-    void setCMakeArguments(const QStringList &cmakeArguments);
-    void setToolArguments(const QStringList &nativeToolArguments);
-
-    void setConfiguration(const QString &configuration);
-
-    Utils::StringAspect cmakeArguments{this};
-    Utils::StringAspect toolArguments{this};
-    Utils::BoolAspect useiOSAutomaticProvisioningUpdates{this};
-    Utils::BoolAspect useStaging{this};
-    Utils::FilePathAspect stagingDir{this};
-
 signals:
     void buildTargetsChanged();
-    void environmentChanged();
 
 private:
     Utils::CommandLine cmakeCommand() const;
 
-    void fromMap(const Utils::Store &map) override;
+    void processFinished(int exitCode, QProcess::ExitStatus status) override;
+    bool fromMap(const QVariantMap &map) override;
 
     bool init() override;
     void setupOutputFormatter(Utils::OutputFormatter *formatter) override;
-    Tasking::GroupItem runRecipe() final;
+    void doRun() override;
     QWidget *createConfigWidget() override;
 
-    Utils::FilePath cmakeExecutable() const;
-    QString currentInstallPrefix() const;
-
     QString defaultBuildTarget() const;
-    bool isCleanStep() const;
+
+    void runImpl();
+    void handleProjectWasParsed(bool success);
 
     void handleBuildTargetsChanges(bool success);
     void recreateBuildTargetsModel();
     void updateBuildTargetsModel();
-    void updateDeploymentData();
+
+    QMetaObject::Connection m_runTrigger;
 
     friend class CMakeBuildStepConfigWidget;
     QStringList m_buildTargets; // Convention: Empty string member signifies "Current executable"
+    Utils::StringAspect *m_cmakeArguments = nullptr;
+    Utils::StringAspect *m_toolArguments = nullptr;
+    Utils::BoolAspect *m_useiOSAutomaticProvisioningUpdates = nullptr;
+    bool m_waiting = false;
 
     QString m_allTarget = "all";
     QString m_installTarget = "install";
 
     Utils::TreeModel<Utils::TreeItem, CMakeTargetItem> m_buildTargetModel;
-
-    Utils::Environment m_environment;
-    Utils::EnvironmentItems  m_userEnvironmentChanges;
-    bool m_clearSystemEnvironment = false;
-    QString m_buildPreset;
-    std::optional<QString> m_configuration;
 };
 
-void setupCMakeBuildStep();
+class CMakeBuildStepFactory : public ProjectExplorer::BuildStepFactory
+{
+public:
+    CMakeBuildStepFactory();
+};
 
-} // CMakeProjectManager::Internal
+} // namespace Internal
+} // namespace CMakeProjectManager

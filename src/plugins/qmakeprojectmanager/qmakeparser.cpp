@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmakeparser.h"
 
@@ -19,7 +41,7 @@ QMakeParser::QMakeParser() : m_error(QLatin1String("^(.+?):(\\d+?):\\s(.+?)$"))
 
 OutputLineParser::Result QMakeParser::handleLine(const QString &line, OutputFormat type)
 {
-    if (type != StdErrFormat)
+    if (type != Utils::StdErrFormat)
         return Status::NotHandled;
     QString lne = rightTrimmed(line);
     QRegularExpressionMatch match = m_error.match(lne);
@@ -46,7 +68,7 @@ OutputLineParser::Result QMakeParser::handleLine(const QString &line, OutputForm
         BuildSystemTask t(type, description, absoluteFilePath(FilePath::fromUserInput(fileName)),
                           match.captured(2).toInt() /* line */);
         LinkSpecs linkSpecs;
-        addLinkSpecForAbsoluteFilePath(linkSpecs, t.file, t.line, t.column, fileNameOffset,
+        addLinkSpecForAbsoluteFilePath(linkSpecs, t.file, t.line, fileNameOffset,
                                        fileName.length());
         scheduleTask(t, 1);
         return {Status::Done, linkSpecs};
@@ -71,23 +93,17 @@ OutputLineParser::Result QMakeParser::handleLine(const QString &line, OutputForm
 // Unit tests:
 
 #ifdef WITH_TESTS
+#   include <QTest>
 
-#include <projectexplorer/outputparser_test.h>
+#   include "qmakeprojectmanagerplugin.h"
 
-#include <QTest>
+#   include "projectexplorer/outputparser_test.h"
 
-namespace QmakeProjectManager::Internal {
+using namespace QmakeProjectManager::Internal;
 
-class QmakeOutputParserTest final : public QObject
-{
-    Q_OBJECT
+namespace QmakeProjectManager {
 
-private slots:
-    void testQmakeOutputParsers_data();
-    void testQmakeOutputParsers();
-};
-
-void QmakeOutputParserTest::testQmakeOutputParsers_data()
+void QmakeProjectManagerPlugin::testQmakeOutputParsers_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<OutputParserTester::Channel>("inputChannel");
@@ -167,7 +183,7 @@ void QmakeOutputParserTest::testQmakeOutputParsers_data()
             << QString();
 }
 
-void QmakeOutputParserTest::testQmakeOutputParsers()
+void QmakeProjectManagerPlugin::testQmakeOutputParsers()
 {
     OutputParserTester testbench;
     testbench.addLineParser(new QMakeParser);
@@ -183,13 +199,6 @@ void QmakeOutputParserTest::testQmakeOutputParsers()
                           outputLines);
 }
 
-QObject *createQmakeOutputParserTest()
-{
-    return new QmakeOutputParserTest;
-}
-
-} // QmakeProjectManager::Internal
+} // QmakeProjectManager
 
 #endif
-
-#include "qmakeparser.moc"

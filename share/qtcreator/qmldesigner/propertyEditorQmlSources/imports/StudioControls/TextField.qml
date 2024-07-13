@@ -1,29 +1,49 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Templates as T
+import QtQuick 2.15
+import QtQuick.Templates 2.15 as T
 import StudioTheme 1.0 as StudioTheme
 
 T.TextField {
-    id: control
-
-    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
+    id: root
 
     // This property is used to indicate the global hover state
     property bool hover: (actionIndicator.hover || mouseArea.containsMouse || indicator.hover
-                         || translationIndicator.hover) && control.enabled
-    property bool edit: control.activeFocus
+                         || translationIndicator.hover) && root.enabled
+    property bool edit: root.activeFocus
 
     property alias actionIndicator: actionIndicator
     property alias actionIndicatorVisible: actionIndicator.visible
-    property real __actionIndicatorWidth: control.style.actionIndicatorSize.width
-    property real __actionIndicatorHeight: control.style.actionIndicatorSize.height
+    property real __actionIndicatorWidth: StudioTheme.Values.actionIndicatorWidth
+    property real __actionIndicatorHeight: StudioTheme.Values.actionIndicatorHeight
 
     property alias translationIndicator: translationIndicator
     property alias translationIndicatorVisible: translationIndicator.visible
-    property real __translationIndicatorWidth: control.style.squareControlSize.width
-    property real __translationIndicatorHeight: control.style.squareControlSize.height
+    property real __translationIndicatorWidth: StudioTheme.Values.translationIndicatorWidth
+    property real __translationIndicatorHeight: StudioTheme.Values.translationIndicatorHeight
 
     property alias indicator: indicator
     property alias indicatorVisible: indicator.visible
@@ -37,24 +57,24 @@ T.TextField {
     horizontalAlignment: Qt.AlignLeft
     verticalAlignment: Qt.AlignVCenter
 
-    font.pixelSize: control.style.baseFontSize
+    font.pixelSize: StudioTheme.Values.myFontSize
 
-    color: control.style.text.idle
-    selectionColor: control.style.text.selection
-    selectedTextColor: control.style.text.selectedText
-    placeholderTextColor: control.style.text.placeholder
+    color: StudioTheme.Values.themeTextColor
+    selectionColor: StudioTheme.Values.themeTextSelectionColor
+    selectedTextColor: StudioTheme.Values.themeTextSelectedTextColor
+    placeholderTextColor: StudioTheme.Values.themePlaceholderTextColor
 
     readOnly: false
     selectByMouse: true
-    persistentSelection: contextMenu.visible || control.focus
+    persistentSelection: contextMenu.visible || root.focus
     clip: true
 
-    width: control.style.controlSize.width
-    height: control.style.controlSize.height
-    implicitHeight: control.style.controlSize.height
+    width: StudioTheme.Values.defaultControlWidth
+    height: StudioTheme.Values.defaultControlHeight
+    implicitHeight: StudioTheme.Values.defaultControlHeight
 
-    leftPadding: control.style.inputHorizontalPadding + actionIndicator.width
-    rightPadding: control.style.inputHorizontalPadding + translationIndicator.width + indicator.width
+    leftPadding: StudioTheme.Values.inputHorizontalPadding + actionIndicator.width
+    rightPadding: StudioTheme.Values.inputHorizontalPadding + translationIndicator.width + indicator.width
 
     MouseArea {
         id: mouseArea
@@ -68,87 +88,80 @@ T.TextField {
 
     onPressed: function(event) {
         if (event.button === Qt.RightButton)
-            contextMenu.popup(control)
+            contextMenu.popup(root)
     }
 
     ContextMenu {
         id: contextMenu
-        style: control.style
-        __parentControl: control
+        myTextEdit: root
 
-        onClosed: control.forceActiveFocus()
-        onAboutToShow: control.contextMenuAboutToShow = true
-        onAboutToHide: control.contextMenuAboutToShow = false
+        onClosed: root.forceActiveFocus()
+        onAboutToShow: root.contextMenuAboutToShow = true
+        onAboutToHide: root.contextMenuAboutToShow = false
     }
 
     onActiveFocusChanged: {
         // OtherFocusReason in this case means, if the TextField gets focus after the context menu
         // was closed due to an menu item click.
-        if (control.activeFocus && control.focusReason !== Qt.OtherFocusReason)
-            control.preFocusText = control.text
-
-        if (!control.activeFocus)
-            control.deselect()
+        if (root.activeFocus && root.focusReason !== Qt.OtherFocusReason)
+            root.preFocusText = root.text
     }
 
     onEditChanged: {
-        if (control.edit)
+        if (root.edit)
             contextMenu.close()
     }
 
-    onEditingFinished: control.focus = false
+    onEditingFinished: root.focus = false
 
     ActionIndicator {
         id: actionIndicator
-        style: control.style
-        __parentControl: control
+        myControl: root
         x: 0
         y: 0
-        width: actionIndicator.visible ? control.__actionIndicatorWidth : 0
-        height: actionIndicator.visible ? control.__actionIndicatorHeight : 0
+        width: actionIndicator.visible ? root.__actionIndicatorWidth : 0
+        height: actionIndicator.visible ? root.__actionIndicatorHeight : 0
     }
 
     Text {
         id: placeholder
-        x: control.leftPadding
-        y: control.topPadding
-        width: control.width - (control.leftPadding + control.rightPadding)
-        height: control.height - (control.topPadding + control.bottomPadding)
+        x: root.leftPadding
+        y: root.topPadding
+        width: root.width - (root.leftPadding + root.rightPadding)
+        height: root.height - (root.topPadding + root.bottomPadding)
 
-        text: control.placeholderText
-        font: control.font
-        color: control.placeholderTextColor
-        verticalAlignment: control.verticalAlignment
-        visible: !control.length && !control.preeditText
-                 && (!control.activeFocus || control.horizontalAlignment !== Qt.AlignHCenter)
+        text: root.placeholderText
+        font: root.font
+        color: root.placeholderTextColor
+        verticalAlignment: root.verticalAlignment
+        visible: !root.length && !root.preeditText
+                 && (!root.activeFocus || root.horizontalAlignment !== Qt.AlignHCenter)
         elide: Text.ElideRight
-        renderType: control.renderType
+        renderType: root.renderType
     }
 
     background: Rectangle {
         id: textFieldBackground
-        color: control.style.background.idle
-        border.color: control.style.border.idle
-        border.width: control.style.borderWidth
+        color: StudioTheme.Values.themeControlBackground
+        border.color: StudioTheme.Values.themeControlOutline
+        border.width: StudioTheme.Values.border
         x: actionIndicator.width
-        width: control.width - actionIndicator.width
-        height: control.height
+        width: root.width - actionIndicator.width
+        height: root.height
     }
 
     Indicator {
         id: indicator
-        style: control.style
         visible: false
-        x: control.width - translationIndicator.width - indicator.width
-        width: indicator.visible ? control.height : 0
-        height: indicator.visible ? control.height : 0
+        x: root.width - translationIndicator.width - indicator.width
+        width: indicator.visible ? root.height : 0
+        height: indicator.visible ? root.height : 0
     }
 
     TranslationIndicator {
         id: translationIndicator
-        style: control.style
-        __parentControl: control
-        x: control.width - translationIndicator.width
+        myControl: root
+        x: root.width - translationIndicator.width
         width: translationIndicator.visible ? __translationIndicatorWidth : 0
         height: translationIndicator.visible ? __translationIndicatorHeight : 0
     }
@@ -156,16 +169,16 @@ T.TextField {
     states: [
         State {
             name: "default"
-            when: control.enabled && !control.hover && !control.edit && !contextMenu.visible
+            when: root.enabled && !root.hover && !root.edit && !contextMenu.visible
             PropertyChanges {
                 target: textFieldBackground
-                color: control.style.background.idle
-                border.color: control.style.border.idle
+                color: StudioTheme.Values.themeControlBackground
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
-                target: control
-                color: control.style.text.idle
-                placeholderTextColor: control.style.text.placeholder
+                target: root
+                color: StudioTheme.Values.themeTextColor
+                placeholderTextColor: StudioTheme.Values.themePlaceholderTextColor
             }
             PropertyChanges {
                 target: mouseArea
@@ -175,45 +188,45 @@ T.TextField {
         State {
             name: "globalHover"
             when: (actionIndicator.hover || translationIndicator.hover || indicator.hover)
-                  && !control.edit && control.enabled && !contextMenu.visible
+                  && !root.edit && root.enabled && !contextMenu.visible
             PropertyChanges {
                 target: textFieldBackground
-                color: control.style.background.globalHover
-                border.color: control.style.border.idle
+                color: StudioTheme.Values.themeControlBackgroundGlobalHover
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
-                target: control
-                color: control.style.text.idle
-                placeholderTextColor: control.style.text.placeholder
+                target: root
+                color: StudioTheme.Values.themeTextColor
+                placeholderTextColor: StudioTheme.Values.themePlaceholderTextColor
             }
         },
         State {
             name: "hover"
             when: mouseArea.containsMouse && !actionIndicator.hover && !translationIndicator.hover
-                  && !indicator.hover && !control.edit && control.enabled && !contextMenu.visible
+                  && !indicator.hover && !root.edit && root.enabled && !contextMenu.visible
             PropertyChanges {
                 target: textFieldBackground
-                color: control.style.background.hover
-                border.color: control.style.border.hover
+                color: StudioTheme.Values.themeControlBackgroundHover
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
-                target: control
-                color: control.style.text.hover
-                placeholderTextColor: control.style.text.placeholder
+                target: root
+                color: StudioTheme.Values.themeTextColor
+                placeholderTextColor: StudioTheme.Values.themePlaceholderTextColor
             }
         },
         State {
             name: "edit"
-            when: control.edit || contextMenu.visible
+            when: root.edit || contextMenu.visible
             PropertyChanges {
                 target: textFieldBackground
-                color: control.style.background.interaction
-                border.color: control.style.border.interaction
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
             PropertyChanges {
-                target: control
-                color: control.style.text.idle
-                placeholderTextColor: control.style.text.placeholder
+                target: root
+                color: StudioTheme.Values.themeTextColor
+                placeholderTextColor: StudioTheme.Values.themePlaceholderTextColorInteraction
             }
             PropertyChanges {
                 target: mouseArea
@@ -222,24 +235,24 @@ T.TextField {
         },
         State {
             name: "disable"
-            when: !control.enabled
+            when: !root.enabled
             PropertyChanges {
                 target: textFieldBackground
-                color: control.style.background.disabled
-                border.color: control.style.border.disabled
+                color: StudioTheme.Values.themeControlBackgroundDisabled
+                border.color: StudioTheme.Values.themeControlOutlineDisabled
             }
             PropertyChanges {
-                target: control
-                color: control.style.text.disabled
-                placeholderTextColor: control.style.text.disabled
+                target: root
+                color: StudioTheme.Values.themeTextColorDisabled
+                placeholderTextColor: StudioTheme.Values.themeTextColorDisabled
             }
         }
     ]
 
     Keys.onEscapePressed: function(event) {
         event.accepted = true
-        control.text = control.preFocusText
-        control.rejected()
-        control.focus = false
+        root.text = root.preFocusText
+        root.rejected()
+        root.focus = false
     }
 }

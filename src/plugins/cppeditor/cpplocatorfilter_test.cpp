@@ -1,14 +1,40 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cpplocatorfilter_test.h"
 
+#include "cppcurrentdocumentfilter.h"
+#include "cpplocatorfilter.h"
+#include "cppmodelmanager.h"
 #include "cpptoolstestcase.h"
 
 #include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/locator/locatorfiltertest.h>
 #include <coreplugin/testdatadir.h>
-#include <utils/environment.h>
+#include <extensionsystem/pluginmanager.h>
+#include <coreplugin/locator/locatorfiltertest.h>
+#include <utils/fileutils.h>
 
 #include <QDebug>
 #include <QFileInfo>
@@ -16,31 +42,33 @@
 
 using namespace Core;
 using namespace Core::Tests;
+using namespace ExtensionSystem;
 using namespace Utils;
 
 namespace CppEditor::Internal {
 namespace {
 
-const bool debug = qtcEnvironmentVariable("QTC_DEBUG_CPPLOCATORFILTERTESTCASE") == "1";
+const bool debug = qEnvironmentVariable("QTC_DEBUG_CPPLOCATORFILTERTESTCASE") == "1";
 
 QTC_DECLARE_MYTESTDATADIR("../../../tests/cpplocators/")
 
-class CppLocatorFilterTestCase : public CppEditor::Tests::TestCase
+class CppLocatorFilterTestCase
+    : public BasicLocatorFilterTest
+    , public CppEditor::Tests::TestCase
 {
 public:
-    CppLocatorFilterTestCase(const QList<LocatorMatcherTask> &matchers,
+    CppLocatorFilterTestCase(ILocatorFilter *filter,
                              const QString &fileName,
                              const QString &searchText,
                              const ResultDataList &expectedResults)
+        : BasicLocatorFilterTest(filter)
+        , m_fileName(fileName)
     {
         QVERIFY(succeededSoFar());
-        QVERIFY(!fileName.isEmpty());
+        QVERIFY(!m_fileName.isEmpty());
         QVERIFY(garbageCollectGlobalSnapshot());
 
-        QVERIFY(parseFiles(fileName));
-        const LocatorFilterEntries entries = LocatorMatcher::runBlocking(matchers, searchText);
-        QVERIFY(garbageCollectGlobalSnapshot());
-        const ResultDataList results = ResultData::fromFilterEntryList(entries);
+        ResultDataList results = ResultData::fromFilterEntryList(matchesFor(searchText));
         if (debug) {
             ResultData::printFilterEntries(expectedResults, "Expected:");
             ResultData::printFilterEntries(results, "Results:");
@@ -48,39 +76,61 @@ public:
         QVERIFY(!results.isEmpty());
         QCOMPARE(results, expectedResults);
     }
+
+private:
+    void doBeforeLocatorRun() override { QVERIFY(parseFiles(m_fileName)); }
+    void doAfterLocatorRun() override { QVERIFY(garbageCollectGlobalSnapshot()); }
+
+private:
+    const QString m_fileName;
 };
 
-class CppCurrentDocumentFilterTestCase : public CppEditor::Tests::TestCase
+class CppCurrentDocumentFilterTestCase
+    : public BasicLocatorFilterTest
+    , public CppEditor::Tests::TestCase
 {
 public:
-    CppCurrentDocumentFilterTestCase(const FilePath &filePath,
-                                     const QList<LocatorMatcherTask> &matchers,
+    CppCurrentDocumentFilterTestCase(const QString &fileName,
                                      const ResultDataList &expectedResults,
                                      const QString &searchText = QString())
+        : BasicLocatorFilterTest(CppModelManager::instance()->currentDocumentFilter())
+        , m_fileName(fileName)
     {
         QVERIFY(succeededSoFar());
-        QVERIFY(!filePath.isEmpty());
+        QVERIFY(!m_fileName.isEmpty());
 
+        ResultDataList results = ResultData::fromFilterEntryList(matchesFor(searchText));
+        if (debug) {
+            ResultData::printFilterEntries(expectedResults, "Expected:");
+            ResultData::printFilterEntries(results, "Results:");
+        }
+        QVERIFY(!results.isEmpty());
+        QCOMPARE(results, expectedResults);
+    }
+
+private:
+    void doBeforeLocatorRun() override
+    {
         QVERIFY(DocumentModel::openedDocuments().isEmpty());
         QVERIFY(garbageCollectGlobalSnapshot());
 
-        const auto editor = EditorManager::openEditor(filePath);
-        QVERIFY(editor);
+        m_editor = EditorManager::openEditor(FilePath::fromString(m_fileName));
+        QVERIFY(m_editor);
 
-        QVERIFY(waitForFileInGlobalSnapshot(filePath));
-        const LocatorFilterEntries entries = LocatorMatcher::runBlocking(matchers, searchText);
-        QVERIFY(closeEditorWithoutGarbageCollectorInvocation(editor));
+        QVERIFY(waitForFileInGlobalSnapshot(m_fileName));
+    }
+
+    void doAfterLocatorRun() override
+    {
+        QVERIFY(closeEditorWithoutGarbageCollectorInvocation(m_editor));
         QCoreApplication::processEvents();
         QVERIFY(DocumentModel::openedDocuments().isEmpty());
         QVERIFY(garbageCollectGlobalSnapshot());
-        const ResultDataList results = ResultData::fromFilterEntryList(entries);
-        if (debug) {
-            ResultData::printFilterEntries(expectedResults, "Expected:");
-            ResultData::printFilterEntries(results, "Results:");
-        }
-        QVERIFY(!results.isEmpty());
-        QCOMPARE(results, expectedResults);
     }
+
+private:
+    IEditor *m_editor = nullptr;
+    const QString m_fileName;
 };
 
 } // anonymous namespace
@@ -88,21 +138,27 @@ public:
 void LocatorFilterTest::testLocatorFilter()
 {
     QFETCH(QString, testFile);
-    QFETCH(MatcherType, matcherType);
+    QFETCH(ILocatorFilter *, filter);
     QFETCH(QString, searchText);
     QFETCH(ResultDataList, expectedResults);
 
     Tests::VerifyCleanCppModelManager verify;
-    CppLocatorFilterTestCase(LocatorMatcher::matchers(matcherType), testFile, searchText,
-                             expectedResults);
+
+    CppLocatorFilterTestCase(filter, testFile, searchText, expectedResults);
 }
 
 void LocatorFilterTest::testLocatorFilter_data()
 {
     QTest::addColumn<QString>("testFile");
-    QTest::addColumn<MatcherType>("matcherType");
+    QTest::addColumn<ILocatorFilter *>("filter");
     QTest::addColumn<QString>("searchText");
     QTest::addColumn<ResultDataList>("expectedResults");
+
+    CppModelManager *cppModelManager = CppModelManager::instance();
+
+    ILocatorFilter *cppFunctionsFilter = cppModelManager->functionsFilter();
+    ILocatorFilter *cppClassesFilter = cppModelManager->classesFilter();
+    ILocatorFilter *cppLocatorFilter = cppModelManager->locatorFilter();
 
     MyTestDataDir testDirectory("testdata_basic");
     QString testFile = testDirectory.file("file1.cpp");
@@ -113,7 +169,7 @@ void LocatorFilterTest::testLocatorFilter_data()
 
     QTest::newRow("CppFunctionsFilter")
         << testFile
-        << MatcherType::Functions
+        << cppFunctionsFilter
         << "function"
         << ResultDataList{
                ResultData("functionDefinedInClass(bool, int)",
@@ -135,7 +191,7 @@ void LocatorFilterTest::testLocatorFilter_data()
 
     QTest::newRow("CppFunctionsFilter-Sorting")
         << testFile
-        << MatcherType::Functions
+        << cppFunctionsFilter
         << "pos"
         << ResultDataList{
                ResultData("positiveNumber()", testFileShort),
@@ -146,7 +202,7 @@ void LocatorFilterTest::testLocatorFilter_data()
 
     QTest::newRow("CppFunctionsFilter-arguments")
         << testFile
-        << MatcherType::Functions
+        << cppFunctionsFilter
         << "function*bool"
         << ResultDataList{
                ResultData("functionDefinedInClass(bool, int)",
@@ -162,7 +218,7 @@ void LocatorFilterTest::testLocatorFilter_data()
 
     QTest::newRow("CppFunctionsFilter-WithNamespacePrefix")
         << testFile
-        << MatcherType::Functions
+        << cppFunctionsFilter
         << "mynamespace::"
         << ResultDataList{
                ResultData("MyClass()", "MyNamespace::MyClass (file1.cpp)"),
@@ -177,7 +233,7 @@ void LocatorFilterTest::testLocatorFilter_data()
 
     QTest::newRow("CppFunctionsFilter-WithClassPrefix")
         << testFile
-        << MatcherType::Functions
+        << cppFunctionsFilter
         << "MyClass::func"
         << ResultDataList{
                ResultData("functionDefinedInClass(bool, int)",
@@ -198,7 +254,7 @@ void LocatorFilterTest::testLocatorFilter_data()
 
     QTest::newRow("CppClassesFilter")
         << testFile
-        << MatcherType::Classes
+        << cppClassesFilter
         << "myclass"
         << ResultDataList{
                ResultData("MyClass", "<anonymous namespace>"),
@@ -208,7 +264,7 @@ void LocatorFilterTest::testLocatorFilter_data()
 
     QTest::newRow("CppClassesFilter-WithNamespacePrefix")
         << testFile
-        << MatcherType::Classes
+        << cppClassesFilter
         << "mynamespace::"
         << ResultDataList{
                ResultData("MyClass", "MyNamespace")
@@ -217,26 +273,33 @@ void LocatorFilterTest::testLocatorFilter_data()
     // all symbols in the left column are expected to be fully qualified.
     QTest::newRow("CppLocatorFilter-filtered")
         << testFile
-        << MatcherType::AllSymbols
+        << cppLocatorFilter
         << "my"
         << ResultDataList{
-               ResultData("MyClass", "<anonymous namespace>"),
-               ResultData("MyClass", "<anonymous namespace>::MyClass"),
-               ResultData("MyClass", "MyClass"),
-               ResultData("MyClass", "MyNamespace"),
-               ResultData("MyClass", "MyNamespace::MyClass"),
                ResultData("MyClass", testFileShort),
-               ResultData("MyEnum", "<anonymous namespace>"),
-               ResultData("MyEnum", "MyNamespace"),
+               ResultData("MyClass::MyClass", "()"),
+               ResultData("MyClass::functionDefinedOutSideClass", "(char)"),
                ResultData("MyEnum", testFileShort),
+               ResultData("MyNamespace::MyClass", testFileShort),
+               ResultData("MyNamespace::MyClass::MyClass", "()"),
+               ResultData("MyNamespace::MyClass::functionDefinedOutSideClass",
+                          "(char)"),
+               ResultData("MyNamespace::MyClass::functionDefinedOutSideClassAndNamespace",
+                          "(float)"),
+               ResultData("MyNamespace::MyEnum", testFileShort),
+               ResultData("MyNamespace::myFunction", "(bool, int)"),
                ResultData("myFunction", "(bool, int)"),
-               ResultData("myFunction", "<anonymous namespace>"),
-               ResultData("myFunction", "MyNamespace"),
+               ResultData("<anonymous namespace>::MyClass", testFileShort),
+               ResultData("<anonymous namespace>::MyClass::MyClass", "()"),
+               ResultData("<anonymous namespace>::MyClass::functionDefinedOutSideClass",
+                          "(char)"),
+               ResultData("<anonymous namespace>::MyEnum", testFileShort),
+               ResultData("<anonymous namespace>::myFunction", "(bool, int)")
            };
 
     QTest::newRow("CppClassesFilter-ObjC")
         << objTestFile
-        << MatcherType::Classes
+        << cppClassesFilter
         << "M"
         << ResultDataList{
                ResultData("MyClass", objTestFileShort),
@@ -247,7 +310,7 @@ void LocatorFilterTest::testLocatorFilter_data()
 
     QTest::newRow("CppFunctionsFilter-ObjC")
         << objTestFile
-        << MatcherType::Functions
+        << cppFunctionsFilter
         << "M"
         << ResultDataList{
                ResultData("anotherMethod", "MyClass (file1.mm)"),
@@ -259,7 +322,7 @@ void LocatorFilterTest::testLocatorFilter_data()
 void LocatorFilterTest::testCurrentDocumentFilter()
 {
     MyTestDataDir testDirectory("testdata_basic");
-    const FilePath testFile = testDirectory.filePath("file1.cpp");
+    const QString testFile = testDirectory.file("file1.cpp");
 
     auto expectedResults = ResultDataList{
         ResultData("int myVariable", ""),
@@ -277,6 +340,7 @@ void LocatorFilterTest::testCurrentDocumentFilter()
         ResultData("functionDeclaredOnly()", "MyClass"),
         ResultData("functionDefinedInClass(bool, int)", "MyClass"),
         ResultData("functionDefinedOutSideClass(char)", "MyClass"),
+        ResultData("functionDefinedOutSideClass(char)", "MyClass"),
         ResultData("int myVariable", "MyNamespace"),
         ResultData("myFunction(bool, int)", "MyNamespace"),
         ResultData("MyEnum", "MyNamespace"),
@@ -286,6 +350,9 @@ void LocatorFilterTest::testCurrentDocumentFilter()
         ResultData("MyClass()", "MyNamespace::MyClass"),
         ResultData("functionDeclaredOnly()", "MyNamespace::MyClass"),
         ResultData("functionDefinedInClass(bool, int)", "MyNamespace::MyClass"),
+        ResultData("functionDefinedOutSideClass(char)", "MyNamespace::MyClass"),
+        ResultData("functionDefinedOutSideClassAndNamespace(float)",
+                   "MyNamespace::MyClass"),
         ResultData("functionDefinedOutSideClass(char)", "MyNamespace::MyClass"),
         ResultData("functionDefinedOutSideClassAndNamespace(float)",
                    "MyNamespace::MyClass"),
@@ -299,18 +366,17 @@ void LocatorFilterTest::testCurrentDocumentFilter()
         ResultData("functionDeclaredOnly()", "<anonymous namespace>::MyClass"),
         ResultData("functionDefinedInClass(bool, int)", "<anonymous namespace>::MyClass"),
         ResultData("functionDefinedOutSideClass(char)", "<anonymous namespace>::MyClass"),
+        ResultData("functionDefinedOutSideClass(char)", "<anonymous namespace>::MyClass"),
         ResultData("main()", ""),
     };
 
-    Tests::VerifyCleanCppModelManager verify;
-    CppCurrentDocumentFilterTestCase(
-        testFile, LocatorMatcher::matchers(MatcherType::CurrentDocumentSymbols), expectedResults);
+    CppCurrentDocumentFilterTestCase(testFile, expectedResults);
 }
 
 void LocatorFilterTest::testCurrentDocumentHighlighting()
 {
     MyTestDataDir testDirectory("testdata_basic");
-    const FilePath testFile = testDirectory.filePath("file1.cpp");
+    const QString testFile = testDirectory.file("file1.cpp");
 
     const QString searchText = "pos";
     const ResultDataList expectedResults{
@@ -327,8 +393,8 @@ void LocatorFilterTest::testCurrentDocumentHighlighting()
        };
 
     Tests::VerifyCleanCppModelManager verify;
-    CppCurrentDocumentFilterTestCase(testFile,
-        LocatorMatcher::matchers(MatcherType::CurrentDocumentSymbols), expectedResults, searchText);
+
+    CppCurrentDocumentFilterTestCase(testFile, expectedResults, searchText);
 }
 
 void LocatorFilterTest::testFunctionsFilterHighlighting()
@@ -349,9 +415,12 @@ void LocatorFilterTest::testFunctionsFilterHighlighting()
                    "              ~~~ ")
        };
 
+    CppModelManager *cppModelManager = CppModelManager::instance();
+    ILocatorFilter *filter = cppModelManager->functionsFilter();
+
     Tests::VerifyCleanCppModelManager verify;
-    CppLocatorFilterTestCase(LocatorMatcher::matchers(MatcherType::Functions), testFile,
-                             searchText, expectedResults);
+
+    CppLocatorFilterTestCase(filter, testFile, searchText, expectedResults);
 }
 
 } // namespace CppEditor::Internal

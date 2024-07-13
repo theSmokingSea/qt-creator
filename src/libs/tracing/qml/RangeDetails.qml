@@ -1,15 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Controls
+import QtQuick 2.9
+import QtQuick.Controls 2.0
 
-import QtCreator.Tracing
+import QtCreator.Tracing 1.0
 
 Item {
     id: rangeDetails
 
-    property real titleBarHeight: Theme.toolBarHeight() / 1.2
+    property real titleBarHeight: 20
     property real borderWidth: 1
     property real outerMargin: 10
     property real innerMargin: 5
@@ -34,9 +56,10 @@ Item {
     property alias noteReadonly: noteEdit.readOnly
 
     signal recenterOnItem
+    signal clearSelection
     signal updateNote(string text)
 
-    visible: dialogTitle.length > 0
+    visible: dialogTitle.length > 0 || model.length > 0
 
     width: dragHandle.x + dragHandle.width
     height: contentArea.height + titleBar.height
@@ -59,9 +82,9 @@ Item {
     Rectangle {
         id: titleBar
         width: parent.width
-        height: rangeDetails.titleBarHeight
+        height: titleBarHeight
         color: Theme.color(Theme.Timeline_PanelHeaderColor)
-        border.width: rangeDetails.borderWidth
+        border.width: borderWidth
         border.color: Theme.color(Theme.PanelTextColorMid)
 
         TimelineText {
@@ -71,8 +94,8 @@ Item {
             verticalAlignment: Text.AlignVCenter
             anchors.left: parent.left
             anchors.right: closeIcon.left
-            anchors.leftMargin: rangeDetails.outerMargin
-            anchors.rightMargin: rangeDetails.innerMargin
+            anchors.leftMargin: outerMargin
+            anchors.rightMargin: innerMargin
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             color: Theme.color(Theme.PanelTextColorLight)
@@ -87,17 +110,17 @@ Item {
             implicitHeight: typeTitle.height
             visible: !rangeDetails.noteReadonly
             onClicked: noteEdit.focus = true
-            ToolTip.text: qsTranslate("QtC::Tracing", "Edit note")
+            ToolTip.text: qsTr("Edit note")
         }
 
         ImageToolButton {
             id: lockIcon
-            imageSource: "image://icons/lock_" + (rangeDetails.locked ? "closed" : "open")
+            imageSource: "image://icons/lock_" + (locked ? "closed" : "open")
             anchors.top: closeIcon.top
             anchors.right: closeIcon.left
             implicitHeight: typeTitle.height
-            onClicked: rangeDetails.locked = !rangeDetails.locked
-            ToolTip.text: qsTranslate("QtC::Tracing", "View event information on mouseover.")
+            onClicked: locked = !locked
+            ToolTip.text: qsTr("View event information on mouseover.")
         }
 
         ImageToolButton {
@@ -105,10 +128,9 @@ Item {
             anchors.right: parent.right
             anchors.top: parent.top
             implicitHeight: typeTitle.height
-            imageSource: "image://icons/arrow" + (col.visible ? "up" : "down")
-            onClicked: col.visible = !col.visible
-            ToolTip.text: col.visible ? qsTranslate("QtC::Tracing", "Collapse")
-                                      : qsTranslate("QtC::Tracing", "Expand")
+            imageSource: "image://icons/close_window"
+            onClicked: rangeDetails.clearSelection()
+            ToolTip.text: qsTr("Close")
         }
     }
 
@@ -121,7 +143,7 @@ Item {
         anchors.right: parent.right
         anchors.bottom: dragHandle.bottom
 
-        border.width: rangeDetails.borderWidth
+        border.width: borderWidth
         border.color: Theme.color(Theme.PanelTextColorMid)
     }
 
@@ -130,19 +152,17 @@ Item {
 
         anchors.left: parent.left
         anchors.top: titleBar.bottom
-        anchors.topMargin: rangeDetails.innerMargin
-        anchors.leftMargin: rangeDetails.outerMargin
-        anchors.rightMargin: rangeDetails.outerMargin
+        anchors.topMargin: innerMargin
+        anchors.leftMargin: outerMargin
+        anchors.rightMargin: outerMargin
 
-        height: visible ? implicitHeight : 0
-
-        spacing: rangeDetails.innerMargin
+        spacing: innerMargin
         columns: 2
 
-        property int minimumWidth: rangeDetails.minimumInnerWidth
+        property int minimumWidth: minimumInnerWidth
         onPositioningComplete: {
             // max(width of longest label * 2, minimumInnerWidth)
-            var result = rangeDetails.minimumInnerWidth;
+            var result = minimumInnerWidth;
             for (var i = 0; i < children.length; ++i) {
                 if (children[i].isLabel)
                     result = Math.max(children[i].implicitWidth * 2 + innerMargin, result);
@@ -151,14 +171,12 @@ Item {
             minimumWidth = result + 2 * outerMargin;
         }
 
-        property int labelWidth: Math.ceil((minimumWidth - rangeDetails.innerMargin) / 2)
-                                           - rangeDetails.outerMargin
-        property int valueWidth: dragHandle.x - labelWidth - rangeDetails.innerMargin
-                                 - rangeDetails.outerMargin
+        property int labelWidth: Math.ceil((minimumWidth - innerMargin) / 2) - outerMargin
+        property int valueWidth: dragHandle.x - labelWidth - innerMargin - outerMargin
 
         onMinimumWidthChanged: {
-            if (dragHandle.x < minimumWidth - rangeDetails.outerMargin)
-                dragHandle.x = minimumWidth - rangeDetails.outerMargin;
+            if (dragHandle.x < minimumWidth - outerMargin)
+                dragHandle.x = minimumWidth - outerMargin;
         }
 
         Repeater {
@@ -178,9 +196,9 @@ Item {
 
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.leftMargin: rangeDetails.outerMargin
-        anchors.rightMargin: rangeDetails.outerMargin
-        anchors.topMargin: visible ? rangeDetails.innerMargin : 0
+        anchors.leftMargin: outerMargin
+        anchors.rightMargin: outerMargin
+        anchors.topMargin: visible ? innerMargin : 0
         anchors.top: col.bottom
         height: visible ? implicitHeight : 0
 
@@ -205,7 +223,7 @@ Item {
         Timer {
             id: saveTimer
             onTriggered: {
-                if (!noteEdit.readOnly)
+                if (!rangeDetails.readOnly)
                     rangeDetails.updateNote(noteEdit.text);
             }
             interval: 1000
@@ -215,15 +233,15 @@ Item {
 
     Item {
         id: dragHandle
-        width: rangeDetails.outerMargin
-        height: rangeDetails.outerMargin
-        x: rangeDetails.initialWidth
+        width: outerMargin
+        height: outerMargin
+        x: initialWidth
         anchors.top: noteEdit.bottom
         clip: true
         MouseArea {
             anchors.fill: parent
             drag.target: parent
-            drag.minimumX: col.minimumWidth - rangeDetails.outerMargin
+            drag.minimumX: col.minimumWidth - outerMargin
             drag.axis: Drag.XAxis
             cursorShape: Qt.SizeHorCursor
         }

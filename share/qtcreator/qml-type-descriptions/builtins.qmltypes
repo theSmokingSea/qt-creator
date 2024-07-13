@@ -265,7 +265,7 @@ Module {
         name: "QDeclarativeComponent"
         prototype: "QObject"
         exports: [
-            "QML/Component 1.0"
+            "QtQuick/Component 1.0"
         ]
         exportMetaObjectRevisions: [
             0
@@ -3209,7 +3209,7 @@ Module {
     Component {
         name: "QObject"
         exports: [
-            "QML/QtObject 1.0"
+            "QtQuick/QtObject 1.0"
         ]
         exportMetaObjectRevisions: [
             0

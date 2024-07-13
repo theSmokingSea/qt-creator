@@ -8,13 +8,12 @@
     "trDisplayCategory": "Application (Qt for Python)",
     "icon": "icon.png",
     "iconKind": "Themed",
-    "enabled": "%{JS: value('Plugins').indexOf('Python') >= 0 && (!value('Platform').length || ['Desktop', 'DockerDeviceType', 'GenericLinuxOsType'].includes(value('Platform')))}",
+    "enabled": "%{JS: value('Plugins').indexOf('Python') >= 0}",
 
     "options":
     [
         { "key": "SrcFileName", "value": "main.py" },
-        { "key": "PyProjectFile", "value": "%{JS: Util.fileName('%{ProjectName}', 'pyproject')}" },
-        { "key": "ProjectFilePath", "value": "%{ProjectDirectory}/%{PyProjectFile}" }
+        { "key": "PyProjectFile", "value": "%{JS: Util.fileName('%{ProjectName}', 'pyproject')}" }
     ],
 
     "pages":
@@ -27,37 +26,20 @@
         {
             "trDisplayName": "Define Project Details",
             "trShortTitle": "Details",
-            "typeId": "PythonConfiguration",
-            "data":
-            {
-                "index": 0,
-                "items":
-                [
+            "typeId": "Fields",
+            "data" :
+            [
+                {
+                    "name": "PySideVersion",
+                    "trDisplayName": "PySide version:",
+                    "type": "ComboBox",
+                    "data":
                     {
-                        "trKey": "PySide 6",
-                        "value":
-                        {
-                            "PySideVersion": "PySide6"
-                        }
-                    },
-                    {
-                        "trKey": "PySide 2",
-                        "value":
-                        {
-                            "PySideVersion": "PySide2"
-                        }
+                        "index": 1,
+                        "items": [ "PySide2", "PySide6" ]
                     }
-                ]
-            }
-        },
-        {
-            "trDisplayName": "Kit Selection",
-            "trShortTitle": "Kits",
-            "typeId": "Kits",
-            "data": {
-                 "projectFilePath": "%{ProjectFilePath}",
-                 "requiredFeatures": [ "Python.Interpreter" ]
-            }
+                }
+            ]
         },
         {
             "trDisplayName": "Project Management",
@@ -80,10 +62,6 @@
                     "source": "../main_empty.py",
                     "target": "%{SrcFileName}",
                     "openInEditor": true
-                },
-                {
-                    "source": "../requirements.txt",
-                    "target": "requirements.txt"
                 },
                 {
                     "source": "../../git.ignore",

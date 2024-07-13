@@ -1,12 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qtversions.h"
 
 #include "baseqtversion.h"
 #include "qtsupportconstants.h"
-#include "qtsupporttr.h"
-#include "qtversionfactory.h"
 
 #include <projectexplorer/abi.h>
 #include <projectexplorer/projectexplorerconstants.h>
@@ -19,34 +39,38 @@
 #include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
 
-namespace QtSupport::Internal {
+#include <QCoreApplication>
+#include <QFileInfo>
 
-class DesktopQtVersion final : public QtVersion
+namespace QtSupport {
+namespace Internal {
+
+class DesktopQtVersion : public QtVersion
 {
 public:
     DesktopQtVersion() = default;
 
-    QStringList warningReason() const final;
+    QStringList warningReason() const override;
 
-    QString description() const final;
+    QString description() const override;
 
-    QSet<Utils::Id> availableFeatures() const final;
-    QSet<Utils::Id> targetDeviceTypes() const final;
+    QSet<Utils::Id> availableFeatures() const override;
+    QSet<Utils::Id> targetDeviceTypes() const override;
 };
 
 QStringList DesktopQtVersion::warningReason() const
 {
     QStringList ret = QtVersion::warningReason();
-    if (qtVersion() >= QVersionNumber(5, 0, 0)) {
+    if (qtVersion() >= QtVersionNumber(5, 0, 0)) {
         if (qmlRuntimeFilePath().isEmpty())
-            ret << Tr::tr("No QML utility installed.");
+            ret << QCoreApplication::translate("QtVersion", "No QML utility installed.");
     }
     return ret;
 }
 
 QString DesktopQtVersion::description() const
 {
-    return Tr::tr("Desktop", "Qt Version is meant for the desktop");
+    return QCoreApplication::translate("QtVersion", "Desktop", "Qt Version is meant for the desktop");
 }
 
 QSet<Utils::Id> DesktopQtVersion::availableFeatures() const
@@ -67,61 +91,45 @@ QSet<Utils::Id> DesktopQtVersion::targetDeviceTypes() const
 
 // Factory
 
-class DesktopQtVersionFactory : public QtVersionFactory
+DesktopQtVersionFactory::DesktopQtVersionFactory()
 {
-public:
-    DesktopQtVersionFactory()
-    {
-        setQtVersionCreator([] { return new DesktopQtVersion; });
-        setSupportedType(QtSupport::Constants::DESKTOPQT);
-        setPriority(0); // Lowest of all, we want to be the fallback
-        // No further restrictions. We are the fallback :) so we don't care what kind of qt it is.
-    }
-};
-
-void setupDesktopQtVersion()
-{
-    static DesktopQtVersionFactory theDesktopQtVersionFactory;
+    setQtVersionCreator([] { return new DesktopQtVersion; });
+    setSupportedType(QtSupport::Constants::DESKTOPQT);
+    setPriority(0); // Lowest of all, we want to be the fallback
+    // No further restrictions. We are the fallback :) so we don't care what kind of qt it is.
 }
+
 
 // EmbeddedLinuxQtVersion
 
 const char EMBEDDED_LINUX_QT[] = "RemoteLinux.EmbeddedLinuxQt";
 
-class EmbeddedLinuxQtVersion final : public QtVersion
+class EmbeddedLinuxQtVersion : public QtVersion
 {
 public:
     EmbeddedLinuxQtVersion() = default;
 
-    QString description() const final
+    QString description() const override
     {
-        return Tr::tr("Embedded Linux", "Qt Version is used for embedded Linux development");
+        return QCoreApplication::translate("QtVersion", "Embedded Linux",
+                                           "Qt Version is used for embedded Linux development");
     }
 
-    QSet<Utils::Id> targetDeviceTypes() const final
+    QSet<Utils::Id> targetDeviceTypes() const override
     {
-        return {
-            // RemoteLinux::Constants::GenericLinuxOsType
-        };
-    }
-};
-
-class EmbeddedLinuxQtVersionFactory : public QtSupport::QtVersionFactory
-{
-public:
-    EmbeddedLinuxQtVersionFactory()
-    {
-        setQtVersionCreator([] { return new EmbeddedLinuxQtVersion; });
-        setSupportedType(EMBEDDED_LINUX_QT);
-        setPriority(10);
-
-        setRestrictionChecker([](const SetupData &) { return false; });
+        // return {RemoteLinux::Constants::GenericLinuxOsType};
+        return {};
     }
 };
 
-void setupEmbeddedLinuxQtVersion()
+EmbeddedLinuxQtVersionFactory::EmbeddedLinuxQtVersionFactory()
 {
-    static EmbeddedLinuxQtVersionFactory theEmbeddedLinuxQtVersionFactory;
+    setQtVersionCreator([] { return new EmbeddedLinuxQtVersion; });
+    setSupportedType(EMBEDDED_LINUX_QT);
+    setPriority(10);
+
+    setRestrictionChecker([](const SetupData &) { return false; });
 }
 
-} // QtSupport::Internal
+} // Internal
+} // QtSupport

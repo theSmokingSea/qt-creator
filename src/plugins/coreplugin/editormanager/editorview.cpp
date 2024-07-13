@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "editorview.h"
 
@@ -7,19 +29,22 @@
 #include "editormanager_p.h"
 #include "documentmodel.h"
 #include "documentmodel_p.h"
-#include "../editormanager/ieditor.h"
-#include "../editortoolbar.h"
-#include "../findplaceholder.h"
-#include "../minisplitter.h"
 
+#include <coreplugin/actionmanager/actionmanager.h>
+#include <coreplugin/editormanager/ieditor.h>
+#include <coreplugin/editortoolbar.h>
+#include <coreplugin/findplaceholder.h>
+#include <coreplugin/icore.h>
+#include <coreplugin/locator/locatorconstants.h>
+#include <coreplugin/minisplitter.h>
 #include <utils/algorithm.h>
 #include <utils/infobar.h>
-#include <utils/layoutbuilder.h>
-#include <utils/link.h>
-#include <utils/overlaywidget.h>
 #include <utils/qtcassert.h>
 #include <utils/theme/theme.h>
+#include <utils/link.h>
 #include <utils/utilsicons.h>
+
+#include <QDebug>
 
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -33,22 +58,19 @@
 #include <QStackedLayout>
 
 using namespace Core;
+using namespace Core::Internal;
 using namespace Utils;
 
-namespace Core::Internal {
+// ================EditorView====================
 
-// EditorView
-
-EditorView::EditorView(SplitterOrView *parentSplitterOrView, QWidget *parent)
-    : QWidget(parent)
-    , m_parentSplitterOrView(parentSplitterOrView)
-    , m_toolBar(new EditorToolBar(this))
-    , m_container(new QStackedWidget(this))
-    , m_infoBarDisplay(new InfoBarDisplay(this))
-    , m_statusHLine(Layouting::createHr(this))
-    , m_statusWidget(new QFrame(this))
-    , m_backMenu(new QMenu(this))
-    , m_forwardMenu(new QMenu(this))
+EditorView::EditorView(SplitterOrView *parentSplitterOrView, QWidget *parent) :
+    QWidget(parent),
+    m_parentSplitterOrView(parentSplitterOrView),
+    m_toolBar(new EditorToolBar(this)),
+    m_container(new QStackedWidget(this)),
+    m_infoBarDisplay(new InfoBarDisplay(this)),
+    m_statusHLine(new QFrame(this)),
+    m_statusWidget(new QFrame(this))
 {
     auto tl = new QVBoxLayout(this);
     tl->setSpacing(0);
@@ -69,8 +91,6 @@ EditorView::EditorView(SplitterOrView *parentSplitterOrView, QWidget *parent)
         connect(m_toolBar, &EditorToolBar::splitNewWindowClicked, this, &EditorView::splitNewWindow);
         connect(m_toolBar, &EditorToolBar::closeSplitClicked, this, &EditorView::closeSplit);
         m_toolBar->setMenuProvider([this](QMenu *menu) { fillListContextMenu(menu); });
-        m_toolBar->setGoBackMenu(m_backMenu);
-        m_toolBar->setGoForwardMenu(m_forwardMenu);
         tl->addWidget(m_toolBar);
     }
 
@@ -81,6 +101,8 @@ EditorView::EditorView(SplitterOrView *parentSplitterOrView, QWidget *parent)
     tl->addWidget(new FindToolBarPlaceHolder(this));
 
     {
+        m_statusHLine->setFrameStyle(QFrame::HLine);
+
         m_statusWidget->setFrameStyle(QFrame::NoFrame);
         m_statusWidget->setLineWidth(0);
         m_statusWidget->setAutoFillBackground(true);
@@ -130,33 +152,6 @@ EditorView::EditorView(SplitterOrView *parentSplitterOrView, QWidget *parent)
             this, &EditorView::openDroppedFiles);
 
     updateNavigatorActions();
-
-    auto currentViewOverlay = new OverlayWidget;
-    currentViewOverlay->attachToWidget(this);
-    currentViewOverlay->setAttribute(Qt::WA_OpaquePaintEvent);
-    currentViewOverlay->setResizeFunction([this](QWidget *w, const QSize &) {
-        const QRect toolbarRect = m_toolBar->geometry();
-        w->setGeometry(toolbarRect.x(), toolbarRect.bottom() - 1, toolbarRect.width(), 2);
-    });
-    currentViewOverlay->setPaintFunction([](QWidget *w, QPainter &p, QPaintEvent *) {
-        p.fillRect(w->rect(), w->palette().color(QPalette::Highlight));
-    });
-    currentViewOverlay->setVisible(false);
-    const auto updateCurrentViewOverlay = [this, currentViewOverlay] {
-        currentViewOverlay->setVisible(
-            EditorManagerPrivate::hasMoreThanOneview()
-            && EditorManagerPrivate::currentEditorView() == this);
-    };
-    connect(
-        EditorManagerPrivate::instance(),
-        &EditorManagerPrivate::currentViewChanged,
-        currentViewOverlay,
-        updateCurrentViewOverlay);
-    connect(
-        EditorManagerPrivate::instance(),
-        &EditorManagerPrivate::viewCountChanged,
-        currentViewOverlay,
-        updateCurrentViewOverlay);
 }
 
 EditorView::~EditorView() = default;
@@ -254,34 +249,27 @@ void EditorView::setCloseSplitIcon(const QIcon &icon)
     m_toolBar->setCloseSplitIcon(icon);
 }
 
-bool EditorView::canGoForward() const
-{
-    return m_currentNavigationHistoryPosition < m_navigationHistory.size() - 1;
-}
-
-bool EditorView::canGoBack() const
-{
-    return m_currentNavigationHistoryPosition > 0;
-}
-
-bool EditorView::canReopen() const
-{
-    return !m_closedEditorHistory.isEmpty();
-}
-
 void EditorView::updateEditorHistory(IEditor *editor, QList<EditLocation> &history)
 {
-    IDocument *document = editor ? editor->document() : nullptr;
-    QTC_ASSERT(document, return);
+    if (!editor)
+        return;
+    IDocument *document = editor->document();
 
-    const auto location = EditLocation::forEditor(editor);
+    if (!document)
+        return;
+
+    QByteArray state = editor->saveState();
+
+    EditLocation location;
+    location.document = document;
+    location.filePath = document->filePath();
+    location.id = document->id();
+    location.state = QVariant(state);
 
     for (int i = 0; i < history.size(); ++i) {
         const EditLocation &item = history.at(i);
-        // remove items that refer to the same document/file,
-        // or that are no longer in the "open documents"
-        if (item.document == document || (!item.document && item.filePath == document->filePath())
-            || (!item.document && !DocumentModel::indexOfFilePath(item.filePath))) {
+        if (item.document == document
+                || (!item.document && !DocumentModel::indexOfFilePath(item.filePath))) {
             history.removeAt(i--);
         }
     }
@@ -302,11 +290,11 @@ void EditorView::paintEvent(QPaintEvent *)
 
     QRect rect = m_container->geometry();
     if (creatorTheme()->flag(Theme::FlatToolBars)) {
-        painter.fillRect(rect, creatorColor(Theme::EditorPlaceholderColor));
+        painter.fillRect(rect, creatorTheme()->color(Theme::EditorPlaceholderColor));
     } else {
         painter.setRenderHint(QPainter::Antialiasing, true);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(creatorColor(Theme::EditorPlaceholderColor));
+        painter.setBrush(creatorTheme()->color(Theme::EditorPlaceholderColor));
         const int r = 3;
         painter.drawRoundedRect(rect.adjusted(r , r, -r, -r), r * 2, r * 2);
     }
@@ -381,7 +369,9 @@ void EditorView::fillListContextMenu(QMenu *menu) const
     IEditor *editor = currentEditor();
     DocumentModel::Entry *entry = editor ? DocumentModel::entryForDocument(editor->document())
                                          : nullptr;
-    EditorManager::addContextMenuActions(menu, entry, editor);
+    EditorManager::addSaveAndCloseEditorActions(menu, entry, editor);
+    menu->addSeparator();
+    EditorManager::addNativeDirAndOpenWithActions(menu, entry);
 }
 
 void EditorView::splitHorizontally()
@@ -488,11 +478,24 @@ constexpr int navigationHistorySize = 100;
 void EditorView::addCurrentPositionToNavigationHistory(const QByteArray &saveState)
 {
     IEditor *editor = currentEditor();
+    if (!editor)
+        return;
+    IDocument *document = editor->document();
 
-    if (!editor || !editor->document())
+    if (!document)
         return;
 
-    const auto location = EditLocation::forEditor(editor, saveState);
+    QByteArray state;
+    if (saveState.isNull())
+        state = editor->saveState();
+    else
+        state = saveState;
+
+    EditLocation location;
+    location.document = document;
+    location.filePath = document->filePath();
+    location.id = document->id();
+    location.state = QVariant(state);
     m_currentNavigationHistoryPosition = qMin(m_currentNavigationHistoryPosition, m_navigationHistory.size()); // paranoia
     m_navigationHistory.insert(m_currentNavigationHistoryPosition, location);
     ++m_currentNavigationHistoryPosition;
@@ -508,21 +511,6 @@ void EditorView::addCurrentPositionToNavigationHistory(const QByteArray &saveSta
     updateNavigatorActions();
 }
 
-void EditorView::addClosedEditorToCloseHistory(IEditor *editor)
-{
-    static const int MAX_ITEMS = 20;
-
-    if (!editor || !editor->document())
-        return;
-
-    EditLocation location = EditLocation::forEditor(editor);
-
-    m_closedEditorHistory.push_back(location);
-
-    if (m_closedEditorHistory.size() > MAX_ITEMS)
-        m_closedEditorHistory.removeFirst();
-}
-
 void EditorView::cutForwardNavigationHistory()
 {
     while (m_currentNavigationHistoryPosition < m_navigationHistory.size() - 1)
@@ -531,33 +519,6 @@ void EditorView::cutForwardNavigationHistory()
 
 void EditorView::updateNavigatorActions()
 {
-    static const int MAX_ITEMS = 20;
-    QString lastDisplay;
-    m_backMenu->clear();
-    int count = 0;
-    for (int i = m_currentNavigationHistoryPosition - 1; i >= 0; i--) {
-        const EditLocation &loc = m_navigationHistory.at(i);
-        if (!loc.displayName().isEmpty() && loc.displayName() != lastDisplay) {
-            lastDisplay = loc.displayName();
-            m_backMenu->addAction(lastDisplay, this, [this, i] { goToNavigationHistory(i); });
-            ++count;
-            if (count >= MAX_ITEMS)
-                break;
-        }
-    }
-    lastDisplay.clear();
-    m_forwardMenu->clear();
-    count = 0;
-    for (int i = m_currentNavigationHistoryPosition + 1; i < m_navigationHistory.size(); i++) {
-        const EditLocation &loc = m_navigationHistory.at(i);
-        if (!loc.displayName().isEmpty() && loc.displayName() != lastDisplay) {
-            lastDisplay = loc.displayName();
-            m_forwardMenu->addAction(lastDisplay, this, [this, i] { goToNavigationHistory(i); });
-            ++count;
-            if (count >= MAX_ITEMS)
-                break;
-        }
-    }
     m_toolBar->setCanGoBack(canGoBack());
     m_toolBar->setCanGoForward(canGoForward());
 }
@@ -578,6 +539,7 @@ void EditorView::updateCurrentPositionInNavigationHistory()
     if (!editor || !editor->document())
         return;
 
+    IDocument *document = editor->document();
     EditLocation *location;
     if (m_currentNavigationHistoryPosition < m_navigationHistory.size()) {
         location = &m_navigationHistory[m_currentNavigationHistoryPosition];
@@ -585,7 +547,10 @@ void EditorView::updateCurrentPositionInNavigationHistory()
         m_navigationHistory.append(EditLocation());
         location = &m_navigationHistory[m_navigationHistory.size()-1];
     }
-    *location = EditLocation::forEditor(editor);
+    location->document = document;
+    location->filePath = document->filePath();
+    location->id = document->id();
+    location->state = QVariant(editor->saveState());
 }
 
 static bool fileNameWasRemoved(const FilePath &filePath)
@@ -593,45 +558,31 @@ static bool fileNameWasRemoved(const FilePath &filePath)
     return !filePath.isEmpty() && !filePath.exists();
 }
 
-bool EditorView::openEditorFromNavigationHistory(int index)
-{
-    EditLocation location = m_navigationHistory.at(index);
-    IEditor *editor = nullptr;
-    if (location.document) {
-        editor = EditorManagerPrivate::activateEditorForDocument(
-            this, location.document, EditorManager::IgnoreNavigationHistory);
-    }
-    if (!editor) {
-        if (fileNameWasRemoved(location.filePath))
-            return false;
-        editor = EditorManagerPrivate::openEditor(
-            this, location.filePath, location.id, EditorManager::IgnoreNavigationHistory);
-        if (!editor)
-            return false;
-    }
-    editor->restoreState(location.state);
-    return true;
-}
-
-void EditorView::goToNavigationHistory(int index)
-{
-    if (index >= m_navigationHistory.size())
-        return;
-    updateCurrentPositionInNavigationHistory();
-    if (!openEditorFromNavigationHistory(index))
-        m_navigationHistory.removeAt(index);
-    m_currentNavigationHistoryPosition = index;
-    updateNavigatorActions();
-}
-
 void EditorView::goBackInNavigationHistory()
 {
     updateCurrentPositionInNavigationHistory();
     while (m_currentNavigationHistoryPosition > 0) {
         --m_currentNavigationHistoryPosition;
-        if (openEditorFromNavigationHistory(m_currentNavigationHistoryPosition))
-            break;
-        m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
+        EditLocation location = m_navigationHistory.at(m_currentNavigationHistoryPosition);
+        IEditor *editor = nullptr;
+        if (location.document) {
+            editor = EditorManagerPrivate::activateEditorForDocument(this, location.document,
+                                        EditorManager::IgnoreNavigationHistory);
+        }
+        if (!editor) {
+            if (fileNameWasRemoved(location.filePath)) {
+                m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
+                continue;
+            }
+            editor = EditorManagerPrivate::openEditor(this, location.filePath, location.id,
+                                    EditorManager::IgnoreNavigationHistory);
+            if (!editor) {
+                m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
+                continue;
+            }
+        }
+        editor->restoreState(location.state.toByteArray());
+        break;
     }
     updateNavigatorActions();
 }
@@ -643,20 +594,30 @@ void EditorView::goForwardInNavigationHistory()
         return;
     ++m_currentNavigationHistoryPosition;
     while (m_currentNavigationHistoryPosition < m_navigationHistory.size()) {
-        if (openEditorFromNavigationHistory(m_currentNavigationHistoryPosition))
-            break;
-        m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
+        IEditor *editor = nullptr;
+        EditLocation location = m_navigationHistory.at(m_currentNavigationHistoryPosition);
+        if (location.document) {
+            editor = EditorManagerPrivate::activateEditorForDocument(this, location.document,
+                                                                     EditorManager::IgnoreNavigationHistory);
+        }
+        if (!editor) {
+            if (fileNameWasRemoved(location.filePath)) {
+                m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
+                continue;
+            }
+            editor = EditorManagerPrivate::openEditor(this, location.filePath, location.id,
+                                                      EditorManager::IgnoreNavigationHistory);
+            if (!editor) {
+                m_navigationHistory.removeAt(m_currentNavigationHistoryPosition);
+                continue;
+            }
+        }
+        editor->restoreState(location.state.toByteArray());
+        break;
     }
     if (m_currentNavigationHistoryPosition >= m_navigationHistory.size())
         m_currentNavigationHistoryPosition = qMax<int>(m_navigationHistory.size() - 1, 0);
     updateNavigatorActions();
-}
-
-void EditorView::reopenLastClosedDocument()
-{
-    if (m_closedEditorHistory.isEmpty())
-        return;
-    goToEditLocation(m_closedEditorHistory.takeLast());
 }
 
 void EditorView::goToEditLocation(const EditLocation &location)
@@ -677,7 +638,7 @@ void EditorView::goToEditLocation(const EditLocation &location)
     }
 
     if (editor) {
-        editor->restoreState(location.state);
+        editor->restoreState(location.state.toByteArray());
     }
 }
 
@@ -938,20 +899,6 @@ void SplitterOrView::unsplit()
     emit splitStateChanged();
 }
 
-static QByteArrayList saveHistory(const QList<EditLocation> &history)
-{
-    const QList<EditLocation> nonTempHistory = Utils::filtered(history, [](const EditLocation &loc) {
-        const bool isTemp = loc.filePath.isEmpty() || (loc.document && loc.document->isTemporary());
-        return !isTemp;
-    });
-    return Utils::transform(nonTempHistory, [](const EditLocation &loc) { return loc.save(); });
-}
-
-static QList<EditLocation> loadHistory(const QByteArrayList &data)
-{
-    return Utils::transform(data,
-                            [](const QByteArray &locData) { return EditLocation::load(locData); });
-}
 
 QByteArray SplitterOrView::saveState() const
 {
@@ -978,17 +925,16 @@ QByteArray SplitterOrView::saveState() const
 
         if (!e) {
             stream << QByteArray("empty");
+        } else if (e == EditorManager::currentEditor()) {
+            stream << QByteArray("currenteditor")
+                   << e->document()->filePath().toString()
+                   << e->document()->id().toString()
+                   << e->saveState();
         } else {
-            if (e == EditorManager::currentEditor()) {
-                stream << QByteArray("currenteditor") << e->document()->filePath().toString()
-                       << e->document()->id().toString() << e->saveState();
-            } else {
-                stream << QByteArray("editor") << e->document()->filePath().toString()
-                       << e->document()->id().toString() << e->saveState();
-            }
-
-            // save edit history
-            stream << saveHistory(view()->editorHistory());
+            stream << QByteArray("editor")
+                   << e->document()->filePath().toString()
+                   << e->document()->id().toString()
+                   << e->saveState();
         }
     }
     return bytes;
@@ -1011,13 +957,8 @@ void SplitterOrView::restoreState(const QByteArray &state)
         QString fileName;
         QString id;
         QByteArray editorState;
-        QByteArrayList historyData;
         stream >> fileName >> id >> editorState;
-        if (!stream.atEnd())
-            stream >> historyData;
-        view()->m_editorHistory = loadHistory(historyData);
-
-        if (!QFileInfo::exists(fileName))
+        if (!QFile::exists(fileName))
             return;
         IEditor *e = EditorManagerPrivate::openEditor(view(), FilePath::fromString(fileName), Id::fromString(id),
                                                       EditorManager::IgnoreNavigationHistory
@@ -1038,50 +979,3 @@ void SplitterOrView::restoreState(const QByteArray &state)
         }
     }
 }
-
-QByteArray EditLocation::save() const
-{
-    QByteArray data;
-    QDataStream stream(&data, QIODevice::WriteOnly);
-    stream << filePath.toFSPathString() << id << state;
-    return data;
-}
-
-EditLocation EditLocation::load(const QByteArray &data)
-{
-    EditLocation loc;
-    QDataStream stream(data);
-    QString fp;
-    stream >> fp;
-    loc.filePath = FilePath::fromString(fp);
-    stream >> loc.id;
-    stream >> loc.state;
-    return loc;
-}
-
-EditLocation EditLocation::forEditor(const IEditor *editor, const QByteArray &saveState)
-{
-    QTC_ASSERT(editor, return EditLocation());
-
-    IDocument *document = editor->document();
-    QTC_ASSERT(document, return EditLocation());
-
-    const QByteArray &state = saveState.isEmpty() ? editor->saveState() : saveState;
-
-    EditLocation location;
-    location.document = document;
-    location.filePath = document->filePath();
-    location.id = document->id();
-    location.state = state;
-
-    return location;
-}
-
-QString EditLocation::displayName() const
-{
-    if (document)
-        return document->displayName();
-    return filePath.fileName();
-}
-
-} // Core::Internal

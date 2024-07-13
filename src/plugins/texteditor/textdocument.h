@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -37,7 +59,6 @@ class SyntaxHighlighter;
 class TabSettings;
 class TextDocumentPrivate;
 class TextMark;
-class TextSuggestion;
 class TypingSettings;
 
 using TextMarks = QList<TextMark *>;
@@ -50,16 +71,14 @@ public:
     explicit TextDocument(Utils::Id id = Utils::Id());
     ~TextDocument() override;
 
-    static QMap<Utils::FilePath, QString> openedTextDocumentContents();
-    static QMap<Utils::FilePath, QTextCodec *> openedTextDocumentEncodings();
+    static QMap<QString, QString> openedTextDocumentContents();
+    static QMap<QString, QTextCodec *> openedTextDocumentEncodings();
     static TextDocument *currentTextDocument();
     static TextDocument *textDocumentForFilePath(const Utils::FilePath &filePath);
-    static QString convertToPlainText(const QString &rawText);
 
     virtual QString plainText() const;
     virtual QString textAt(int pos, int length) const;
     virtual QChar characterAt(int pos) const;
-    QString blockText(int blockNumber) const;
 
     void setTypingSettings(const TypingSettings &typingSettings);
     void setStorageSettings(const StorageSettings &storageSettings);
@@ -85,6 +104,9 @@ public:
     void autoFormat(const QTextCursor &cursor);
     bool applyChangeSet(const Utils::ChangeSet &changeSet);
 
+    // the blocks list must be sorted
+    void setIfdefedOutBlocks(const QList<BlockRange> &blocks);
+
     TextMarks marks() const;
     bool addMark(TextMark *mark);
     TextMarks marksAt(int line) const;
@@ -94,14 +116,11 @@ public:
     void updateMark(TextMark *mark);
     void moveMark(TextMark *mark, int previousLine);
     void removeMarkFromMarksCache(TextMark *mark);
-    static void temporaryHideMarksAnnotation(const Utils::Id &category);
-    static void showMarksAnnotation(const Utils::Id &category);
-    static bool marksAnnotationHidden(const Utils::Id &category);
 
     // IDocument implementation.
+    bool save(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override;
     QByteArray contents() const override;
     bool setContents(const QByteArray &contents) override;
-    void formatContents() override;
     bool shouldAutoSave() const override;
     bool isModified() const override;
     bool isSaveAsAllowed() const override;
@@ -122,9 +141,7 @@ public:
 
     bool setPlainText(const QString &text);
     QTextDocument *document() const;
-
-    using SyntaxHighLighterCreator = std::function<SyntaxHighlighter *()>;
-    void resetSyntaxHighlighter(const SyntaxHighLighterCreator &creator);
+    void setSyntaxHighlighter(SyntaxHighlighter *highlighter);
     SyntaxHighlighter *syntaxHighlighter() const;
 
     bool reload(QString *errorString, QTextCodec *codec);
@@ -145,9 +162,6 @@ public:
     static QAction *createDiffAgainstCurrentFileAction(QObject *parent,
         const std::function<Utils::FilePath()> &filePath);
 
-    void insertSuggestion(const QString &text, const QTextCursor &cursor);
-    void insertSuggestion(std::unique_ptr<TextSuggestion> &&suggestion);
-
 #ifdef WITH_TESTS
     void setSilentReload();
 #endif
@@ -160,9 +174,12 @@ signals:
     void fontSettingsChanged();
     void markRemoved(TextMark *mark);
 
+#ifdef WITH_TESTS
+    void ifdefedOutBlocksChanged(const QList<BlockRange> &blocks);
+#endif
+
 protected:
     virtual void applyFontSettings();
-    bool saveImpl(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override;
 
 private:
     OpenResult openImpl(QString *errorString,

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -16,7 +38,7 @@
 namespace QtSupport {
 namespace Internal {
 
-class ExamplesViewController;
+class ExamplesListModel;
 
 class ExampleSetModel : public QStandardItemModel
 {
@@ -28,21 +50,14 @@ public:
         QString displayName;
         QString manifestPath;
         QString examplesPath;
-        // qtVersion is set by recreateModel for extra sets that correspond to actual Qt versions.
-        // This is needed for the decision to show categories or not based on the Qt version
-        // (which is not ideal).
-        QVersionNumber qtVersion = {};
     };
     static QVector<ExtraExampleSet> pluginRegisteredExampleSets();
 
     ExampleSetModel();
 
     int selectedExampleSet() const { return m_selectedExampleSetIndex; }
-    bool selectExampleSet(int index);
-    QStringList exampleSources(QString *examplesInstallPath,
-                               QString *demosInstallPath,
-                               QVersionNumber *qtVersion,
-                               bool isExamples);
+    void selectExampleSet(int index);
+    QStringList exampleSources(QString *examplesInstallPath, QString *demosInstallPath);
     bool selectedQtSupports(const Utils::Id &target) const;
 
 signals:
@@ -84,27 +99,73 @@ private:
     bool m_initalized = false;
 };
 
-class ExamplesViewController : public QObject
+enum InstructionalType
+{
+    Example = 0, Demo, Tutorial
+};
+
+class ExampleItem : public Core::ListItem
 {
 public:
-    explicit ExamplesViewController(ExampleSetModel *exampleSetModel,
-                                    Core::SectionedGridView *view,
-                                    QLineEdit *searchField,
-                                    bool isExamples,
-                                    QObject *parent);
+    QString projectPath;
+    QString docUrl;
+    QStringList filesToOpen;
+    QString mainFile; /* file to be visible after opening filesToOpen */
+    QStringList dependencies;
+    InstructionalType type;
+    int difficulty = 0;
+    bool hasSourceCode = false;
+    bool isVideo = false;
+    bool isHighlighted = false;
+    QString videoUrl;
+    QString videoLength;
+    QStringList platforms;
+};
+
+class ExamplesListModel : public Core::ListModel
+{
+    Q_OBJECT
+public:
+    explicit ExamplesListModel(QObject *parent);
+
+    QVariant data(const QModelIndex &index, int role = Qt::DisplayRole) const final;
 
     void updateExamples();
-    void setVisible(bool isVisible);
-    bool isVisible() const;
+
+    QStringList exampleSets() const;
+    ExampleSetModel *exampleSetModel() { return &m_exampleSetModel; }
+
+    QPixmap fetchPixmapAndUpdatePixmapCache(const QString &url) const override;
+
+signals:
+    void selectedExampleSetChanged(int);
 
 private:
-    ExampleSetModel *m_exampleSetModel;
-    Core::SectionedGridView *m_view;
-    QLineEdit *m_searchField;
-    bool m_isExamples;
-    bool m_isVisible = false;
-    bool m_needsUpdateExamples = false;
+    void updateSelectedQtVersion();
+
+    void parseExamples(QXmlStreamReader *reader, const QString &projectsOffset,
+                                     const QString &examplesInstallPath);
+    void parseDemos(QXmlStreamReader *reader, const QString &projectsOffset,
+                                  const QString &demosInstallPath);
+    void parseTutorials(QXmlStreamReader *reader, const QString &projectsOffset);
+
+    ExampleSetModel m_exampleSetModel;
+};
+
+class ExamplesListModelFilter : public Core::ListModelFilter
+{
+public:
+    ExamplesListModelFilter(ExamplesListModel *sourceModel, bool showTutorialsOnly, QObject *parent);
+
+protected:
+    bool leaveFilterAcceptsRowBeforeFiltering(const Core::ListItem *item,
+                                              bool *earlyExitResult) const override;
+private:
+    const bool m_showTutorialsOnly;
+    ExamplesListModel *m_examplesListModel = nullptr;
 };
 
 } // namespace Internal
 } // namespace QtSupport
+
+Q_DECLARE_METATYPE(QtSupport::Internal::ExampleItem *)

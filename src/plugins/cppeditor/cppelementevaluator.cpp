@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppelementevaluator.h"
 
@@ -14,14 +36,13 @@
 #include <cplusplus/Icons.h>
 #include <cplusplus/TypeOfExpression.h>
 
-#include <utils/async.h>
+#include <utils/runextensions.h>
 
 #include <QDir>
 #include <QQueue>
 #include <QSet>
 
 using namespace CPlusPlus;
-using namespace Utils;
 
 namespace CppEditor::Internal {
 
@@ -63,18 +84,18 @@ class CppInclude : public CppElement
 {
 public:
     explicit CppInclude(const Document::Include &includeFile)
-        : path(includeFile.resolvedFileName())
-        , fileName(path.fileName())
+        : path(QDir::toNativeSeparators(includeFile.resolvedFileName()))
+        , fileName(Utils::FilePath::fromString(includeFile.resolvedFileName()).fileName())
     {
         helpCategory = Core::HelpItem::Brief;
         helpIdCandidates = QStringList(fileName);
         helpMark = fileName;
-        link = Utils::Link(path);
-        tooltip = path.toUserOutput();
+        link = Utils::Link(Utils::FilePath::fromString(path));
+        tooltip = path;
     }
 
 public:
-    FilePath path;
+    QString path;
     QString fileName;
 };
 
@@ -87,7 +108,7 @@ public:
         const QString macroName = QString::fromUtf8(macro.name(), macro.name().size());
         helpIdCandidates = QStringList(macroName);
         helpMark = macroName;
-        link = Link(macro.filePath(), macro.line());
+        link = Utils::Link(Utils::FilePath::fromString(macro.fileName()), macro.line());
         tooltip = macro.toStringWithLineBreaks();
     }
 };
@@ -95,7 +116,8 @@ public:
 // CppDeclarableElement
 CppDeclarableElement::CppDeclarableElement(Symbol *declaration)
     : CppElement()
-    , iconType(CPlusPlus::Icons::iconTypeForSymbol(declaration))
+    , declaration(declaration)
+    , icon(Icons::iconForSymbol(declaration))
 {
     Overview overview;
     overview.showArgumentNames = true;
@@ -135,60 +157,74 @@ CppClass::CppClass(Symbol *declaration) : CppDeclarableElement(declaration)
     tooltip = qualifiedName;
 }
 
+bool CppClass::operator==(const CppClass &other)
+{
+    return this->declaration == other.declaration;
+}
+
 CppClass *CppClass::toCppClass()
 {
     return this;
 }
 
-void CppClass::lookupBases(const QFuture<void> &future, Symbol *declaration,
-                           const LookupContext &context)
+void CppClass::lookupBases(QFutureInterfaceBase &futureInterface,
+                           Symbol *declaration, const LookupContext &context)
 {
-    ClassOrNamespace *hierarchy = context.lookupType(declaration);
-    if (!hierarchy)
-        return;
-    QSet<ClassOrNamespace *> visited;
-    addBaseHierarchy(future, context, hierarchy, &visited);
-}
+    using Data = QPair<ClassOrNamespace*, CppClass*>;
 
-void CppClass::addBaseHierarchy(const QFuture<void> &future, const LookupContext &context,
-                                ClassOrNamespace *hierarchy, QSet<ClassOrNamespace *> *visited)
-{
-    if (future.isCanceled())
-        return;
-    visited->insert(hierarchy);
-    const QList<ClassOrNamespace *> &baseClasses = hierarchy->usings();
-    for (ClassOrNamespace *baseClass : baseClasses) {
-        const QList<Symbol *> &symbols = baseClass->symbols();
-        for (Symbol *symbol : symbols) {
-            if (!symbol->asClass())
-                continue;
-            ClassOrNamespace *baseHierarchy = context.lookupType(symbol);
-            if (baseHierarchy && !visited->contains(baseHierarchy)) {
-                CppClass classSymbol(symbol);
-                classSymbol.addBaseHierarchy(future, context, baseHierarchy, visited);
-                bases.append(classSymbol);
+    if (ClassOrNamespace *clazz = context.lookupType(declaration)) {
+        QSet<ClassOrNamespace *> visited;
+
+        QQueue<Data> q;
+        q.enqueue(qMakePair(clazz, this));
+        while (!q.isEmpty()) {
+            if (futureInterface.isCanceled())
+                return;
+            Data current = q.dequeue();
+            clazz = current.first;
+            visited.insert(clazz);
+            const QList<ClassOrNamespace *> &bases = clazz->usings();
+            for (ClassOrNamespace *baseClass : bases) {
+                const QList<Symbol *> &symbols = baseClass->symbols();
+                for (Symbol *symbol : symbols) {
+                    if (symbol->asClass() && (
+                        clazz = context.lookupType(symbol)) &&
+                        !visited.contains(clazz)) {
+                        CppClass baseCppClass(symbol);
+                        CppClass *cppClass = current.second;
+                        cppClass->bases.append(baseCppClass);
+                        q.enqueue(qMakePair(clazz, &cppClass->bases.last()));
+                    }
+                }
             }
         }
     }
 }
 
-void CppClass::lookupDerived(const QFuture<void> &future, Symbol *declaration,
-                             const Snapshot &snapshot)
+void CppClass::lookupDerived(QFutureInterfaceBase &futureInterface,
+                             Symbol *declaration, const Snapshot &snapshot)
 {
-    snapshot.updateDependencyTable(future);
-    if (future.isCanceled())
-        return;
-    addDerivedHierarchy(TypeHierarchyBuilder::buildDerivedTypeHierarchy(
-                        declaration, snapshot, future));
-}
+    using Data = QPair<CppClass*, TypeHierarchy>;
 
-void CppClass::addDerivedHierarchy(const TypeHierarchy &hierarchy)
-{
-    const QList<TypeHierarchy> derivedHierarchies = hierarchy.hierarchy();
-    for (const TypeHierarchy &derivedHierarchy : derivedHierarchies) {
-        CppClass classSymbol(derivedHierarchy.symbol());
-        classSymbol.addDerivedHierarchy(derivedHierarchy);
-        derived.append(classSymbol);
+    snapshot.updateDependencyTable(futureInterface);
+    if (futureInterface.isCanceled())
+        return;
+    const TypeHierarchy &completeHierarchy
+            = TypeHierarchyBuilder::buildDerivedTypeHierarchy(futureInterface, declaration, snapshot);
+
+    QQueue<Data> q;
+    q.enqueue(qMakePair(this, completeHierarchy));
+    while (!q.isEmpty()) {
+        if (futureInterface.isCanceled())
+            return;
+        const Data &current = q.dequeue();
+        CppClass *clazz = current.first;
+        const TypeHierarchy &classHierarchy = current.second;
+        const QList<TypeHierarchy> hierarchy = classHierarchy.hierarchy();
+        for (const TypeHierarchy &derivedHierarchy : hierarchy) {
+            clazz->derived.append(CppClass(derivedHierarchy.symbol()));
+            q.enqueue(qMakePair(&clazz->derived.last(), derivedHierarchy));
+        }
     }
 }
 
@@ -246,15 +282,15 @@ public:
         const FullySpecifiedType &type = declaration->type();
 
         const Name *typeName = nullptr;
-        if (type->asNamedType()) {
+        if (type->isNamedType()) {
             typeName = type->asNamedType()->name();
-        } else if (type->asPointerType() || type->asReferenceType()) {
+        } else if (type->isPointerType() || type->isReferenceType()) {
             FullySpecifiedType associatedType;
-            if (type->asPointerType())
+            if (type->isPointerType())
                 associatedType = type->asPointerType()->elementType();
             else
                 associatedType = type->asReferenceType()->elementType();
-            if (associatedType->asNamedType())
+            if (associatedType->isNamedType())
                 typeName = associatedType->asNamedType()->name();
         }
 
@@ -326,7 +362,9 @@ static Symbol *followClassDeclaration(Symbol *symbol, const Snapshot &snapshot, 
         return symbol;
 
     if (context) {
-        const Document::Ptr declarationDocument = snapshot.document(classDeclaration->filePath());
+        const QString fileName = QString::fromUtf8(classDeclaration->fileName(),
+                                                   classDeclaration->fileNameLength());
+        const Document::Ptr declarationDocument = snapshot.document(fileName);
         if (declarationDocument != context->thisDocument())
             (*context) = LookupContext(declarationDocument, snapshot);
     }
@@ -340,13 +378,13 @@ static Symbol *followTemplateAsClass(Symbol *symbol)
     return symbol;
 }
 
-static void createTypeHierarchy(QPromise<std::shared_ptr<CppElement>> &promise,
+static void createTypeHierarchy(QFutureInterface<QSharedPointer<CppElement>> &futureInterface,
                                 const Snapshot &snapshot,
                                 const LookupItem &lookupItem,
                                 const LookupContext &context,
                                 SymbolFinder symbolFinder)
 {
-    if (promise.isCanceled())
+    if (futureInterface.isCanceled())
         return;
 
     Symbol *declaration = lookupItem.declaration();
@@ -360,52 +398,51 @@ static void createTypeHierarchy(QPromise<std::shared_ptr<CppElement>> &promise,
     declaration = followClassDeclaration(declaration, snapshot, symbolFinder, &contextToUse);
     declaration = followTemplateAsClass(declaration);
 
-    if (promise.isCanceled())
+    if (futureInterface.isCanceled())
         return;
-    std::shared_ptr<CppClass> cppClass(new CppClass(declaration));
-    const QFuture<void> future = QFuture<void>(promise.future());
-    cppClass->lookupBases(future, declaration, contextToUse);
-    if (promise.isCanceled())
+    QSharedPointer<CppClass> cppClass(new CppClass(declaration));
+    cppClass->lookupBases(futureInterface, declaration, contextToUse);
+    if (futureInterface.isCanceled())
         return;
-    cppClass->lookupDerived(future, declaration, snapshot);
-    if (promise.isCanceled())
+    cppClass->lookupDerived(futureInterface, declaration, snapshot);
+    if (futureInterface.isCanceled())
         return;
-    promise.addResult(cppClass);
+    futureInterface.reportResult(cppClass);
 }
 
-static std::shared_ptr<CppElement> handleLookupItemMatch(const Snapshot &snapshot,
+static QSharedPointer<CppElement> handleLookupItemMatch(const Snapshot &snapshot,
                                                         const LookupItem &lookupItem,
                                                         const LookupContext &context,
                                                         SymbolFinder symbolFinder)
 {
-    std::shared_ptr<CppElement> element;
+    QSharedPointer<CppElement> element;
     Symbol *declaration = lookupItem.declaration();
     if (!declaration) {
         const QString &type = Overview().prettyType(lookupItem.type(), QString());
-        element = std::shared_ptr<CppElement>(new Unknown(type));
+        element = QSharedPointer<CppElement>(new Unknown(type));
     } else {
         const FullySpecifiedType &type = declaration->type();
         if (declaration->asNamespace()) {
-            element = std::shared_ptr<CppElement>(new CppNamespace(declaration));
+            element = QSharedPointer<CppElement>(new CppNamespace(declaration));
         } else if (isCppClass(declaration)) {
             LookupContext contextToUse = context;
             declaration = followClassDeclaration(declaration, snapshot, symbolFinder, &contextToUse);
-            element = std::shared_ptr<CppElement>(new CppClass(declaration));
+            element = QSharedPointer<CppElement>(new CppClass(declaration));
         } else if (Enum *enumDecl = declaration->asEnum()) {
-            element = std::shared_ptr<CppElement>(new CppEnum(enumDecl));
+            element = QSharedPointer<CppElement>(new CppEnum(enumDecl));
         } else if (auto enumerator = dynamic_cast<EnumeratorDeclaration *>(declaration)) {
-            element = std::shared_ptr<CppElement>(new CppEnumerator(enumerator));
+            element = QSharedPointer<CppElement>(new CppEnumerator(enumerator));
         } else if (declaration->isTypedef()) {
-            element = std::shared_ptr<CppElement>(new CppTypedef(declaration));
+            element = QSharedPointer<CppElement>(new CppTypedef(declaration));
         } else if (declaration->asFunction()
-                   || (type.isValid() && type->asFunctionType())
+                   || (type.isValid() && type->isFunctionType())
                    || declaration->asTemplate()) {
-            element = std::shared_ptr<CppElement>(new CppFunction(declaration));
+            element = QSharedPointer<CppElement>(new CppFunction(declaration));
         } else if (declaration->asDeclaration() && type.isValid()) {
-            element = std::shared_ptr<CppElement>(
+            element = QSharedPointer<CppElement>(
                 new CppVariable(declaration, context, lookupItem.scope()));
         } else {
-            element = std::shared_ptr<CppElement>(new CppDeclarableElement(declaration));
+            element = QSharedPointer<CppElement>(new CppDeclarableElement(declaration));
         }
     }
     return element;
@@ -419,16 +456,16 @@ static bool shouldOmitElement(const LookupItem &lookupItem, const Scope *scope)
 }
 
 using namespace std::placeholders;
-using ExecFunction = std::function<QFuture<std::shared_ptr<CppElement>>
+using ExecFunction = std::function<QFuture<QSharedPointer<CppElement>>
             (const CPlusPlus::Snapshot &, const CPlusPlus::LookupItem &,
              const CPlusPlus::LookupContext &)>;
 using SourceFunction = std::function<bool(const CPlusPlus::Snapshot &,
                                           CPlusPlus::Document::Ptr &,
                                           CPlusPlus::Scope **, QString &)>;
 
-static QFuture<std::shared_ptr<CppElement>> createFinishedFuture()
+static QFuture<QSharedPointer<CppElement>> createFinishedFuture()
 {
-    QFutureInterface<std::shared_ptr<CppElement>> futureInterface;
+    QFutureInterface<QSharedPointer<CppElement>> futureInterface;
     futureInterface.reportStarted();
     futureInterface.reportFinished();
     return futureInterface.future();
@@ -471,11 +508,11 @@ static LookupItem findLookupItem(const CPlusPlus::Snapshot &snapshot, CPlusPlus:
     return LookupItem();
 }
 
-static QFuture<std::shared_ptr<CppElement>> exec(SourceFunction &&sourceFunction,
-                                                 ExecFunction &&execFunction,
-                                                 bool followTypedef = true)
+static QFuture<QSharedPointer<CppElement>> exec(SourceFunction &&sourceFunction,
+                                                ExecFunction &&execFunction,
+                                                bool followTypedef = true)
 {
-    const Snapshot &snapshot = CppModelManager::snapshot();
+    const Snapshot &snapshot = CppModelManager::instance()->snapshot();
 
     Document::Ptr doc;
     QString expression;
@@ -492,26 +529,26 @@ static QFuture<std::shared_ptr<CppElement>> exec(SourceFunction &&sourceFunction
     return std::invoke(std::forward<ExecFunction>(execFunction), snapshot, lookupItem, lookupContext);
 }
 
-static QFuture<std::shared_ptr<CppElement>> asyncExec(
+static QFuture<QSharedPointer<CppElement>> asyncExec(
         const CPlusPlus::Snapshot &snapshot, const CPlusPlus::LookupItem &lookupItem,
         const CPlusPlus::LookupContext &lookupContext)
 {
-    return Utils::asyncRun(&createTypeHierarchy, snapshot, lookupItem, lookupContext,
-                           *CppModelManager::symbolFinder());
+    return Utils::runAsync(&createTypeHierarchy, snapshot, lookupItem, lookupContext,
+                           *CppModelManager::instance()->symbolFinder());
 }
 
 class FromExpressionFunctor
 {
 public:
-    FromExpressionFunctor(const QString &expression, const FilePath &filePath)
+    FromExpressionFunctor(const QString &expression, const QString &fileName)
         : m_expression(expression)
-        , m_filePath(filePath)
+        , m_fileName(fileName)
     {}
 
     bool operator()(const CPlusPlus::Snapshot &snapshot, Document::Ptr &doc, Scope **scope,
                     QString &expression)
     {
-        doc = snapshot.document(m_filePath);
+        doc = snapshot.document(m_fileName);
         if (doc.isNull())
             return false;
 
@@ -523,13 +560,13 @@ public:
     }
 private:
     const QString m_expression;
-    const FilePath m_filePath;
+    const QString m_fileName;
 };
 
-QFuture<std::shared_ptr<CppElement>> CppElementEvaluator::asyncExecute(const QString &expression,
-                                                                       const FilePath &filePath)
+QFuture<QSharedPointer<CppElement>> CppElementEvaluator::asyncExecute(const QString &expression,
+                                                                      const QString &fileName)
 {
-    return exec(FromExpressionFunctor(expression, filePath), asyncExec);
+    return exec(FromExpressionFunctor(expression, fileName), asyncExec);
 }
 
 class FromGuiFunctor
@@ -562,10 +599,10 @@ public:
         expression = expressionUnderCursor(m_tc);
 
         // Fetch the expression's code
-        *scope = doc->scopeAt(line, column);
+        *scope = doc->scopeAt(line, column - 1);
         return true;
     }
-    QFuture<std::shared_ptr<CppElement>> syncExec(const CPlusPlus::Snapshot &,
+    QFuture<QSharedPointer<CppElement>> syncExec(const CPlusPlus::Snapshot &,
                      const CPlusPlus::LookupItem &, const CPlusPlus::LookupContext &);
 
 private:
@@ -578,18 +615,18 @@ public:
 
     TextEditor::TextEditorWidget *m_editor;
     QTextCursor m_tc;
-    std::shared_ptr<CppElement> m_element;
+    QSharedPointer<CppElement> m_element;
     QString m_diagnosis;
 };
 
-QFuture<std::shared_ptr<CppElement>> FromGuiFunctor::syncExec(
+QFuture<QSharedPointer<CppElement>> FromGuiFunctor::syncExec(
         const CPlusPlus::Snapshot &snapshot, const CPlusPlus::LookupItem &lookupItem,
         const CPlusPlus::LookupContext &lookupContext)
 {
-    QFutureInterface<std::shared_ptr<CppElement>> futureInterface;
+    QFutureInterface<QSharedPointer<CppElement>> futureInterface;
     futureInterface.reportStarted();
     m_element = handleLookupItemMatch(snapshot, lookupItem, lookupContext,
-                                      *CppModelManager::symbolFinder());
+                                      *CppModelManager::instance()->symbolFinder());
     futureInterface.reportResult(m_element);
     futureInterface.reportFinished();
     return futureInterface.future();
@@ -612,7 +649,7 @@ bool FromGuiFunctor::matchIncludeFile(const Document::Ptr &document, int line)
     const QList<Document::Include> &includes = document->resolvedIncludes();
     for (const Document::Include &includeFile : includes) {
         if (includeFile.line() == line) {
-            m_element = std::shared_ptr<CppElement>(new CppInclude(includeFile));
+            m_element = QSharedPointer<CppElement>(new CppInclude(includeFile));
             return true;
         }
     }
@@ -621,11 +658,12 @@ bool FromGuiFunctor::matchIncludeFile(const Document::Ptr &document, int line)
 
 bool FromGuiFunctor::matchMacroInUse(const Document::Ptr &document, int pos)
 {
-    for (const Document::MacroUse &use : document->macroUses()) {
+    const QList<Document::MacroUse> macros = document->macroUses();
+    for (const Document::MacroUse &use : macros) {
         if (use.containsUtf16charOffset(pos)) {
             const int begin = use.utf16charsBegin();
             if (pos < begin + use.macro().nameToQString().size()) {
-                m_element = std::shared_ptr<CppElement>(new CppMacro(use.macro()));
+                m_element = QSharedPointer<CppElement>(new CppMacro(use.macro()));
                 return true;
             }
         }
@@ -635,7 +673,7 @@ bool FromGuiFunctor::matchMacroInUse(const Document::Ptr &document, int pos)
 
 void FromGuiFunctor::clear()
 {
-    m_element.reset();
+    m_element.clear();
     m_diagnosis.clear();
 }
 
@@ -660,7 +698,7 @@ void CppElementEvaluator::setTextCursor(const QTextCursor &tc)
     d->m_functor.m_tc = tc;
 }
 
-QFuture<std::shared_ptr<CppElement>> CppElementEvaluator::asyncExecute(
+QFuture<QSharedPointer<CppElement>> CppElementEvaluator::asyncExecute(
         TextEditor::TextEditorWidget *editor)
 {
     return exec(FromGuiFunctor(editor), asyncExec);
@@ -669,14 +707,15 @@ QFuture<std::shared_ptr<CppElement>> CppElementEvaluator::asyncExecute(
 void CppElementEvaluator::execute()
 {
     d->m_functor.clear();
-    const auto execFunction = [this](const CPlusPlus::Snapshot &snapshot,
-        const CPlusPlus::LookupItem &lookupItem, const CPlusPlus::LookupContext &lookupContext) {
-        return d->m_functor.syncExec(snapshot, lookupItem, lookupContext);
-    };
-    exec(std::ref(d->m_functor), execFunction, false);
+    exec(std::ref(d->m_functor), std::bind(&FromGuiFunctor::syncExec, &d->m_functor, _1, _2, _3), false);
 }
 
-const std::shared_ptr<CppElement> &CppElementEvaluator::cppElement() const
+bool CppElementEvaluator::identifiedCppElement() const
+{
+    return !d->m_functor.m_element.isNull();
+}
+
+const QSharedPointer<CppElement> &CppElementEvaluator::cppElement() const
 {
     return d->m_functor.m_element;
 }
@@ -691,10 +730,10 @@ const QString &CppElementEvaluator::diagnosis() const
     return d->m_functor.m_diagnosis;
 }
 
-Utils::Link CppElementEvaluator::linkFromExpression(const QString &expression, const FilePath &filePath)
+Utils::Link CppElementEvaluator::linkFromExpression(const QString &expression, const QString &fileName)
 {
-    const Snapshot &snapshot = CppModelManager::snapshot();
-    Document::Ptr doc = snapshot.document(filePath);
+    const Snapshot &snapshot = CppModelManager::instance()->snapshot();
+    Document::Ptr doc = snapshot.document(fileName);
     if (doc.isNull())
         return Utils::Link();
     Scope *scope = doc->globalNamespace();

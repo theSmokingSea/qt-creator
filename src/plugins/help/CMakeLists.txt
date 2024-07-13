@@ -1,23 +1,22 @@
 add_qtc_plugin(Help
-  CONDITION TARGET Qt::Help
+  CONDITION TARGET Qt5::Help
   DEPENDS shared_help
   PLUGIN_DEPENDS Core ProjectExplorer
   PLUGIN_RECOMMENDS TextEditor
   SOURCES
-    docsettingspage.cpp docsettingspage.h
-    filtersettingspage.cpp filtersettingspage.h
-    generalsettingspage.cpp generalsettingspage.h
+    docsettingspage.cpp docsettingspage.h docsettingspage.ui
+    filtersettingspage.cpp filtersettingspage.h filtersettingspage.ui
+    generalsettingspage.cpp generalsettingspage.h generalsettingspage.ui
     help.qrc
     helpconstants.h
     helpfindsupport.cpp helpfindsupport.h
     helpindexfilter.cpp helpindexfilter.h
     helpmanager.cpp helpmanager.h
+    helpmode.cpp helpmode.h
     helpplugin.cpp helpplugin.h
-    helptr.h
     helpviewer.cpp helpviewer.h
     helpwidget.cpp helpwidget.h
     localhelpmanager.cpp localhelpmanager.h
-    offline-dark.css
     openpagesmanager.cpp openpagesmanager.h
     openpagesswitcher.cpp openpagesswitcher.h
     openpageswidget.cpp openpageswidget.h
@@ -25,6 +24,11 @@ add_qtc_plugin(Help
     searchwidget.cpp searchwidget.h
     textbrowserhelpviewer.cpp textbrowserhelpviewer.h
     xbelsupport.cpp xbelsupport.h
+)
+
+extend_qtc_plugin(Help
+  CONDITION Qt5_VERSION VERSION_GREATER_EQUAL 5.15.0
+  DEFINES HELP_NEW_FILTER_ENGINE
 )
 
 set(HELPVIEWER_DEFAULT_BACKEND "litehtml" CACHE STRING "Sets default help viewer backend")
@@ -36,7 +40,7 @@ extend_qtc_plugin(Help
 )
 
 extend_qtc_plugin(Help
-  CONDITION FWWebKit AND FWAppKit
+  CONDITION FWWebKit AND FWAppKit AND Qt5_VERSION VERSION_LESS 6.0.0
   FEATURE_INFO "Native WebKit help viewer"
   DEPENDS ${FWWebKit} ${FWAppKit}
   DEFINES QTC_MAC_NATIVE_HELPVIEWER
@@ -46,16 +50,15 @@ extend_qtc_plugin(Help
 )
 
 option(BUILD_HELPVIEWERBACKEND_QTWEBENGINE "Build QtWebEngine based help viewer backend." YES)
-find_package(Qt6 COMPONENTS WebEngineWidgets QUIET)
+find_package(Qt5 COMPONENTS WebEngineWidgets QUIET)
 extend_qtc_plugin(Help
-  CONDITION BUILD_HELPVIEWERBACKEND_QTWEBENGINE AND TARGET Qt::WebEngineWidgets
+  CONDITION BUILD_HELPVIEWERBACKEND_QTWEBENGINE AND TARGET Qt5::WebEngineWidgets
   FEATURE_INFO "QtWebEngine help viewer"
-  DEPENDS Qt::WebEngineWidgets
+  DEPENDS Qt5::WebEngineWidgets
   DEFINES QTC_WEBENGINE_HELPVIEWER
   SOURCES
     webenginehelpviewer.cpp
     webenginehelpviewer.h
-  EXPLICIT_MOC webenginehelpviewer.h
 )
 
 extend_qtc_plugin(Help

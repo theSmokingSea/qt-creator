@@ -48,6 +48,8 @@ public:
     bool parseQtEnumDeclaration(DeclarationAST *&node);
     bool parseQtFlags(DeclarationAST *&node);
     bool parseQtInterfaces(DeclarationAST *&node);
+    bool parseAdditiveExpression(ExpressionAST *&node);
+    bool parseAndExpression(ExpressionAST *&node);
     bool parseAsmDefinition(DeclarationAST *&node);
     bool parseAsmOperandList();
     bool parseAsmOperand();
@@ -77,15 +79,16 @@ public:
     bool parseSimpleDeclaration(DeclarationAST *&node, ClassSpecifierAST *declaringClass = nullptr);
     bool parseDeclarationStatement(StatementAST *&node);
     bool parseCoreDeclarator(DeclaratorAST *&node, SpecifierListAST *decl_specifier_list, ClassSpecifierAST *declaringClass);
-    DecompositionDeclaratorAST *parseDecompositionDeclarator(SpecifierListAST *decl_specifier_list);
     bool parseDeclarator(DeclaratorAST *&node, SpecifierListAST *decl_specifier_list, ClassSpecifierAST *declaringClass = nullptr);
     bool parseDeleteExpression(ExpressionAST *&node);
     bool parseDoStatement(StatementAST *&node);
     bool parseElaboratedTypeSpecifier(SpecifierListAST *&node);
     bool parseEnumSpecifier(SpecifierListAST *&node);
     bool parseEnumerator(EnumeratorListAST *&node);
+    bool parseEqualityExpression(ExpressionAST *&node);
     bool parseExceptionDeclaration(ExceptionDeclarationAST *&node);
     bool parseExceptionSpecification(ExceptionSpecificationAST *&node);
+    bool parseExclusiveOrExpression(ExpressionAST *&node);
     bool parseExpression(ExpressionAST *&node);
     bool parseExpressionOrDeclarationStatement(StatementAST *&node);
     bool parseExpressionStatement(StatementAST *&node);
@@ -94,6 +97,7 @@ public:
     bool parseForStatement(StatementAST *&node);
     bool parseFunctionBody(StatementAST *&node);
     bool parseIfStatement(StatementAST *&node);
+    bool parseInclusiveOrExpression(ExpressionAST *&node);
     bool parseInitDeclarator(DeclaratorAST *&node, SpecifierListAST *decl_specifier_list, ClassSpecifierAST *declaringClass);
     bool parseInitializerList(ExpressionListAST *&node);
     bool parseInitializer(ExpressionAST *&node, int *equals_token);
@@ -101,10 +105,12 @@ public:
     bool parseLabeledStatement(StatementAST *&node);
     bool parseLinkageBody(DeclarationAST *&node);
     bool parseLinkageSpecification(DeclarationAST *&node);
+    bool parseLogicalAndExpression(ExpressionAST *&node);
     bool parseLogicalOrExpression(ExpressionAST *&node);
     bool parseMemInitializer(MemInitializerListAST *&node);
     bool parseMemInitializerList(MemInitializerListAST *&node);
     bool parseMemberSpecification(DeclarationAST *&node, ClassSpecifierAST *declaringClass);
+    bool parseMultiplicativeExpression(ExpressionAST *&node);
     bool parseTemplateId(NameAST *&node, int template_token = 0);
     bool parseClassOrNamespaceName(NameAST *&node);
     bool parseNameId(NameAST *&node);
@@ -126,6 +132,7 @@ public:
     bool parseParameterDeclaration(ParameterDeclarationAST *&node);
     bool parseParameterDeclarationClause(ParameterDeclarationClauseAST *&node);
     bool parseParameterDeclarationList(ParameterDeclarationListAST *&node);
+    bool parsePmExpression(ExpressionAST *&node);
     bool parseTypeidExpression(ExpressionAST *&node);
     bool parseTypenameCallExpression(ExpressionAST *&node);
     bool parseCorePostfixExpression(ExpressionAST *&node);
@@ -133,6 +140,8 @@ public:
     bool parsePrimaryExpression(ExpressionAST *&node);
     bool parseNestedExpression(ExpressionAST *&node);
     bool parsePtrOperator(PtrOperatorListAST *&node);
+    bool parseRelationalExpression(ExpressionAST *&node);
+    bool parseShiftExpression(ExpressionAST *&node);
     bool parseStatement(StatementAST *&node, bool blockLabeledStatement = false);
     bool parseThisExpression(ExpressionAST *&node);
     bool parseBoolLiteral(ExpressionAST *&node);
@@ -143,17 +152,9 @@ public:
     bool parseTemplateArgument(ExpressionAST *&node);
     bool parseTemplateArgumentList(ExpressionListAST *&node);
     bool parseTemplateDeclaration(DeclarationAST *&node);
-    bool parseConceptDeclaration(DeclarationAST *&node);
-    bool parsePlaceholderTypeSpecifier(PlaceholderTypeSpecifierAST *&node);
-    bool parseTypeConstraint(TypeConstraintAST *&node);
-    bool parseRequirement();
-    bool parseRequiresClauseOpt(RequiresClauseAST *&node);
-    bool parseRequiresExpression(ExpressionAST *&node);
     bool parseTemplateParameter(DeclarationAST *&node);
     bool parseTemplateParameterList(DeclarationListAST *&node);
     bool parseThrowExpression(ExpressionAST *&node);
-    bool parseYieldExpression(ExpressionAST *&node);
-    bool parseAwaitExpression(ExpressionAST *&node);
     bool parseNoExceptOperatorExpression(ExpressionAST *&node);
     bool parseTryBlockStatement(StatementAST *&node, CtorInitializerAST **placeholder);
     bool parseCatchClause(CatchClauseListAST *&node);
@@ -315,8 +316,6 @@ public:
     void clearTemplateArgumentList() { _templateArgumentList.clear(); }
 
 private:
-    bool hasAuto(SpecifierListAST *decl_specifier_list) const;
-
     TranslationUnit *_translationUnit;
     Control *_control;
     MemoryPool *_pool;

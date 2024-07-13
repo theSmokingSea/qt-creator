@@ -1,14 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "stackwindow.h"
 
+#include "debuggeractions.h"
+#include "debuggercore.h"
 #include "stackhandler.h"
 
 #include <QAction>
 #include <QHeaderView>
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 StackTreeView::StackTreeView(QWidget *parent)
     : BaseTreeView(parent)
@@ -23,7 +48,8 @@ void StackTreeView::setModel(QAbstractItemModel *model)
     if (model)
         setRootIndex(model->index(0, 0, QModelIndex()));
 
-    connect(static_cast<StackHandler*>(model), &StackHandler::stackChanged, this, [this] {
+    connect(static_cast<StackHandler*>(model), &StackHandler::stackChanged,
+            this, [this]() {
         if (!m_contentsAdjusted)
             adjustForContents();
     });
@@ -54,4 +80,5 @@ void StackTreeView::adjustForContents(bool refreshSpan)
     m_contentsAdjusted = true;
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

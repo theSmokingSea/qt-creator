@@ -1,96 +1,143 @@
-// Copyright (C) 2016 Lorenz Haas
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Lorenz Haas
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "generalsettings.h"
 
 #include "beautifierconstants.h"
-#include "beautifiertr.h"
 
-#include <coreplugin/dialogs/ioptionspage.h>
-
+#include <coreplugin/icore.h>
 #include <utils/algorithm.h>
 #include <utils/genericconstants.h>
-#include <utils/layoutbuilder.h>
+#include <utils/mimeutils.h>
 
-using namespace Utils;
+namespace Beautifier {
+namespace Internal {
 
-namespace Beautifier::Internal {
-
-GeneralSettings &generalSettings()
-{
-    static GeneralSettings theSettings;
-    return theSettings;
+namespace {
+const char AUTO_FORMAT_TOOL[]                 = "autoFormatTool";
+const char AUTO_FORMAT_MIME[]                 = "autoFormatMime";
+const char AUTO_FORMAT_ONLY_CURRENT_PROJECT[] = "autoFormatOnlyCurrentProject";
 }
+
+static GeneralSettings *m_instance;
 
 GeneralSettings::GeneralSettings()
 {
-    setAutoApply(false);
-    setSettingsGroups("Beautifier", "General");
-
-    autoFormatOnSave.setSettingsKey(Utils::Constants::BEAUTIFIER_AUTO_FORMAT_ON_SAVE);
-    autoFormatOnSave.setDefaultValue(false);
-    autoFormatOnSave.setLabelText(Tr::tr("Enable auto format on file save"));
-
-    autoFormatOnlyCurrentProject.setSettingsKey("autoFormatOnlyCurrentProject");
-    autoFormatOnlyCurrentProject.setDefaultValue(true);
-    autoFormatOnlyCurrentProject.setLabelText(Tr::tr("Restrict to files contained in the current project"));
-
-    autoFormatTools.setSettingsKey("autoFormatTool");
-    autoFormatTools.setLabelText(Tr::tr("Tool:"));
-    autoFormatTools.setDefaultValue(0);
-    autoFormatTools.setDisplayStyle(SelectionAspect::DisplayStyle::ComboBox);
-
-    autoFormatMime.setSettingsKey("autoFormatMime");
-    autoFormatMime.setDefaultValue("text/x-c++src;text/x-c++hdr");
-    autoFormatMime.setLabelText(Tr::tr("Restrict to MIME types:"));
-    autoFormatMime.setDisplayStyle(StringAspect::LineEditDisplay);
-
-    setLayouter([this] {
-        using namespace Layouting;
-        return Column {
-            Group {
-                title(Tr::tr("Automatic Formatting on File Save")),
-                groupChecker(autoFormatOnSave.groupChecker()),
-                Form {
-                    autoFormatTools, br,
-                    autoFormatMime, br,
-                    Span(2, autoFormatOnlyCurrentProject)
-                }
-            },
-            st
-        };
-    });
-    readSettings();
+    m_instance = this;
+    read();
 }
 
-QList<MimeType> GeneralSettings::allowedMimeTypes() const
+GeneralSettings *GeneralSettings::instance()
 {
-    const QStringList stringTypes = autoFormatMime().split(';');
+    return m_instance;
+}
 
-    QList<MimeType> types;
+void GeneralSettings::read()
+{
+    QSettings *s = Core::ICore::settings();
+    s->beginGroup(Utils::Constants::BEAUTIFIER_SETTINGS_GROUP);
+    s->beginGroup(Utils::Constants::BEAUTIFIER_GENERAL_GROUP);
+    m_autoFormatOnSave = s->value(Utils::Constants::BEAUTIFIER_AUTO_FORMAT_ON_SAVE, false).toBool();
+    m_autoFormatTool = s->value(AUTO_FORMAT_TOOL, QString()).toString();
+    setAutoFormatMime(s->value(AUTO_FORMAT_MIME, "text/x-c++src;text/x-c++hdr").toString());
+    m_autoFormatOnlyCurrentProject = s->value(AUTO_FORMAT_ONLY_CURRENT_PROJECT, true).toBool();
+    s->endGroup();
+    s->endGroup();
+}
+
+void GeneralSettings::save()
+{
+    QSettings *s = Core::ICore::settings();
+    s->beginGroup(Utils::Constants::BEAUTIFIER_SETTINGS_GROUP);
+    s->beginGroup(Utils::Constants::BEAUTIFIER_GENERAL_GROUP);
+    s->setValue(Utils::Constants::BEAUTIFIER_AUTO_FORMAT_ON_SAVE, m_autoFormatOnSave);
+    s->setValue(AUTO_FORMAT_TOOL, m_autoFormatTool);
+    s->setValue(AUTO_FORMAT_MIME, autoFormatMimeAsString());
+    s->setValue(AUTO_FORMAT_ONLY_CURRENT_PROJECT, m_autoFormatOnlyCurrentProject);
+    s->endGroup();
+    s->endGroup();
+}
+
+bool GeneralSettings::autoFormatOnSave() const
+{
+    return m_autoFormatOnSave;
+}
+
+void GeneralSettings::setAutoFormatOnSave(bool autoFormatOnSave)
+{
+    m_autoFormatOnSave = autoFormatOnSave;
+}
+
+QString GeneralSettings::autoFormatTool() const
+{
+    return m_autoFormatTool;
+}
+
+void GeneralSettings::setAutoFormatTool(const QString &autoFormatTool)
+{
+    m_autoFormatTool = autoFormatTool;
+}
+
+QList<Utils::MimeType> GeneralSettings::autoFormatMime() const
+{
+    return m_autoFormatMime;
+}
+
+QString GeneralSettings::autoFormatMimeAsString() const
+{
+    return Utils::transform(m_autoFormatMime, &Utils::MimeType::name).join("; ");
+}
+
+void GeneralSettings::setAutoFormatMime(const QList<Utils::MimeType> &autoFormatMime)
+{
+    m_autoFormatMime = autoFormatMime;
+}
+
+void GeneralSettings::setAutoFormatMime(const QString &mimeList)
+{
+    const QStringList stringTypes = mimeList.split(';');
+    QList<Utils::MimeType> types;
+    types.reserve(stringTypes.count());
     for (QString t : stringTypes) {
         t = t.trimmed();
-        const MimeType mime = Utils::mimeTypeForName(t);
+        const Utils::MimeType mime = Utils::mimeTypeForName(t);
         if (mime.isValid())
             types << mime;
     }
-    return types;
+    setAutoFormatMime(types);
 }
 
-class GeneralSettingsPage final : public Core::IOptionsPage
+bool GeneralSettings::autoFormatOnlyCurrentProject() const
 {
-public:
-    GeneralSettingsPage()
-    {
-        setId(Constants::OPTION_GENERAL_ID);
-        setDisplayName(Tr::tr("General"));
-        setCategory(Constants::OPTION_CATEGORY);
-        setDisplayCategory(Tr::tr("Beautifier"));
-        setCategoryIconPath(":/beautifier/images/settingscategory_beautifier.png");
-        setSettingsProvider([] { return &generalSettings(); });
-    }
-};
+    return m_autoFormatOnlyCurrentProject;
+}
 
-const GeneralSettingsPage settingsPage;
+void GeneralSettings::setAutoFormatOnlyCurrentProject(bool autoFormatOnlyCurrentProject)
+{
+    m_autoFormatOnlyCurrentProject = autoFormatOnlyCurrentProject;
+}
 
-} // Beautifier::Internal
+} // namespace Internal
+} // namespace Beautifier

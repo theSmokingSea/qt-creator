@@ -25,7 +25,7 @@
 
 #include "cppassert.h"
 
-#include <QScopeGuard>
+#include <utils/executeondestruction.h>
 
 #include <cctype>
 
@@ -217,17 +217,14 @@ void Lexer::scan_helper(Token *tok)
         tok->f.kind = s._tokenKind;
         const bool found = _expectedRawStringSuffix.isEmpty()
                 ? scanUntilRawStringLiteralEndSimple() : scanUntilRawStringLiteralEndPrecise();
-        if (found) {
-            scanOptionalUserDefinedLiteral(tok);
+        if (found)
             _state = 0;
-        }
         return;
     } else { // non-raw strings
         tok->f.joined = true;
         tok->f.kind = s._tokenKind;
         _state = 0;
         scanUntilQuote(tok, '"');
-        scanOptionalUserDefinedLiteral(tok);
         return;
     }
 
@@ -615,12 +612,7 @@ void Lexer::scan_helper(Token *tok)
                 tok->f.kind = T_LESS_LESS;
         } else if (_yychar == '=') {
             yyinp();
-            if (_languageFeatures.cxx20Enabled && _yychar == '>') {
-                yyinp();
-                tok->f.kind = T_LESS_EQUAL_GREATER;
-            } else {
-                tok->f.kind = T_LESS_EQUAL;
-            }
+            tok->f.kind = T_LESS_EQUAL;
         } else if (_yychar == ':') {
             if (*(_currentChar+1) != ':' || *(_currentChar+2) == ':' || *(_currentChar+2) == '>') {
                 yyinp();
@@ -756,9 +748,9 @@ void Lexer::scanStringLiteral(Token *tok, unsigned char hint)
 
 void Lexer::scanRawStringLiteral(Token *tok, unsigned char hint)
 {
-    QScopeGuard cleanup([this] { _expectedRawStringSuffix.clear(); });
-    if (control())
-        cleanup.dismiss();
+    Utils::ExecuteOnDestruction suffixCleaner;
+    if (!control())
+        suffixCleaner.reset([this] { _expectedRawStringSuffix.clear(); });
 
     const char *yytext = _currentChar;
 
@@ -827,27 +819,25 @@ void Lexer::scanRawStringLiteral(Token *tok, unsigned char hint)
         tok->f.kind = T_RAW_STRING_LITERAL;
 
     if (!control() && !closed) {
-        cleanup.dismiss();
+        suffixCleaner.reset([]{});
         s._tokenKind = tok->f.kind;
         _expectedRawStringSuffix.prepend(')');
         _expectedRawStringSuffix.append('"');
     }
-    if (closed)
-        scanOptionalUserDefinedLiteral(tok);
 }
 
 bool Lexer::scanUntilRawStringLiteralEndPrecise()
 {
-    QByteArray slidingWindow;
-    slidingWindow.reserve(_expectedRawStringSuffix.size());
+    int matchLen = 0;
     while (_yychar) {
-        slidingWindow.append(_yychar);
-        if (slidingWindow.size() > _expectedRawStringSuffix.size())
-            slidingWindow.remove(0, 1);
-        if (slidingWindow == _expectedRawStringSuffix) {
-            _expectedRawStringSuffix.clear();
-            yyinp();
-            return true;
+        if (_yychar == _expectedRawStringSuffix.at(matchLen)) {
+            if (++matchLen == _expectedRawStringSuffix.length()) {
+                _expectedRawStringSuffix.clear();
+                yyinp();
+                return true;
+            }
+        } else {
+            matchLen = 0;
         }
         yyinp();
     }

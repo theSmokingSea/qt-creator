@@ -1,14 +1,32 @@
-// Copyright (C) 2016 Brian McGillion and Hugues Delorme
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Brian McGillion and Hugues Delorme
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "vcsbaseclient.h"
-
-#include "vcsbaseclientsettings.h"
-#include "vcsbaseeditor.h"
-#include "vcsbaseeditorconfig.h"
-#include "vcsbasetr.h"
 #include "vcscommand.h"
-#include "vcsoutputwindow.h"
+#include "vcsbaseclientsettings.h"
+#include "vcsbaseeditorconfig.h"
 
 #include <coreplugin/icore.h>
 #include <coreplugin/vcsmanager.h>
@@ -16,19 +34,20 @@
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/idocument.h>
 
-#include <texteditor/textdocument.h>
-
-#include <utils/commandline.h>
 #include <utils/environment.h>
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
+
+#include <vcsbase/vcsbaseeditor.h>
+#include <vcsbase/vcsoutputwindow.h>
+#include <vcsbase/vcsbaseplugin.h>
 
 #include <QDebug>
+#include <QFileInfo>
 #include <QStringList>
 #include <QTextCodec>
 #include <QVariant>
 
-using namespace Core;
 using namespace Utils;
 
 /*!
@@ -42,12 +61,12 @@ using namespace Utils;
     \sa VcsBase::VcsJobRunner
 */
 
-static IEditor *locateEditor(const char *property, const QString &entry)
+static Core::IEditor *locateEditor(const char *property, const QString &entry)
 {
-    const QList<IDocument *> documents = DocumentModel::openedDocuments();
-    for (IDocument *document : documents)
+    const QList<Core::IDocument *> documents = Core::DocumentModel::openedDocuments();
+    for (Core::IDocument *document : documents)
         if (document->property(property).toString() == entry)
-            return DocumentModel::editorsForDocument(document).constFirst();
+            return Core::DocumentModel::editorsForDocument(document).constFirst();
     return nullptr;
 }
 
@@ -56,59 +75,68 @@ namespace VcsBase {
 VcsBaseClientImpl::VcsBaseClientImpl(VcsBaseSettings *baseSettings)
     : m_baseSettings(baseSettings)
 {
-    connect(ICore::instance(), &ICore::saveSettingsRequested,
+    m_baseSettings->readSettings(Core::ICore::settings());
+    connect(Core::ICore::instance(), &Core::ICore::saveSettingsRequested,
             this, &VcsBaseClientImpl::saveSettings);
 }
 
-FilePath VcsBaseClientImpl::vcsBinary(const Utils::FilePath &forDirectory) const
+VcsBaseSettings &VcsBaseClientImpl::settings() const
 {
-    if (forDirectory.needsDevice())
-        return {};
+    return *m_baseSettings;
+}
 
-    return m_baseSettings->binaryPath();
+FilePath VcsBaseClientImpl::vcsBinary() const
+{
+    return m_baseSettings->binaryPath.filePath();
 }
 
 VcsCommand *VcsBaseClientImpl::createCommand(const FilePath &workingDirectory,
-                                             VcsBaseEditorWidget *editor) const
+                                             VcsBaseEditorWidget *editor,
+                                             JobOutputBindMode mode) const
 {
-    auto cmd = createVcsCommand(const_cast<VcsBaseClientImpl *>(this),
-                                workingDirectory, processEnvironment(workingDirectory));
-    if (editor) {
+    auto cmd = new VcsCommand(workingDirectory, processEnvironment());
+    cmd->setDefaultTimeoutS(vcsTimeoutS());
+    if (editor)
         editor->setCommand(cmd);
-        connect(cmd, &VcsCommand::done, editor, [editor, cmd] {
-            if (cmd->result() != ProcessResult::FinishedWithSuccess) {
-                editor->textDocument()->setPlainText(Tr::tr("Failed to retrieve data."));
-                return;
-            }
-            editor->setPlainText(cmd->cleanedStdOut());
-            editor->gotoDefaultLine();
-        });
+    if (mode == VcsWindowOutputBind) {
+        cmd->addFlags(VcsCommand::ShowStdOut);
+        if (editor) // assume that the commands output is the important thing
+            cmd->addFlags(VcsCommand::SilentOutput);
+    } else if (editor) {
+        connect(cmd, &VcsCommand::stdOutText, editor, &VcsBaseEditorWidget::setPlainText);
     }
+
     return cmd;
 }
 
-void VcsBaseClientImpl::setupCommand(Utils::Process &process,
-                                     const FilePath &workingDirectory,
-                                     const QStringList &args) const
+VcsCommand *VcsBaseClientImpl::execBgCommand(const FilePath &workingDirectory,
+                                             const QStringList &args,
+                                             const std::function<void (const QString &)> &outputCallback,
+                                             unsigned flags) const
 {
-    process.setEnvironment(workingDirectory.deviceEnvironment());
-    process.setWorkingDirectory(workingDirectory);
-    process.setCommand({vcsBinary(workingDirectory), args});
-    process.setUseCtrlCStub(true);
+    VcsCommand *cmd = createCommand(workingDirectory);
+    cmd->addFlags(flags
+                  | VcsCommand::SuppressCommandLogging
+                  | VcsCommand::SuppressStdErr
+                  | VcsCommand::SuppressFailMessage);
+    cmd->addJob({vcsBinary(), args});
+    connect(cmd, &VcsCommand::stdOutText, this, outputCallback);
+    cmd->execute();
+    return cmd;
 }
 
-void VcsBaseClientImpl::enqueueJob(VcsCommand *cmd,
-                                   const QStringList &args,
-                                   const Utils::FilePath &forDirectory,
+void VcsBaseClientImpl::enqueueJob(VcsCommand *cmd, const QStringList &args,
                                    const ExitCodeInterpreter &interpreter) const
 {
-    cmd->addJob({vcsBinary(forDirectory), args}, vcsTimeoutS(), {}, interpreter);
-    cmd->start();
+    cmd->addJob({vcsBinary(), args}, vcsTimeoutS(), {}, interpreter);
+    cmd->execute();
 }
 
-Environment VcsBaseClientImpl::processEnvironment(const FilePath &appliedTo) const
+Environment VcsBaseClientImpl::processEnvironment() const
 {
-    return appliedTo.deviceEnvironment();
+    Environment environment = Environment::systemEnvironment();
+    VcsBase::setProcessEnvironment(&environment, false);
+    return environment;
 }
 
 QStringList VcsBaseClientImpl::splitLines(const QString &s)
@@ -118,37 +146,39 @@ QStringList VcsBaseClientImpl::splitLines(const QString &s)
     if (output.endsWith(newLine))
         output.truncate(output.size() - 1);
     if (output.isEmpty())
-        return {};
+        return QStringList();
     return output.split(newLine);
 }
 
 QString VcsBaseClientImpl::stripLastNewline(const QString &in)
 {
     if (in.endsWith('\n'))
-        return in.left(in.size() - 1);
+        return in.left(in.count() - 1);
     return in;
 }
 
-CommandResult VcsBaseClientImpl::vcsSynchronousExec(const FilePath &workingDir,
-              const QStringList &args, RunFlags flags, int timeoutS, QTextCodec *codec) const
+void VcsBaseClientImpl::vcsFullySynchronousExec(QtcProcess &proc,
+                                                const FilePath &workingDir, const QStringList &args,
+                                                unsigned flags, int timeoutS, QTextCodec *codec) const
 {
-    return vcsSynchronousExec(workingDir, {vcsBinary(workingDir), args}, flags, timeoutS, codec);
+    vcsFullySynchronousExec(proc, workingDir, {vcsBinary(), args}, flags, timeoutS, codec);
 }
 
-CommandResult VcsBaseClientImpl::vcsSynchronousExec(const FilePath &workingDir,
-              const CommandLine &cmdLine, RunFlags flags, int timeoutS, QTextCodec *codec) const
+void VcsBaseClientImpl::vcsFullySynchronousExec(QtcProcess &proc,
+                                                const FilePath &workingDir, const CommandLine &cmdLine,
+                                                unsigned flags, int timeoutS, QTextCodec *codec) const
 {
-    return VcsCommand::runBlocking(workingDir,
-                                   processEnvironment(workingDir),
-                                   cmdLine,
-                                   flags,
-                                   timeoutS > 0 ? timeoutS : vcsTimeoutS(),
-                                   codec);
+    VcsCommand command(workingDir, processEnvironment());
+    command.addFlags(flags);
+    if (codec)
+        command.setCodec(codec);
+    proc.setTimeoutS(timeoutS > 0 ? timeoutS : vcsTimeoutS());
+    command.runCommand(proc, cmdLine);
 }
 
 void VcsBaseClientImpl::resetCachedVcsInfo(const FilePath &workingDir)
 {
-    VcsManager::resetVersionControlForDirectory(workingDir);
+    Core::VcsManager::resetVersionControlForDirectory(workingDir);
 }
 
 void VcsBaseClientImpl::annotateRevisionRequested(const FilePath &workingDirectory,
@@ -161,90 +191,64 @@ void VcsBaseClientImpl::annotateRevisionRequested(const FilePath &workingDirecto
     const int blankPos = changeCopy.indexOf(QLatin1Char(' '));
     if (blankPos != -1)
         changeCopy.truncate(blankPos);
-    annotate(workingDirectory, file, line, changeCopy);
+    annotate(workingDirectory, file, changeCopy, line);
 }
 
-void VcsBaseClientImpl::vcsExecWithHandler(const FilePath &workingDirectory,
-                                           const QStringList &arguments,
-                                           const QObject *context,
-                                           const CommandHandler &handler,
-                                           RunFlags additionalFlags, QTextCodec *codec) const
+VcsCommand *VcsBaseClientImpl::vcsExec(const FilePath &workingDirectory, const QStringList &arguments,
+                                       VcsBaseEditorWidget *editor, bool useOutputToWindow,
+                                       unsigned additionalFlags, const QVariant &cookie) const
 {
-    VcsCommand *command = createCommand(workingDirectory);
+    VcsCommand *command = createCommand(workingDirectory, editor,
+                                        useOutputToWindow ? VcsWindowOutputBind : NoOutputBind);
+    command->setCookie(cookie);
     command->addFlags(additionalFlags);
-    command->setCodec(codec);
-    command->addJob({vcsBinary(workingDirectory), arguments}, vcsTimeoutS());
-    if (handler) {
-        const QObject *actualContext = context ? context : this;
-        connect(command, &VcsCommand::done, actualContext, [command, handler] {
-            handler(CommandResult(*command));
-        });
-    }
-    command->start();
+    if (editor)
+        command->setCodec(editor->codec());
+    enqueueJob(command, arguments);
+    return command;
 }
 
-void VcsBaseClientImpl::vcsExec(const FilePath &workingDirectory,
-                                const QStringList &arguments,
-                                RunFlags additionalFlags) const
+void VcsBaseClientImpl::vcsSynchronousExec(QtcProcess &proc,
+                                           const FilePath &workingDir,
+                                           const QStringList &args,
+                                           unsigned flags,
+                                           QTextCodec *outputCodec) const
 {
-    VcsCommand *command = createCommand(workingDirectory);
-    command->addFlags(additionalFlags);
-    command->addJob({vcsBinary(workingDirectory), arguments}, vcsTimeoutS());
-    command->start();
-}
-
-void VcsBaseClientImpl::vcsExecWithEditor(const Utils::FilePath &workingDirectory,
-                                          const QStringList &arguments,
-                                          VcsBaseEditorWidget *editor) const
-{
-    VcsCommand *command = createCommand(workingDirectory, editor);
-    command->setCodec(editor->codec());
-    command->addJob({vcsBinary(workingDirectory), arguments}, vcsTimeoutS());
-    command->start();
+    Environment env = processEnvironment();
+    VcsCommand command(workingDir, env.isValid() ? env : Environment::systemEnvironment());
+    proc.setTimeoutS(vcsTimeoutS());
+    command.addFlags(flags);
+    command.setCodec(outputCodec);
+    command.runCommand(proc, {vcsBinary(), args});
 }
 
 int VcsBaseClientImpl::vcsTimeoutS() const
 {
-    return m_baseSettings->timeout();
+    return m_baseSettings->timeout.value();
 }
 
-VcsCommand *VcsBaseClientImpl::createVcsCommand(const FilePath &defaultWorkingDir,
-                                                const Environment &environment)
-{
-    return new VcsCommand(defaultWorkingDir, environment);
-}
-
-VcsCommand *VcsBaseClientImpl::createVcsCommand(QObject *parent, const FilePath &defaultWorkingDir,
-                                                const Environment &environment)
-{
-    auto command = new VcsCommand(defaultWorkingDir, environment);
-    command->setParent(parent);
-    return command;
-}
-
-VcsBaseEditorWidget *VcsBaseClientImpl::createVcsEditor(Id kind, QString title,
-                                                        const FilePath &source, QTextCodec *codec,
+VcsBaseEditorWidget *VcsBaseClientImpl::createVcsEditor(Utils::Id kind, QString title,
+                                                        const QString &source, QTextCodec *codec,
                                                         const char *registerDynamicProperty,
                                                         const QString &dynamicPropertyValue) const
 {
     VcsBaseEditorWidget *baseEditor = nullptr;
-    IEditor *outputEditor = locateEditor(registerDynamicProperty, dynamicPropertyValue);
-    const QString progressMsg = Tr::tr("Working...");
+    Core::IEditor *outputEditor = locateEditor(registerDynamicProperty, dynamicPropertyValue);
+    const QString progressMsg = tr("Working...");
     if (outputEditor) {
         // Exists already
         outputEditor->document()->setContents(progressMsg.toUtf8());
         baseEditor = VcsBaseEditor::getVcsBaseEditor(outputEditor);
         QTC_ASSERT(baseEditor, return nullptr);
-        EditorManager::activateEditor(outputEditor);
+        Core::EditorManager::activateEditor(outputEditor);
     } else {
-        outputEditor = EditorManager::openEditorWithContents(kind, &title, progressMsg.toUtf8());
+        outputEditor = Core::EditorManager::openEditorWithContents(kind, &title, progressMsg.toUtf8());
         outputEditor->document()->setProperty(registerDynamicProperty, dynamicPropertyValue);
         baseEditor = VcsBaseEditor::getVcsBaseEditor(outputEditor);
         QTC_ASSERT(baseEditor, return nullptr);
         connect(baseEditor, &VcsBaseEditorWidget::annotateRevisionRequested,
                 this, &VcsBaseClientImpl::annotateRevisionRequested);
         baseEditor->setSource(source);
-        baseEditor->setDefaultLineNumber(1);
         if (codec)
             baseEditor->setCodec(codec);
     }
@@ -255,7 +259,7 @@ VcsBaseEditorWidget *VcsBaseClientImpl::createVcsEditor(Id kind, QString title,
 
 void VcsBaseClientImpl::saveSettings()
 {
-    m_baseSettings->writeSettings();
+    m_baseSettings->writeSettings(Core::ICore::settings());
 }
 
 VcsBaseClient::VcsBaseClient(VcsBaseSettings *baseSettings)
@@ -269,10 +273,11 @@ bool VcsBaseClient::synchronousCreateRepository(const FilePath &workingDirectory
 {
     QStringList args(vcsCommandString(CreateRepositoryCommand));
     args << extraOptions;
-    const CommandResult result = vcsSynchronousExec(workingDirectory, args);
-    if (result.result() != ProcessResult::FinishedWithSuccess)
+    QtcProcess proc;
+    vcsFullySynchronousExec(proc, workingDirectory, args);
+    if (proc.result() != ProcessResult::FinishedWithSuccess)
         return false;
-    VcsOutputWindow::append(result.cleanedStdOut());
+    VcsOutputWindow::append(proc.cleanedStdOut());
 
     resetCachedVcsInfo(workingDirectory);
 
@@ -288,9 +293,10 @@ bool VcsBaseClient::synchronousClone(const FilePath &workingDir,
     args << vcsCommandString(CloneCommand)
          << extraOptions << srcLocation << dstLocation;
 
-    const CommandResult result = vcsSynchronousExec(workingDir, args);
+    QtcProcess proc;
+    vcsFullySynchronousExec(proc, workingDir, args);
     resetCachedVcsInfo(workingDir);
-    return result.result() == ProcessResult::FinishedWithSuccess;
+    return proc.result() == ProcessResult::FinishedWithSuccess;
 }
 
 bool VcsBaseClient::synchronousAdd(const FilePath &workingDir,
@@ -299,7 +305,9 @@ bool VcsBaseClient::synchronousAdd(const FilePath &workingDir,
 {
     QStringList args;
     args << vcsCommandString(AddCommand) << extraOptions << relFileName;
-    return vcsSynchronousExec(workingDir, args).result() == ProcessResult::FinishedWithSuccess;
+    QtcProcess proc;
+    vcsFullySynchronousExec(proc, workingDir, args);
+    return proc.result() == ProcessResult::FinishedWithSuccess;
 }
 
 bool VcsBaseClient::synchronousRemove(const FilePath &workingDir,
@@ -308,7 +316,9 @@ bool VcsBaseClient::synchronousRemove(const FilePath &workingDir,
 {
     QStringList args;
     args << vcsCommandString(RemoveCommand) << extraOptions << filename;
-    return vcsSynchronousExec(workingDir, args).result() == ProcessResult::FinishedWithSuccess;
+    QtcProcess proc;
+    vcsFullySynchronousExec(proc, workingDir, args);
+    return proc.result() == ProcessResult::FinishedWithSuccess;
 }
 
 bool VcsBaseClient::synchronousMove(const FilePath &workingDir,
@@ -318,7 +328,9 @@ bool VcsBaseClient::synchronousMove(const FilePath &workingDir,
 {
     QStringList args;
     args << vcsCommandString(MoveCommand) << extraOptions << from << to;
-    return vcsSynchronousExec(workingDir, args).result() == ProcessResult::FinishedWithSuccess;
+    QtcProcess proc;
+    vcsFullySynchronousExec(proc, workingDir, args);
+    return proc.result() == ProcessResult::FinishedWithSuccess;
 }
 
 bool VcsBaseClient::synchronousPull(const FilePath &workingDir,
@@ -327,11 +339,16 @@ bool VcsBaseClient::synchronousPull(const FilePath &workingDir,
 {
     QStringList args;
     args << vcsCommandString(PullCommand) << extraOptions << srcLocation;
-    const RunFlags flags = RunFlags::ShowStdOut | RunFlags::ShowSuccessMessage;
-    const bool ok = vcsSynchronousExec(workingDir, args, flags).result()
-            == ProcessResult::FinishedWithSuccess;
+    // Disable UNIX terminals to suppress SSH prompting
+    const unsigned flags =
+            VcsCommand::SshPasswordPrompt
+            | VcsCommand::ShowStdOut
+            | VcsCommand::ShowSuccessMessage;
+    QtcProcess proc;
+    vcsSynchronousExec(proc, workingDir, args, flags);
+    const bool ok = proc.result() == ProcessResult::FinishedWithSuccess;
     if (ok)
-        emit changed(workingDir.toVariant());
+        emit changed(QVariant(workingDir.toString()));
     return ok;
 }
 
@@ -341,112 +358,114 @@ bool VcsBaseClient::synchronousPush(const FilePath &workingDir,
 {
     QStringList args;
     args << vcsCommandString(PushCommand) << extraOptions << dstLocation;
-    const RunFlags flags = RunFlags::ShowStdOut | RunFlags::ShowSuccessMessage;
-    return vcsSynchronousExec(workingDir, args, flags).result()
-            == ProcessResult::FinishedWithSuccess;
+    // Disable UNIX terminals to suppress SSH prompting
+    const unsigned flags =
+            VcsCommand::SshPasswordPrompt
+            | VcsCommand::ShowStdOut
+            | VcsCommand::ShowSuccessMessage;
+    QtcProcess proc;
+    vcsSynchronousExec(proc, workingDir, args, flags);
+    return proc.result() == ProcessResult::FinishedWithSuccess;
 }
 
-void VcsBaseClient::annotate(const Utils::FilePath &workingDir, const QString &file,
-              int lineNumber /* = -1 */, const QString &revision /* = {} */,
-              const QStringList &extraOptions /* = {} */, int firstLine /* = -1 */)
+VcsBaseEditorWidget *VcsBaseClient::annotate(
+        const FilePath &workingDir, const QString &file, const QString &revision /* = QString() */,
+        int lineNumber /* = -1 */, const QStringList &extraOptions)
 {
-    Q_UNUSED(firstLine)
     const QString vcsCmdString = vcsCommandString(AnnotateCommand);
     QStringList args;
     args << vcsCmdString << revisionSpec(revision) << extraOptions << file;
-    const Id kind = vcsEditorKind(AnnotateCommand);
-    const QString id = VcsBaseEditor::getSource(workingDir, QStringList(file)).toString();
+    const Utils::Id kind = vcsEditorKind(AnnotateCommand);
+    const QString id = VcsBaseEditor::getSource(workingDir, QStringList(file));
     const QString title = vcsEditorTitle(vcsCmdString, id);
-    const FilePath source = VcsBaseEditor::getSource(workingDir, file);
+    const QString source = VcsBaseEditor::getSource(workingDir, file);
 
     VcsBaseEditorWidget *editor = createVcsEditor(kind, title, source,
                                                   VcsBaseEditor::getCodec(source),
                                                   vcsCmdString.toLatin1().constData(), id);
 
     VcsCommand *cmd = createCommand(workingDir, editor);
-    editor->setDefaultLineNumber(lineNumber);
-    enqueueJob(cmd, args, workingDir);
+    cmd->setCookie(lineNumber);
+    enqueueJob(cmd, args);
+    return editor;
 }
 
-void VcsBaseClient::diff(const FilePath &workingDir, const QStringList &files)
+void VcsBaseClient::diff(const FilePath &workingDir, const QStringList &files,
+                         const QStringList &extraOptions)
 {
     const QString vcsCmdString = vcsCommandString(DiffCommand);
-    const Id kind = vcsEditorKind(DiffCommand);
+    const Utils::Id kind = vcsEditorKind(DiffCommand);
     const QString id = VcsBaseEditor::getTitleId(workingDir, files);
     const QString title = vcsEditorTitle(vcsCmdString, id);
-    const FilePath source = VcsBaseEditor::getSource(workingDir, files);
+    const QString source = VcsBaseEditor::getSource(workingDir, files);
     VcsBaseEditorWidget *editor = createVcsEditor(kind, title, source,
                                                   VcsBaseEditor::getCodec(source),
                                                   vcsCmdString.toLatin1().constData(), id);
     editor->setWorkingDirectory(workingDir);
 
-    VcsBaseEditorConfig *editorConfig = editor->editorConfig();
-    if (!editorConfig) {
+    VcsBaseEditorConfig *paramWidget = editor->editorConfig();
+    if (!paramWidget) {
         if (m_diffConfigCreator)
-            editorConfig = m_diffConfigCreator(editor->toolBar());
-        if (editorConfig) {
+            paramWidget = m_diffConfigCreator(editor->toolBar());
+        if (paramWidget) {
+            paramWidget->setBaseArguments(extraOptions);
             // editor has been just created, createVcsEditor() didn't set a configuration widget yet
             connect(editor, &VcsBaseEditorWidget::diffChunkReverted,
-                    editorConfig, &VcsBaseEditorConfig::executeCommand);
-            connect(editorConfig, &VcsBaseEditorConfig::commandExecutionRequested,
-                    this, [this, workingDir, files] { diff(workingDir, files); });
-            editor->setEditorConfig(editorConfig);
+                    paramWidget, &VcsBaseEditorConfig::executeCommand);
+            connect(paramWidget, &VcsBaseEditorConfig::commandExecutionRequested,
+                [=] { diff(workingDir, files, extraOptions); } );
+            editor->setEditorConfig(paramWidget);
         }
     }
 
     QStringList args = {vcsCmdString};
-    if (editorConfig)
-        args << editorConfig->arguments();
+    if (paramWidget)
+        args << paramWidget->arguments();
+    else
+        args << extraOptions;
     args << files;
     QTextCodec *codec = source.isEmpty() ? static_cast<QTextCodec *>(nullptr)
                                          : VcsBaseEditor::getCodec(source);
     VcsCommand *command = createCommand(workingDir, editor);
     command->setCodec(codec);
-    enqueueJob(command, args, workingDir, exitCodeInterpreter(DiffCommand));
+    enqueueJob(command, args, exitCodeInterpreter(DiffCommand));
 }
 
 void VcsBaseClient::log(const FilePath &workingDir,
                         const QStringList &files,
                         const QStringList &extraOptions,
-                        bool enableAnnotationContextMenu,
-                        const std::function<void(Utils::CommandLine &)> &addAuthOptions)
+                        bool enableAnnotationContextMenu)
 {
     const QString vcsCmdString = vcsCommandString(LogCommand);
-    const Id kind = vcsEditorKind(LogCommand);
+    const Utils::Id kind = vcsEditorKind(LogCommand);
     const QString id = VcsBaseEditor::getTitleId(workingDir, files);
     const QString title = vcsEditorTitle(vcsCmdString, id);
-    const FilePath source = VcsBaseEditor::getSource(workingDir, files);
+    const QString source = VcsBaseEditor::getSource(workingDir, files);
     VcsBaseEditorWidget *editor = createVcsEditor(kind, title, source,
                                                   VcsBaseEditor::getCodec(source),
                                                   vcsCmdString.toLatin1().constData(), id);
     editor->setFileLogAnnotateEnabled(enableAnnotationContextMenu);
 
-    VcsBaseEditorConfig *editorConfig = editor->editorConfig();
-    if (!editorConfig) {
+    VcsBaseEditorConfig *paramWidget = editor->editorConfig();
+    if (!paramWidget) {
         if (m_logConfigCreator)
-            editorConfig = m_logConfigCreator(editor->toolBar());
-        if (editorConfig) {
-            editorConfig->setBaseArguments(extraOptions);
+            paramWidget = m_logConfigCreator(editor->toolBar());
+        if (paramWidget) {
+            paramWidget->setBaseArguments(extraOptions);
             // editor has been just created, createVcsEditor() didn't set a configuration widget yet
-            connect(editorConfig, &VcsBaseEditorConfig::commandExecutionRequested, this,
-                    [this, workingDir, files, extraOptions, enableAnnotationContextMenu, addAuthOptions] {
-                log(workingDir, files, extraOptions, enableAnnotationContextMenu, addAuthOptions);
-            });
-            editor->setEditorConfig(editorConfig);
+            connect(paramWidget, &VcsBaseEditorConfig::commandExecutionRequested,
+                [=] { this->log(workingDir, files, extraOptions, enableAnnotationContextMenu); } );
+            editor->setEditorConfig(paramWidget);
         }
     }
 
-    CommandLine args{vcsBinary(workingDir), {vcsCmdString}};
-    if (addAuthOptions)
-        addAuthOptions(args);
-    if (editorConfig)
-        args << editorConfig->arguments();
+    QStringList args = {vcsCmdString};
+    if (paramWidget)
+        args << paramWidget->arguments();
     else
         args << extraOptions;
     args << files;
-    VcsCommand *cmd = createCommand(workingDir, editor);
-    cmd->addJob(args, vcsTimeoutS());
-    cmd->start();
+    enqueueJob(createCommand(workingDir, editor), args);
 }
 
 void VcsBaseClient::revertFile(const FilePath &workingDir,
@@ -458,12 +477,9 @@ void VcsBaseClient::revertFile(const FilePath &workingDir,
     args << revisionSpec(revision) << extraOptions << file;
     // Indicate repository change or file list
     VcsCommand *cmd = createCommand(workingDir);
-    const QStringList files = QStringList(workingDir.pathAppended(file).toString());
-    connect(cmd, &VcsCommand::done, this, [this, files, cmd] {
-        if (cmd->result() == ProcessResult::FinishedWithSuccess)
-            emit changed(files);
-    });
-    enqueueJob(cmd, args, workingDir);
+    cmd->setCookie(QStringList(workingDir.pathAppended(file).toString()));
+    connect(cmd, &VcsCommand::success, this, &VcsBaseClient::changed, Qt::QueuedConnection);
+    enqueueJob(cmd, args);
 }
 
 void VcsBaseClient::revertAll(const FilePath &workingDir,
@@ -474,12 +490,9 @@ void VcsBaseClient::revertAll(const FilePath &workingDir,
     args << revisionSpec(revision) << extraOptions;
     // Indicate repository change or file list
     VcsCommand *cmd = createCommand(workingDir);
-    const QStringList files = QStringList(workingDir.toString());
-    connect(cmd, &VcsCommand::done, this, [this, files, cmd] {
-        if (cmd->result() == ProcessResult::FinishedWithSuccess)
-            emit changed(files);
-    });
-    enqueueJob(cmd, args, workingDir);
+    cmd->setCookie(QStringList(workingDir.toString()));
+    connect(cmd, &VcsCommand::success, this, &VcsBaseClient::changed, Qt::QueuedConnection);
+    enqueueJob(createCommand(workingDir), args);
 }
 
 void VcsBaseClient::status(const FilePath &workingDir,
@@ -488,9 +501,12 @@ void VcsBaseClient::status(const FilePath &workingDir,
 {
     QStringList args(vcsCommandString(StatusCommand));
     args << extraOptions << file;
-    VcsCommand *cmd = createCommand(workingDir);
-    cmd->addFlags(RunFlags::ShowStdOut);
-    enqueueJob(cmd, args, workingDir);
+    VcsOutputWindow::setRepository(workingDir.toString());
+    VcsCommand *cmd = createCommand(workingDir, nullptr, VcsWindowOutputBind);
+    connect(cmd, &VcsCommand::finished,
+            VcsOutputWindow::instance(), &VcsOutputWindow::clearRepository,
+            Qt::QueuedConnection);
+    enqueueJob(cmd, args);
 }
 
 void VcsBaseClient::emitParsedStatus(const FilePath &repository, const QStringList &extraOptions)
@@ -498,8 +514,8 @@ void VcsBaseClient::emitParsedStatus(const FilePath &repository, const QStringLi
     QStringList args(vcsCommandString(StatusCommand));
     args << extraOptions;
     VcsCommand *cmd = createCommand(repository);
-    connect(cmd, &VcsCommand::done, this, [this, cmd] { statusParser(cmd->cleanedStdOut()); });
-    enqueueJob(cmd, args, repository);
+    connect(cmd, &VcsCommand::stdOutText, this, &VcsBaseClient::statusParser);
+    enqueueJob(cmd, args);
 }
 
 QString VcsBaseClient::vcsCommandString(VcsCommandTag cmd) const
@@ -521,6 +537,12 @@ QString VcsBaseClient::vcsCommandString(VcsCommandTag cmd) const
     case LogCommand: return QLatin1String("log");
     case StatusCommand: return QLatin1String("status");
     }
+    return QString();
+}
+
+ExitCodeInterpreter VcsBaseClient::exitCodeInterpreter(VcsCommandTag cmd) const
+{
+    Q_UNUSED(cmd)
     return {};
 }
 
@@ -540,23 +562,24 @@ void VcsBaseClient::import(const FilePath &repositoryRoot,
 {
     QStringList args(vcsCommandString(ImportCommand));
     args << extraOptions << files;
-    enqueueJob(createCommand(repositoryRoot), args, repositoryRoot);
+    enqueueJob(createCommand(repositoryRoot), args);
 }
 
-void VcsBaseClient::view(const FilePath &source,
+void VcsBaseClient::view(const QString &source,
                          const QString &id,
                          const QStringList &extraOptions)
 {
     QStringList args;
     args << extraOptions << revisionSpec(id);
-    const Id kind = vcsEditorKind(DiffCommand);
+    const Utils::Id kind = vcsEditorKind(DiffCommand);
     const QString title = vcsEditorTitle(vcsCommandString(LogCommand), id);
 
     VcsBaseEditorWidget *editor = createVcsEditor(kind, title, source,
                                                   VcsBaseEditor::getCodec(source), "view", id);
 
-    const FilePath workingDirPath = source.isFile() ? source.absolutePath() : source;
-    enqueueJob(createCommand(workingDirPath, editor), args, source);
+    const QFileInfo fi(source);
+    const FilePath workingDirPath = FilePath::fromString(fi.isFile() ? fi.absolutePath() : source);
+    enqueueJob(createCommand(workingDirPath, editor), args);
 }
 
 void VcsBaseClient::update(const FilePath &repositoryRoot, const QString &revision,
@@ -565,11 +588,9 @@ void VcsBaseClient::update(const FilePath &repositoryRoot, const QString &revisi
     QStringList args(vcsCommandString(UpdateCommand));
     args << revisionSpec(revision) << extraOptions;
     VcsCommand *cmd = createCommand(repositoryRoot);
-    connect(cmd, &VcsCommand::done, this, [this, repositoryRoot, cmd] {
-        if (cmd->result() == ProcessResult::FinishedWithSuccess)
-            emit changed(repositoryRoot.toString());
-    });
-    enqueueJob(cmd, args, repositoryRoot);
+    cmd->setCookie(repositoryRoot.toString());
+    connect(cmd, &VcsCommand::success, this, &VcsBaseClient::changed, Qt::QueuedConnection);
+    enqueueJob(cmd, args);
 }
 
 void VcsBaseClient::commit(const FilePath &repositoryRoot,
@@ -587,16 +608,15 @@ void VcsBaseClient::commit(const FilePath &repositoryRoot,
     //   for example)
     QStringList args(vcsCommandString(CommitCommand));
     args << extraOptions << files;
-    VcsCommand *cmd = createCommand(repositoryRoot);
-    cmd->addFlags(RunFlags::ShowStdOut);
+    VcsCommand *cmd = createCommand(repositoryRoot, nullptr, VcsWindowOutputBind);
     if (!commitMessageFile.isEmpty())
-        connect(cmd, &VcsCommand::done, [commitMessageFile] { QFile(commitMessageFile).remove(); });
-    enqueueJob(cmd, args, repositoryRoot);
+        connect(cmd, &VcsCommand::finished, [commitMessageFile]() { QFile(commitMessageFile).remove(); });
+    enqueueJob(cmd, args);
 }
 
 QString VcsBaseClient::vcsEditorTitle(const QString &vcsCmd, const QString &sourceId) const
 {
-    return vcsBinary({}).baseName() + QLatin1Char(' ') + vcsCmd + QLatin1Char(' ')
+    return vcsBinary().baseName() + QLatin1Char(' ') + vcsCmd + QLatin1Char(' ')
            + FilePath::fromString(sourceId).fileName();
 }
 
@@ -604,9 +624,9 @@ void VcsBaseClient::statusParser(const QString &text)
 {
     QList<VcsBaseClient::StatusItem> lineInfoList;
 
-    const QStringList rawStatusList = text.split(QLatin1Char('\n'));
+    QStringList rawStatusList = text.split(QLatin1Char('\n'));
 
-    for (const QString &string : rawStatusList) {
+    for (const QString &string : qAsConst(rawStatusList)) {
         const VcsBaseClient::StatusItem lineInfo = parseStatusLine(string);
         if (!lineInfo.flags.isEmpty() && !lineInfo.file.isEmpty())
             lineInfoList.append(lineInfo);

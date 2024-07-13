@@ -1,136 +1,110 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppoutline.h"
 
-#include "cppeditordocument.h"
 #include "cppeditoroutline.h"
-#include "cppeditortr.h"
-#include "cppeditorwidget.h"
 #include "cppmodelmanager.h"
-#include "cppoutlinemodel.h"
+#include "cppoverviewmodel.h"
 
-#include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/find/itemviewfind.h>
-
-#include <texteditor/ioutlinewidget.h>
+#include <coreplugin/editormanager/editormanager.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditor.h>
-
-#include <utils/navigationtreeview.h>
+#include <utils/linecolumn.h>
 #include <utils/qtcassert.h>
 
-#include <QMenu>
-#include <QSortFilterProxyModel>
-#include <QTimer>
+#include <QDebug>
 #include <QVBoxLayout>
+#include <QMenu>
 
-using namespace TextEditor;
+namespace CppEditor {
+namespace Internal {
 
-namespace CppEditor::Internal {
-
-class CppOutlineTreeView final : public Utils::NavigationTreeView
+CppOutlineTreeView::CppOutlineTreeView(QWidget *parent) :
+    Utils::NavigationTreeView(parent)
 {
-public:
-    CppOutlineTreeView(QWidget *parent) :
-        Utils::NavigationTreeView(parent)
-    {
-        setExpandsOnDoubleClick(false);
-        setDragEnabled(true);
-        setDragDropMode(QAbstractItemView::DragOnly);
-    }
+    setExpandsOnDoubleClick(false);
+    setDragEnabled(true);
+    setDragDropMode(QAbstractItemView::DragOnly);
+}
 
-    void contextMenuEvent(QContextMenuEvent *event) final
-    {
-        if (!event)
-            return;
-
-        QMenu contextMenu;
-
-        QAction *action = contextMenu.addAction(Tr::tr("Expand All"));
-        connect(action, &QAction::triggered, this, &QTreeView::expandAll);
-        action = contextMenu.addAction(Tr::tr("Collapse All"));
-        connect(action, &QAction::triggered, this, &QTreeView::collapseAll);
-
-        contextMenu.exec(event->globalPos());
-
-        event->accept();
-    }
-};
-
-class CppOutlineFilterModel : public QSortFilterProxyModel
+void CppOutlineTreeView::contextMenuEvent(QContextMenuEvent *event)
 {
-public:
-    CppOutlineFilterModel(OutlineModel &sourceModel, QObject *parent)
-        : QSortFilterProxyModel(parent)
-        , m_sourceModel(sourceModel)
-    {}
+    if (!event)
+        return;
 
-    bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const final
-    {
-        // ignore artificial "<Select Symbol>" entry
-        if (!sourceParent.isValid() && sourceRow == 0)
-            return false;
-        // ignore generated symbols, e.g. by macro expansion (Q_OBJECT)
-        const QModelIndex sourceIndex = m_sourceModel.index(sourceRow, 0, sourceParent);
-        if (m_sourceModel.isGenerated(sourceIndex))
-            return false;
+    QMenu contextMenu;
 
-        return QSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent);
-    }
+    QAction *action = contextMenu.addAction(tr("Expand All"));
+    connect(action, &QAction::triggered, this, &QTreeView::expandAll);
+    action = contextMenu.addAction(tr("Collapse All"));
+    connect(action, &QAction::triggered, this, &QTreeView::collapseAll);
 
-    Qt::DropActions supportedDragActions() const final
-    {
-        return sourceModel()->supportedDragActions();
-    }
+    contextMenu.exec(event->globalPos());
 
-private:
-    OutlineModel &m_sourceModel;
-};
+    event->accept();
+}
 
-class CppOutlineWidget : public TextEditor::IOutlineWidget
+CppOutlineFilterModel::CppOutlineFilterModel(AbstractOverviewModel &sourceModel,
+                                             QObject *parent)
+    : QSortFilterProxyModel(parent)
+    , m_sourceModel(sourceModel)
 {
-public:
-    CppOutlineWidget(CppEditorWidget *editor);
+}
 
-    // IOutlineWidget
-    QList<QAction*> filterMenuActions() const final;
-    void setCursorSynchronization(bool syncWithCursor) final;
-    bool isSorted() const final;
-    void setSorted(bool sorted) final;
+bool CppOutlineFilterModel::filterAcceptsRow(int sourceRow,
+                                             const QModelIndex &sourceParent) const
+{
+    // ignore artifical "<Select Symbol>" entry
+    if (!sourceParent.isValid() && sourceRow == 0)
+        return false;
+    // ignore generated symbols, e.g. by macro expansion (Q_OBJECT)
+    const QModelIndex sourceIndex = m_sourceModel.index(sourceRow, 0, sourceParent);
+    if (m_sourceModel.isGenerated(sourceIndex))
+        return false;
 
-    void restoreSettings(const QVariantMap &map) final;
-    QVariantMap settings() const final;
+    return QSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent);
+}
 
-private:
-    void modelUpdated();
-    void updateIndex();
-    void updateIndexNow();
-    void updateTextCursor(const QModelIndex &index);
-    void onItemActivated(const QModelIndex &index);
-    bool syncCursor();
+Qt::DropActions CppOutlineFilterModel::supportedDragActions() const
+{
+    return sourceModel()->supportedDragActions();
+}
 
-    CppEditorWidget *m_editor;
-    CppOutlineTreeView *m_treeView;
-    OutlineModel * const m_model;
-    QSortFilterProxyModel *m_proxyModel;
-    QTimer m_updateIndexTimer;
-
-    bool m_enableCursorSync;
-    bool m_blockCursorSync;
-    bool m_sorted;
-};
 
 CppOutlineWidget::CppOutlineWidget(CppEditorWidget *editor) :
     m_editor(editor),
     m_treeView(new CppOutlineTreeView(this)),
-    m_model(&m_editor->cppEditorDocument()->outlineModel()),
-    m_proxyModel(new CppOutlineFilterModel(*m_model, this)),
     m_enableCursorSync(true),
     m_blockCursorSync(false),
     m_sorted(false)
 {
-    m_proxyModel->setSourceModel(m_model);
+    AbstractOverviewModel *model = m_editor->outline()->model();
+    m_proxyModel = new CppOutlineFilterModel(*model, this);
+    m_proxyModel->setSourceModel(model);
 
     auto *layout = new QVBoxLayout;
     layout->setContentsMargins(0, 0, 0, 0);
@@ -142,31 +116,25 @@ CppOutlineWidget::CppOutlineWidget(CppEditorWidget *editor) :
     m_treeView->setSortingEnabled(true);
     setFocusProxy(m_treeView);
 
-    connect(m_model, &QAbstractItemModel::modelReset, this, &CppOutlineWidget::modelUpdated);
+    connect(model, &QAbstractItemModel::modelReset, this, &CppOutlineWidget::modelUpdated);
     modelUpdated();
 
+    connect(m_editor->outline(), &CppEditorOutline::modelIndexChanged,
+            this, &CppOutlineWidget::updateSelectionInTree);
     connect(m_treeView, &QAbstractItemView::activated,
             this, &CppOutlineWidget::onItemActivated);
-    connect(editor, &QPlainTextEdit::cursorPositionChanged, this, [this] {
-        if (m_model->rootItem()->hasChildren())
-            updateIndex();
-    });
-
-    m_updateIndexTimer.setSingleShot(true);
-    m_updateIndexTimer.setInterval(500);
-    connect(&m_updateIndexTimer, &QTimer::timeout, this, &CppOutlineWidget::updateIndexNow);
 }
 
 QList<QAction*> CppOutlineWidget::filterMenuActions() const
 {
-    return {};
+    return QList<QAction*>();
 }
 
 void CppOutlineWidget::setCursorSynchronization(bool syncWithCursor)
 {
     m_enableCursorSync = syncWithCursor;
     if (m_enableCursorSync)
-        updateIndexNow();
+        updateSelectionInTree(m_editor->outline()->modelIndex());
 }
 
 bool CppOutlineWidget::isSorted() const
@@ -195,43 +163,24 @@ void CppOutlineWidget::modelUpdated()
     m_treeView->expandAll();
 }
 
-void CppOutlineWidget::updateIndex()
-{
-    m_updateIndexTimer.start();
-}
-
-void CppOutlineWidget::updateIndexNow()
+void CppOutlineWidget::updateSelectionInTree(const QModelIndex &index)
 {
     if (!syncCursor())
         return;
 
-    const int revision = m_editor->document()->revision();
-    if (m_model->editorRevision() != revision) {
-        m_editor->cppEditorDocument()->updateOutline();
-        return;
-    }
+    QModelIndex proxyIndex = m_proxyModel->mapFromSource(index);
 
-    m_updateIndexTimer.stop();
-
-    int line = 0, column = 0;
-    m_editor->convertPosition(m_editor->position(), &line, &column);
-    QModelIndex index = m_model->indexForPosition(line, column);
-
-    if (index.isValid()) {
-        m_blockCursorSync = true;
-        QModelIndex proxyIndex = m_proxyModel->mapFromSource(index);
-        m_treeView->setCurrentIndex(proxyIndex);
-        m_treeView->scrollTo(proxyIndex);
-        m_blockCursorSync = false;
-    }
-
+    m_blockCursorSync = true;
+    m_treeView->setCurrentIndex(proxyIndex);
+    m_treeView->scrollTo(proxyIndex);
+    m_blockCursorSync = false;
 }
 
 void CppOutlineWidget::updateTextCursor(const QModelIndex &proxyIndex)
 {
     QModelIndex index = m_proxyModel->mapToSource(proxyIndex);
-    Utils::Text::Position lineColumn
-        = m_editor->cppEditorDocument()->outlineModel().positionFromIndex(index);
+    AbstractOverviewModel *model = m_editor->outline()->model();
+    Utils::LineColumn lineColumn = model->lineColumnFromIndex(index);
     if (!lineColumn.isValid())
         return;
 
@@ -240,7 +189,8 @@ void CppOutlineWidget::updateTextCursor(const QModelIndex &proxyIndex)
     Core::EditorManager::cutForwardNavigationHistory();
     Core::EditorManager::addCurrentPositionToNavigationHistory();
 
-    m_editor->gotoLine(lineColumn.line, lineColumn.column, true, true);
+    // line has to be 1 based, column 0 based!
+    m_editor->gotoLine(lineColumn.line, lineColumn.column - 1, true, true);
     m_blockCursorSync = false;
 }
 
@@ -258,36 +208,23 @@ bool CppOutlineWidget::syncCursor()
     return m_enableCursorSync && !m_blockCursorSync;
 }
 
-class CppOutlineWidgetFactory final : public IOutlineWidgetFactory
+bool CppOutlineWidgetFactory::supportsEditor(Core::IEditor *editor) const
 {
-public:
-    bool supportsEditor(Core::IEditor *editor) const final
-    {
-        const auto cppEditor = qobject_cast<BaseTextEditor*>(editor);
-        if (!cppEditor || !CppModelManager::isCppEditor(cppEditor))
-            return false;
-        return !CppModelManager::usesClangd(cppEditor->textDocument());
-    }
-
-    bool supportsSorting() const final
-    {
-        return true;
-    }
-
-    IOutlineWidget *createWidget(Core::IEditor *editor) final
-    {
-        const auto cppEditor = qobject_cast<BaseTextEditor*>(editor);
-        QTC_ASSERT(cppEditor, return nullptr);
-        const auto cppEditorWidget = qobject_cast<CppEditorWidget*>(cppEditor->widget());
-        QTC_ASSERT(cppEditorWidget, return nullptr);
-
-        return new CppOutlineWidget(cppEditorWidget);
-    }
-};
-
-void setupCppOutline()
-{
-    static CppOutlineWidgetFactory theCppOutlineWidgetFactory;
+    const auto cppEditor = qobject_cast<TextEditor::BaseTextEditor*>(editor);
+    if (!cppEditor || !CppModelManager::isCppEditor(cppEditor))
+        return false;
+    return !CppModelManager::usesClangd(cppEditor->textDocument());
 }
 
-} // namespace CppEditor::Internal
+TextEditor::IOutlineWidget *CppOutlineWidgetFactory::createWidget(Core::IEditor *editor)
+{
+    const auto cppEditor = qobject_cast<TextEditor::BaseTextEditor*>(editor);
+    QTC_ASSERT(cppEditor, return nullptr);
+    const auto cppEditorWidget = qobject_cast<CppEditorWidget*>(cppEditor->widget());
+    QTC_ASSERT(cppEditorWidget, return nullptr);
+
+    return new CppOutlineWidget(cppEditorWidget);
+}
+
+} // namespace Internal
+} // namespace CppEditor

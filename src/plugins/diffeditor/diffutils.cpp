@@ -1,13 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "diffutils.h"
 
 #include <utils/algorithm.h>
 #include <utils/differ.h>
+#include <utils/porting.h>
 
-#include <QFuture>
-#include <QPromise>
+#include <QFutureInterfaceBase>
 #include <QRegularExpression>
 #include <QStringList>
 #include <QTextStream>
@@ -16,45 +38,9 @@ using namespace Utils;
 
 namespace DiffEditor {
 
-static int forBlockNumber(const QMap<int, QPair<int, int>> &chunkInfo, int blockNumber,
-                          const std::function<int (int, int, int)> &func)
-{
-    if (chunkInfo.isEmpty())
-        return -1;
-
-    auto it = chunkInfo.upperBound(blockNumber);
-    if (it == chunkInfo.constBegin())
-        return -1;
-
-    --it;
-
-    if (blockNumber < it.key() + it.value().first)
-        return func(it.key(), it.value().first, it.value().second);
-
-    return -1;
-}
-
-int DiffChunkInfo::chunkRowForBlockNumber(int blockNumber) const
-{
-    return forBlockNumber(m_chunkInfo, blockNumber, [blockNumber](int startBlockNumber, int, int)
-                          { return blockNumber - startBlockNumber; });
-}
-
-int DiffChunkInfo::chunkRowsCountForBlockNumber(int blockNumber) const
-{
-    return forBlockNumber(m_chunkInfo, blockNumber,
-                          [](int, int rowsCount, int) { return rowsCount; });
-}
-
-int DiffChunkInfo::chunkIndexForBlockNumber(int blockNumber) const
-{
-    return forBlockNumber(m_chunkInfo, blockNumber,
-                          [](int, int, int chunkIndex) { return chunkIndex; });
-}
-
 int ChunkSelection::selectedRowsCount() const
 {
-    return Utils::toSet(selection[LeftSide]).unite(Utils::toSet(selection[RightSide])).size();
+    return Utils::toSet(leftSelection).unite(Utils::toSet(rightSelection)).size();
 }
 
 static QList<TextLineData> assemblyRows(const QList<TextLineData> &lines,
@@ -75,12 +61,18 @@ static QList<TextLineData> assemblyRows(const QList<TextLineData> &lines,
 static bool lastLinesEqual(const QList<TextLineData> &leftLines,
                            const QList<TextLineData> &rightLines)
 {
-    const bool leftLineEqual = leftLines.isEmpty() || leftLines.last().text.isEmpty();
-    const bool rightLineEqual = rightLines.isEmpty() || rightLines.last().text.isEmpty();
+    const bool leftLineEqual = !leftLines.isEmpty()
+            ? leftLines.last().text.isEmpty()
+            : true;
+    const bool rightLineEqual = !rightLines.isEmpty()
+            ? rightLines.last().text.isEmpty()
+            : true;
     return leftLineEqual && rightLineEqual;
 }
 
-static void handleLine(const QStringList &newLines, int line, QList<TextLineData> *lines,
+static void handleLine(const QStringList &newLines,
+                       int line,
+                       QList<TextLineData> *lines,
                        int *lineNumber)
 {
     if (line < newLines.size()) {
@@ -95,7 +87,9 @@ static void handleLine(const QStringList &newLines, int line, QList<TextLineData
     }
 }
 
-static void handleDifference(const QString &text, QList<TextLineData> *lines, int *lineNumber)
+static void handleDifference(const QString &text,
+                             QList<TextLineData> *lines,
+                             int *lineNumber)
 {
     const QStringList newLines = text.split('\n');
     for (int line = 0; line < newLines.size(); ++line) {
@@ -236,8 +230,10 @@ ChunkData DiffUtils::calculateOriginalData(const QList<Diff> &leftDiffList,
         }
     }
 
-    QList<TextLineData> leftData = assemblyRows(leftLines, leftSpans);
-    QList<TextLineData> rightData = assemblyRows(rightLines, rightSpans);
+    QList<TextLineData> leftData = assemblyRows(leftLines,
+                                                leftSpans);
+    QList<TextLineData> rightData = assemblyRows(rightLines,
+                                                 rightSpans);
 
     // fill ending separators
     for (int i = leftData.size(); i < rightData.size(); i++)
@@ -315,15 +311,16 @@ FileData DiffUtils::calculateContextData(const ChunkData &originalData, int cont
         const bool contextChunk = hiddenRows.contains(i);
         ChunkData chunkData;
         chunkData.contextChunk = contextChunk;
-        chunkData.startingLineNumber = {leftLineNumber, rightLineNumber};
+        chunkData.leftStartingLineNumber = leftLineNumber;
+        chunkData.rightStartingLineNumber = rightLineNumber;
         while (i < originalData.rows.size()) {
             if (contextChunk != hiddenRows.contains(i))
                 break;
             RowData rowData = originalData.rows.at(i);
             chunkData.rows.append(rowData);
-            if (rowData.line[LeftSide].textLineType == TextLineData::TextLine)
+            if (rowData.leftLine.textLineType == TextLineData::TextLine)
                 ++leftLineNumber;
-            if (rowData.line[RightSide].textLineType == TextLineData::TextLine)
+            if (rowData.rightLine.textLineType == TextLineData::TextLine)
                 ++rightLineNumber;
             ++i;
         }
@@ -361,7 +358,7 @@ QString DiffUtils::makePatch(const ChunkData &chunkData,
                              bool lastChunk)
 {
     if (chunkData.contextChunk)
-        return {};
+        return QString();
 
     QString diffText;
     int leftLineCount = 0;
@@ -378,15 +375,15 @@ QString DiffUtils::makePatch(const ChunkData &chunkData,
         int i = 0;
         for (i = rowCount; i > 0; i--) {
             const RowData &rowData = chunkData.rows.at(i - 1);
-            if (rowData.line[LeftSide].textLineType != TextLineData::Separator
-                    || rowData.line[RightSide].textLineType != TextLineData::TextLine)
+            if (rowData.leftLine.textLineType != TextLineData::Separator
+                    || rowData.rightLine.textLineType != TextLineData::TextLine)
                 break;
         }
         const int leftSeparator = i;
         for (i = rowCount; i > 0; i--) {
             const RowData &rowData = chunkData.rows.at(i - 1);
-            if (rowData.line[RightSide].textLineType != TextLineData::Separator
-                    || rowData.line[LeftSide].textLineType != TextLineData::TextLine)
+            if (rowData.rightLine.textLineType != TextLineData::Separator
+                    || rowData.leftLine.textLineType != TextLineData::TextLine)
                 break;
         }
         const int rightSeparator = i;
@@ -436,7 +433,7 @@ QString DiffUtils::makePatch(const ChunkData &chunkData,
             }
             if (i < chunkData.rows.size()) {
                 const QString line = makePatchLine(' ',
-                                                   rowData.line[RightSide].text,
+                                                   rowData.rightLine.text,
                                                    lastChunk,
                                                    i == chunkData.rows.size() - 1);
 
@@ -448,19 +445,19 @@ QString DiffUtils::makePatch(const ChunkData &chunkData,
                 diffText += line;
             }
         } else {
-            if (rowData.line[LeftSide].textLineType == TextLineData::TextLine)
-                leftBuffer.append(rowData.line[LeftSide]);
-            if (rowData.line[RightSide].textLineType == TextLineData::TextLine)
-                rightBuffer.append(rowData.line[RightSide]);
+            if (rowData.leftLine.textLineType == TextLineData::TextLine)
+                leftBuffer.append(rowData.leftLine);
+            if (rowData.rightLine.textLineType == TextLineData::TextLine)
+                rightBuffer.append(rowData.rightLine);
         }
     }
 
     const QString chunkLine = "@@ -"
-            + QString::number(chunkData.startingLineNumber[LeftSide] + 1)
+            + QString::number(chunkData.leftStartingLineNumber + 1)
             + ','
             + QString::number(leftLineCount)
             + " +"
-            + QString::number(chunkData.startingLineNumber[RightSide] + 1)
+            + QString::number(chunkData.rightStartingLineNumber + 1)
             + ','
             + QString::number(rightLineCount)
             + " @@"
@@ -488,25 +485,45 @@ QString DiffUtils::makePatch(const ChunkData &chunkData,
     return diffText;
 }
 
-static QString sideFileName(DiffSide side, const FileData &fileData)
+static QString leftFileName(const FileData &fileData, unsigned formatFlags)
 {
-    const FileData::FileOperation operation = side == LeftSide ? FileData::NewFile
-                                                               : FileData::DeleteFile;
-    if (fileData.fileOperation == operation)
-        return "/dev/null";
-    const QString sideMarker = side == LeftSide ? QString("a/") : QString("b/");
-    return sideMarker + fileData.fileInfo[side].fileName;
+    QString diffText;
+    QTextStream str(&diffText);
+    if (fileData.fileOperation == FileData::NewFile) {
+        str << "/dev/null";
+    } else {
+        if (formatFlags & DiffUtils::AddLevel)
+            str << "a/";
+        str << fileData.leftFileInfo.fileName;
+    }
+    return diffText;
 }
 
-QString DiffUtils::makePatch(const QList<FileData> &fileDataList)
+static QString rightFileName(const FileData &fileData, unsigned formatFlags)
+{
+    QString diffText;
+    QTextStream str(&diffText);
+    if (fileData.fileOperation == FileData::DeleteFile) {
+        str << "/dev/null";
+    } else {
+        if (formatFlags & DiffUtils::AddLevel)
+            str << "b/";
+        str << fileData.rightFileInfo.fileName;
+    }
+    return diffText;
+}
+
+QString DiffUtils::makePatch(const QList<FileData> &fileDataList, unsigned formatFlags)
 {
     QString diffText;
     QTextStream str(&diffText);
 
     for (int i = 0; i < fileDataList.size(); i++) {
         const FileData &fileData = fileDataList.at(i);
-        str << "diff --git a/" << fileData.fileInfo[LeftSide].fileName
-                      << " b/" << fileData.fileInfo[RightSide].fileName << '\n';
+        if (formatFlags & GitFormat) {
+            str << "diff --git a/" << fileData.leftFileInfo.fileName
+                << " b/" << fileData.rightFileInfo.fileName << '\n';
+        }
         if (fileData.fileOperation == FileData::NewFile
                 || fileData.fileOperation == FileData::DeleteFile) { // git only?
             if (fileData.fileOperation == FileData::NewFile)
@@ -515,23 +532,23 @@ QString DiffUtils::makePatch(const QList<FileData> &fileDataList)
                 str << "deleted";
             str << " file mode 100644\n";
         }
-        str << "index " << fileData.fileInfo[LeftSide].typeInfo << ".." << fileData.fileInfo[RightSide].typeInfo;
+        str << "index " << fileData.leftFileInfo.typeInfo << ".." << fileData.rightFileInfo.typeInfo;
         if (fileData.fileOperation == FileData::ChangeFile)
             str << " 100644";
         str << "\n";
 
         if (fileData.binaryFiles) {
             str << "Binary files ";
-            str << sideFileName(LeftSide, fileData);
+            str << leftFileName(fileData, formatFlags);
             str << " and ";
-            str << sideFileName(RightSide, fileData);
+            str << rightFileName(fileData, formatFlags);
             str << " differ\n";
         } else {
             if (!fileData.chunks.isEmpty()) {
                 str << "--- ";
-                str << sideFileName(LeftSide, fileData) << "\n";
+                str << leftFileName(fileData, formatFlags) << "\n";
                 str << "+++ ";
-                str << sideFileName(RightSide, fileData) << "\n";
+                str << rightFileName(fileData, formatFlags) << "\n";
                 for (int j = 0; j < fileData.chunks.size(); j++) {
                     str << makePatch(fileData.chunks.at(j),
                                      (j == fileData.chunks.size() - 1)
@@ -543,7 +560,7 @@ QString DiffUtils::makePatch(const QList<FileData> &fileDataList)
     return diffText;
 }
 
-static QList<RowData> readLines(QStringView patch, bool lastChunk, bool *lastChunkAtTheEndOfFile, bool *ok)
+static QList<RowData> readLines(StringView patch, bool lastChunk, bool *lastChunkAtTheEndOfFile, bool *ok)
 {
     QList<Diff> diffList;
 
@@ -557,10 +574,10 @@ static QList<RowData> readLines(QStringView patch, bool lastChunk, bool *lastChu
     int noNewLineInDelete = -1;
     int noNewLineInInsert = -1;
 
-    const QList<QStringView> lines = patch.split(newLine);
+    const QVector<StringView> lines = patch.split(newLine);
     int i;
     for (i = 0; i < lines.size(); i++) {
-        QStringView line = lines.at(i);
+        StringView line = lines.at(i);
         if (line.isEmpty()) { // need to have at least one character (1 column)
             if (lastChunk)
                 i = lines.size(); // pretend as we've read all the lines (we just ignore the rest)
@@ -630,7 +647,7 @@ static QList<RowData> readLines(QStringView patch, bool lastChunk, bool *lastChu
         || (noNewLineInInsert >= 0 && (noNewLineInInsert != lastInsert || lastEqual > lastInsert))) {
         if (ok)
             *ok = false;
-        return {};
+        return QList<RowData>();
     }
 
     if (ok)
@@ -713,13 +730,13 @@ static QList<RowData> readLines(QStringView patch, bool lastChunk, bool *lastChu
                                             outputRightDiffList).rows;
 }
 
-static QStringView readLine(QStringView text, QStringView *remainingText, bool *hasNewLine)
+static StringView readLine(StringView text, StringView *remainingText, bool *hasNewLine)
 {
     const QChar newLine('\n');
     const int indexOfFirstNewLine = text.indexOf(newLine);
     if (indexOfFirstNewLine < 0) {
         if (remainingText)
-            *remainingText = {};
+            *remainingText = StringView();
         if (hasNewLine)
             *hasNewLine = false;
         return text;
@@ -734,10 +751,10 @@ static QStringView readLine(QStringView text, QStringView *remainingText, bool *
     return text.left(indexOfFirstNewLine);
 }
 
-static bool detectChunkData(QStringView chunkDiff, ChunkData *chunkData, QStringView *remainingPatch)
+static bool detectChunkData(StringView chunkDiff, ChunkData *chunkData, StringView *remainingPatch)
 {
     bool hasNewLine;
-    const QStringView chunkLine = readLine(chunkDiff, remainingPatch, &hasNewLine);
+    const StringView chunkLine = readLine(chunkDiff, remainingPatch, &hasNewLine);
 
     const QLatin1String leftPosMarker("@@ -");
     const QLatin1String rightPosMarker(" +");
@@ -757,15 +774,15 @@ static bool detectChunkData(QStringView chunkDiff, ChunkData *chunkData, QString
 
     const int leftPosStart = leftPosIndex + leftPosMarker.size();
     const int leftPosLength = rightPosIndex - leftPosStart;
-    QStringView leftPos = chunkLine.mid(leftPosStart, leftPosLength);
+    StringView leftPos = chunkLine.mid(leftPosStart, leftPosLength);
 
     const int rightPosStart = rightPosIndex + rightPosMarker.size();
     const int rightPosLength = optionalHintIndex - rightPosStart;
-    QStringView rightPos = chunkLine.mid(rightPosStart, rightPosLength);
+    StringView rightPos = chunkLine.mid(rightPosStart, rightPosLength);
 
     const int optionalHintStart = optionalHintIndex + optionalHintMarker.size();
     const int optionalHintLength = chunkLine.size() - optionalHintStart;
-    const QStringView optionalHint = chunkLine.mid(optionalHintStart, optionalHintLength);
+    const StringView optionalHint = chunkLine.mid(optionalHintStart, optionalHintLength);
 
     const QChar comma(',');
     bool ok;
@@ -784,18 +801,19 @@ static bool detectChunkData(QStringView chunkDiff, ChunkData *chunkData, QString
     if (!ok)
         return false;
 
-    chunkData->startingLineNumber = {leftLineNumber - 1, rightLineNumber - 1};
+    chunkData->leftStartingLineNumber = leftLineNumber - 1;
+    chunkData->rightStartingLineNumber = rightLineNumber - 1;
     chunkData->contextInfo = optionalHint.toString();
 
     return true;
 }
 
-static QList<ChunkData> readChunks(QStringView patch, bool *lastChunkAtTheEndOfFile, bool *ok)
+static QList<ChunkData> readChunks(StringView patch, bool *lastChunkAtTheEndOfFile, bool *ok)
 {
     QList<ChunkData> chunkDataList;
     int position = -1;
 
-    QList<int> startingPositions; // store starting positions of @@
+    QVector<int> startingPositions; // store starting positions of @@
     if (patch.startsWith(QStringLiteral("@@ -")))
         startingPositions.append(position + 1);
 
@@ -816,10 +834,10 @@ static QList<ChunkData> readChunks(QStringView patch, bool *lastChunkAtTheEndOfF
                                                                           : patch.size());
 
         // extract just one chunk
-        const QStringView chunkDiff = patch.mid(chunkStart, chunkEnd - chunkStart);
+        const StringView chunkDiff = patch.mid(chunkStart, chunkEnd - chunkStart);
 
         ChunkData chunkData;
-        QStringView lines;
+        StringView lines;
         readOk = detectChunkData(chunkDiff, &chunkData, &lines);
 
         if (!readOk)
@@ -839,9 +857,9 @@ static QList<ChunkData> readChunks(QStringView patch, bool *lastChunkAtTheEndOfF
     return chunkDataList;
 }
 
-static FileData readDiffHeaderAndChunks(QStringView headerAndChunks, bool *ok)
+static FileData readDiffHeaderAndChunks(StringView headerAndChunks, bool *ok)
 {
-    QStringView patch = headerAndChunks;
+    StringView patch = headerAndChunks;
     FileData fileData;
     bool readOk = false;
 
@@ -860,13 +878,13 @@ static FileData readDiffHeaderAndChunks(QStringView headerAndChunks, bool *ok)
     const QRegularExpressionMatch leftMatch = leftFileRegExp.match(patch);
     if (leftMatch.hasMatch() && leftMatch.capturedStart() == 0) {
         patch = patch.mid(leftMatch.capturedEnd());
-        fileData.fileInfo[LeftSide].fileName = leftMatch.captured(1);
+        fileData.leftFileInfo.fileName = leftMatch.captured(1);
 
         // followed by rightFileRegExp
         const QRegularExpressionMatch rightMatch = rightFileRegExp.match(patch);
         if (rightMatch.hasMatch() && rightMatch.capturedStart() == 0) {
             patch = patch.mid(rightMatch.capturedEnd());
-            fileData.fileInfo[RightSide].fileName = rightMatch.captured(1);
+            fileData.rightFileInfo.fileName = rightMatch.captured(1);
 
             fileData.chunks = readChunks(patch,
                                          &fileData.lastChunkAtTheEndOfFile,
@@ -876,8 +894,8 @@ static FileData readDiffHeaderAndChunks(QStringView headerAndChunks, bool *ok)
         // or by binaryRegExp
         const QRegularExpressionMatch binaryMatch = binaryRegExp.match(patch);
         if (binaryMatch.hasMatch() && binaryMatch.capturedStart() == 0) {
-            fileData.fileInfo[LeftSide].fileName = binaryMatch.captured(1);
-            fileData.fileInfo[RightSide].fileName = binaryMatch.captured(2);
+            fileData.leftFileInfo.fileName = binaryMatch.captured(1);
+            fileData.rightFileInfo.fileName = binaryMatch.captured(2);
             fileData.binaryFiles = true;
             readOk = true;
         }
@@ -887,13 +905,13 @@ static FileData readDiffHeaderAndChunks(QStringView headerAndChunks, bool *ok)
         *ok = readOk;
 
     if (!readOk)
-        return {};
+        return FileData();
 
     return fileData;
 
 }
 
-static void readDiffPatch(QPromise<QList<FileData>> &promise, QStringView patch)
+static QList<FileData> readDiffPatch(StringView patch, bool *ok, QFutureInterfaceBase *jobController)
 {
     const QRegularExpression diffRegExp("(?:\\n|^)"          // new line of the beginning of a patch
                                         "("                  // either
@@ -912,20 +930,23 @@ static void readDiffPatch(QPromise<QList<FileData>> &promise, QStringView patch)
                                         ")");                // end of or
 
     bool readOk = false;
+
     QList<FileData> fileDataList;
+
     QRegularExpressionMatch diffMatch = diffRegExp.match(patch);
     if (diffMatch.hasMatch()) {
         readOk = true;
         int lastPos = -1;
         do {
-            if (promise.isCanceled())
-                return;
+            if (jobController && jobController->isCanceled())
+                return QList<FileData>();
 
             int pos = diffMatch.capturedStart();
             if (lastPos >= 0) {
-                QStringView headerAndChunks = patch.mid(lastPos, pos - lastPos);
+                StringView headerAndChunks = patch.mid(lastPos, pos - lastPos);
 
-                const FileData fileData = readDiffHeaderAndChunks(headerAndChunks, &readOk);
+                const FileData fileData = readDiffHeaderAndChunks(headerAndChunks,
+                                                                  &readOk);
 
                 if (!readOk)
                     break;
@@ -938,17 +959,23 @@ static void readDiffPatch(QPromise<QList<FileData>> &promise, QStringView patch)
         } while (diffMatch.hasMatch());
 
         if (readOk) {
-            QStringView headerAndChunks = patch.mid(lastPos, patch.size() - lastPos - 1);
+            StringView headerAndChunks = patch.mid(lastPos, patch.size() - lastPos - 1);
 
-            const FileData fileData = readDiffHeaderAndChunks(headerAndChunks, &readOk);
+            const FileData fileData = readDiffHeaderAndChunks(headerAndChunks,
+                                                              &readOk);
 
             if (readOk)
                 fileDataList.append(fileData);
         }
     }
+
+    if (ok)
+        *ok = readOk;
+
     if (!readOk)
-        return;
-    promise.addResult(fileDataList);
+        return QList<FileData>();
+
+    return fileDataList;
 }
 
 // The git diff patch format (ChangeFile, NewFile, DeleteFile)
@@ -982,7 +1009,7 @@ static void readDiffPatch(QPromise<QList<FileData>> &promise, QStringView patch)
 //     +++ [rightFileNameOrDevNull]\n
 //     <Chunks>
 
-static bool detectIndexAndBinary(QStringView patch, FileData *fileData, QStringView *remainingPatch)
+static bool detectIndexAndBinary(StringView patch, FileData *fileData, StringView *remainingPatch)
 {
     bool hasNewLine;
     *remainingPatch = patch;
@@ -999,23 +1026,23 @@ static bool detectIndexAndBinary(QStringView patch, FileData *fileData, QStringV
         }
     }
 
-    QStringView afterNextLine;
+    StringView afterNextLine;
     // index [leftIndexSha]..[rightIndexSha] <optionally: octalNumber>
-    const QStringView nextLine = readLine(patch, &afterNextLine, &hasNewLine);
+    const StringView nextLine = readLine(patch, &afterNextLine, &hasNewLine);
 
     const QLatin1String indexHeader("index ");
 
     if (nextLine.startsWith(indexHeader)) {
-        const QStringView indices = nextLine.mid(indexHeader.size());
+        const StringView indices = nextLine.mid(indexHeader.size());
         const int dotsPosition = indices.indexOf(QStringLiteral(".."));
         if (dotsPosition < 0)
             return false;
-        fileData->fileInfo[LeftSide].typeInfo = indices.left(dotsPosition).toString();
+        fileData->leftFileInfo.typeInfo = indices.left(dotsPosition).toString();
 
         // if there is no space we take the remaining string
         const int spacePosition = indices.indexOf(QChar::Space, dotsPosition + 2);
         const int length = spacePosition < 0 ? -1 : spacePosition - dotsPosition - 2;
-        fileData->fileInfo[RightSide].typeInfo = indices.mid(dotsPosition + 2, length).toString();
+        fileData->rightFileInfo.typeInfo = indices.mid(dotsPosition + 2, length).toString();
 
         *remainingPatch = afterNextLine;
     } else if (fileData->fileOperation != FileData::ChangeFile) {
@@ -1030,22 +1057,26 @@ static bool detectIndexAndBinary(QStringView patch, FileData *fileData, QStringV
         return true;
     }
 
-    const QString leftFileName = sideFileName(LeftSide, *fileData);
-    const QString rightFileName = sideFileName(RightSide, *fileData);
+    const QString devNull("/dev/null");
+    const QString leftFileName = fileData->fileOperation == FileData::NewFile
+            ? devNull : QLatin1String("a/") + fileData->leftFileInfo.fileName;
+    const QString rightFileName = fileData->fileOperation == FileData::DeleteFile
+            ? devNull : QLatin1String("b/") + fileData->rightFileInfo.fileName;
+
     const QString binaryLine = "Binary files "
             + leftFileName + " and "
             + rightFileName + " differ";
 
     if (*remainingPatch == binaryLine) {
         fileData->binaryFiles = true;
-        *remainingPatch = {};
+        *remainingPatch = StringView();
         return true;
     }
 
     const QString leftStart = "--- " + leftFileName;
-    QStringView afterMinuses;
+    StringView afterMinuses;
     // --- leftFileName
-    const QStringView minuses = readLine(*remainingPatch, &afterMinuses, &hasNewLine);
+    const StringView minuses = readLine(*remainingPatch, &afterMinuses, &hasNewLine);
     if (!hasNewLine)
         return false; // we need to have at least one more line
 
@@ -1053,9 +1084,9 @@ static bool detectIndexAndBinary(QStringView patch, FileData *fileData, QStringV
         return false;
 
     const QString rightStart = "+++ " + rightFileName;
-    QStringView afterPluses;
+    StringView afterPluses;
     // +++ rightFileName
-    const QStringView pluses = readLine(afterMinuses, &afterPluses, &hasNewLine);
+    const StringView pluses = readLine(afterMinuses, &afterPluses, &hasNewLine);
     if (!hasNewLine)
         return false; // we need to have at least one more line
 
@@ -1066,7 +1097,7 @@ static bool detectIndexAndBinary(QStringView patch, FileData *fileData, QStringV
     return true;
 }
 
-static bool extractCommonFileName(QStringView fileNames, QStringView *fileName)
+static bool extractCommonFileName(StringView fileNames, StringView *fileName)
 {
     // we should have 1 space between filenames
     if (fileNames.size() % 2 == 0)
@@ -1081,10 +1112,10 @@ static bool extractCommonFileName(QStringView fileNames, QStringView *fileName)
         return false;
 
     // drop "a/"
-    const QStringView leftFileName = fileNames.mid(2, fileNameSize - 2);
+    const StringView leftFileName = fileNames.mid(2, fileNameSize - 2);
 
     // drop the first filename + " b/"
-    const QStringView rightFileName = fileNames.mid(fileNameSize + 3, fileNameSize - 2);
+    const StringView rightFileName = fileNames.mid(fileNameSize + 3, fileNameSize - 2);
 
     if (leftFileName != rightFileName)
         return false;
@@ -1093,27 +1124,27 @@ static bool extractCommonFileName(QStringView fileNames, QStringView *fileName)
     return true;
 }
 
-static bool detectFileData(QStringView patch, FileData *fileData, QStringView *remainingPatch)
+static bool detectFileData(StringView patch, FileData *fileData, StringView *remainingPatch)
 {
     bool hasNewLine;
 
-    QStringView afterDiffGit;
+    StringView afterDiffGit;
     // diff --git a/leftFileName b/rightFileName
-    const QStringView diffGit = readLine(patch, &afterDiffGit, &hasNewLine);
+    const StringView diffGit = readLine(patch, &afterDiffGit, &hasNewLine);
     if (!hasNewLine)
         return false; // we need to have at least one more line
 
     const QLatin1String gitHeader("diff --git ");
-    const QStringView fileNames = diffGit.mid(gitHeader.size());
-    QStringView commonFileName;
+    const StringView fileNames = diffGit.mid(gitHeader.size());
+    StringView commonFileName;
     if (extractCommonFileName(fileNames, &commonFileName)) {
         // change / new / delete
 
         fileData->fileOperation = FileData::ChangeFile;
-        fileData->fileInfo[LeftSide].fileName = fileData->fileInfo[RightSide].fileName = commonFileName.toString();
+        fileData->leftFileInfo.fileName = fileData->rightFileInfo.fileName = commonFileName.toString();
 
-        QStringView afterSecondLine;
-        const QStringView secondLine = readLine(afterDiffGit, &afterSecondLine, &hasNewLine);
+        StringView afterSecondLine;
+        const StringView secondLine = readLine(afterDiffGit, &afterSecondLine, &hasNewLine);
 
         if (secondLine.startsWith(QStringLiteral("new file mode "))) {
             fileData->fileOperation = FileData::NewFile;
@@ -1122,7 +1153,7 @@ static bool detectFileData(QStringView patch, FileData *fileData, QStringView *r
             fileData->fileOperation = FileData::DeleteFile;
             *remainingPatch = afterSecondLine;
         } else if (secondLine.startsWith(QStringLiteral("old mode "))) {
-            QStringView afterThirdLine;
+            StringView afterThirdLine;
             // new mode
             readLine(afterSecondLine, &afterThirdLine, &hasNewLine);
             if (!hasNewLine)
@@ -1136,9 +1167,9 @@ static bool detectFileData(QStringView patch, FileData *fileData, QStringView *r
 
     } else {
         // copy / rename
-        QStringView afterModeOrSimilarity;
-        QStringView afterSimilarity;
-        const QStringView secondLine = readLine(afterDiffGit, &afterModeOrSimilarity, &hasNewLine);
+        StringView afterModeOrSimilarity;
+        StringView afterSimilarity;
+        const StringView secondLine = readLine(afterDiffGit, &afterModeOrSimilarity, &hasNewLine);
         if (secondLine.startsWith(QLatin1String("old mode "))) {
             if (!hasNewLine)
                 return false;
@@ -1156,9 +1187,9 @@ static bool detectFileData(QStringView patch, FileData *fileData, QStringView *r
 
         // TODO: validate similarity line
 
-        QStringView afterCopyRenameFrom;
+        StringView afterCopyRenameFrom;
         // [copy / rename] from leftFileName
-        const QStringView copyRenameFrom = readLine(afterSimilarity, &afterCopyRenameFrom, &hasNewLine);
+        const StringView copyRenameFrom = readLine(afterSimilarity, &afterCopyRenameFrom, &hasNewLine);
         if (!hasNewLine)
             return false; // we need to have at least one more line
 
@@ -1166,26 +1197,26 @@ static bool detectFileData(QStringView patch, FileData *fileData, QStringView *r
         const QLatin1String renameFrom("rename from ");
         if (copyRenameFrom.startsWith(copyFrom)) {
             fileData->fileOperation = FileData::CopyFile;
-            fileData->fileInfo[LeftSide].fileName = copyRenameFrom.mid(copyFrom.size()).toString();
+            fileData->leftFileInfo.fileName = copyRenameFrom.mid(copyFrom.size()).toString();
         } else if (copyRenameFrom.startsWith(renameFrom)) {
             fileData->fileOperation = FileData::RenameFile;
-            fileData->fileInfo[LeftSide].fileName = copyRenameFrom.mid(renameFrom.size()).toString();
+            fileData->leftFileInfo.fileName = copyRenameFrom.mid(renameFrom.size()).toString();
         } else {
             return false;
         }
 
-        QStringView afterCopyRenameTo;
+        StringView afterCopyRenameTo;
         // [copy / rename] to rightFileName
-        const QStringView copyRenameTo = readLine(afterCopyRenameFrom, &afterCopyRenameTo, &hasNewLine);
+        const StringView copyRenameTo = readLine(afterCopyRenameFrom, &afterCopyRenameTo, &hasNewLine);
 
         // if (dis)similarity index is 100% we don't have more lines
 
         const QLatin1String copyTo("copy to ");
         const QLatin1String renameTo("rename to ");
         if (fileData->fileOperation == FileData::CopyFile && copyRenameTo.startsWith(copyTo)) {
-            fileData->fileInfo[RightSide].fileName = copyRenameTo.mid(copyTo.size()).toString();
+            fileData->rightFileInfo.fileName = copyRenameTo.mid(copyTo.size()).toString();
         } else if (fileData->fileOperation == FileData::RenameFile && copyRenameTo.startsWith(renameTo)) {
-            fileData->fileInfo[RightSide].fileName = copyRenameTo.mid(renameTo.size()).toString();
+            fileData->rightFileInfo.fileName = copyRenameTo.mid(renameTo.size()).toString();
         } else {
             return false;
         }
@@ -1195,11 +1226,11 @@ static bool detectFileData(QStringView patch, FileData *fileData, QStringView *r
     return detectIndexAndBinary(*remainingPatch, fileData, remainingPatch);
 }
 
-static void readGitPatch(QPromise<QList<FileData>> &promise, QStringView patch)
+static QList<FileData> readGitPatch(StringView patch, bool *ok, QFutureInterfaceBase *jobController)
 {
     int position = -1;
 
-    QList<int> startingPositions; // store starting positions of git headers
+    QVector<int> startingPositions; // store starting positions of git headers
     if (patch.startsWith(QStringLiteral("diff --git ")))
         startingPositions.append(position + 1);
 
@@ -1208,17 +1239,18 @@ static void readGitPatch(QPromise<QList<FileData>> &promise, QStringView patch)
 
     class PatchInfo {
     public:
-        QStringView patch;
+        StringView patch;
         FileData fileData;
     };
 
     const QChar newLine('\n');
+    bool readOk = true;
 
-    QList<PatchInfo> patches;
+    QVector<PatchInfo> patches;
     const int count = startingPositions.size();
     for (int i = 0; i < count; i++) {
-        if (promise.isCanceled())
-            return;
+        if (jobController && jobController->isCanceled())
+            return QList<FileData>();
 
         const int diffStart = startingPositions.at(i);
         const int diffEnd = (i < count - 1)
@@ -1229,67 +1261,84 @@ static void readGitPatch(QPromise<QList<FileData>> &promise, QStringView patch)
                                                                          : patch.size());
 
         // extract the patch for just one file
-        const QStringView fileDiff = patch.mid(diffStart, diffEnd - diffStart);
+        const StringView fileDiff = patch.mid(diffStart, diffEnd - diffStart);
 
         FileData fileData;
-        QStringView remainingFileDiff;
-        if (!detectFileData(fileDiff, &fileData, &remainingFileDiff))
-            return;
+        StringView remainingFileDiff;
+        readOk = detectFileData(fileDiff, &fileData, &remainingFileDiff);
+
+        if (!readOk)
+            break;
 
         patches.append(PatchInfo { remainingFileDiff, fileData });
     }
 
-    if (patches.isEmpty())
-        return;
+    if (!readOk) {
+        if (ok)
+            *ok = readOk;
+        return QList<FileData>();
+    }
 
-    promise.setProgressRange(0, patches.size());
+    if (jobController)
+        jobController->setProgressRange(0, patches.size());
 
     QList<FileData> fileDataList;
+    readOk = false;
     int i = 0;
-    for (const auto &patchInfo : std::as_const(patches)) {
-        if (promise.isCanceled())
-            return;
-        promise.setProgressValue(i++);
+    for (const auto &patchInfo : qAsConst(patches)) {
+        if (jobController) {
+            if (jobController->isCanceled())
+                return QList<FileData>();
+            jobController->setProgressValue(i++);
+        }
 
         FileData fileData = patchInfo.fileData;
-        bool readOk = false;
         if (!patchInfo.patch.isEmpty() || fileData.fileOperation == FileData::ChangeFile)
             fileData.chunks = readChunks(patchInfo.patch, &fileData.lastChunkAtTheEndOfFile, &readOk);
         else
             readOk = true;
 
         if (!readOk)
-            return;
+            break;
 
         fileDataList.append(fileData);
     }
-    promise.addResult(fileDataList);
+
+    if (ok)
+        *ok = readOk;
+
+    if (!readOk)
+        return QList<FileData>();
+
+    return fileDataList;
 }
 
-std::optional<QList<FileData>> DiffUtils::readPatch(const QString &patch)
+QList<FileData> DiffUtils::readPatch(const QString &patch, bool *ok,
+                                     QFutureInterfaceBase *jobController)
 {
-    QPromise<QList<FileData>> promise;
-    promise.start();
-    readPatchWithPromise(promise, patch);
-    if (promise.future().resultCount() == 0)
-        return {};
-    return promise.future().result();
-}
+    bool readOk = false;
 
-void DiffUtils::readPatchWithPromise(QPromise<QList<FileData>> &promise, const QString &patch)
-{
-    promise.setProgressRange(0, 1);
-    promise.setProgressValue(0);
-    QStringView croppedPatch = QStringView(patch);
+    QList<FileData> fileDataList;
+
+    if (jobController) {
+        jobController->setProgressRange(0, 1);
+        jobController->setProgressValue(0);
+    }
+    StringView croppedPatch = make_stringview(patch);
     // Crop e.g. "-- \n2.10.2.windows.1\n\n" at end of file
     const QRegularExpression formatPatchEndingRegExp("(\\n-- \\n\\S*\\n\\n$)");
     const QRegularExpressionMatch match = formatPatchEndingRegExp.match(croppedPatch);
     if (match.hasMatch())
         croppedPatch = croppedPatch.left(match.capturedStart() + 1);
 
-    readGitPatch(promise, croppedPatch);
-    if (promise.future().resultCount() == 0)
-        readDiffPatch(promise, croppedPatch);
+    fileDataList = readGitPatch(croppedPatch, &readOk, jobController);
+    if (!readOk)
+        fileDataList = readDiffPatch(croppedPatch, &readOk, jobController);
+
+    if (ok)
+        *ok = readOk;
+
+    return fileDataList;
 }
 
 } // namespace DiffEditor

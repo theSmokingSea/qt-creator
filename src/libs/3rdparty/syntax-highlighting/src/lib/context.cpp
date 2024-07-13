@@ -38,15 +38,7 @@ void Context::resolveContexts(DefinitionData &def, const HighlightingContextData
     m_lineEndContext.resolve(def, data.lineEndContext);
     m_lineEmptyContext.resolve(def, data.lineEmptyContext);
     m_fallthroughContext.resolve(def, data.fallthroughContext);
-    m_stopEmptyLineContextSwitchLoop = data.stopEmptyLineContextSwitchLoop;
-
-    /**
-     * line end context switches only when lineEmptyContext is #stay. This avoids
-     * skipping empty lines after a line continuation character (see bug 405903)
-     */
-    if (m_lineEmptyContext.isStay()) {
-        m_lineEmptyContext = m_lineEndContext;
-    }
+    m_fallthrough = !m_fallthroughContext.isStay();
 
     m_rules.reserve(data.rules.size());
     for (const auto &ruleData : data.rules) {
@@ -73,7 +65,6 @@ void Context::resolveIncludes(DefinitionData &def)
     for (auto it = m_rules.begin(); it != m_rules.end();) {
         const IncludeRules *includeRules = it->get()->castToIncludeRules();
         if (!includeRules) {
-            m_hasDynamicRule = m_hasDynamicRule || it->get()->isDynamic();
             ++it;
             continue;
         }
@@ -100,7 +91,7 @@ void Context::resolveIncludes(DefinitionData &def)
             if (idx == 0) {
                 context = defData->initialContext();
             } else {
-                context = defData->contextByName(QStringView(contextName).left(idx));
+                context = defData->contextByName(contextName.left(idx));
             }
         }
 
@@ -119,8 +110,6 @@ void Context::resolveIncludes(DefinitionData &def)
         if (context->m_resolveState != Resolved) {
             context->resolveIncludes(*defData);
         }
-
-        m_hasDynamicRule = m_hasDynamicRule || context->m_hasDynamicRule;
 
         /**
          * handle included attribute

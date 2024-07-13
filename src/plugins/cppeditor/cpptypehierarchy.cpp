@@ -1,96 +1,58 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cpptypehierarchy.h"
 
 #include "cppeditorconstants.h"
-#include "cppeditordocument.h"
-#include "cppeditortr.h"
 #include "cppeditorwidget.h"
+#include "cppeditorplugin.h"
 #include "cppelementevaluator.h"
 
-#include <coreplugin/actionmanager/actionmanager.h>
-#include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/find/itemviewfind.h>
+#include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/progressmanager/progressmanager.h>
-
 #include <texteditor/texteditor.h>
-#include <texteditor/typehierarchy.h>
-
 #include <utils/algorithm.h>
 #include <utils/delegates.h>
 #include <utils/dropsupport.h>
-#include <utils/futuresynchronizer.h>
 #include <utils/navigationtreeview.h>
 #include <utils/progressindicator.h>
 
-#include <QFuture>
-#include <QFutureWatcher>
+#include <QApplication>
 #include <QLabel>
+#include <QLatin1String>
 #include <QMenu>
 #include <QModelIndex>
 #include <QStackedLayout>
-#include <QStandardItemModel>
 #include <QVBoxLayout>
 
-using namespace Core;
+using namespace CppEditor;
+using namespace CppEditor::Internal;
 using namespace Utils;
 
-namespace CppEditor::Internal {
-
-class CppClass;
-class CppElement;
-
-class CppTypeHierarchyModel : public QStandardItemModel
-{
-public:
-    CppTypeHierarchyModel(QObject *parent)
-        : QStandardItemModel(parent)
-    {}
-
-    Qt::DropActions supportedDragActions() const override;
-    QStringList mimeTypes() const override;
-    QMimeData *mimeData(const QModelIndexList &indexes) const override;
-};
-
-class CppTypeHierarchyWidget : public TextEditor::TypeHierarchyWidget
-{
-public:
-    CppTypeHierarchyWidget();
-
-    void perform();
-
-private:
-    void reload() override { perform(); }
-
-    void displayHierarchy();
-    typedef QList<CppClass> CppClass::*HierarchyMember;
-    void performFromExpression(const QString &expression, const FilePath &filePath);
-    QStandardItem *buildHierarchy(const CppClass &cppClass, QStandardItem *parent,
-                                  bool isRoot, HierarchyMember member);
-    void showNoTypeHierarchyLabel();
-    void showTypeHierarchy();
-    void showProgress();
-    void hideProgress();
-    void clearTypeHierarchy();
-    void onItemActivated(const QModelIndex &index);
-    void onItemDoubleClicked(const QModelIndex &index);
-
-    NavigationTreeView *m_treeView = nullptr;
-    QWidget *m_hierarchyWidget = nullptr;
-    QStackedLayout *m_stackLayout = nullptr;
-    QStandardItemModel *m_model = nullptr;
-    AnnotatedItemDelegate *m_delegate = nullptr;
-    TextEditor::TextEditorLinkLabel *m_inspectedClass = nullptr;
-    QLabel *m_infoLabel = nullptr;
-    QFuture<std::shared_ptr<CppElement>> m_future;
-    QFutureWatcher<void> m_futureWatcher;
-    FutureSynchronizer m_synchronizer;
-    ProgressIndicator *m_progressIndicator = nullptr;
-    QString m_oldClass;
-    bool m_showOldClass = false;
-    int m_runningIndexers = 0;
-};
+namespace {
 
 enum ItemRole {
     AnnotationRole = Qt::UserRole + 1,
@@ -104,7 +66,7 @@ QStandardItem *itemForClass(const CppClass &cppClass)
     item->setData(cppClass.name, Qt::DisplayRole);
     if (cppClass.name != cppClass.qualifiedName)
         item->setData(cppClass.qualifiedName, AnnotationRole);
-    item->setData(iconForType(cppClass.iconType), Qt::DecorationRole);
+    item->setData(cppClass.icon, Qt::DecorationRole);
     QVariant link;
     link.setValue(Link(cppClass.link));
     item->setData(link, LinkRole);
@@ -113,51 +75,64 @@ QStandardItem *itemForClass(const CppClass &cppClass)
 
 QList<CppClass> sortClasses(const QList<CppClass> &cppClasses)
 {
-    return sorted(cppClasses, [](const CppClass &c1, const CppClass &c2) -> bool {
+    QList<CppClass> sorted = cppClasses;
+    sort(sorted, [](const CppClass &c1, const CppClass &c2) -> bool {
         const QString key1 = c1.name + QLatin1String("::") + c1.qualifiedName;
         const QString key2 = c2.name + QLatin1String("::") + c2.qualifiedName;
         return key1 < key2;
     });
+    return sorted;
 }
+
+} // Anonymous
 
 class CppTypeHierarchyTreeView : public NavigationTreeView
 {
+    Q_OBJECT
 public:
-    CppTypeHierarchyTreeView(QWidget *parent)
-        : NavigationTreeView(parent)
-    {}
+    CppTypeHierarchyTreeView(QWidget *parent);
 
-    void contextMenuEvent(QContextMenuEvent *event) override
-    {
-        if (!event)
-            return;
-
-        QMenu contextMenu;
-
-        QAction *action = contextMenu.addAction(Tr::tr("Open in Editor"));
-        connect(action, &QAction::triggered, this, [this] () {
-            emit activated(currentIndex());
-        });
-        action = contextMenu.addAction(Tr::tr("Open Type Hierarchy"));
-        connect(action, &QAction::triggered, this, [this] () {
-            emit doubleClicked(currentIndex());
-        });
-
-        contextMenu.addSeparator();
-
-        action = contextMenu.addAction(Tr::tr("Expand All"));
-        connect(action, &QAction::triggered, this, &QTreeView::expandAll);
-        action = contextMenu.addAction(Tr::tr("Collapse All"));
-        connect(action, &QAction::triggered, this, &QTreeView::collapseAll);
-
-        contextMenu.exec(event->globalPos());
-
-        event->accept();
-    }
+    void contextMenuEvent(QContextMenuEvent *event) override;
 };
 
-// CppTypeHierarchyWidget
 
+CppTypeHierarchyTreeView::CppTypeHierarchyTreeView(QWidget *parent) :
+    NavigationTreeView(parent)
+{
+}
+
+void CppTypeHierarchyTreeView::contextMenuEvent(QContextMenuEvent *event)
+{
+    if (!event)
+        return;
+
+    QMenu contextMenu;
+
+    QAction *action = contextMenu.addAction(tr("Open in Editor"));
+    connect(action, &QAction::triggered, this, [this] () {
+        emit activated(currentIndex());
+    });
+    action = contextMenu.addAction(tr("Open Type Hierarchy"));
+    connect(action, &QAction::triggered, this, [this] () {
+        emit doubleClicked(currentIndex());
+    });
+
+    contextMenu.addSeparator();
+
+    action = contextMenu.addAction(tr("Expand All"));
+    connect(action, &QAction::triggered, this, &QTreeView::expandAll);
+    action = contextMenu.addAction(tr("Collapse All"));
+    connect(action, &QAction::triggered, this, &QTreeView::collapseAll);
+
+    contextMenu.exec(event->globalPos());
+
+    event->accept();
+}
+
+namespace CppEditor {
+namespace Internal {
+
+// CppTypeHierarchyWidget
 CppTypeHierarchyWidget::CppTypeHierarchyWidget()
 {
     m_inspectedClass = new TextEditor::TextEditorLinkLabel(this);
@@ -198,24 +173,16 @@ CppTypeHierarchyWidget::CppTypeHierarchyWidget()
     showNoTypeHierarchyLabel();
     setLayout(m_stackLayout);
 
+    connect(CppEditorPlugin::instance(), &CppEditorPlugin::typeHierarchyRequested,
+            this, &CppTypeHierarchyWidget::perform);
     connect(&m_futureWatcher, &QFutureWatcher<void>::finished,
             this, &CppTypeHierarchyWidget::displayHierarchy);
 
-    connect(ProgressManager::instance(), &ProgressManager::taskStarted, [this](Id type) {
-        if (type == Constants::TASK_INDEX)
-            ++m_runningIndexers;
-    });
-    connect(ProgressManager::instance(), &ProgressManager::allTasksFinished, [this](Id type) {
-        if (type == Constants::TASK_INDEX)
-            --m_runningIndexers;
-    });
+    m_synchronizer.setCancelOnWait(true);
 }
 
 void CppTypeHierarchyWidget::perform()
 {
-    if (m_runningIndexers > 0)
-        return;
-
     if (m_future.isRunning())
         m_future.cancel();
 
@@ -239,14 +206,10 @@ void CppTypeHierarchyWidget::perform()
     m_futureWatcher.setFuture(QFuture<void>(m_future));
     m_synchronizer.addFuture(m_future);
 
-    using namespace std::chrono_literals;
-    Core::ProgressManager::addTimedTask(m_futureWatcher.future(),
-                                        Tr::tr("Evaluating Type Hierarchy"),
-                                        "TypeHierarchy",
-                                        2s);
+    Core::ProgressManager::addTask(m_future, tr("Evaluating Type Hierarchy"), "TypeHierarchy");
 }
 
-void CppTypeHierarchyWidget::performFromExpression(const QString &expression, const FilePath &filePath)
+void CppTypeHierarchyWidget::performFromExpression(const QString &expression, const QString &fileName)
 {
     if (m_future.isRunning())
         m_future.cancel();
@@ -255,11 +218,11 @@ void CppTypeHierarchyWidget::performFromExpression(const QString &expression, co
 
     showProgress();
 
-    m_future = CppElementEvaluator::asyncExecute(expression, filePath);
+    m_future = CppElementEvaluator::asyncExecute(expression, fileName);
     m_futureWatcher.setFuture(QFuture<void>(m_future));
     m_synchronizer.addFuture(m_future);
 
-    Core::ProgressManager::addTask(m_future, Tr::tr("Evaluating Type Hierarchy"), "TypeHierarchy");
+    Core::ProgressManager::addTask(m_future, tr("Evaluating Type Hierarchy"), "TypeHierarchy");
 }
 
 void CppTypeHierarchyWidget::displayHierarchy()
@@ -272,8 +235,8 @@ void CppTypeHierarchyWidget::displayHierarchy()
         showNoTypeHierarchyLabel();
         return;
     }
-    const std::shared_ptr<CppElement> &cppElement = m_future.result();
-    if (!cppElement) {
+    const QSharedPointer<CppElement> &cppElement = m_future.result();
+    if (cppElement.isNull()) {
         showNoTypeHierarchyLabel();
         return;
     }
@@ -285,10 +248,10 @@ void CppTypeHierarchyWidget::displayHierarchy()
 
     m_inspectedClass->setText(cppClass->name);
     m_inspectedClass->setLink(cppClass->link);
-    QStandardItem *bases = new QStandardItem(Tr::tr("Bases"));
+    QStandardItem *bases = new QStandardItem(tr("Bases"));
     m_model->invisibleRootItem()->appendRow(bases);
     QStandardItem *selectedItem1 = buildHierarchy(*cppClass, bases, true, &CppClass::bases);
-    QStandardItem *derived = new QStandardItem(Tr::tr("Derived"));
+    QStandardItem *derived = new QStandardItem(tr("Derived"));
     m_model->invisibleRootItem()->appendRow(derived);
     QStandardItem *selectedItem2 = buildHierarchy(*cppClass, derived, true, &CppClass::derived);
     m_treeView->expandAll();
@@ -324,7 +287,7 @@ QStandardItem *CppTypeHierarchyWidget::buildHierarchy(const CppClass &cppClass, 
 
 void CppTypeHierarchyWidget::showNoTypeHierarchyLabel()
 {
-    m_infoLabel->setText(Tr::tr("No type hierarchy available"));
+    m_infoLabel->setText(tr("No type hierarchy available"));
     m_stackLayout->setCurrentWidget(m_infoLabel);
 }
 
@@ -335,7 +298,7 @@ void CppTypeHierarchyWidget::showTypeHierarchy()
 
 void CppTypeHierarchyWidget::showProgress()
 {
-    m_infoLabel->setText(Tr::tr("Evaluating type hierarchy..."));
+    m_infoLabel->setText(tr("Evaluating type hierarchy..."));
     if (!m_progressIndicator) {
         m_progressIndicator = new ProgressIndicator(ProgressIndicatorSize::Large);
         m_progressIndicator->attachToWidget(this);
@@ -370,7 +333,7 @@ void CppTypeHierarchyWidget::onItemActivated(const QModelIndex &index)
         return;
 
     const Link updatedLink = CppElementEvaluator::linkFromExpression(
-                getExpression(index), link.targetFilePath);
+                getExpression(index), link.targetFilePath.toString());
     if (updatedLink.hasValidTarget())
         link = updatedLink;
 
@@ -381,7 +344,27 @@ void CppTypeHierarchyWidget::onItemDoubleClicked(const QModelIndex &index)
 {
     const auto link = index.data(LinkRole).value<Link>();
     if (link.hasValidTarget())
-        performFromExpression(getExpression(index), link.targetFilePath);
+        performFromExpression(getExpression(index), link.targetFilePath.toString());
+}
+
+// CppTypeHierarchyFactory
+CppTypeHierarchyFactory::CppTypeHierarchyFactory()
+{
+    setDisplayName(tr("Type Hierarchy"));
+    setPriority(700);
+    setId(Constants::TYPE_HIERARCHY_ID);
+}
+
+Core::NavigationView CppTypeHierarchyFactory::createWidget()
+{
+    auto w = new CppTypeHierarchyWidget;
+    w->perform();
+    return {w, {}};
+}
+
+CppTypeHierarchyModel::CppTypeHierarchyModel(QObject *parent)
+    : QStandardItemModel(parent)
+{
 }
 
 Qt::DropActions CppTypeHierarchyModel::supportedDragActions() const
@@ -410,32 +393,7 @@ QMimeData *CppTypeHierarchyModel::mimeData(const QModelIndexList &indexes) const
     return data;
 }
 
-// CppTypeHierarchyFactory
+} // namespace Internal
+} // namespace CppEditor
 
-class CppTypeHierarchyFactory final : public TextEditor::TypeHierarchyWidgetFactory
-{
-    TextEditor::TypeHierarchyWidget *createWidget(Core::IEditor *editor) final
-    {
-        const auto textEditor = qobject_cast<TextEditor::BaseTextEditor *>(editor);
-        if (!textEditor)
-            return nullptr;
-        const auto cppDoc = qobject_cast<CppEditorDocument *>(textEditor->textDocument());
-        if (!cppDoc || cppDoc->usesClangd())
-            return nullptr;
-
-        return new CppTypeHierarchyWidget;
-    }
-};
-
-static CppTypeHierarchyFactory &cppTypeHierarchyFactory()
-{
-    static CppTypeHierarchyFactory theCppTypeHierarchyFactory;
-    return theCppTypeHierarchyFactory;
-}
-
-void setupCppTypeHierarchy()
-{
-    (void) cppTypeHierarchyFactory(); // Trigger instantiation
-}
-
-} // CppEditor::Internal
+#include "cpptypehierarchy.moc"

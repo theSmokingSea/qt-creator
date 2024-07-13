@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -7,11 +29,7 @@
 
 #include <projectexplorer/runcontrol.h>
 
-#include <solutions/tasking/tasktree.h>
-
 #include <utils/portlist.h>
-
-using namespace Tasking;
 
 namespace ProjectExplorer {
 
@@ -28,29 +46,20 @@ public:
     DeviceUsedPortsGatherer(QObject *parent = nullptr);
     ~DeviceUsedPortsGatherer() override;
 
-    void start();
+    void start(const IDeviceConstPtr &device);
     void stop();
-    void setDevice(const IDeviceConstPtr &device);
+    Utils::Port getNextFreePort(Utils::PortList *freePorts) const; // returns -1 if no more are left
     QList<Utils::Port> usedPorts() const;
-    QString errorString() const;
 
 signals:
-    void done(bool success);
+    void error(const QString &errMsg);
+    void portListReady();
 
 private:
-    Internal::DeviceUsedPortsGathererPrivate * const d;
-};
+    void handleProcessDone();
+    void setupUsedPorts();
 
-class PROJECTEXPLORER_EXPORT DeviceUsedPortsGathererTaskAdapter
-    : public TaskAdapter<DeviceUsedPortsGatherer>
-{
-public:
-    DeviceUsedPortsGathererTaskAdapter() {
-        connect(task(), &DeviceUsedPortsGatherer::done, this, [this](bool success) {
-            emit done(toDoneResult(success));
-        });
-    }
-    void start() final { task()->start(); }
+    Internal::DeviceUsedPortsGathererPrivate * const d;
 };
 
 class PROJECTEXPLORER_EXPORT PortsGatherer : public RunWorker
@@ -59,6 +68,7 @@ class PROJECTEXPLORER_EXPORT PortsGatherer : public RunWorker
 
 public:
     explicit PortsGatherer(RunControl *runControl);
+    ~PortsGatherer() override;
 
     QUrl findEndPoint();
 
@@ -69,6 +79,25 @@ protected:
 private:
     DeviceUsedPortsGatherer m_portsGatherer;
     Utils::PortList m_portList;
+};
+
+class PROJECTEXPLORER_EXPORT ChannelForwarder : public RunWorker
+{
+    Q_OBJECT
+
+public:
+    explicit ChannelForwarder(RunControl *runControl);
+
+    using UrlGetter = std::function<QUrl()>;
+    void setFromUrlGetter(const UrlGetter &urlGetter);
+
+    QUrl fromUrl() const { return m_fromUrl; }
+    QUrl toUrl() const { return m_toUrl; }
+
+private:
+    UrlGetter m_fromUrlGetter;
+    QUrl m_fromUrl;
+    QUrl m_toUrl;
 };
 
 class PROJECTEXPLORER_EXPORT ChannelProvider : public RunWorker
@@ -84,7 +113,5 @@ public:
 private:
     QVector<Internal::SubChannelProvider *> m_channelProviders;
 };
-
-using DeviceUsedPortsGathererTask = CustomTask<DeviceUsedPortsGathererTaskAdapter>;
 
 } // namespace ProjectExplorer

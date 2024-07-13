@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -12,21 +34,12 @@ namespace ProjectExplorer {
 
 class ProjectExplorerPlugin;
 
-class PROJECTEXPLORER_EXPORT TaskCategory
-{
-public:
-    Utils::Id id;
-    QString displayName;
-    QString description;
-    bool visible = true;
-    int priority = 0;
-};
-
-class PROJECTEXPLORER_EXPORT TaskHub final : public QObject
+class PROJECTEXPLORER_EXPORT TaskHub : public QObject
 {
     Q_OBJECT
-
 public:
+    static TaskHub *instance();
+
     // Convenience overload
     static void addTask(Task::TaskType type, const QString &description,
                         Utils::Id category);
@@ -37,7 +50,8 @@ public slots:
     static void removeTask(const ProjectExplorer::Task &task);
 
 public:
-    static void addCategory(const TaskCategory &category);
+    static void addCategory(Utils::Id categoryId, const QString &displayName, bool visible = true,
+                            int priority = 0);
     static void updateTaskFileName(const Task &task, const QString &fileName);
     static void updateTaskLineNumber(const Task &task, int line);
     static void taskMarkClicked(const Task &task);
@@ -47,7 +61,8 @@ public:
     static void requestPopup();
 
 signals:
-    void categoryAdded(const TaskCategory &category);
+    void categoryAdded(Utils::Id categoryId, const QString &displayName, bool visible,
+                       int priority);
     void taskAdded(const ProjectExplorer::Task &task);
     void taskRemoved(const ProjectExplorer::Task &task);
     void tasksCleared(Utils::Id categoryId);
@@ -59,12 +74,12 @@ signals:
     void openTask(const Task &task);
 
 private:
-    friend PROJECTEXPLORER_EXPORT TaskHub &taskHub();
-
     TaskHub();
-    ~TaskHub() final;
-};
+    ~TaskHub() override;
 
-PROJECTEXPLORER_EXPORT TaskHub &taskHub();
+    static QVector<Utils::Id> m_registeredCategories;
+
+    friend class ProjectExplorerPluginPrivate;
+};
 
 } // namespace ProjectExplorer

@@ -1,20 +1,41 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
+
+#include <QObject>
 
 #include "propertiesview.h"
 
 #include "qmt/model/mconstvisitor.h"
 #include "qmt/diagram/dconstvisitor.h"
 #include "qmt/diagram/dobject.h"
-#include "qmt/diagram/drelation.h"
-#include "qmt/infrastructure/qmtassert.h"
 #include "qmt/stereotype/stereotypeicon.h"
 #include "qmt/style/styleengine.h"
 
 #include <QList>
-#include <QObject>
 
 QT_BEGIN_NAMESPACE
 class QWidget;
@@ -37,6 +58,8 @@ class PaletteBox;
 
 class QMT_EXPORT PropertiesView::MView : public QObject, public MConstVisitor, public DConstVisitor
 {
+    Q_OBJECT
+
 public:
     explicit MView(PropertiesView *propertiesView);
     ~MView() override;
@@ -73,23 +96,18 @@ public:
     void visitDBoundary(const DBoundary *boundary) override;
     void visitDSwimlane(const DSwimlane *swimlane) override;
 
-    void update(const QList<MElement *> &modelElements);
-    void update(const QList<DElement *> &diagramElements, MDiagram *diagram);
+    void update(QList<MElement *> &modelElements);
+    void update(QList<DElement *> &diagramElements, MDiagram *diagram);
     void edit();
 
 protected:
-    virtual void visitMElementBehind(const MElement *element);
-    virtual void visitMObjectBehind(const MObject *object);
-    virtual void visitMDiagramBehind(const MDiagram *diagram);
-    virtual void visitDObjectBefore(const DObject *object);
-
     void onStereotypesChanged(const QString &stereotypes);
     void onObjectNameChanged(const QString &name);
     void onNamespaceChanged(const QString &umlNamespace);
     void onTemplateParametersChanged(const QString &templateParameters);
     void onClassMembersStatusChanged(bool valid);
     void onParseClassMembers();
-    void onClassMembersChanged(const QList<MClassMember> &classMembers);
+    void onClassMembersChanged(QList<MClassMember> &classMembers);
     void onItemVarietyChanged(const QString &variety);
     void onRelationNameChanged(const QString &name);
     void onDependencyDirectionChanged(int directionIndex);
@@ -117,11 +135,6 @@ protected:
     void onPlainShapeChanged(bool plainShape);
     void onItemShapeChanged(const QString &shape);
     void onAutoWidthChanged(bool autoWidthed);
-    void onRelationVisualPrimaryRoleChanged(int visualRoleIndex);
-    void onRelationVisualSecondaryRoleChanged(int visualRoleIndex);
-    void onRelationVisualEmphasizedChanged(bool visualEmphasized);
-    void onRelationColorChanged(const QColor &color);
-    void onRelationThicknessChanged(qreal thickness);
     void onAnnotationVisualRoleChanged(int visualRoleIndex);
 
     void prepare();
@@ -151,9 +164,6 @@ protected:
     QList<QString> splitTemplateParameters(const QString &templateParameters);
     QString formatTemplateParameters(const QList<QString> &templateParametersList);
 
-    void setRelationPrimaryRolePalette(StyleEngine::ElementType elementType,
-                                       DRelation::VisualPrimaryRole visualPrimaryRole);
-
     enum SelectionType {
         SelectionSingle,
         SelectionMulti
@@ -163,9 +173,6 @@ protected:
     QList<T *> filter(const QList<V *> &elements);
     template<class T, class V, class BASE>
     bool haveSameValue(const QList<BASE *> &baseElements, V (T::*getter)() const, V *value);
-    template<class T, class V, class BASE>
-    bool isValueChanged(const QList<BASE *> &baseElements, SelectionType selectionType,
-                        const V &value, V (T::*getter)() const);
     template<class T, class V, class BASE>
     void assignModelElement(const QList<BASE *> &baseElements, SelectionType selectionType,
                             const V &value, V (T::*getter)() const, void (T::*setter)(const V &));
@@ -250,132 +257,7 @@ protected:
     QCheckBox *m_annotationAutoWidthCheckbox = nullptr;
     QComboBox *m_annotationVisualRoleSelector = nullptr;
     // DRelation
-    PaletteBox *m_relationVisualPrimaryRoleSelector = nullptr;
-    QComboBox *m_relationVisualSecondaryRoleSelector = nullptr;
-    QCheckBox *m_relationVisualEmphasizedCheckbox = nullptr;
     QLabel *m_pointsLabel = nullptr;
 };
-
-template<class T, class V>
-QList<T *> PropertiesView::MView::filter(const QList<V *> &elements)
-{
-    QList<T *> filtered;
-    for (auto *element : elements) {
-        auto t = dynamic_cast<T *>(element);
-        if (t)
-            filtered.append(t);
-    }
-    return filtered;
-}
-
-template<class T, class V, class BASE>
-inline bool PropertiesView::MView::haveSameValue(const QList<BASE *> &baseElements, V (T::*getter)() const, V *value)
-{
-    QList<T *> elements = filter<T>(baseElements);
-    QMT_CHECK(!elements.isEmpty());
-    V candidate = V(); // avoid warning of reading uninitialized variable
-    bool haveCandidate = false;
-    for (const auto *element : elements) {
-        if (!haveCandidate) {
-            candidate = ((*element).*getter)();
-            haveCandidate = true;
-        } else {
-            if (candidate != ((*element).*getter)())
-                return false;
-        }
-    }
-    QMT_CHECK(haveCandidate);
-    if (!haveCandidate)
-        return false;
-    if (value)
-        *value = candidate;
-    return true;
-}
-
-template<class T, class V, class BASE>
-inline bool PropertiesView::MView::isValueChanged(const QList<BASE *> &baseElements, SelectionType selectionType,
-                                                  const V &value, V (T::*getter)() const)
-{
-    QList<T *> elements = filter<T>(baseElements);
-    if ((selectionType == SelectionSingle && elements.size() == 1) || selectionType == SelectionMulti) {
-        for (const auto *element : elements) {
-            if (value != ((*element).*getter)())
-                return true;
-        }
-    }
-    return false;
-}
-
-template<class T, class V, class BASE>
-inline void PropertiesView::MView::assignModelElement(const QList<BASE *> &baseElements, SelectionType selectionType,
-                                                      const V &value, V (T::*getter)() const, void (T::*setter)(const V &))
-{
-    QList<T *> elements = filter<T>(baseElements);
-    if ((selectionType == SelectionSingle && elements.size() == 1) || selectionType == SelectionMulti) {
-        for (auto *element : elements) {
-            if (value != ((*element).*getter)()) {
-                m_propertiesView->beginUpdate(element);
-                ((*element).*setter)(value);
-                m_propertiesView->endUpdate(element, false);
-            }
-        }
-    }
-}
-
-template<class T, class V, class BASE>
-inline void PropertiesView::MView::assignModelElement(const QList<BASE *> &baseElements, SelectionType selectionType,
-                                                      const V &value, V (T::*getter)() const, void (T::*setter)(V))
-{
-    QList<T *> elements = filter<T>(baseElements);
-    if ((selectionType == SelectionSingle && elements.size() == 1) || selectionType == SelectionMulti) {
-        for (auto *element : elements) {
-            if (value != ((*element).*getter)()) {
-                m_propertiesView->beginUpdate(element);
-                ((*element).*setter)(value);
-                m_propertiesView->endUpdate(element, false);
-            }
-        }
-    }
-}
-
-template<class T, class E, class V, class BASE>
-inline void PropertiesView::MView::assignEmbeddedModelElement(const QList<BASE *> &baseElements, SelectionType selectionType,
-                                                              const V &value, E (T::*getter)() const,
-                                                              void (T::*setter)(const E &),
-                                                              V (E::*vGetter)() const, void (E::*vSetter)(const V &))
-{
-    QList<T *> elements = filter<T>(baseElements);
-    if ((selectionType == SelectionSingle && elements.size() == 1) || selectionType == SelectionMulti) {
-        for (auto *element : elements) {
-            E embedded = ((*element).*getter)();
-            if (value != (embedded.*vGetter)()) {
-                m_propertiesView->beginUpdate(element);
-                (embedded.*vSetter)(value);
-                ((*element).*setter)(embedded);
-                m_propertiesView->endUpdate(element, false);
-            }
-        }
-    }
-}
-
-template<class T, class E, class V, class BASE>
-inline void PropertiesView::MView::assignEmbeddedModelElement(const QList<BASE *> &baseElements, SelectionType selectionType,
-                                                              const V &value, E (T::*getter)() const,
-                                                              void (T::*setter)(const E &),
-                                                              V (E::*vGetter)() const, void (E::*vSetter)(V))
-{
-    QList<T *> elements = filter<T>(baseElements);
-    if ((selectionType == SelectionSingle && elements.size() == 1) || selectionType == SelectionMulti) {
-        for (auto *element : elements) {
-            E embedded = ((*element).*getter)();
-            if (value != (embedded.*vGetter)()) {
-                m_propertiesView->beginUpdate(element);
-                (embedded.*vSetter)(value);
-                ((*element).*setter)(embedded);
-                m_propertiesView->endUpdate(element, false);
-            }
-        }
-    }
-}
 
 } // namespace qmt

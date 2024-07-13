@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -20,11 +42,8 @@ class QMakeGlobals;
 class QMakeVfs;
 QT_END_NAMESPACE
 
-namespace ProjectExplorer {
-class DeploymentData;
-class ProjectUpdater;
-} // ProjectExplorer
-
+namespace CppEditor { class CppProjectUpdater; }
+namespace ProjectExplorer { class DeploymentData; }
 namespace QtSupport { class ProFileReader; }
 
 namespace QmakeProjectManager {
@@ -48,7 +67,7 @@ public:
     ProjectExplorer::ProjectImporter *projectImporter() const final;
 
 protected:
-    RestoreResult fromMap(const Utils::Store &map, QString *errorMessage) final;
+    RestoreResult fromMap(const QVariantMap &map, QString *errorMessage) final;
 
 private:
     ProjectExplorer::DeploymentKnowledge deploymentKnowledge() const override;
@@ -56,7 +75,9 @@ private:
     mutable ProjectExplorer::ProjectImporter *m_projectImporter = nullptr;
 };
 
-class QmakeBuildSystem : public ProjectExplorer::BuildSystem
+// FIXME: This export here is only there to appease the current version
+// of the appman plugin. This _will_ go away, one way or the other.
+class QMAKEPROJECTMANAGER_EXPORT QmakeBuildSystem : public ProjectExplorer::BuildSystem
 {
     Q_OBJECT
 
@@ -89,8 +110,6 @@ public:
 
     Utils::FilePaths filesGeneratedFrom(const Utils::FilePath &file) const final;
     QVariant additionalData(Utils::Id id) const final;
-    QList<QPair<Utils::Id, QString>> generators() const override;
-    void runGenerator(Utils::Id id) override;
 
     void asyncUpdate();
     void buildFinished(bool success);
@@ -107,24 +126,21 @@ public:
     void collectData(const QmakeProFile *file, ProjectExplorer::DeploymentData &deploymentData);
     void collectApplicationData(const QmakeProFile *file,
                                 ProjectExplorer::DeploymentData &deploymentData);
-    Utils::FilePaths allLibraryTargetFiles(const QmakeProFile *file) const;
     void collectLibraryData(const QmakeProFile *file,
             ProjectExplorer::DeploymentData &deploymentData);
     void startAsyncTimer(QmakeProFile::AsyncUpdateDelay delay);
 
     void warnOnToolChainMismatch(const QmakeProFile *pro) const;
-    void testToolChain(ProjectExplorer::Toolchain *tc, const Utils::FilePath &path) const;
-
-    QString deviceRoot() const;
+    void testToolChain(ProjectExplorer::ToolChain *tc, const Utils::FilePath &path) const;
 
     /// \internal
     QtSupport::ProFileReader *createProFileReader(const QmakeProFile *qmakeProFile);
     /// \internal
-    QMakeGlobals *qmakeGlobals() const;
+    QMakeGlobals *qmakeGlobals();
     /// \internal
-    QMakeVfs *qmakeVfs() const;
+    QMakeVfs *qmakeVfs();
     /// \internal
-    const Utils::FilePath &qmakeSysroot() const;
+    QString qmakeSysroot();
     /// \internal
     void destroyProFileReader(QtSupport::ProFileReader *reader);
     void deregisterFromCacheManager();
@@ -165,9 +181,6 @@ public:
     void scheduleUpdateAllNowOrLater();
 
 private:
-    ProjectExplorer::ExtraCompiler *findExtraCompiler(
-            const ExtraCompilerFilter &filter) const override;
-
     void scheduleUpdateAll(QmakeProFile::AsyncUpdateDelay delay);
     void scheduleUpdateAllLater() { scheduleUpdateAll(QmakeProFile::ParseLater); }
 
@@ -186,7 +199,7 @@ private:
     int m_qmakeGlobalsRefCnt = 0;
     bool m_invalidateQmakeVfsContents = false;
 
-    Utils::FilePath m_qmakeSysroot;
+    QString m_qmakeSysroot;
 
     std::unique_ptr<QFutureInterface<void>> m_asyncUpdateFutureInterface;
     int m_pendingEvaluateFuturesCount = 0;
@@ -194,7 +207,7 @@ private:
     bool m_cancelEvaluate = false;
     QList<QmakeProFile *> m_partialEvaluate;
 
-    ProjectExplorer::ProjectUpdater *m_cppCodeModelUpdater = nullptr;
+    CppEditor::CppProjectUpdater *m_cppCodeModelUpdater = nullptr;
 
     Internal::CentralizedFolderWatcher *m_centralizedFolderWatcher = nullptr;
 

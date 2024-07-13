@@ -1,17 +1,33 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "translationwizardpage.h"
 
-#include "qtsupporttr.h"
-
 #include <projectexplorer/jsonwizard/jsonwizard.h>
-#include <projectexplorer/jsonwizard/jsonwizardpagefactory.h>
-#include <projectexplorer/project.h>
-#include <projectexplorer/projectmanager.h>
-
 #include <utils/algorithm.h>
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/macroexpander.h>
 #include <utils/wizardpage.h>
 
@@ -31,17 +47,20 @@ using namespace Core;
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace QtSupport::Internal {
+namespace QtSupport {
+namespace Internal {
 
-class TranslationWizardPage final : public WizardPage
+class TranslationWizardPage : public WizardPage
 {
+    Q_OBJECT
+
 public:
-    TranslationWizardPage(const QString &enabledExpr, bool singleFile);
+    TranslationWizardPage(const QString &enabledExpr);
 
 private:
-    void initializePage() final;
-    bool isComplete() const final;
-    bool validatePage() final;
+    void initializePage() override;
+    bool isComplete() const override;
+    bool validatePage() override;
 
     QString tsBaseName() const { return m_fileNameLineEdit.text(); }
     void updateLineEdit();
@@ -49,26 +68,34 @@ private:
     QComboBox m_languageComboBox;
     QLineEdit m_fileNameLineEdit;
     const QString m_enabledExpr;
-    const bool m_isProjectWizard;
 };
 
-TranslationWizardPage::TranslationWizardPage(const QString &enabledExpr, bool singleFile)
+TranslationWizardPageFactory::TranslationWizardPageFactory()
+{
+    setTypeIdsSuffix("QtTranslation");
+}
+
+WizardPage *TranslationWizardPageFactory::create(JsonWizard *wizard, Id typeId,
+                                                 const QVariant &data)
+{
+    Q_UNUSED(wizard)
+    Q_UNUSED(typeId)
+    return new TranslationWizardPage(data.toMap().value("enabled").toString());
+}
+
+TranslationWizardPage::TranslationWizardPage(const QString &enabledExpr)
     : m_enabledExpr(enabledExpr)
-    , m_isProjectWizard(!singleFile)
 {
     const auto mainLayout = new QVBoxLayout(this);
     const auto descriptionLabel = new QLabel(
-                singleFile ? Tr::tr("Select a language for which a corresponding "
-                                    "translation (.ts) file will be generated for you.")
-                           : Tr::tr("If you plan to provide translations for your project's "
-                                    "user interface via the Qt Linguist tool, select a "
-                                    "language here. A corresponding translation (.ts) file will be "
-                                    "generated for you."));
+                tr("If you plan to provide translations for your project's "
+                   "user interface via the Qt Linguist tool, please select a language here. "
+                   "A corresponding translation (.ts) file will be generated for you."));
     descriptionLabel->setWordWrap(true);
     mainLayout->addWidget(descriptionLabel);
     const auto formLayout = new QFormLayout;
     mainLayout->addLayout(formLayout);
-    m_languageComboBox.addItem(Tr::tr("<none>"));
+    m_languageComboBox.addItem(tr("<none>"));
     QList<QLocale> allLocales = QLocale::matchingLocales(
                 QLocale::AnyLanguage, QLocale::AnyScript, QLocale::AnyCountry);
     allLocales.removeOne(QLocale::C);
@@ -76,7 +103,7 @@ TranslationWizardPage::TranslationWizardPage(const QString &enabledExpr, bool si
     auto localeStrings = transform<QList<LocalePair>>(allLocales,
                 [](const QLocale &l) {
                     const QString displayName = QLocale::languageToString(l.language()).append(" (")
-                            .append(QLocale::territoryToString(l.territory())).append(')');
+                            .append(QLocale::countryToString(l.country())).append(')');
                     const QString tsFileBaseName = l.name();
                     return qMakePair(displayName, tsFileBaseName);
                 });
@@ -84,15 +111,15 @@ TranslationWizardPage::TranslationWizardPage(const QString &enabledExpr, bool si
         return l1.first < l2.first; });
     localeStrings.erase(std::unique(localeStrings.begin(), localeStrings.end()),
                         localeStrings.end());
-    for (const LocalePair &lp : std::as_const(localeStrings))
+    for (const LocalePair &lp : qAsConst(localeStrings))
         m_languageComboBox.addItem(lp.first, lp.second);
-    formLayout->addRow(Tr::tr("Language:"), &m_languageComboBox);
+    formLayout->addRow(tr("Language:"), &m_languageComboBox);
     const auto fileNameLayout = new QHBoxLayout;
     m_fileNameLineEdit.setReadOnly(true);
     fileNameLayout->addWidget(&m_fileNameLineEdit);
     fileNameLayout->addStretch(1);
-    formLayout->addRow(Tr::tr("Translation file:"), fileNameLayout);
-    connect(&m_languageComboBox, &QComboBox::currentIndexChanged,
+    formLayout->addRow(tr("Translation file:"), fileNameLayout);
+    connect(&m_languageComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &TranslationWizardPage::updateLineEdit);
 }
 
@@ -108,9 +135,7 @@ void TranslationWizardPage::initializePage()
 
 bool TranslationWizardPage::isComplete() const
 {
-    if (m_isProjectWizard)
-        return m_languageComboBox.currentIndex() == 0 || !tsBaseName().isEmpty();
-    return m_languageComboBox.currentIndex() > 0 && !tsBaseName().isEmpty();
+    return m_languageComboBox.currentIndex() == 0 || !tsBaseName().isEmpty();
 }
 
 bool TranslationWizardPage::validatePage()
@@ -125,45 +150,16 @@ void TranslationWizardPage::updateLineEdit()
 {
     m_fileNameLineEdit.setEnabled(m_languageComboBox.currentIndex() != 0);
     if (m_fileNameLineEdit.isEnabled()) {
-        auto jsonWizard = static_cast<JsonWizard *>(wizard());
-        QString projectName = jsonWizard->stringValue("ProjectName");
-        if (!m_isProjectWizard && projectName.isEmpty()) {
-            if (auto project = ProjectManager::startupProject())
-                projectName = FileUtils::fileSystemFriendlyName(project->displayName());
-            else
-                projectName = FilePath::fromUserInput(jsonWizard->stringValue("InitialPath")).baseName();
-        }
+        const QString projectName = static_cast<JsonWizard *>(wizard())->stringValue("ProjectName");
         m_fileNameLineEdit.setText(projectName + '_' + m_languageComboBox.currentData().toString());
     } else {
         m_fileNameLineEdit.clear();
-        m_fileNameLineEdit.setPlaceholderText(Tr::tr("<none>"));
+        m_fileNameLineEdit.setPlaceholderText(tr("<none>"));
     }
     emit completeChanged();
 }
 
-class TranslationWizardPageFactory final : public JsonWizardPageFactory
-{
-public:
-    TranslationWizardPageFactory()
-    {
-        setTypeIdsSuffix("QtTranslation");
-    }
+} // namespace Internal
+} // namespace QtSupport
 
-private:
-    WizardPage *create(JsonWizard *wizard, Id typeId, const QVariant &data) final
-    {
-        Q_UNUSED(wizard)
-        Q_UNUSED(typeId)
-        return new TranslationWizardPage(data.toMap().value("enabled").toString(),
-                                         data.toMap().value("singleFile").toBool());
-    }
-
-    bool validateData(Id, const QVariant &, QString *) final { return true; }
-};
-
-void setupTranslationWizardPage()
-{
-    static TranslationWizardPageFactory theTranslationWizardPageFactory;
-}
-
-} // QtSupport::Internal
+#include <translationwizardpage.moc>

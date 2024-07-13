@@ -1,79 +1,65 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qscxmlcgenerator.h"
 
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitaspect.h>
-
-#include <projectexplorer/extracompiler.h>
+#include <qtsupport/qtkitinformation.h>
 #include <projectexplorer/target.h>
-
 #include <utils/qtcassert.h>
-#include <utils/temporarydirectory.h>
 
 #include <QDateTime>
 #include <QLoggingCategory>
+#include <QUuid>
 
 using namespace ProjectExplorer;
-using namespace Utils;
 
-namespace QtSupport::Internal {
+namespace QtSupport {
 
 static QLoggingCategory log("qtc.qscxmlcgenerator", QtWarningMsg);
+static const char TaskCategory[] = "Task.Category.ExtraCompiler.QScxmlc";
 
-const char TaskCategory[] = "Task.Category.ExtraCompiler.QScxmlc";
-
-class QScxmlcGenerator final : public ProcessExtraCompiler
+QScxmlcGenerator::QScxmlcGenerator(const Project *project,
+                                   const Utils::FilePath &source,
+                                   const Utils::FilePaths &targets, QObject *parent) :
+    ProcessExtraCompiler(project, source, targets, parent),
+    m_tmpdir("qscxmlgenerator")
 {
-public:
-    QScxmlcGenerator(const Project *project, const FilePath &source,
-                     const FilePaths &targets, QObject *parent)
-        : ProcessExtraCompiler(project, source, targets, parent)
-        , m_tmpdir("qscxmlgenerator")
-    {
-        QTC_ASSERT(targets.count() == 2, return);
-        m_header = m_tmpdir.filePath(targets[0].fileName()).toString();
-        QTC_ASSERT(!m_header.isEmpty(), return);
-        m_impl = m_tmpdir.filePath(targets[1].fileName()).toString();
-    }
-
-private:
-    FilePath command() const override;
-
-    QStringList arguments() const override
-    {
-        return {"--header", m_header, "--impl", m_impl, tmpFile().fileName()};
-    }
-
-    FilePath workingDirectory() const override
-    {
-        return m_tmpdir.path();
-    }
-
-    FilePath tmpFile() const
-    {
-        return workingDirectory().pathAppended(source().fileName());
-    }
-
-    FileNameToContentsHash handleProcessFinished(Process *process) override;
-    bool prepareToRun(const QByteArray &sourceContents) override;
-    Tasks parseIssues(const QByteArray &processStderr) override;
-
-    TemporaryDirectory m_tmpdir;
-    QString m_header;
-    QString m_impl;
-};
+    QTC_ASSERT(targets.count() == 2, return);
+    m_header = m_tmpdir.filePath(targets[0].fileName()).toString();
+    m_impl = m_tmpdir.filePath(targets[1].fileName()).toString();
+}
 
 Tasks QScxmlcGenerator::parseIssues(const QByteArray &processStderr)
 {
     Tasks issues;
-    const QList<QByteArray> lines = processStderr.split('\n');
-    for (const QByteArray &line : lines) {
+    foreach (const QByteArray &line, processStderr.split('\n')) {
         QByteArrayList tokens = line.split(':');
 
         if (tokens.length() > 4) {
-            FilePath file = FilePath::fromUtf8(tokens[0]);
+            Utils::FilePath file = Utils::FilePath::fromUtf8(tokens[0]);
             int line = tokens[1].toInt();
             // int column = tokens[2].toInt(); <- nice, but not needed for now.
             Task::TaskType type = tokens[3].trimmed() == "error" ?
@@ -85,21 +71,38 @@ Tasks QScxmlcGenerator::parseIssues(const QByteArray &processStderr)
     return issues;
 }
 
-FilePath QScxmlcGenerator::command() const
+
+Utils::FilePath QScxmlcGenerator::command() const
 {
-    Target *target = project()->activeTarget();
-    Kit *kit = target ? target->kit() : KitManager::defaultKit();
-    QtVersion *version = QtKitAspect::qtVersion(kit);
+    QtSupport::QtVersion *version = nullptr;
+    Target *target;
+    if ((target = project()->activeTarget()))
+        version = QtSupport::QtKitAspect::qtVersion(target->kit());
+    else
+        version = QtSupport::QtKitAspect::qtVersion(KitManager::defaultKit());
 
     if (!version)
-        return {};
+        return Utils::FilePath();
 
     return version->qscxmlcFilePath();
 }
 
+QStringList QScxmlcGenerator::arguments() const
+{
+    QTC_ASSERT(!m_header.isEmpty(), return QStringList());
+
+    return QStringList({QLatin1String("--header"), m_header, QLatin1String("--impl"), m_impl,
+                        tmpFile().fileName()});
+}
+
+Utils::FilePath QScxmlcGenerator::workingDirectory() const
+{
+    return m_tmpdir.path();
+}
+
 bool QScxmlcGenerator::prepareToRun(const QByteArray &sourceContents)
 {
-    const FilePath fn = tmpFile();
+    const Utils::FilePath fn = tmpFile();
     QFile input(fn.toString());
     if (!input.open(QIODevice::WriteOnly))
         return false;
@@ -109,13 +112,13 @@ bool QScxmlcGenerator::prepareToRun(const QByteArray &sourceContents)
     return true;
 }
 
-FileNameToContentsHash QScxmlcGenerator::handleProcessFinished(Process *process)
+FileNameToContentsHash QScxmlcGenerator::handleProcessFinished(Utils::QtcProcess *process)
 {
     Q_UNUSED(process)
-    const FilePath wd = workingDirectory();
+    const Utils::FilePath wd = workingDirectory();
     FileNameToContentsHash result;
-    forEachTarget([&](const FilePath &target) {
-        const FilePath file = wd.pathAppended(target.fileName());
+    forEachTarget([&](const Utils::FilePath &target) {
+        const Utils::FilePath file = wd.pathAppended(target.fileName());
         QFile generated(file.toString());
         if (!generated.open(QIODevice::ReadOnly))
             return;
@@ -124,31 +127,26 @@ FileNameToContentsHash QScxmlcGenerator::handleProcessFinished(Process *process)
     return result;
 }
 
-// QScxmlcGeneratorFactory
-
-class QScxmlcGeneratorFactory final : public ExtraCompilerFactory
+Utils::FilePath QScxmlcGenerator::tmpFile() const
 {
-public:
-    explicit QScxmlcGeneratorFactory(QObject *guard) : m_guard(guard) {}
-
-private:
-    FileType sourceType() const final { return FileType::StateChart; }
-
-    QString sourceTag() const final { return QStringLiteral("scxml"); }
-
-    ExtraCompiler *create(const Project *project,
-                          const FilePath &source,
-                          const FilePaths &targets) final
-    {
-        return new QScxmlcGenerator(project, source, targets, m_guard);
-    }
-
-    QObject *m_guard;
-};
-
-void setupQScxmlcGenerator(QObject *guard)
-{
-    static QScxmlcGeneratorFactory theQScxmlcGeneratorFactory(guard);
+    return workingDirectory().pathAppended(source().fileName());
 }
 
-} // QtSupport::Internal
+FileType QScxmlcGeneratorFactory::sourceType() const
+{
+    return FileType::StateChart;
+}
+
+QString QScxmlcGeneratorFactory::sourceTag() const
+{
+    return QStringLiteral("scxml");
+}
+
+ExtraCompiler *QScxmlcGeneratorFactory::create(
+        const Project *project, const Utils::FilePath &source,
+        const Utils::FilePaths &targets)
+{
+    return new QScxmlcGenerator(project, source, targets, this);
+}
+
+} // namespace QtSupport

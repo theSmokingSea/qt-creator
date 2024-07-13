@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "genericproposalwidget.h"
 #include "genericproposalmodel.h"
@@ -249,6 +271,7 @@ public:
     QRect m_displayRect;
     bool m_isSynchronized = true;
     bool m_explicitlySelected = false;
+    AssistReason m_reason = IdleEditor;
     AssistKind m_kind = Completion;
     bool m_justInvoked = false;
     QPointer<GenericProposalInfoFrame> m_infoFrame;
@@ -357,9 +380,9 @@ void GenericProposalWidget::setAssistant(CodeAssistant *assistant)
 
 void GenericProposalWidget::setReason(AssistReason reason)
 {
-    if (reason == ExplicitlyInvoked)
+    d->m_reason = reason;
+    if (d->m_reason == ExplicitlyInvoked)
         d->m_justInvoked = true;
-    IAssistProposalWidget::setReason(reason);
 }
 
 void GenericProposalWidget::setKind(AssistKind kind)
@@ -392,26 +415,31 @@ void GenericProposalWidget::setIsSynchronized(bool isSync)
     d->m_isSynchronized = isSync;
 }
 
-void GenericProposalWidget::updateModel(GenericProposalModelPtr model, const QString &prefix)
+bool GenericProposalWidget::supportsModelUpdate(const Utils::Id &proposalId) const
+{
+    return proposalId == Constants::GENERIC_PROPOSAL_ID;
+}
+
+void GenericProposalWidget::updateModel(ProposalModelPtr model)
 {
     QString currentText;
     if (d->m_explicitlySelected)
         currentText = d->m_model->text(d->m_completionListView->currentIndex().row());
-    d->m_model = model;
+    d->m_model = model.staticCast<GenericProposalModel>();
     if (d->m_model->containsDuplicates())
         d->m_model->removeDuplicates();
     d->m_completionListView->setModel(new ModelAdapter(d->m_model, d->m_completionListView));
     connect(d->m_completionListView->selectionModel(), &QItemSelectionModel::currentChanged,
             &d->m_infoTimer, QOverload<>::of(&QTimer::start));
+    int currentRow = -1;
     if (!currentText.isEmpty()) {
-        const int currentRow = d->m_model->indexOf(
+        currentRow = d->m_model->indexOf(
             Utils::equal(&AssistProposalItemInterface::text, currentText));
-        if (currentRow < 0)
-            d->m_explicitlySelected = false;
-        else
-            d->m_completionListView->selectRow(currentRow);
     }
-    updateAndCheck(prefix);
+    if (currentRow >= 0)
+        d->m_completionListView->selectRow(currentRow);
+    else
+        d->m_explicitlySelected = false;
 }
 
 void GenericProposalWidget::showProposal(const QString &prefix)
@@ -425,7 +453,7 @@ void GenericProposalWidget::showProposal(const QString &prefix)
     d->m_completionListView->setFocus();
 }
 
-void GenericProposalWidget::filterProposal(const QString &prefix)
+void GenericProposalWidget::updateProposal(const QString &prefix)
 {
     if (!isVisible())
         return;
@@ -464,7 +492,7 @@ bool GenericProposalWidget::updateAndCheck(const QString &prefix)
         if (!prefix.isEmpty())
             d->m_model->filter(prefix);
     }
-    if (!d->m_model->hasItemsToPropose(prefix, reason())) {
+    if (!d->m_model->hasItemsToPropose(prefix, d->m_reason)) {
         d->m_completionListView->reset();
         abort();
         return false;
@@ -654,7 +682,7 @@ bool GenericProposalWidget::eventFilter(QObject *o, QEvent *e)
             AssistProposalItemInterface *item =
                 d->m_model->proposalItem(d->m_completionListView->currentIndex().row());
             if (item->prematurelyApplies(typedChar)
-                    && (reason() == ExplicitlyInvoked || item->text().endsWith(typedChar))) {
+                    && (d->m_reason == ExplicitlyInvoked || item->text().endsWith(typedChar))) {
                 abort();
                 emit proposalItemActivated(item);
                 return true;

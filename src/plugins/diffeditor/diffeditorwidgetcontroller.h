@@ -1,20 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "diffutils.h"
 
-#include <coreplugin/patchtool.h>
-#include <utils/guard.h>
-
 #include <QObject>
 #include <QTextCharFormat>
 #include <QTimer>
 
-QT_BEGIN_NAMESPACE
-class QMenu;
-QT_END_NAMESPACE
+QT_FORWARD_DECLARE_CLASS(QMenu)
 
 namespace Core { class IDocument; }
 namespace TextEditor { class FontSettings; }
@@ -41,29 +58,25 @@ public:
                             int columnNumber);
     void setFontSettings(const TextEditor::FontSettings &fontSettings);
     void addCodePasterAction(QMenu *menu, int fileIndex, int chunkIndex);
-    void addPatchAction(QMenu *menu, int fileIndex, int chunkIndex, Core::PatchAction patchAction);
+    void addApplyAction(QMenu *menu, int fileIndex, int chunkIndex);
+    void addRevertAction(QMenu *menu, int fileIndex, int chunkIndex);
     void addExtraActions(QMenu *menu, int fileIndex, int chunkIndex, const ChunkSelection &selection);
     void updateCannotDecodeInfo();
-    void setBusyShowing(bool busy);
-    void setCurrentDiffFileIndex(int index) { m_currentDiffFileIndex = index; }
-    int currentDiffFileIndex() const { return m_currentDiffFileIndex; }
 
     ChunkData chunkData(int fileIndex, int chunkIndex) const;
 
-    Utils::Guard m_ignoreChanges;
+    bool m_ignoreCurrentIndexChange = false;
     QList<FileData> m_contextFileData; // ultimate data to be shown
                                        // contextLineCount taken into account
     QTextCharFormat m_fileLineFormat;
     QTextCharFormat m_chunkLineFormat;
-    QTextCharFormat m_spanLineFormat;
-    std::array<QTextCharFormat, SideCount> m_lineFormat{};
-    std::array<QTextCharFormat, SideCount> m_charFormat{};
+    QTextCharFormat m_leftLineFormat;
+    QTextCharFormat m_rightLineFormat;
+    QTextCharFormat m_leftCharFormat;
+    QTextCharFormat m_rightCharFormat;
 
 private:
-    bool isInProgress() const;
-    void toggleProgress(bool wasInProgress);
-
-    void patch(Core::PatchAction patchAction, int fileIndex, int chunkIndex);
+    void patch(bool revert, int fileIndex, int chunkIndex);
     void sendChunkToCodePaster(int fileIndex, int chunkIndex);
     bool chunkExists(int fileIndex, int chunkIndex) const;
     bool fileNamesAreDifferent(int fileIndex) const;
@@ -77,22 +90,8 @@ private:
 
     DiffEditorDocument *m_document = nullptr;
 
-    bool m_isBusyShowing = false;
-    int m_currentDiffFileIndex = -1;
     Utils::ProgressIndicator *m_progressIndicator = nullptr;
     QTimer m_timer;
-};
-
-class DiffEditorInput
-{
-public:
-    DiffEditorInput(DiffEditorWidgetController *controller);
-    QList<FileData> m_contextFileData;
-    QTextCharFormat *m_fileLineFormat = nullptr;
-    QTextCharFormat *m_chunkLineFormat = nullptr;
-    QTextCharFormat *m_spanLineFormat = nullptr;
-    std::array<QTextCharFormat *, SideCount> m_lineFormat{};
-    std::array<QTextCharFormat *, SideCount> m_charFormat{};
 };
 
 } // namespace Internal

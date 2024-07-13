@@ -1,12 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmljsfindexportedcpptypes.h"
 
-#include "qmljsdocument.h"
-#include "qmljsinterpreter.h"
-#include "qmljstr.h"
-
+#include <qmljs/qmljsinterpreter.h>
+#include <qmljs/qmljsdocument.h>
 #include <cplusplus/Overview.h>
 #include <cplusplus/TypeOfExpression.h>
 #include <cplusplus/cppmodelmanagerbase.h>
@@ -247,13 +267,13 @@ protected:
             nameLit = translationUnit()->stringLiteral(nameAst->literal_token);
         if (!nameLit) {
             int line, column;
-            translationUnit()->getTokenPosition(nameExp->firstToken(), &line, &column);
+            translationUnit()->getTokenStartPosition(nameExp->firstToken(), &line, &column);
             _messages += Document::DiagnosticMessage(
                         Document::DiagnosticMessage::Warning,
-                        _doc->filePath(),
+                        _doc->fileName(),
                         line, column,
-                        QmlJS::Tr::tr(
-                            "The type will only be available in the QML editors when the type name is a string literal."));
+                        QmlJS::FindExportedCppTypes::tr(
+                            "The type will only be available in the QML editors when the type name is a string literal"));
             return false;
         }
 
@@ -308,12 +328,12 @@ protected:
         if (packageName.isEmpty()) {
             packageName = QmlJS::CppQmlTypes::defaultPackage;
             int line, column;
-            translationUnit()->getTokenPosition(ast->firstToken(), &line, &column);
+            translationUnit()->getTokenStartPosition(ast->firstToken(), &line, &column);
             _messages += Document::DiagnosticMessage(
                         Document::DiagnosticMessage::Warning,
-                        _doc->filePath(),
+                        _doc->fileName(),
                         line, column,
-                        QmlJS::Tr::tr(
+                        QmlJS::FindExportedCppTypes::tr(
                             "The module URI cannot be determined by static analysis. The type will not be available\n"
                             "globally in the QML editor. You can add a \"// @uri My.Module.Uri\" annotation to let\n"
                             "the QML editor know about a likely URI."));
@@ -346,7 +366,7 @@ protected:
 
         // we want to do lookup later, so also store the surrounding scope
         int line, column;
-        translationUnit()->getTokenPosition(ast->firstToken(), &line, &column);
+        translationUnit()->getTokenStartPosition(ast->firstToken(), &line, &column);
         exportedType.scope = _doc->scopeAt(line, column);
 
         if (typeId){
@@ -490,12 +510,12 @@ protected:
             nameLit = translationUnit()->stringLiteral(nameAst->literal_token);
         if (!nameLit) {
             int line, column;
-            translationUnit()->getTokenPosition(ast->expression_list->value->firstToken(), &line, &column);
+            translationUnit()->getTokenStartPosition(ast->expression_list->value->firstToken(), &line, &column);
             _messages += Document::DiagnosticMessage(
                         Document::DiagnosticMessage::Warning,
-                        _doc->filePath(),
+                        _doc->fileName(),
                         line, column,
-                        QmlJS::Tr::tr(
+                        QmlJS::FindExportedCppTypes::tr(
                             "must be a string literal to be available in the QML editor"));
             return false;
         }
@@ -504,9 +524,9 @@ protected:
         contextProperty.name = QString::fromUtf8(nameLit->chars(), nameLit->size());
         contextProperty.expression = stringOf(skipQVariant(ast->expression_list->next->value, translationUnit()));
         // we want to do lookup later, so also store the line and column of the target scope
-        translationUnit()->getTokenPosition(ast->firstToken(),
-                                            &contextProperty.line,
-                                            &contextProperty.column);
+        translationUnit()->getTokenStartPosition(ast->firstToken(),
+                                                 &contextProperty.line,
+                                                 &contextProperty.column);
 
         _contextProperties += contextProperty;
 
@@ -639,9 +659,9 @@ static QString toQmlType(const FullySpecifiedType &type)
 
 static Class *lookupClass(const QString &expression, Scope *scope, TypeOfExpression &typeOf)
 {
-    const QList<LookupItem> results = typeOf(expression.toUtf8(), scope);
+    QList<LookupItem> results = typeOf(expression.toUtf8(), scope);
     Class *klass = nullptr;
-    for (const LookupItem &item : results) {
+    foreach (const LookupItem &item, results) {
         if (item.declaration()) {
             klass = item.declaration()->asClass();
             if (klass)
@@ -697,7 +717,7 @@ static LanguageUtils::FakeMetaObject::Ptr buildFakeMetaObject(
             const FullySpecifiedType &type = propDecl->type();
             const bool isList = false; // ### fixme
             const bool isWritable = propDecl->flags() & QtPropertyDeclaration::WriteFunction;
-            const bool isPointer = type.type() && type.type()->asPointerType();
+            const bool isPointer = type.type() && type.type()->isPointerType();
             const int revision = 0; // ### fixme
             FakeMetaProperty property(
                         namePrinter.prettyName(propDecl->name()),
@@ -709,8 +729,8 @@ static LanguageUtils::FakeMetaObject::Ptr buildFakeMetaObject(
         if (QtEnum *qtEnum = member->asQtEnum()) {
             // find the matching enum
             Enum *e = nullptr;
-            const QList<LookupItem> result = typeOf(namePrinter.prettyName(qtEnum->name()).toUtf8(), klass);
-            for (const LookupItem &item : result) {
+            QList<LookupItem> result = typeOf(namePrinter.prettyName(qtEnum->name()).toUtf8(), klass);
+            foreach (const LookupItem &item, result) {
                 if (item.declaration()) {
                     e = item.declaration()->asEnum();
                     if (e)
@@ -759,7 +779,7 @@ static void buildExportedQmlObjects(
     if (cppExports.isEmpty())
         return;
 
-    for (const ExportedQmlType &exportedType : cppExports) {
+    foreach (const ExportedQmlType &exportedType, cppExports) {
         Class *klass = nullptr;
         if (!exportedType.typeExpression.isEmpty())
             klass = lookupClass(exportedType.typeExpression, exportedType.scope, typeOf);
@@ -787,7 +807,7 @@ static void buildContextProperties(
 {
     using namespace LanguageUtils;
 
-    for (const ContextProperty &property : contextPropertyDescriptions) {
+    foreach (const ContextProperty &property, contextPropertyDescriptions) {
         Scope *scope = doc->scopeAt(property.line, property.column);
         QList<LookupItem> results = typeOf(property.expression.toUtf8(), scope);
         QString typeName;
@@ -827,7 +847,7 @@ FindExportedCppTypes::FindExportedCppTypes(const CPlusPlus::Snapshot &snapshot)
 
 QStringList FindExportedCppTypes::operator()(const CPlusPlus::Document::Ptr &document)
 {
-    QTC_ASSERT(!document.isNull(), return {});
+    QTC_ASSERT(!document.isNull(), return QStringList());
 
     m_contextProperties.clear();
     m_exportedTypes.clear();
@@ -842,7 +862,8 @@ QStringList FindExportedCppTypes::operator()(const CPlusPlus::Document::Ptr &doc
     FindExportsVisitor finder(document);
     finder();
     static const QString kindKey = QLatin1String("QmlJSTools.ExportedQmlTypesDiagnostic");
-    CppModelManagerBase::trySetExtraDiagnostics(document->filePath(), kindKey, finder.messages());
+    CppModelManagerBase::trySetExtraDiagnostics(document->fileName(), kindKey,
+                                                finder.messages());
 
     // if nothing was found, done
     const QList<ContextProperty> contextPropertyDescriptions = finder.contextProperties();
@@ -852,9 +873,8 @@ QStringList FindExportedCppTypes::operator()(const CPlusPlus::Document::Ptr &doc
 
     // context properties need lookup inside function scope, and thus require a full check
     CPlusPlus::Document::Ptr localDoc = document;
-    if (document->checkMode() != CPlusPlus::Document::FullCheck
-            && !contextPropertyDescriptions.isEmpty()) {
-        localDoc = m_snapshot.documentFromSource(document->utf8Source(), document->filePath());
+    if (document->checkMode() != CPlusPlus::Document::FullCheck && !contextPropertyDescriptions.isEmpty()) {
+        localDoc = m_snapshot.documentFromSource(document->utf8Source(), document->fileName());
         localDoc->check();
     }
 
@@ -881,7 +901,7 @@ QStringList FindExportedCppTypes::operator()(const CPlusPlus::Document::Ptr &doc
         m_exportedTypes += it.value();
         fileNames += QLatin1String(it.key()->fileName());
     }
-    for (const LanguageUtils::FakeMetaObject::Ptr &fmo : std::as_const(extraFakeMetaObjects)) {
+    foreach (const LanguageUtils::FakeMetaObject::Ptr &fmo, extraFakeMetaObjects) {
         fmo->updateFingerprint();
         m_exportedTypes += fmo;
     }

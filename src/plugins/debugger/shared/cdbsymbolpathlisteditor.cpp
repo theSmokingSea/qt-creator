@@ -1,28 +1,50 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cdbsymbolpathlisteditor.h"
-
-#include "../debuggertr.h"
-#include "symbolpathsdialog.h"
 
 #include <coreplugin/icore.h>
 #include <coreplugin/messagebox.h>
 
 #include <utils/pathchooser.h>
+#include <utils/checkablemessagebox.h>
 #include <utils/temporarydirectory.h>
 
-#include <QAction>
+#include "symbolpathsdialog.h"
+
 #include <QCheckBox>
 #include <QDebug>
-#include <QDialogButtonBox>
+#include <QAction>
 #include <QFormLayout>
 #include <QLabel>
 #include <QPushButton>
 
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 // Internal helper dialog prompting for a cache directory using a PathChooser.
 //
@@ -33,6 +55,8 @@ namespace Debugger::Internal {
 
 class CacheDirectoryDialog : public QDialog
 {
+    Q_DECLARE_TR_FUNCTIONS(Debugger::Internal::CaheDirectoryDialog)
+
 public:
     explicit CacheDirectoryDialog(QWidget *parent);
 
@@ -50,14 +74,14 @@ CacheDirectoryDialog::CacheDirectoryDialog(QWidget *parent) :
     QDialog(parent), m_chooser(new PathChooser),
     m_buttonBox(new QDialogButtonBox(QDialogButtonBox::Ok|QDialogButtonBox::Cancel))
 {
-    setWindowTitle(Tr::tr("Select Local Cache Folder"));
+    setWindowTitle(tr("Select Local Cache Folder"));
     setModal(true);
 
     auto formLayout = new QFormLayout;
     m_chooser->setExpectedKind(PathChooser::ExistingDirectory);
     m_chooser->setHistoryCompleter("Debugger.CdbCacheDir.History");
     m_chooser->setMinimumWidth(400);
-    formLayout->addRow(Tr::tr("Path:"), m_chooser);
+    formLayout->addRow(tr("Path:"), m_chooser);
 
     auto mainLayout = new QVBoxLayout;
     mainLayout->addLayout(formLayout);
@@ -85,14 +109,14 @@ void CacheDirectoryDialog::accept()
     }
     // Does a file of the same name exist?
     if (cache.exists()) {
-        Core::AsynchronousMessageBox::warning(Tr::tr("Already Exists"),
-                                              Tr::tr("A file named \"%1\" already exists.").arg(cache.toUserOutput()));
+        Core::AsynchronousMessageBox::warning(tr("Already Exists"),
+                                              tr("A file named \"%1\" already exists.").arg(cache.toUserOutput()));
         return;
     }
     // Create
     if (!cache.ensureWritableDir()) {
-        Core::AsynchronousMessageBox::warning(Tr::tr("Cannot Create"),
-                                              Tr::tr("The folder \"%1\" could not be created.").arg(cache.toUserOutput()));
+        Core::AsynchronousMessageBox::warning(tr("Cannot Create"),
+                                              tr("The folder \"%1\" could not be created.").arg(cache.toUserOutput()));
         return;
     }
     QDialog::accept();
@@ -109,27 +133,27 @@ CdbSymbolPathListEditor::CdbSymbolPathListEditor(QWidget *parent) :
     PathListEditor(parent)
 {
     QPushButton *button = insertButton(lastInsertButtonIndex + 1,
-                                       Tr::tr("Insert Symbol Server..."), this, [this] {
+                                       tr("Insert Symbol Server..."), this, [this](){
         addSymbolPath(SymbolServerPath);
     });
-    button->setToolTip(Tr::tr("Adds the Microsoft symbol server providing symbols for operating system "
-                              "libraries. Requires specifying a local cache directory."));
+    button->setToolTip(tr("Adds the Microsoft symbol server providing symbols for operating system "
+                          "libraries. Requires specifying a local cache directory."));
 
-    button = insertButton(lastInsertButtonIndex + 1, Tr::tr("Insert Symbol Cache..."), this, [this] {
+    button = insertButton(lastInsertButtonIndex + 1, tr("Insert Symbol Cache..."), this, [this]() {
         addSymbolPath(SymbolCachePath);
     });
-    button->setToolTip(Tr::tr("Uses a directory to cache symbols used by the debugger."));
+    button->setToolTip(tr("Uses a directory to cache symbols used by the debugger."));
 
-    button = insertButton(lastInsertButtonIndex + 1, Tr::tr("Set up Symbol Paths..."), this, [this] {
+    button = insertButton(lastInsertButtonIndex + 1, tr("Set up Symbol Paths..."), this, [this](){
         setupSymbolPaths();
     });
-    button->setToolTip(Tr::tr("Configure Symbol paths that are used to locate debug symbol files."));
+    button->setToolTip(tr("Configure Symbol paths that are used to locate debug symbol files."));
 }
 
 bool CdbSymbolPathListEditor::promptCacheDirectory(QWidget *parent, FilePath *cacheDirectory)
 {
     CacheDirectoryDialog dialog(parent);
-    dialog.setPath(TemporaryDirectory::masterDirectoryFilePath() / "symbolcache");
+    dialog.setPath(TemporaryDirectory::masterDirectoryFilePath() + "/symbolcache");
     if (dialog.exec() != QDialog::Accepted)
         return false;
     *cacheDirectory = dialog.path();
@@ -155,7 +179,7 @@ void CdbSymbolPathListEditor::setupSymbolPaths()
     if (path.isEmpty() && indexOfSymbolCache != -1)
         path = FilePath::fromString(currentPaths.at(indexOfSymbolCache));
     if (path.isEmpty())
-        path = TemporaryDirectory::masterDirectoryFilePath() / "symbolcache";
+        path = TemporaryDirectory::masterDirectoryFilePath() + "/symbolcache";
 
     bool useSymbolServer = true;
     bool useSymbolCache = true;
@@ -228,4 +252,5 @@ int CdbSymbolPathListEditor::indexOfSymbolPath(const QStringList &paths,
     return -1;
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

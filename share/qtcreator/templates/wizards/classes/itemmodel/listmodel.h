@@ -1,5 +1,5 @@
-%{JS: Cpp.licenseTemplate()}\
-@if '%{JS: Cpp.usePragmaOnce()}' === 'true'
+%{Cpp:LicenseTemplate}\
+@if '%{Cpp:PragmaOnce}'
 #pragma once
 @else
 #ifndef %{GUARD}
@@ -59,6 +59,6 @@ public:
 private:
 };
 %{JS: Cpp.closeNamespaces('%{Class}')}
-@if '%{JS: Cpp.usePragmaOnce()}' === 'false'
+@if ! '%{Cpp:PragmaOnce}'
 #endif // %{GUARD}
 @endif

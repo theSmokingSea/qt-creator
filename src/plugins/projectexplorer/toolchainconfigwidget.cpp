@@ -1,14 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "toolchainconfigwidget.h"
-
 #include "toolchain.h"
-#include "projectexplorertr.h"
 
 #include <utils/detailswidget.h>
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
+
+#include <QString>
 
 #include <QFormLayout>
 #include <QLineEdit>
@@ -20,7 +42,7 @@ using namespace Utils;
 
 namespace ProjectExplorer {
 
-ToolchainConfigWidget::ToolchainConfigWidget(Toolchain *tc) :
+ToolChainConfigWidget::ToolChainConfigWidget(ToolChain *tc) :
     m_toolChain(tc)
 {
     Q_ASSERT(tc);
@@ -44,40 +66,40 @@ ToolchainConfigWidget::ToolchainConfigWidget(Toolchain *tc) :
     m_nameLineEdit = new QLineEdit;
     m_nameLineEdit->setText(tc->displayName());
 
-    m_mainLayout->addRow(Tr::tr("Name:"), m_nameLineEdit);
+    m_mainLayout->addRow(tr("Name:"), m_nameLineEdit);
 
-    connect(m_nameLineEdit, &QLineEdit::textChanged, this, &ToolchainConfigWidget::dirty);
+    connect(m_nameLineEdit, &QLineEdit::textChanged, this, &ToolChainConfigWidget::dirty);
 }
 
-void ToolchainConfigWidget::apply()
+void ToolChainConfigWidget::apply()
 {
     m_toolChain->setDisplayName(m_nameLineEdit->text());
     applyImpl();
 }
 
-void ToolchainConfigWidget::discard()
+void ToolChainConfigWidget::discard()
 {
     m_nameLineEdit->setText(m_toolChain->displayName());
     discardImpl();
 }
 
-bool ToolchainConfigWidget::isDirty() const
+bool ToolChainConfigWidget::isDirty() const
 {
     return m_nameLineEdit->text() != m_toolChain->displayName() || isDirtyImpl();
 }
 
-Toolchain *ToolchainConfigWidget::toolchain() const
+ToolChain *ToolChainConfigWidget::toolChain() const
 {
     return m_toolChain;
 }
 
-void ToolchainConfigWidget::makeReadOnly()
+void ToolChainConfigWidget::makeReadOnly()
 {
     m_nameLineEdit->setEnabled(false);
     makeReadOnlyImpl();
 }
 
-void ToolchainConfigWidget::addErrorLabel()
+void ToolChainConfigWidget::addErrorLabel()
 {
     if (!m_errorLabel) {
         m_errorLabel = new QLabel;
@@ -86,7 +108,7 @@ void ToolchainConfigWidget::addErrorLabel()
     m_mainLayout->addRow(m_errorLabel);
 }
 
-void ToolchainConfigWidget::setErrorMessage(const QString &m)
+void ToolChainConfigWidget::setErrorMessage(const QString &m)
 {
     QTC_ASSERT(m_errorLabel, return);
     if (m.isEmpty()) {
@@ -98,7 +120,7 @@ void ToolchainConfigWidget::setErrorMessage(const QString &m)
     }
 }
 
-void ToolchainConfigWidget::clearErrorMessage()
+void ToolChainConfigWidget::clearErrorMessage()
 {
     QTC_ASSERT(m_errorLabel, return);
     m_errorLabel->clear();
@@ -106,7 +128,7 @@ void ToolchainConfigWidget::clearErrorMessage()
     m_errorLabel->setVisible(false);
 }
 
-QStringList ToolchainConfigWidget::splitString(const QString &s)
+QStringList ToolChainConfigWidget::splitString(const QString &s)
 {
     ProcessArgs::SplitError splitError;
     const OsType osType = HostOsInfo::hostOs();

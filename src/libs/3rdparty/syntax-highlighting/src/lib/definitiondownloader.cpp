@@ -75,14 +75,14 @@ void DefinitionDownloaderPrivate::updateDefinition(QXmlStreamReader &parser)
 
     auto localDef = repo->definitionForName(name.toString());
     if (!localDef.isValid()) {
-        Q_EMIT q->informationMessage(QObject::tr("Downloading new syntax definition for '%1'...").arg(name));
+        Q_EMIT q->informationMessage(QObject::tr("Downloading new syntax definition for '%1'...").arg(name.toString()));
         downloadDefinition(QUrl(parser.attributes().value(QLatin1String("url")).toString()));
         return;
     }
 
     const auto version = parser.attributes().value(QLatin1String("version"));
     if (localDef.version() < version.toFloat()) {
-        Q_EMIT q->informationMessage(QObject::tr("Updating syntax definition for '%1' to version %2...").arg(name, version));
+        Q_EMIT q->informationMessage(QObject::tr("Updating syntax definition for '%1' to version %2...").arg(name.toString(), version.toString()));
         downloadDefinition(QUrl(parser.attributes().value(QLatin1String("url")).toString()));
     }
 }
@@ -169,14 +169,12 @@ DefinitionDownloader::~DefinitionDownloader()
 
 void DefinitionDownloader::start()
 {
-    const QString url = QLatin1String("https://www.kate-editor.org/syntax/update-") + QString::number(KSYNTAXHIGHLIGHTING_VERSION_MAJOR) + QLatin1Char('.')
-        + QString::number(KSYNTAXHIGHLIGHTING_VERSION_MINOR) + QLatin1String(".xml");
+    const QString url = QLatin1String("https://www.kate-editor.org/syntax/update-") + QString::number(SyntaxHighlighting_VERSION_MAJOR) + QLatin1Char('.')
+        + QString::number(SyntaxHighlighting_VERSION_MINOR) + QLatin1String(".xml");
     auto req = QNetworkRequest(QUrl(url));
     req.setAttribute(QNetworkRequest::RedirectPolicyAttribute, QNetworkRequest::NoLessSafeRedirectPolicy);
     auto reply = d->nam->get(req);
-    QObject::connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    QObject::connect(reply, &QNetworkReply::finished, this, [=]() {
         d->definitionListDownloadFinished(reply);
     });
 }
-
-#include "moc_definitiondownloader.cpp"

@@ -1,62 +1,47 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "outlinefactory.h"
-
-#include "texteditortr.h"
-#include "ioutlinewidget.h"
-
 #include <coreplugin/coreconstants.h>
+#include <coreplugin/icore.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
-#include <coreplugin/icore.h>
-#include <coreplugin/inavigationwidgetfactory.h>
 
-#include <utils/qtcassert.h>
-#include <utils/store.h>
-#include <utils/stylehelper.h>
 #include <utils/utilsicons.h>
+#include <utils/qtcassert.h>
+
+#include <QToolButton>
+#include <QLabel>
+#include <QStackedWidget>
 
 #include <QDebug>
-#include <QLabel>
-#include <QMenu>
-#include <QStackedWidget>
-#include <QToolButton>
-
-using namespace Utils;
 
 namespace TextEditor {
-namespace Internal {
-
-class OutlineFactory : public Core::INavigationWidgetFactory
-{
-    Q_OBJECT
-
-public:
-    OutlineFactory();
-
-    Core::NavigationView createWidget() override;
-    void saveSettings(Utils::QtcSettings *settings, int position, QWidget *widget) override;
-    void restoreSettings(Utils::QtcSettings *settings, int position, QWidget *widget) override;
-
-signals:
-    void updateOutline();
-};
-
-OutlineFactory &outlineFactory()
-{
-    static OutlineFactory theOutlineFactory;
-    return theOutlineFactory;
-}
-
-void setupOutlineFactory()
-{
-    (void) outlineFactory();
-}
-
-} // Internal
 
 static QList<IOutlineWidgetFactory *> g_outlineWidgetFactories;
+static QPointer<Internal::OutlineFactory> g_outlineFactory;
 
 IOutlineWidgetFactory::IOutlineWidgetFactory()
 {
@@ -70,47 +55,17 @@ IOutlineWidgetFactory::~IOutlineWidgetFactory()
 
 void IOutlineWidgetFactory::updateOutline()
 {
-    emit Internal::outlineFactory().updateOutline();
+    if (QTC_GUARD(!g_outlineFactory.isNull()))
+        emit g_outlineFactory->updateOutline();
 }
 
 namespace Internal {
-
-class OutlineWidgetStack : public QStackedWidget
-{
-    Q_OBJECT
-
-public:
-    OutlineWidgetStack(OutlineFactory *factory);
-    ~OutlineWidgetStack() override;
-
-    QList<QToolButton *> toolButtons();
-
-    void saveSettings(Utils::QtcSettings *settings, int position);
-    void restoreSettings(Utils::QtcSettings *settings, int position);
-
-private:
-    bool isCursorSynchronized() const;
-    QWidget *dummyWidget() const;
-    void updateFilterMenu();
-    void toggleCursorSynchronization();
-    void toggleSort();
-    void updateEditor(Core::IEditor *editor);
-    void updateCurrentEditor();
-
-    QToolButton *m_toggleSync;
-    QToolButton *m_filterButton;
-    QToolButton *m_toggleSort;
-    QMenu *m_filterMenu;
-    QVariantMap m_widgetSettings;
-    bool m_syncWithEditor;
-    bool m_sorted;
-};
 
 OutlineWidgetStack::OutlineWidgetStack(OutlineFactory *factory) :
     m_syncWithEditor(true),
     m_sorted(false)
 {
-    QLabel *label = new QLabel(Tr::tr("No outline available"), this);
+    QLabel *label = new QLabel(tr("No outline available"), this);
     label->setAlignment(Qt::AlignCenter);
 
     // set background to be white
@@ -123,35 +78,31 @@ OutlineWidgetStack::OutlineWidgetStack(OutlineFactory *factory) :
     m_toggleSync->setIcon(Utils::Icons::LINK_TOOLBAR.icon());
     m_toggleSync->setCheckable(true);
     m_toggleSync->setChecked(true);
-    m_toggleSync->setToolTip(Tr::tr("Synchronize with Editor"));
+    m_toggleSync->setToolTip(tr("Synchronize with Editor"));
     connect(m_toggleSync, &QAbstractButton::clicked,
             this, &OutlineWidgetStack::toggleCursorSynchronization);
 
     m_filterButton = new QToolButton(this);
-    Utils::StyleHelper::setPanelWidget(m_filterButton);
     // The ToolButton needs a parent because updateFilterMenu() sets
     // it visible. That would open a top-level window if the button
     // did not have a parent in that moment.
 
     m_filterButton->setIcon(Utils::Icons::FILTER.icon());
-    m_filterButton->setToolTip(Tr::tr("Filter tree"));
+    m_filterButton->setToolTip(tr("Filter tree"));
     m_filterButton->setPopupMode(QToolButton::InstantPopup);
-    m_filterButton->setProperty(Utils::StyleHelper::C_NO_ARROW, true);
+    m_filterButton->setProperty("noArrow", true);
     m_filterMenu = new QMenu(m_filterButton);
     m_filterButton->setMenu(m_filterMenu);
 
     m_toggleSort = new QToolButton(this);
-    Utils::StyleHelper::setPanelWidget(m_toggleSort);
     m_toggleSort->setIcon(Utils::Icons::SORT_ALPHABETICALLY_TOOLBAR.icon());
     m_toggleSort->setCheckable(true);
     m_toggleSort->setChecked(false);
-    m_toggleSort->setToolTip(Tr::tr("Sort Alphabetically"));
+    m_toggleSort->setToolTip(tr("Sort Alphabetically"));
     connect(m_toggleSort, &QAbstractButton::clicked, this, &OutlineWidgetStack::toggleSort);
 
-    connect(Core::EditorManager::instance(),
-            &Core::EditorManager::currentEditorChanged,
-            this,
-            &OutlineWidgetStack::updateCurrentEditor);
+    connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
+            this, &OutlineWidgetStack::updateEditor);
     connect(factory, &OutlineFactory::updateOutline,
             this, &OutlineWidgetStack::updateCurrentEditor);
     updateCurrentEditor();
@@ -164,33 +115,32 @@ QList<QToolButton *> OutlineWidgetStack::toolButtons()
 
 OutlineWidgetStack::~OutlineWidgetStack() = default;
 
-void OutlineWidgetStack::saveSettings(QtcSettings *settings, int position)
+void OutlineWidgetStack::saveSettings(QSettings *settings, int position)
 {
-    const Key baseKey = numberedKey("Outline.", position) + '.';
-    settings->setValue(baseKey + "SyncWithEditor", m_toggleSync->isChecked());
+    const QString baseKey = QStringLiteral("Outline.%1.").arg(position);
+    settings->setValue(baseKey + QLatin1String("SyncWithEditor"), m_toggleSync->isChecked());
     for (auto iter = m_widgetSettings.constBegin(); iter != m_widgetSettings.constEnd(); ++iter)
-        settings->setValue(baseKey + keyFromString(iter.key()), iter.value());
+        settings->setValue(baseKey + iter.key(), iter.value());
 }
 
-void OutlineWidgetStack::restoreSettings(Utils::QtcSettings *settings, int position)
+void OutlineWidgetStack::restoreSettings(QSettings *settings, int position)
 {
-    const Key baseKey = numberedKey("Outline.", position) + '.';
-    const QString baseKeyString = stringFromKey(baseKey);
+    const QString baseKey = QStringLiteral("Outline.%1.").arg(position);
 
     bool syncWithEditor = true;
     m_widgetSettings.clear();
     const QStringList longKeys = settings->allKeys();
     for (const QString &longKey : longKeys) {
-        if (!longKey.startsWith(baseKeyString))
+        if (!longKey.startsWith(baseKey))
             continue;
 
-        const QString key = longKey.mid(baseKeyString.length());
+        const QString key = longKey.mid(baseKey.length());
 
         if (key == QLatin1String("SyncWithEditor")) {
-            syncWithEditor = settings->value(keyFromString(longKey)).toBool();
+            syncWithEditor = settings->value(longKey).toBool();
             continue;
         }
-        m_widgetSettings.insert(key, settings->value(keyFromString(longKey)));
+        m_widgetSettings.insert(key, settings->value(longKey));
     }
 
     m_toggleSync->setChecked(syncWithEditor);
@@ -238,7 +188,7 @@ void OutlineWidgetStack::updateEditor(Core::IEditor *editor)
     IOutlineWidget *newWidget = nullptr;
 
     if (editor) {
-        for (IOutlineWidgetFactory *widgetFactory : std::as_const(g_outlineWidgetFactories)) {
+        for (IOutlineWidgetFactory *widgetFactory : qAsConst(g_outlineWidgetFactories)) {
             if (widgetFactory->supportsEditor(editor)) {
                 newWidget = widgetFactory->createWidget(editor);
                 m_toggleSort->setVisible(widgetFactory->supportsSorting());
@@ -271,7 +221,9 @@ void OutlineWidgetStack::updateEditor(Core::IEditor *editor)
 
 OutlineFactory::OutlineFactory()
 {
-    setDisplayName(Tr::tr("Outline"));
+    QTC_CHECK(g_outlineFactory.isNull());
+    g_outlineFactory = this;
+    setDisplayName(tr("Outline"));
     setId("Outline");
     setPriority(600);
 }
@@ -289,7 +241,7 @@ void OutlineFactory::saveSettings(Utils::QtcSettings *settings, int position, QW
     widgetStack->saveSettings(settings, position);
 }
 
-void OutlineFactory::restoreSettings(Utils::QtcSettings *settings, int position, QWidget *widget)
+void OutlineFactory::restoreSettings(QSettings *settings, int position, QWidget *widget)
 {
     auto widgetStack = qobject_cast<OutlineWidgetStack *>(widget);
     Q_ASSERT(widgetStack);
@@ -298,5 +250,3 @@ void OutlineFactory::restoreSettings(Utils::QtcSettings *settings, int position,
 
 } // namespace Internal
 } // namespace TextEditor
-
-#include "outlinefactory.moc"

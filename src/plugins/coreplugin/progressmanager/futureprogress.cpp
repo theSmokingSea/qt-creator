@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "futureprogress.h"
 #include "progressbar.h"
@@ -121,12 +143,7 @@ FutureProgress::FutureProgress(QWidget *parent) :
             this, &FutureProgress::setProgressValue);
     connect(&d->m_watcher, &QFutureWatcherBase::progressTextChanged,
             this, &FutureProgress::setProgressText);
-    connect(d->m_progress, &Internal::ProgressBar::clicked, this, [this] {
-        if (isCancelEnabled())
-            cancel();
-        else
-            emit clicked();
-    });
+    connect(d->m_progress, &Internal::ProgressBar::clicked, this, &FutureProgress::cancel);
     setMinimumWidth(100);
     setMaximumWidth(300);
 }
@@ -296,11 +313,11 @@ QFuture<void> FutureProgress::future() const
 /*!
     \internal
 */
-void FutureProgress::mouseReleaseEvent(QMouseEvent *event)
+void FutureProgress::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton)
         emit clicked();
-    QWidget::mouseReleaseEvent(event);
+    QWidget::mousePressEvent(event);
 }
 
 void FutureProgress::paintEvent(QPaintEvent *)
@@ -308,9 +325,8 @@ void FutureProgress::paintEvent(QPaintEvent *)
     QPainter p(this);
     if (creatorTheme()->flag(Theme::FlatToolBars)) {
         p.fillRect(rect(), StyleHelper::baseColor());
-        p.fillRect(rect(), creatorColor(Theme::FancyToolButtonSelectedColor));
     } else {
-        QLinearGradient grad = StyleHelper::statusBarGradient(rect());
+      QLinearGradient grad = StyleHelper::statusBarGradient(rect());
         p.fillRect(rect(), grad);
     }
 }
@@ -376,16 +392,6 @@ bool FutureProgress::isFading() const
 QSize FutureProgress::sizeHint() const
 {
     return QSize(QWidget::sizeHint().width(), minimumHeight());
-}
-
-bool FutureProgress::isCancelEnabled() const
-{
-    return d->m_progress->isCancelEnabled();
-}
-
-void FutureProgress::setCancelEnabled(bool enabled)
-{
-    d->m_progress->setCancelEnabled(enabled);
 }
 
 void FutureProgressPrivate::fadeAway()

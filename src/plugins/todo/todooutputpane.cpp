@@ -1,20 +1,36 @@
-// Copyright (C) 2016 Dmitry Savchenko
-// Copyright (C) 2016 Vasiliy Sorokin
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Dmitry Savchenko
+** Copyright (C) 2016 Vasiliy Sorokin
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "todooutputpane.h"
-
 #include "constants.h"
 #include "todoitemsmodel.h"
-#include "todoitemsprovider.h"
 #include "todooutputtreeview.h"
-#include "todotr.h"
 
 #include <aggregation/aggregate.h>
-
-#include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/find/itemviewfind.h>
-#include <coreplugin/icore.h>
 
 #include <QIcon>
 #include <QHeaderView>
@@ -22,21 +38,17 @@
 #include <QButtonGroup>
 #include <QSortFilterProxyModel>
 
-namespace Todo::Internal {
+namespace Todo {
+namespace Internal {
 
-TodoOutputPane::TodoOutputPane(TodoItemsModel *todoItemsModel, QObject *parent) :
+TodoOutputPane::TodoOutputPane(TodoItemsModel *todoItemsModel, const Settings *settings, QObject *parent) :
     IOutputPane(parent),
-    m_todoItemsModel(todoItemsModel)
+    m_todoItemsModel(todoItemsModel),
+    m_settings(settings)
 {
-    setId("To-DoEntries");
-    setDisplayName(Tr::tr("To-Do Entries"));
-    setPriorityInStatusBar(10);
-
     createTreeView();
     createScopeButtons();
-
-    setScanningScope(todoSettings().scanningScope);
-
+    setScanningScope(ScanningScopeCurrentFile); // default
     connect(m_todoTreeView->model(), &TodoItemsModel::layoutChanged,
             this, &TodoOutputPane::navigateStateUpdate);
     connect(m_todoTreeView->model(), &TodoItemsModel::layoutChanged,
@@ -65,6 +77,16 @@ QList<QWidget*> TodoOutputPane::toolBarWidgets() const
     widgets << m_spacer << m_currentFileButton << m_wholeProjectButton << m_subProjectButton;
 
     return widgets;
+}
+
+QString TodoOutputPane::displayName() const
+{
+    return tr(Constants::OUTPUT_PANE_TITLE);
+}
+
+int TodoOutputPane::priorityInStatusBar() const
+{
+    return 1;
 }
 
 void TodoOutputPane::clearContents()
@@ -130,30 +152,15 @@ void TodoOutputPane::setScanningScope(ScanningScope scanningScope)
         Q_ASSERT_X(false, "Updating scanning scope buttons", "Unknown scanning scope enum value");
 }
 
-void TodoOutputPane::todoItemClicked(const TodoItem &item)
-{
-    if (item.file.exists())
-        Core::EditorManager::openEditorAt(Utils::Link(item.file, item.line));
-}
-
 void TodoOutputPane::scopeButtonClicked(QAbstractButton *button)
 {
     if (button == m_currentFileButton)
-        scanningScopeChanged(ScanningScopeCurrentFile);
+        emit scanningScopeChanged(ScanningScopeCurrentFile);
     else if (button == m_subProjectButton)
-        scanningScopeChanged(ScanningScopeSubProject);
+        emit scanningScopeChanged(ScanningScopeSubProject);
     else if (button == m_wholeProjectButton)
-        scanningScopeChanged(ScanningScopeProject);
+        emit scanningScopeChanged(ScanningScopeProject);
     emit setBadgeNumber(m_todoTreeView->model()->rowCount());
-}
-
-void TodoOutputPane::scanningScopeChanged(ScanningScope scanningScope)
-{
-    todoSettings().scanningScope = scanningScope;
-    todoSettings().save();
-
-    todoItemsProvider().settingsChanged();
-    setScanningScope(todoSettings().scanningScope);
 }
 
 void TodoOutputPane::todoTreeViewClicked(const QModelIndex &index)
@@ -181,7 +188,7 @@ void TodoOutputPane::updateTodoCount()
 void TodoOutputPane::updateKeywordFilter()
 {
     QStringList keywords;
-    for (const QToolButton *btn: std::as_const(m_filterButtons)) {
+    for (const QToolButton *btn: qAsConst(m_filterButtons)) {
         if (btn->isChecked())
             keywords.append(btn->property(Constants::FILTER_KEYWORD_NAME).toString());
     }
@@ -198,7 +205,7 @@ void TodoOutputPane::updateKeywordFilter()
 
 void TodoOutputPane::clearKeywordFilter()
 {
-    for (QToolButton *btn: std::as_const(m_filterButtons))
+    for (QToolButton *btn: qAsConst(m_filterButtons))
         btn->setChecked(false);
 
     updateKeywordFilter();
@@ -242,31 +249,31 @@ void TodoOutputPane::createScopeButtons()
 {
     m_currentFileButton = new QToolButton();
     m_currentFileButton->setCheckable(true);
-    m_currentFileButton->setText(Tr::tr("Current Document"));
-    m_currentFileButton->setToolTip(Tr::tr("Scan only the currently edited document."));
+    m_currentFileButton->setText(tr("Current Document"));
+    m_currentFileButton->setToolTip(tr("Scan only the currently edited document."));
 
     m_wholeProjectButton = new QToolButton();
     m_wholeProjectButton->setCheckable(true);
-    m_wholeProjectButton->setText(Tr::tr("Active Project"));
-    m_wholeProjectButton->setToolTip(Tr::tr("Scan the whole active project."));
+    m_wholeProjectButton->setText(tr("Active Project"));
+    m_wholeProjectButton->setToolTip(tr("Scan the whole active project."));
 
     m_subProjectButton = new QToolButton();
     m_subProjectButton->setCheckable(true);
-    m_subProjectButton->setText(Tr::tr("Subproject"));
-    m_subProjectButton->setToolTip(Tr::tr("Scan the current subproject."));
+    m_subProjectButton->setText(tr("Subproject"));
+    m_subProjectButton->setToolTip(tr("Scan the current subproject."));
 
     m_scopeButtons = new QButtonGroup();
     m_scopeButtons->addButton(m_wholeProjectButton);
     m_scopeButtons->addButton(m_currentFileButton);
     m_scopeButtons->addButton(m_subProjectButton);
-    connect(m_scopeButtons, &QButtonGroup::buttonClicked,
+    connect(m_scopeButtons, QOverload<QAbstractButton *>::of(&QButtonGroup::buttonClicked),
             this, &TodoOutputPane::scopeButtonClicked);
 
     m_spacer = new QWidget;
     m_spacer->setMinimumWidth(Constants::OUTPUT_TOOLBAR_SPACER_WIDTH);
 
-    QString tooltip = Tr::tr("Show \"%1\" entries");
-    for (const Keyword &keyword: todoSettings().keywords) {
+    QString tooltip = tr("Show \"%1\" entries");
+    for (const Keyword &keyword: m_settings->keywords) {
         QToolButton *button = createCheckableToolButton(keyword.name, tooltip.arg(keyword.name), toolBarIcon(keyword.iconType));
         button->setProperty(Constants::FILTER_KEYWORD_NAME, keyword.name);
         button->setToolButtonStyle(Qt::ToolButtonIconOnly);
@@ -315,16 +322,5 @@ QModelIndex TodoOutputPane::previousModelIndex()
         return indexToBeSelected;
 }
 
-static TodoOutputPane *s_instance = nullptr;
-
-TodoOutputPane &todoOutputPane()
-{
-    return *s_instance;
-}
-
-void setupTodoOutputPane(QObject *guard)
-{
-    s_instance = new TodoOutputPane(todoItemsProvider().todoItemsModel(), guard);
-}
-
-} // Todo::Internal
+} // namespace Internal
+} // namespace Todo

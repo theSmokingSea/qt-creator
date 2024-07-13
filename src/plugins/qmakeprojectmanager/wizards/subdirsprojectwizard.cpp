@@ -1,19 +1,40 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "subdirsprojectwizard.h"
 
 #include "subdirsprojectwizarddialog.h"
 #include "../qmakeprojectmanagerconstants.h"
-#include "../qmakeprojectmanagertr.h"
 
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/projectexplorertr.h>
-
 #include <coreplugin/icore.h>
 #include <qtsupport/qtsupportconstants.h>
 
 #include <utils/algorithm.h>
+
+#include <QCoreApplication>
 
 using namespace Utils;
 
@@ -24,11 +45,11 @@ SubdirsProjectWizard::SubdirsProjectWizard()
 {
     setId("U.Qt4Subdirs");
     setCategory(QLatin1String(ProjectExplorer::Constants::QT_PROJECT_WIZARD_CATEGORY));
-    setDisplayCategory(ProjectExplorer::Tr::tr(
+    setDisplayCategory(QCoreApplication::translate("ProjectExplorer",
         ProjectExplorer::Constants::QT_PROJECT_WIZARD_CATEGORY_DISPLAY));
-    setDisplayName(Tr::tr("Subdirs Project"));
-    setDescription(Tr::tr("Creates a qmake-based subdirs project. This allows you to group "
-                          "your projects in a tree structure."));
+    setDisplayName(tr("Subdirs Project"));
+    setDescription(tr("Creates a qmake-based subdirs project. This allows you to group "
+                "your projects in a tree structure."));
     setIcon(themedIcon(":/wizards/images/gui.png"));
     setRequiredFeatures({QtSupport::Constants::FEATURE_QT_PREFIX});
 }
@@ -41,7 +62,7 @@ Core::BaseFileWizard *SubdirsProjectWizard::create(QWidget *parent,
 
     dialog->setProjectName(SubdirsProjectWizardDialog::uniqueProjectName(parameters.defaultPath()));
     const QString buttonText = dialog->wizardStyle() == QWizard::MacStyle
-            ? Tr::tr("Done && Add Subproject") : Tr::tr("Finish && Add Subproject");
+            ? tr("Done && Add Subproject") : tr("Finish && Add Subproject");
     dialog->setButtonText(QWizard::FinishButton, buttonText);
     return dialog;
 }
@@ -69,12 +90,10 @@ bool SubdirsProjectWizard::postGenerateFiles(const QWizard *w, const Core::Gener
         const FilePath projectPath = params.projectPath();
         const FilePath profileName = Core::BaseFileWizardFactory::buildFileName(projectPath, params.fileName, profileSuffix());
         QVariantMap map;
-        map.insert(QLatin1String(ProjectExplorer::Constants::PREFERRED_PROJECT_NODE), QVariant());
-        map.insert(QLatin1String(ProjectExplorer::Constants::PREFERRED_PROJECT_NODE_PATH), profileName.toVariant());
+        map.insert(QLatin1String(ProjectExplorer::Constants::PREFERRED_PROJECT_NODE), profileName.toVariant());
         map.insert(QLatin1String(ProjectExplorer::Constants::PROJECT_KIT_IDS),
                    Utils::transform<QStringList>(wizard->selectedKits(), &Utils::Id::toString));
-        map.insert(QLatin1String(ProjectExplorer::Constants::PROJECT_ENABLESUBPROJECT), true);
-        IWizardFactory::requestNewItemDialog(Tr::tr("New Subproject", "Title of dialog"),
+        IWizardFactory::requestNewItemDialog(tr("New Subproject", "Title of dialog"),
                                              Utils::filtered(Core::IWizardFactory::allWizardFactories(),
                                                              [](Core::IWizardFactory *f) {
                                                                  return f->supportedProjectTypes().contains(Constants::QMAKEPROJECT_ID);

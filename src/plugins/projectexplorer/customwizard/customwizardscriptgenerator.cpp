@@ -1,11 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "customwizardscriptgenerator.h"
 #include "customwizard.h"
 #include "customwizardparameters.h"
 
-#include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
 #include <utils/qtcprocess.h>
@@ -13,6 +34,7 @@
 
 #include <QFileInfo>
 #include <QDebug>
+#include <QSharedPointer>
 
 using namespace Utils;
 
@@ -26,7 +48,7 @@ namespace Internal {
 QStringList fixGeneratorScript(const QString &configFile, QString binary)
 {
     if (binary.isEmpty())
-        return {};
+        return QStringList();
     // Expand to full path if it is relative and in the wizard
     // directory, else assume it can be found in path.
     QFileInfo binaryInfo(binary);
@@ -46,7 +68,7 @@ QStringList fixGeneratorScript(const QString &configFile, QString binary)
         if (!extension.isEmpty() && extension.compare(QLatin1String("exe"),
                                                       Qt::CaseInsensitive) != 0) {
             rc.push_front(QLatin1String("/C"));
-            rc.push_front(qtcEnvironmentVariable("COMSPEC"));
+            rc.push_front(QString::fromLocal8Bit(qgetenv("COMSPEC")));
             if (rc.front().isEmpty())
                 rc.front() = QLatin1String("cmd.exe");
         }
@@ -63,7 +85,7 @@ static bool
                               const QMap<QString, QString> &fieldMap,
                               QString *stdOut /* = 0 */, QString *errorMessage)
 {
-    Utils::Process process;
+    Utils::QtcProcess process;
     const QString binary = script.front();
     QStringList arguments;
     const int binarySize = script.size();
@@ -87,13 +109,13 @@ static bool
             arguments.push_back(value);
     }
     process.setWorkingDirectory(workingDirectory);
+    process.setTimeoutS(30);
     const Utils::CommandLine cmd(FilePath::fromString(binary), arguments);
     if (CustomWizard::verbose())
         qDebug("In %s, running:\n%s\n", qPrintable(workingDirectory.toUserOutput()),
                qPrintable(cmd.toUserOutput()));
     process.setCommand(cmd);
-    using namespace std::chrono_literals;
-    process.runBlocking(30s, EventLoopMode::On);
+    process.runBlocking(EventLoopMode::On);
     if (process.result() != Utils::ProcessResult::FinishedWithSuccess) {
         *errorMessage = QString("Generator script failed: %1").arg(process.exitMessage());
         const QString stdErr = process.cleanedStdErr();
@@ -156,7 +178,7 @@ Core::GeneratedFiles
                             fileInfo.isAbsolute() ?
                             token :
                             (targetPath + QLatin1Char('/') + token);
-                    file.setFilePath(FilePath::fromString(fullPath).cleanPath());
+                    file.setPath(fullPath);
                 }
             }
             file.setAttributes(attributes);
@@ -166,8 +188,8 @@ Core::GeneratedFiles
     if (CustomWizard::verbose()) {
         QDebug nospace = qDebug().nospace();
         nospace << script << " generated:\n";
-        for (const Core::GeneratedFile &f : std::as_const(files))
-            nospace << ' ' << f.filePath() << f.attributes() << '\n';
+        for (const Core::GeneratedFile &f : qAsConst(files))
+            nospace << ' ' << f.path() << f.attributes() << '\n';
     }
     return files;
 }

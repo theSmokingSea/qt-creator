@@ -1,5 +1,27 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -14,7 +36,6 @@
 #include <utils/cpplanguage_details.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
-#include <utils/store.h>
 
 #include <QPointer>
 
@@ -22,23 +43,15 @@
 
 namespace ProjectExplorer {
 
-class BuildSystem;
 class Kit;
 class Project;
-
-void PROJECTEXPLORER_EXPORT addTargetFlagForIos(
-        QStringList &cFlags,
-        QStringList &cxxFlags,
-        const BuildSystem *bs,
-        const std::function<QString()> &getDeploymentTarget
-        );
 
 class PROJECTEXPLORER_EXPORT RawProjectPartFlags
 {
 public:
     RawProjectPartFlags() = default;
-    RawProjectPartFlags(const Toolchain *toolChain, const QStringList &commandLineFlags,
-                        const Utils::FilePath &includeFileBaseDir);
+    RawProjectPartFlags(const ToolChain *toolChain, const QStringList &commandLineFlags,
+                        const QString &includeFileBaseDir);
 
 public:
     QStringList commandLineFlags;
@@ -120,19 +133,19 @@ public:
     bool isValid() const;
 
     Kit *kit = nullptr;
-    Toolchain *cToolchain = nullptr;
-    Toolchain *cxxToolchain = nullptr;
+    ToolChain *cToolChain = nullptr;
+    ToolChain *cxxToolChain = nullptr;
 
     Utils::QtMajorVersion projectPartQtVersion = Utils::QtMajorVersion::None;
 
     Utils::FilePath sysRootPath;
 };
 
-class PROJECTEXPLORER_EXPORT ToolchainInfo
+class PROJECTEXPLORER_EXPORT ToolChainInfo
 {
 public:
-    ToolchainInfo() = default;
-    ToolchainInfo(const ProjectExplorer::Toolchain *toolChain,
+    ToolChainInfo() = default;
+    ToolChainInfo(const ProjectExplorer::ToolChain *toolChain,
                   const Utils::FilePath &sysRootPath,
                   const Utils::Environment &env);
 
@@ -140,17 +153,17 @@ public:
 
 public:
     Utils::Id type;
-    bool isMsvc2015Toolchain = false;
+    bool isMsvc2015ToolChain = false;
     bool targetTripleIsAuthoritative = false;
-    Abi abi;
+    unsigned wordWidth = 0;
     QString targetTriple;
     Utils::FilePath compilerFilePath;
     Utils::FilePath installDir;
     QStringList extraCodeModelFlags;
 
     Utils::FilePath sysRootPath; // For headerPathsRunner.
-    ProjectExplorer::Toolchain::BuiltInHeaderPathsRunner headerPathsRunner;
-    ProjectExplorer::Toolchain::MacroInspectionRunner macroInspectionRunner;
+    ProjectExplorer::ToolChain::BuiltInHeaderPathsRunner headerPathsRunner;
+    ProjectExplorer::ToolChain::MacroInspectionRunner macroInspectionRunner;
 };
 
 class PROJECTEXPLORER_EXPORT ProjectUpdateInfo
@@ -171,13 +184,9 @@ public:
     Utils::FilePath buildRoot;
     RawProjectParts rawProjectParts;
     RppGenerator rppGenerator;
-    Utils::Store cppSettings;
 
-    ToolchainInfo cToolchainInfo;
-    ToolchainInfo cxxToolchainInfo;
+    ToolChainInfo cToolChainInfo;
+    ToolChainInfo cxxToolChainInfo;
 };
-
-using CppSettingsRetriever = std::function<Utils::Store(const Project *)>;
-void PROJECTEXPLORER_EXPORT provideCppSettingsRetriever(const CppSettingsRetriever &retriever);
 
 } // namespace ProjectExplorer

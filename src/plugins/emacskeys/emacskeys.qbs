@@ -9,10 +9,10 @@ QtcPlugin {
     Depends { name: "TextEditor" }
 
     files: [
-        "emacskeysconstants.h",
         "emacskeysplugin.cpp",
+        "emacskeysplugin.h",
         "emacskeysstate.cpp",
         "emacskeysstate.h",
-        "emacskeystr.h",
+        "emacskeysconstants.h",
     ]
 }

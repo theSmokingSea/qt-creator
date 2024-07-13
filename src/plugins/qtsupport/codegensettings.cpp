@@ -1,88 +1,98 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "codegensettings.h"
 
-#include "qtsupportconstants.h"
-#include "qtsupporttr.h"
+#include <coreplugin/icore.h>
+#include <utils/qtcsettings.h>
 
-#include <coreplugin/dialogs/ioptionspage.h>
+#include <QSettings>
 
-#include <cppeditor/cppeditorconstants.h>
-#include <cppeditor/cppeditortr.h>
+static const char CODE_GEN_GROUP[] = "FormClassWizardPage";
+static const char TRANSLATION_KEY[] = "RetranslationSupport";
+static const char EMBEDDING_KEY[] = "Embedding";
+static const char INCLUDE_QT_MODULE_KEY[] = "IncludeQtModule";
+static const char ADD_QT_VERSION_CHECK_KEY[] = "AddQtVersionCheck";
 
-#include <utils/layoutbuilder.h>
+static const bool retranslationSupportDefault = false;
+static const QtSupport::CodeGenSettings::UiClassEmbedding embeddingDefault
+    = QtSupport::CodeGenSettings::PointerAggregatedUiClass;
+static const bool includeQtModuleDefault = false;
+static const bool addQtVersionCheckDefault = false;
 
 using namespace Utils;
 
 namespace QtSupport {
 
-CodeGenSettings &codeGenSettings()
-{
-    static CodeGenSettings theCodeGenSettings;
-    return theCodeGenSettings;
-}
-
 CodeGenSettings::CodeGenSettings()
+    : embedding(embeddingDefault)
+    , retranslationSupport(retranslationSupportDefault)
+    , includeQtModule(includeQtModuleDefault)
+    , addQtVersionCheck(addQtVersionCheckDefault)
 {
-    setAutoApply(false);
-    setSettingsGroup("FormClassWizardPage");
 
-    embedding.setSettingsKey("Embedding");
-    embedding.addOption(Tr::tr("Aggregation as a pointer member"));
-    embedding.addOption(Tr::tr("Aggregation"));
-    embedding.addOption(Tr::tr("Multiple inheritance"));
-    embedding.setDefaultValue(CodeGenSettings::PointerAggregatedUiClass);
-
-    retranslationSupport.setSettingsKey("RetranslationSupport");
-    retranslationSupport.setLabelText(Tr::tr("Support for changing languages at runtime"));
-
-    includeQtModule.setSettingsKey("IncludeQtModule");
-    includeQtModule.setLabelText(Tr::tr("Use Qt module name in #include-directive"));
-
-    addQtVersionCheck.setSettingsKey("AddQtVersionCheck");
-    addQtVersionCheck.setLabelText(Tr::tr("Add Qt version #ifdef for module names"));
-
-    setLayouter([this] {
-        using namespace Layouting;
-        return Column {
-            Group {
-                title(Tr::tr("Embedding of the UI Class")),
-                Column {
-                    embedding,
-                }
-            },
-            Group {
-                title(Tr::tr("Code Generation")),
-                Column {
-                    retranslationSupport,
-                    includeQtModule,
-                    addQtVersionCheck
-                }
-            },
-            st
-        };
-    });
-
-
-    readSettings();
-    addQtVersionCheck.setEnabler(&includeQtModule);
 }
 
-class CodeGenSettingsPage final : public Core::IOptionsPage
+bool CodeGenSettings::equals(const CodeGenSettings &rhs) const
 {
-public:
-    CodeGenSettingsPage()
-    {
-        setId(Constants::CODEGEN_SETTINGS_PAGE_ID);
-        setDisplayName(Tr::tr("Qt Class Generation"));
-        setCategory(CppEditor::Constants::CPP_SETTINGS_CATEGORY);
-        setDisplayCategory(::CppEditor::Tr::tr(CppEditor::Constants::CPP_SETTINGS_NAME));
-        setCategoryIconPath(":/projectexplorer/images/settingscategory_cpp.png");
-        setSettingsProvider([] { return &codeGenSettings(); });
-    }
-};
+    return embedding == rhs.embedding
+            && retranslationSupport == rhs.retranslationSupport
+            && includeQtModule == rhs.includeQtModule
+            && addQtVersionCheck == rhs.addQtVersionCheck;
+}
 
-const CodeGenSettingsPage settingsPage;
+void CodeGenSettings::fromSettings(const QSettings *settings)
+{
+    QString group = QLatin1String(CODE_GEN_GROUP) + '/';
 
-} // QtSupport
+    retranslationSupport = settings->value(group + TRANSLATION_KEY, retranslationSupportDefault)
+                               .toBool();
+    embedding = static_cast<UiClassEmbedding>(
+        settings->value(group + EMBEDDING_KEY, int(embeddingDefault)).toInt());
+    includeQtModule = settings->value(group + INCLUDE_QT_MODULE_KEY, includeQtModuleDefault).toBool();
+    addQtVersionCheck = settings->value(group + ADD_QT_VERSION_CHECK_KEY, addQtVersionCheckDefault).toBool();
+}
+
+void CodeGenSettings::toSettings(QSettings *settings) const
+{
+    settings->beginGroup(CODE_GEN_GROUP);
+    QtcSettings::setValueWithDefault(settings,
+                                     TRANSLATION_KEY,
+                                     retranslationSupport,
+                                     retranslationSupportDefault);
+    QtcSettings::setValueWithDefault(settings, EMBEDDING_KEY, int(embedding), int(embeddingDefault));
+    QtcSettings::setValueWithDefault(settings,
+                                     INCLUDE_QT_MODULE_KEY,
+                                     includeQtModule,
+                                     includeQtModuleDefault);
+    QtcSettings::setValueWithDefault(settings,
+                                     ADD_QT_VERSION_CHECK_KEY,
+                                     addQtVersionCheck,
+                                     addQtVersionCheckDefault);
+    settings->endGroup();
+
+}
+
+} // namespace QtSupport

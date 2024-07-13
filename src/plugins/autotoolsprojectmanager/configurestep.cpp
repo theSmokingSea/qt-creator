@@ -1,10 +1,34 @@
-// Copyright (C) 2016 Openismus GmbH.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Openismus GmbH.
+** Author: Peter Penz (ppenz@openismus.com)
+** Author: Patricia Santana Cruz (patriciasantanacruz@gmail.com)
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "configurestep.h"
 
+#include "autotoolsbuildconfiguration.h"
 #include "autotoolsprojectconstants.h"
-#include "autotoolsprojectmanagertr.h"
 
 #include <projectexplorer/abstractprocessstep.h>
 #include <projectexplorer/processparameters.h>
@@ -13,14 +37,29 @@
 #include <projectexplorer/target.h>
 
 #include <utils/aspects.h>
-#include <utils/qtcprocess.h>
 
 #include <QDateTime>
+#include <QDir>
 
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace AutotoolsProjectManager::Internal {
+namespace AutotoolsProjectManager {
+namespace Internal {
+
+// Helper Function
+
+static QString projectDirRelativeToBuildDir(BuildConfiguration *bc)
+{
+    const QDir buildDir(bc->buildDirectory().toString());
+    QString projDirToBuildDir = buildDir.relativeFilePath(
+        bc->project()->projectDirectory().toString());
+    if (projDirToBuildDir.isEmpty())
+        return QString("./");
+    if (!projDirToBuildDir.endsWith('/'))
+        projDirToBuildDir.append('/');
+    return projDirToBuildDir;
+}
 
 // ConfigureStep
 
@@ -37,70 +76,83 @@ namespace AutotoolsProjectManager::Internal {
 
 class ConfigureStep final : public AbstractProcessStep
 {
+    Q_DECLARE_TR_FUNCTIONS(AutotoolsProjectManager::Internal::ConfigureStep)
+
 public:
-    ConfigureStep(BuildStepList *bsl, Id id)
-        : AbstractProcessStep(bsl, id)
-    {
-        arguments.setDisplayStyle(StringAspect::LineEditDisplay);
-        arguments.setSettingsKey("AutotoolsProjectManager.ConfigureStep.AdditionalArguments");
-        arguments.setLabelText(Tr::tr("Arguments:"));
-        arguments.setHistoryCompleter("AutotoolsPM.History.ConfigureArgs");
-        arguments.addOnChanged(this, [this] { m_runConfigure = true; });
+    ConfigureStep(BuildStepList *bsl, Id id);
 
-        setCommandLineProvider([this] {
-            return getCommandLine(arguments());
-        });
-
-        setSummaryUpdater([this] {
-            ProcessParameters param;
-            setupProcessParameters(&param);
-
-            return param.summaryInWorkdir(displayName());
-        });
-    }
+    void setAdditionalArguments(const QString &list);
 
 private:
-    Tasking::GroupItem runRecipe() final;
+    void doRun() final;
 
-    CommandLine getCommandLine(const QString &arguments)
-    {
-        return {project()->projectDirectory() / "configure", arguments, CommandLine::Raw};
-    }
+    CommandLine getCommandLine(const QString &arguments);
 
     bool m_runConfigure = false;
-    StringAspect arguments{this};
 };
 
-Tasking::GroupItem ConfigureStep::runRecipe()
+ConfigureStep::ConfigureStep(BuildStepList *bsl, Id id)
+    : AbstractProcessStep(bsl, id)
 {
-    using namespace Tasking;
+    auto arguments = addAspect<StringAspect>();
+    arguments->setDisplayStyle(StringAspect::LineEditDisplay);
+    arguments->setSettingsKey("AutotoolsProjectManager.ConfigureStep.AdditionalArguments");
+    arguments->setLabelText(tr("Arguments:"));
+    arguments->setHistoryCompleter("AutotoolsPM.History.ConfigureArgs");
 
-    const auto onSetup = [this] {
-        // Check whether we need to run configure
-        const FilePath configure = project()->projectDirectory() / "configure";
-        const FilePath configStatus = buildDirectory() / "config.status";
+    connect(arguments, &BaseAspect::changed, this, [this] {
+        m_runConfigure = true;
+    });
 
-        if (!configStatus.exists() || configStatus.lastModified() < configure.lastModified())
-            m_runConfigure = true;
+    setWorkingDirectoryProvider([this] { return project()->projectDirectory(); });
 
-        if (!m_runConfigure) {
-            emit addOutput(Tr::tr("Configuration unchanged, skipping configure step."), OutputFormat::NormalMessage);
-            return SetupResult::StopWithSuccess;
-        }
+    setCommandLineProvider([this, arguments] {
+        return getCommandLine(arguments->value());
+    });
 
-        ProcessParameters *param = processParameters();
-        if (!param->effectiveCommand().exists()) {
-            param->setCommandLine(getCommandLine(param->command().arguments()));
-            setSummaryText(param->summaryInWorkdir(displayName()));
-        }
-        return SetupResult::Continue;
-    };
+    setSummaryUpdater([this] {
+        ProcessParameters param;
+        setupProcessParameters(&param);
 
-    return Group {
-        onGroupSetup(onSetup),
-        onGroupDone([this] { m_runConfigure = false; }, CallDoneIf::Success),
-        defaultProcessTask()
-    };
+        return param.summaryInWorkdir(displayName());
+    });
+}
+
+CommandLine ConfigureStep::getCommandLine(const QString &arguments)
+{
+    BuildConfiguration *bc = buildConfiguration();
+
+    return CommandLine({FilePath::fromString(projectDirRelativeToBuildDir(bc) + "configure"),
+                        arguments,
+                        CommandLine::Raw});
+}
+
+void ConfigureStep::doRun()
+{
+    //Check whether we need to run configure
+    const QString projectDir(project()->projectDirectory().toString());
+    const QFileInfo configureInfo(projectDir + "/configure");
+    const QFileInfo configStatusInfo(buildDirectory().toString() + "/config.status");
+
+    if (!configStatusInfo.exists()
+        || configStatusInfo.lastModified() < configureInfo.lastModified()) {
+        m_runConfigure = true;
+    }
+
+    if (!m_runConfigure) {
+        emit addOutput(tr("Configuration unchanged, skipping configure step."), OutputFormat::NormalMessage);
+        emit finished(true);
+        return;
+    }
+
+    ProcessParameters *param = processParameters();
+    if (!param->effectiveCommand().exists()) {
+        param->setCommandLine(getCommandLine(param->command().arguments()));
+        setSummaryText(param->summaryInWorkdir(displayName()));
+    }
+
+    m_runConfigure = false;
+    AbstractProcessStep::doRun();
 }
 
 // ConfigureStepFactory
@@ -114,9 +166,10 @@ Tasking::GroupItem ConfigureStep::runRecipe()
 ConfigureStepFactory::ConfigureStepFactory()
 {
     registerStep<ConfigureStep>(Constants::CONFIGURE_STEP_ID);
-    setDisplayName(Tr::tr("Configure", "Display name for AutotoolsProjectManager::ConfigureStep id."));
+    setDisplayName(ConfigureStep::tr("Configure", "Display name for AutotoolsProjectManager::ConfigureStep id."));
     setSupportedProjectType(Constants::AUTOTOOLS_PROJECT_ID);
     setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_BUILD);
 }
 
-} // AutotoolsProjectManager::Internal
+} // namespace Internal
+} // namespace AutotoolsProjectManager

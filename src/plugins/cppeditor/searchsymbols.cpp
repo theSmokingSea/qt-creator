@@ -1,24 +1,44 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "searchsymbols.h"
+#include "stringtable.h"
 
 #include <cplusplus/Icons.h>
 #include <cplusplus/LookupContext.h>
-
 #include <utils/qtcassert.h>
 #include <utils/scopedswap.h>
-#include <utils/stringtable.h>
 
 #include <QDebug>
 
 using namespace CPlusPlus;
-using namespace Utils;
 
 namespace CppEditor {
 
-using ScopedIndexItemPtr = ScopedSwap<IndexItem::Ptr>;
-using ScopedScope = ScopedSwap<QString>;
+using ScopedIndexItemPtr = Utils::ScopedSwap<IndexItem::Ptr>;
+using ScopedScope = Utils::ScopedSwap<QString>;
 
 SearchSymbols::SymbolTypes SearchSymbols::AllTypes =
         SymbolSearcher::Classes
@@ -39,7 +59,7 @@ void SearchSymbols::setSymbolsToSearchFor(const SymbolTypes &types)
 
 IndexItem::Ptr SearchSymbols::operator()(Document::Ptr doc, const QString &scope)
 {
-    IndexItem::Ptr root = IndexItem::create(StringTable::insert(doc->filePath().toString()), 100);
+    IndexItem::Ptr root = IndexItem::create(Internal::StringTable::insert(doc->fileName()), 100);
 
     { // RAII scope
         ScopedIndexItemPtr parentRaii(_parent, root);
@@ -48,13 +68,13 @@ IndexItem::Ptr SearchSymbols::operator()(Document::Ptr doc, const QString &scope
 
         QTC_ASSERT(_parent, return IndexItem::Ptr());
         QTC_ASSERT(root, return IndexItem::Ptr());
-        QTC_ASSERT(_parent->filePath().toString() == StringTable::insert(doc->filePath().toString()),
+        QTC_ASSERT(_parent->fileName() == Internal::StringTable::insert(doc->fileName()),
                    return IndexItem::Ptr());
 
         for (int i = 0, ei = doc->globalSymbolCount(); i != ei; ++i)
             accept(doc->globalSymbolAt(i));
 
-        StringTable::scheduleGC();
+        Internal::StringTable::scheduleGC();
         m_paths.clear();
     }
 
@@ -276,17 +296,16 @@ IndexItem::Ptr SearchSymbols::addChildItem(const QString &symbolName, const QStr
         m_paths.insert(symbol->fileId(), path);
     }
 
-    const QIcon icon = CPlusPlus::Icons::iconForSymbol(symbol);
+    const QIcon icon = Icons::iconForSymbol(symbol);
 
-    IndexItem::Ptr newItem = IndexItem::create(StringTable::insert(symbolName),
-                                               StringTable::insert(symbolType),
-                                               StringTable::insert(symbolScope),
+    IndexItem::Ptr newItem = IndexItem::create(Internal::StringTable::insert(symbolName),
+                                               Internal::StringTable::insert(symbolType),
+                                               Internal::StringTable::insert(symbolScope),
                                                itemType,
-                                               StringTable::insert(path),
+                                               Internal::StringTable::insert(path),
                                                symbol->line(),
                                                symbol->column() - 1, // 1-based vs 0-based column
-                                               icon,
-                                               symbol->asFunction());
+                                               icon);
     _parent->addChild(newItem);
     return newItem;
 }
@@ -315,17 +334,8 @@ void SearchSymbols::processFunction(T *func)
     if (!(symbolsToSearchFor & SymbolSearcher::Functions) || !func->name())
         return;
     QString name = overview.prettyName(func->name());
-    QString scope = _scope;
-    const int scopeSep = name.lastIndexOf("::");
-    if (scopeSep != -1) {
-        if (!scope.isEmpty())
-            scope.append("::");
-        scope.append(name.left(scopeSep));
-        name.remove(0, scopeSep + 2);
-    }
     QString type = overview.prettyType(func->type());
-
-    addChildItem(name, type, scope, IndexItem::Function, func);
+    addChildItem(name, type, _scope, IndexItem::Function, func);
 }
 
 } // namespace CppEditor

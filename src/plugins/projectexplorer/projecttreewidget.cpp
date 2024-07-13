@@ -1,31 +1,50 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "projecttreewidget.h"
 
 #include "project.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
-#include "projectmanager.h"
 #include "projectmodels.h"
 #include "projectnodes.h"
 #include "projecttree.h"
+#include "session.h"
 
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/command.h>
 #include <coreplugin/documentmanager.h>
+#include <coreplugin/icore.h>
+#include <coreplugin/idocument.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/find/itemviewfind.h>
-#include <coreplugin/icore.h>
-#include <coreplugin/idocument.h>
-#include <coreplugin/inavigationwidgetfactory.h>
 
 #include <utils/algorithm.h>
 #include <utils/navigationtreeview.h>
 #include <utils/progressindicator.h>
 #include <utils/qtcassert.h>
-#include <utils/stylehelper.h>
 #include <utils/tooltip/tooltip.h>
 #include <utils/utilsicons.h>
 
@@ -34,6 +53,7 @@
 #include <QLineEdit>
 #include <QMenu>
 #include <QPainter>
+#include <QSettings>
 #include <QStyledItemDelegate>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -47,9 +67,9 @@ using namespace Utils;
 
 QList<ProjectTreeWidget *> ProjectTreeWidget::m_projectTreeWidgets;
 
-namespace ProjectExplorer::Internal {
+namespace {
 
-class ProjectTreeItemDelegate final : public QStyledItemDelegate
+class ProjectTreeItemDelegate : public QStyledItemDelegate
 {
 public:
     ProjectTreeItemDelegate(QTreeView *view) : QStyledItemDelegate(view),
@@ -66,25 +86,15 @@ public:
                 this, &ProjectTreeItemDelegate::deleteAllIndicators);
     }
 
-    ~ProjectTreeItemDelegate() final
+    ~ProjectTreeItemDelegate() override
     {
         deleteAllIndicators();
     }
 
-    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const final
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
     {
-        const bool useUnavailableMarker = index.data(Project::UseUnavailableMarkerRole).toBool();
-        if (useUnavailableMarker) {
-            QStyleOptionViewItem opt = option;
-            opt.palette.setColor(QPalette::Text, creatorColor(Theme::TextColorDisabled));
-            QStyledItemDelegate::paint(painter, opt, index);
-            static const QPixmap pixmap
-                = QApplication::style()->standardIcon(QStyle::SP_BrowserStop).pixmap(10);
-            painter->drawPixmap(option.rect.topLeft(), pixmap);
-            return;
-        }
-
         QStyledItemDelegate::paint(painter, option, index);
+
         if (index.data(Project::isParsingRole).toBool()) {
             QStyleOptionViewItem opt = option;
             initStyleOption(&opt, index);
@@ -129,21 +139,24 @@ private:
 };
 
 bool debug = false;
+}
 
 class ProjectTreeView : public NavigationTreeView
 {
 public:
     ProjectTreeView()
     {
-        setObjectName("projectTreeView"); // used by Squish
         setEditTriggers(QAbstractItemView::EditKeyPressed);
         setContextMenuPolicy(Qt::CustomContextMenu);
         setDragEnabled(true);
         setDragDropMode(QAbstractItemView::DragDrop);
         viewport()->setAcceptDrops(true);
         setDropIndicatorShown(true);
+        auto context = new IContext(this);
+        context->setContext(Context(ProjectExplorer::Constants::C_PROJECT_TREE));
+        context->setWidget(this);
 
-        IContext::attach(this, Context(ProjectExplorer::Constants::C_PROJECT_TREE));
+        ICore::addContextObject(context);
 
         connect(this, &ProjectTreeView::expanded,
                 this, &ProjectTreeView::invalidateSize);
@@ -156,7 +169,7 @@ public:
         m_cachedSize = -1;
     }
 
-    void setModel(QAbstractItemModel *newModel) final
+    void setModel(QAbstractItemModel *newModel) override
     {
         // Note: Don't connect to column signals, as we have only one column
         if (model()) {
@@ -191,7 +204,7 @@ public:
         NavigationTreeView::setModel(newModel);
     }
 
-    int sizeHintForColumn(int column) const final
+    int sizeHintForColumn(int column) const override
     {
         if (m_cachedSize < 0)
             m_cachedSize = NavigationTreeView::sizeHintForColumn(column);
@@ -208,7 +221,7 @@ private:
 
   Shows the projects in form of a tree.
   */
-ProjectTreeWidget::ProjectTreeWidget()
+ProjectTreeWidget::ProjectTreeWidget(QWidget *parent) : QWidget(parent)
 {
     // We keep one instance per tree as this also manages the
     // simple/non-simple etc state which is per tree.
@@ -217,6 +230,7 @@ ProjectTreeWidget::ProjectTreeWidget()
     m_view->setModel(m_model);
     m_view->setItemDelegate(new ProjectTreeItemDelegate(m_view));
     setFocusProxy(m_view);
+    m_view->installEventFilter(this);
 
     auto layout = new QVBoxLayout();
     layout->addWidget(ItemViewFind::createSearchableWrapper(
@@ -225,18 +239,18 @@ ProjectTreeWidget::ProjectTreeWidget()
     layout->setContentsMargins(0, 0, 0, 0);
     setLayout(layout);
 
-    m_filterProjectsAction = new QAction(Tr::tr("Simplify Tree"), this);
+    m_filterProjectsAction = new QAction(tr("Simplify Tree"), this);
     m_filterProjectsAction->setCheckable(true);
     m_filterProjectsAction->setChecked(false); // default is the traditional complex tree
     connect(m_filterProjectsAction, &QAction::toggled, this, &ProjectTreeWidget::setProjectFilter);
 
-    m_filterGeneratedFilesAction = new QAction(Tr::tr("Hide Generated Files"), this);
+    m_filterGeneratedFilesAction = new QAction(tr("Hide Generated Files"), this);
     m_filterGeneratedFilesAction->setCheckable(true);
     m_filterGeneratedFilesAction->setChecked(true);
     connect(m_filterGeneratedFilesAction, &QAction::toggled,
             this, &ProjectTreeWidget::setGeneratedFilesFilter);
 
-    m_filterDisabledFilesAction = new QAction(Tr::tr("Hide Disabled Files"), this);
+    m_filterDisabledFilesAction = new QAction(tr("Hide Disabled Files"), this);
     m_filterDisabledFilesAction->setCheckable(true);
     m_filterDisabledFilesAction->setChecked(false);
     connect(m_filterDisabledFilesAction, &QAction::toggled,
@@ -244,22 +258,22 @@ ProjectTreeWidget::ProjectTreeWidget()
 
     const char focusActionId[] = "ProjectExplorer.FocusDocumentInProjectTree";
     if (!ActionManager::command(focusActionId)) {
-        auto focusDocumentInProjectTree = new QAction(Tr::tr("Focus Document in Project Tree"), this);
+        auto focusDocumentInProjectTree = new QAction(tr("Focus Document in Project Tree"), this);
         Command *cmd = ActionManager::registerAction(focusDocumentInProjectTree, focusActionId);
         cmd->setDefaultKeySequence(
-            QKeySequence(useMacShortcuts ? Tr::tr("Meta+Shift+L") : Tr::tr("Alt+Shift+L")));
-        connect(focusDocumentInProjectTree, &QAction::triggered, this, [this] {
+            QKeySequence(useMacShortcuts ? tr("Meta+Shift+L") : tr("Alt+Shift+L")));
+        connect(focusDocumentInProjectTree, &QAction::triggered, this, [this]() {
             syncFromDocumentManager();
         });
     }
 
-    m_trimEmptyDirectoriesAction = new QAction(Tr::tr("Hide Empty Directories"), this);
+    m_trimEmptyDirectoriesAction = new QAction(tr("Hide Empty Directories"), this);
     m_trimEmptyDirectoriesAction->setCheckable(true);
     m_trimEmptyDirectoriesAction->setChecked(true);
     connect(m_trimEmptyDirectoriesAction, &QAction::toggled,
             this, &ProjectTreeWidget::setTrimEmptyDirectories);
 
-    m_hideSourceGroupsAction = new QAction(Tr::tr("Hide Source and Header Groups"), this);
+    m_hideSourceGroupsAction = new QAction(tr("Hide Source and Header Groups"), this);
     m_hideSourceGroupsAction->setCheckable(true);
     m_hideSourceGroupsAction->setChecked(false);
     connect(m_hideSourceGroupsAction, &QAction::toggled,
@@ -285,7 +299,7 @@ ProjectTreeWidget::ProjectTreeWidget()
     m_toggleSync->setIcon(Icons::LINK_TOOLBAR.icon());
     m_toggleSync->setCheckable(true);
     m_toggleSync->setChecked(autoSynchronization());
-    m_toggleSync->setToolTip(Tr::tr("Synchronize with Editor"));
+    m_toggleSync->setToolTip(tr("Synchronize with Editor"));
     connect(m_toggleSync, &QAction::triggered, this, &ProjectTreeWidget::toggleAutoSynchronization);
 
     setCurrentItem(ProjectTree::currentNode());
@@ -305,14 +319,14 @@ ProjectTreeWidget::~ProjectTreeWidget()
 int ProjectTreeWidget::expandedCount(Node *node)
 {
     if (m_projectTreeWidgets.isEmpty())
-        return INT_MAX;
+        return 0;
     FlatModel *model = m_projectTreeWidgets.first()->m_model;
     QModelIndex index = model->indexForNode(node);
     if (!index.isValid())
-        return INT_MAX;
+        return 0;
 
     int count = 0;
-    for (ProjectTreeWidget *tree : std::as_const(m_projectTreeWidgets)) {
+    for (ProjectTreeWidget *tree : qAsConst(m_projectTreeWidgets)) {
         QModelIndex idx = index;
         while (idx.isValid() && idx != tree->m_view->rootIndex()) {
             if (!tree->m_view->isExpanded(idx))
@@ -350,7 +364,7 @@ Node *ProjectTreeWidget::nodeForFile(const FilePath &fileName)
     int bestNodeExpandCount = INT_MAX;
 
     // FIXME: Looks like this could be done with less cycles.
-    for (Project *project : ProjectManager::projects()) {
+    for (Project *project : SessionManager::projects()) {
         if (ProjectNode *projectNode = project->rootProjectNode()) {
             projectNode->forEachGenericNode([&](Node *node) {
                 if (node->filePath() == fileName) {
@@ -425,9 +439,9 @@ QList<QToolButton *> ProjectTreeWidget::createToolButtons()
 {
     auto filter = new QToolButton(this);
     filter->setIcon(Icons::FILTER.icon());
-    filter->setToolTip(Tr::tr("Filter Tree"));
+    filter->setToolTip(tr("Filter Tree"));
     filter->setPopupMode(QToolButton::InstantPopup);
-    filter->setProperty(StyleHelper::C_NO_ARROW, true);
+    filter->setProperty("noArrow", true);
 
     auto filterMenu = new QMenu(filter);
     filterMenu->addAction(m_filterProjectsAction);
@@ -611,26 +625,20 @@ bool ProjectTreeWidget::projectFilter()
     return m_model->projectFilterEnabled();
 }
 
-class ProjectTreeWidgetFactory final : public INavigationWidgetFactory
+
+ProjectTreeWidgetFactory::ProjectTreeWidgetFactory()
 {
-public:
-    ProjectTreeWidgetFactory()
-    {
-        setDisplayName(Tr::tr("Projects"));
-        setPriority(100);
-        setId(ProjectExplorer::Constants::PROJECTTREE_ID);
-        setActivationSequence(QKeySequence(useMacShortcuts ? Tr::tr("Meta+X") : Tr::tr("Alt+X")));
-    }
+    setDisplayName(tr("Projects"));
+    setPriority(100);
+    setId(ProjectExplorer::Constants::PROJECTTREE_ID);
+    setActivationSequence(QKeySequence(useMacShortcuts ? tr("Meta+X") : tr("Alt+X")));
+}
 
-    Core::NavigationView createWidget() final
-    {
-        auto ptw = new ProjectTreeWidget;
-        return {ptw, ptw->createToolButtons()};
-    }
-
-    void restoreSettings(Utils::QtcSettings *settings, int position, QWidget *widget) final;
-    void saveSettings(Utils::QtcSettings *settings, int position, QWidget *widget) final;
-};
+NavigationView ProjectTreeWidgetFactory::createWidget()
+{
+    auto ptw = new ProjectTreeWidget;
+    return {ptw, ptw->createToolButtons()};
+}
 
 const bool kProjectFilterDefault = false;
 const bool kHideGeneratedFilesDefault = true;
@@ -650,7 +658,7 @@ void ProjectTreeWidgetFactory::saveSettings(QtcSettings *settings, int position,
 {
     auto ptw = qobject_cast<ProjectTreeWidget *>(widget);
     Q_ASSERT(ptw);
-    const Key baseKey = numberedKey(kBaseKey, position);
+    const QString baseKey = kBaseKey + QString::number(position);
     settings->setValueWithDefault(baseKey + kProjectFilterKey,
                                   ptw->projectFilter(),
                                   kProjectFilterDefault);
@@ -669,11 +677,11 @@ void ProjectTreeWidgetFactory::saveSettings(QtcSettings *settings, int position,
     settings->setValueWithDefault(baseKey + kSyncKey, ptw->autoSynchronization(), kSyncDefault);
 }
 
-void ProjectTreeWidgetFactory::restoreSettings(QtcSettings *settings, int position, QWidget *widget)
+void ProjectTreeWidgetFactory::restoreSettings(QSettings *settings, int position, QWidget *widget)
 {
     auto ptw = qobject_cast<ProjectTreeWidget *>(widget);
     Q_ASSERT(ptw);
-    const Key baseKey = numberedKey(kBaseKey, position);
+    const QString baseKey = kBaseKey + QString::number(position);
     ptw->setProjectFilter(
         settings->value(baseKey + kProjectFilterKey, kProjectFilterDefault).toBool());
     ptw->setGeneratedFilesFilter(
@@ -686,10 +694,3 @@ void ProjectTreeWidgetFactory::restoreSettings(QtcSettings *settings, int positi
         settings->value(baseKey + kHideSourceGroupsKey, kHideSourceGroupsDefault).toBool());
     ptw->setAutoSynchronization(settings->value(baseKey + kSyncKey, kSyncDefault).toBool());
 }
-
-void setupProjectTreeWidgetFactory()
-{
-    static ProjectTreeWidgetFactory theProjectTreeWidgetFactory;
-}
-
-} // ProjectExplorer::Internal

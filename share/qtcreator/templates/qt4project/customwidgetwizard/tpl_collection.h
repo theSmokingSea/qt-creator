@@ -15,9 +15,9 @@ class @COLLECTION_PLUGIN_CLASS@ : public QObject, public QDesignerCustomWidgetCo
     @COLLECTION_PLUGIN_METADATA@
 
 public:
-    explicit @COLLECTION_PLUGIN_CLASS@(QObject *parent = nullptr);
+    explicit @COLLECTION_PLUGIN_CLASS@(QObject *parent = 0);
 
-    QList<QDesignerCustomWidgetInterface*> customWidgets() const override;
+    virtual QList<QDesignerCustomWidgetInterface*> customWidgets() const;
 
 private:
     QList<QDesignerCustomWidgetInterface*> m_widgets;

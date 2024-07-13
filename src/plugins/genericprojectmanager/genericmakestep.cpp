@@ -1,49 +1,63 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "genericmakestep.h"
-
 #include "genericprojectconstants.h"
 
-#include <projectexplorer/makestep.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/projectexplorerconstants.h>
 
 using namespace ProjectExplorer;
-using namespace Utils;
 
-namespace GenericProjectManager::Internal {
+namespace GenericProjectManager {
+namespace Internal {
 
-class GenericMakeStep final : public MakeStep
+class GenericMakeStep : public ProjectExplorer::MakeStep
 {
 public:
-    GenericMakeStep(BuildStepList *parent, Id id)
-        : MakeStep(parent, id)
-    {
-        setAvailableBuildTargets({"all", "clean"});
-        if (parent->id() == ProjectExplorer::Constants::BUILDSTEPS_BUILD) {
-            setSelectedBuildTarget("all");
-        } else if (parent->id() == ProjectExplorer::Constants::BUILDSTEPS_CLEAN) {
-            setSelectedBuildTarget("clean");
-            setIgnoreReturnValue(true);
-        }
-    }
+    explicit GenericMakeStep(BuildStepList *parent, Utils::Id id);
 };
 
-class GenericMakeStepFactory final : public BuildStepFactory
+GenericMakeStep::GenericMakeStep(BuildStepList *parent, Utils::Id id)
+    : MakeStep(parent, id)
 {
-public:
-    GenericMakeStepFactory()
-    {
-        registerStep<GenericMakeStep>(Constants::GENERIC_MS_ID);
-        setDisplayName(MakeStep::defaultDisplayName());
-        setSupportedProjectType(Constants::GENERICPROJECT_ID);
+    setAvailableBuildTargets({"all", "clean"});
+    if (parent->id() == ProjectExplorer::Constants::BUILDSTEPS_BUILD) {
+        setSelectedBuildTarget("all");
+    } else if (parent->id() == ProjectExplorer::Constants::BUILDSTEPS_CLEAN) {
+        setSelectedBuildTarget("clean");
+        setIgnoreReturnValue(true);
     }
-};
-
-void setupGenericMakeStep()
-{
-    static GenericMakeStepFactory theGenericMakeStepFactory;
 }
 
-} // GenericProjectManager::Internal
+GenericMakeStepFactory::GenericMakeStepFactory()
+{
+    registerStep<GenericMakeStep>(Constants::GENERIC_MS_ID);
+    setDisplayName(MakeStep::defaultDisplayName());
+    setSupportedProjectType(Constants::GENERICPROJECT_ID);
+}
+
+} // namespace Internal
+} // namespace GenericProjectManager

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "taskmodel.h"
 
@@ -60,12 +82,13 @@ bool TaskModel::hasFile(const QModelIndex &index) const
     return !m_tasks.at(row).file.isEmpty();
 }
 
-void TaskModel::addCategory(const TaskCategory &category)
+void TaskModel::addCategory(Utils::Id categoryId, const QString &categoryName, int priority)
 {
-    QTC_ASSERT(category.id.isValid(), return);
+    QTC_ASSERT(categoryId.isValid(), return);
     CategoryData data;
-    data.category = category;
-    m_categories.insert(category.id, data);
+    data.displayName = categoryName;
+    data.priority = priority;
+    m_categories.insert(categoryId, data);
 }
 
 Tasks TaskModel::tasks(Utils::Id categoryId) const
@@ -74,7 +97,7 @@ Tasks TaskModel::tasks(Utils::Id categoryId) const
         return m_tasks;
 
     Tasks taskList;
-    for (const Task &t : std::as_const(m_tasks)) {
+    for (const Task &t : qAsConst(m_tasks)) {
         if (t.category == categoryId)
             taskList.append(t);
     }
@@ -87,8 +110,8 @@ bool TaskModel::compareTasks(const Task &task1, const Task &task2)
         return task1.taskId < task2.taskId;
 
     // Higher-priority task should appear higher up in the view and thus compare less-than.
-    const int prio1 = m_categories.value(task1.category).category.priority;
-    const int prio2 = m_categories.value(task2.category).category.priority;
+    const int prio1 = m_categories.value(task1.category).priority;
+    const int prio2 = m_categories.value(task2.category).priority;
     if (prio1 < prio2)
         return false;
     if (prio1 > prio2)
@@ -99,7 +122,7 @@ bool TaskModel::compareTasks(const Task &task1, const Task &task2)
 
 void TaskModel::addTask(const Task &task)
 {
-    Q_ASSERT(m_categories.contains(task.category));
+    Q_ASSERT(m_categories.keys().contains(task.category));
     CategoryData &data = m_categories[task.category];
     CategoryData &global = m_categories[Utils::Id()];
 
@@ -209,82 +232,58 @@ void TaskModel::clearTasks(Utils::Id categoryId)
 QModelIndex TaskModel::index(int row, int column, const QModelIndex &parent) const
 {
     if (parent.isValid())
-        return createIndex(row, column, quintptr(parent.row() + 1));
+        return QModelIndex();
     return createIndex(row, column);
 }
 
 QModelIndex TaskModel::parent(const QModelIndex &child) const
 {
-    if (child.internalId())
-        return index(child.internalId() - 1, 0);
-    return {};
+    Q_UNUSED(child)
+    return QModelIndex();
 }
 
 int TaskModel::rowCount(const QModelIndex &parent) const
 {
-    if (!parent.isValid())
-        return m_tasks.count();
-    if (parent.column() != 0)
-        return 0;
-    return task(parent).details.isEmpty() ? 0 : 1;
+    return parent.isValid() ? 0 : m_tasks.count();
 }
 
 int TaskModel::columnCount(const QModelIndex &parent) const
 {
-    return parent.isValid() ? 1 : 2;
+        return parent.isValid() ? 0 : 1;
 }
 
 QVariant TaskModel::data(const QModelIndex &index, int role) const
 {
-    if (!index.isValid() || index.row() < 0 || index.row() >= rowCount(index.parent())
-            || index.column() >= columnCount(index.parent())) {
-        return {};
-    }
+    int row = index.row();
+    if (!index.isValid() || row < 0 || row >= m_tasks.count() || index.column() != 0)
+        return QVariant();
 
-    if (index.internalId()) {
-        const Task &task = m_tasks.at(index.internalId() - 1);
-        if (role != Qt::DisplayRole)
-            return {};
-        return task.formattedDescription(Task::WithLinks);
-    }
-
-    static const auto lineString = [](const Task &task) {
-        QString file = task.file.fileName();
-        const int line = task.movedLine > 0 ? task.movedLine : task.line;
-        if (line > 0)
-            file.append(':').append(QString::number(line));
-        return file;
-    };
-
-    const Task &task = m_tasks.at(index.row());
-    if (index.column() == 1) {
-        if (role == Qt::DisplayRole)
-            return lineString(task);
-        if (role == Qt::ToolTipRole)
-            return task.file.toUserOutput();
-        return {};
-    }
-
-    switch (role) {
-    case Qt::DecorationRole:
-        return task.icon();
-    case Qt::DisplayRole:
-        return task.summary;
-    case TaskModel::Description:
-        return task.description();
-    case TaskModel::Type:
-        return int(task.type);
-    }
-    return {};
+    if (role == TaskModel::File)
+        return m_tasks.at(index.row()).file.toString();
+    else if (role == TaskModel::Line)
+        return m_tasks.at(index.row()).line;
+    else if (role == TaskModel::MovedLine)
+        return m_tasks.at(index.row()).movedLine;
+    else if (role == TaskModel::Description)
+        return m_tasks.at(index.row()).description();
+    else if (role == TaskModel::FileNotFound)
+        return m_fileNotFound.value(m_tasks.at(index.row()).file.toString());
+    else if (role == TaskModel::Type)
+        return (int)m_tasks.at(index.row()).type;
+    else if (role == TaskModel::Category)
+        return m_tasks.at(index.row()).category.uniqueIdentifier();
+    else if (role == TaskModel::Icon)
+        return m_tasks.at(index.row()).icon();
+    else if (role == TaskModel::Task_t)
+        return QVariant::fromValue(task(index));
+    return QVariant();
 }
 
 Task TaskModel::task(const QModelIndex &index) const
 {
     int row = index.row();
-    if (!index.isValid() || row < 0 || row >= m_tasks.count() || index.internalId()
-        || index.column() > 0) {
-        return {};
-    }
+    if (!index.isValid() || row < 0 || row >= m_tasks.count())
+        return Task();
     return m_tasks.at(row);
 }
 
@@ -295,10 +294,16 @@ Tasks TaskModel::tasks(const QModelIndexList &indexes) const
                 [](const Task &t) { return !t.isNull(); });
 }
 
-QList<TaskCategory> TaskModel::categories() const
+QList<Utils::Id> TaskModel::categoryIds() const
 {
-    const QList<TaskCategory> cat = Utils::transform<QList>(m_categories, &CategoryData::category);
-    return Utils::filtered(cat, [](const TaskCategory &c) { return c.id.isValid(); });
+    QList<Utils::Id> categories = m_categories.keys();
+    categories.removeAll(Utils::Id()); // remove global category we added for bookkeeping
+    return categories;
+}
+
+QString TaskModel::categoryDisplayName(Utils::Id categoryId) const
+{
+    return m_categories.value(categoryId).displayName;
 }
 
 int TaskModel::sizeOfFile(const QFont &font)
@@ -404,8 +409,7 @@ void TaskFilterModel::updateFilterProperties(
 
 bool TaskFilterModel::filterAcceptsRow(int source_row, const QModelIndex &source_parent) const
 {
-    if (source_parent.isValid())
-        return true;
+    Q_UNUSED(source_parent)
     return filterAcceptsTask(taskModel()->tasks().at(source_row));
 }
 

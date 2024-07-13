@@ -1,49 +1,73 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "allprojectsfilter.h"
-
-#include "project.h"
 #include "projectexplorer.h"
-#include "projectexplorertr.h"
-#include "projectmanager.h"
+#include "session.h"
+#include "project.h"
 
 #include <utils/algorithm.h>
 
-#include <QFuture>
-
 using namespace Core;
-using namespace Utils;
-
-namespace ProjectExplorer::Internal {
+using namespace ProjectExplorer;
+using namespace ProjectExplorer::Internal;
 
 AllProjectsFilter::AllProjectsFilter()
 {
     setId("Files in any project");
-    setDisplayName(Tr::tr("Files in Any Project"));
-    setDescription(Tr::tr("Locates files of all open projects. Append \"+<number>\" or "
-                          "\":<number>\" to jump to the given line number. Append another "
-                          "\"+<number>\" or \":<number>\" to jump to the column number as well."));
+    setDisplayName(tr("Files in Any Project"));
+    setDescription(tr("Matches all files of all open projects. Append \"+<number>\" or "
+                      "\":<number>\" to jump to the given line number. Append another "
+                      "\"+<number>\" or \":<number>\" to jump to the column number as well."));
     setDefaultShortcutString("a");
     setDefaultIncludedByDefault(true);
-    setRefreshRecipe(Tasking::Sync([this] { m_cache.invalidate(); }));
 
     connect(ProjectExplorerPlugin::instance(), &ProjectExplorerPlugin::fileListChanged,
-            this, [this] { m_cache.invalidate(); });
-    m_cache.setGeneratorProvider([] {
-        // This body runs in main thread
-        FilePaths filePaths;
-        for (Project *project : ProjectManager::projects())
-            filePaths.append(project->files(Project::SourceFiles));
-        return [filePaths](const QFuture<void> &future) {
-            // This body runs in non-main thread
-            FilePaths sortedPaths = filePaths;
-            if (future.isCanceled())
-                return FilePaths();
-            Utils::sort(sortedPaths);
-            return sortedPaths;
-        };
-    });
+            this, &AllProjectsFilter::markFilesAsOutOfDate);
 }
 
-} // namespace ProjectExplorer::Internal
+void AllProjectsFilter::markFilesAsOutOfDate()
+{
+    setFileIterator(nullptr);
+}
+
+void AllProjectsFilter::prepareSearch(const QString &entry)
+{
+    Q_UNUSED(entry)
+    if (!fileIterator()) {
+        Utils::FilePaths paths;
+        for (Project *project : SessionManager::projects())
+            paths.append(project->files(Project::SourceFiles));
+        Utils::sort(paths);
+        setFileIterator(new BaseFileFilter::ListIterator(paths));
+    }
+    BaseFileFilter::prepareSearch(entry);
+}
+
+void AllProjectsFilter::refresh(QFutureInterface<void> &future)
+{
+    Q_UNUSED(future)
+    QMetaObject::invokeMethod(this, &AllProjectsFilter::markFilesAsOutOfDate, Qt::QueuedConnection);
+}

@@ -1,5 +1,27 @@
-// Copyright (C) 2020 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2020 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -9,27 +31,29 @@
 #include "documentmodel.h"
 #include "ieditor.h"
 
-#include <utils/link.h>
-#include <utils/textfileformat.h>
+#include "utils/link.h"
+#include "utils/textfileformat.h"
 
-#include <QFileDialog>
 #include <QList>
 #include <QWidget>
 
 #include <functional>
 
-QT_BEGIN_NAMESPACE
-class QMenu;
-QT_END_NAMESPACE
+QT_FORWARD_DECLARE_CLASS(QMenu)
 
-namespace Utils { class SearchResultItem; }
+namespace Utils {
+class MimeType;
+}
 
 namespace Core {
 
 class IDocument;
-class LocatorFilterEntry;
+class SearchResultItem;
 
-namespace Internal { class ICorePrivate; }
+namespace Internal {
+class EditorManagerPrivate;
+class MainWindow;
+} // namespace Internal
 
 class CORE_EXPORT EditorManagerPlaceHolder final : public QWidget
 {
@@ -73,9 +97,8 @@ public:
                                  Utils::Id editorId = {},
                                  OpenEditorFlags flags = NoFlags,
                                  bool *newEditor = nullptr);
-    static IEditor *openEditor(const LocatorFilterEntry &entry);
 
-    static void openEditorAtSearchResult(const Utils::SearchResultItem &item,
+    static void openEditorAtSearchResult(const SearchResultItem &item,
                                          Utils::Id editorId = {},
                                          OpenEditorFlags flags = NoFlags,
                                          bool *newEditor = nullptr);
@@ -89,7 +112,7 @@ public:
     static bool openExternalEditor(const Utils::FilePath &filePath, Utils::Id editorId);
     static void addCloseEditorListener(const std::function<bool(IEditor *)> &listener);
 
-    static Utils::FilePaths getOpenFilePaths(QFileDialog::Options options = {});
+    static Utils::FilePaths getOpenFilePaths();
 
     static IDocument *currentDocument();
     static IEditor *currentEditor();
@@ -141,12 +164,7 @@ public:
                                              IEditor *editor = nullptr);
     static void addPinEditorActions(QMenu *contextMenu, DocumentModel::Entry *entry);
     static void addNativeDirAndOpenWithActions(QMenu *contextMenu, DocumentModel::Entry *entry);
-    static void addContextMenuActions(
-        QMenu *contextMenu, DocumentModel::Entry *entry, IEditor *editor = nullptr);
     static void populateOpenWithMenu(QMenu *menu, const Utils::FilePath &filePath);
-
-    static void runWithTemporaryEditor(const Utils::FilePath &filePath,
-                                       const std::function<void(IEditor *)> &callback);
 
 public: // for tests
     static IDocument::ReloadSetting reloadSetting();
@@ -156,7 +174,7 @@ signals:
     void currentEditorChanged(Core::IEditor *editor);
     void currentDocumentStateChanged();
     void documentStateChanged(Core::IDocument *document);
-    void editorCreated(Core::IEditor *editor, const Utils::FilePath &filePath);
+    void editorCreated(Core::IEditor *editor, const QString &fileName);
     void editorOpened(Core::IEditor *editor);
     void documentOpened(Core::IDocument *document);
     void editorAboutToClose(Core::IEditor *editor);
@@ -190,7 +208,7 @@ private:
     explicit EditorManager(QObject *parent);
     ~EditorManager() override;
 
-    friend class Internal::ICorePrivate;
+    friend class Core::Internal::MainWindow;
 };
 
 } // namespace Core

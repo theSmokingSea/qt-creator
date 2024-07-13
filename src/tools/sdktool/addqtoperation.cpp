@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "addqtoperation.h"
 
@@ -11,15 +33,18 @@
 
 #include "settings.h"
 
+#include <utils/filepath.h>
+
 #ifdef WITH_TESTS
 #include <QTest>
 #endif
 
-#include <QDir>
 #include <QLoggingCategory>
 #include <QRegularExpression>
 
 Q_LOGGING_CATEGORY(log, "qtc.sdktool.operations.addqt", QtWarningMsg)
+
+using namespace Utils;
 
 // Qt version file stuff:
 const char PREFIX[] = "QtVersion.";
@@ -252,15 +277,6 @@ void AddQtOperation::unittest()
     QCOMPARE(version1.value(QLatin1String(QMAKE)).toString(), QLatin1String("/tmp/test/qmake2"));
     QVERIFY(version1.contains(QLatin1String("extraData")));
     QCOMPARE(version1.value(QLatin1String("extraData")).toString(), QLatin1String("extraValue"));
-
-    // Docker paths
-    qtData.m_id = "testId3";
-    qtData.m_qmake = "docker://image///path/to//some/qmake";
-
-    map = qtData.addQt(map);
-    QVariantMap version2 = map.value(QLatin1String("QtVersion.2")).toMap();
-    QVERIFY(version2.contains(QLatin1String(QMAKE)));
-    QCOMPARE(version2.value(QLatin1String(QMAKE)).toString(), QLatin1String("docker://image/path/to/some/qmake"));
 }
 #endif
 
@@ -279,7 +295,7 @@ QVariantMap AddQtData::addQt(const QVariantMap &map) const
     for (QVariantMap::const_iterator i = map.begin(); i != map.end(); ++i) {
         if (!i.key().startsWith(QLatin1String(PREFIX)))
             continue;
-        QString number = i.key().mid(QString::fromLatin1(PREFIX).size());
+        QString number = i.key().mid(QString::fromLatin1(PREFIX).count());
         bool ok;
         int count = number.toInt(&ok);
         if (ok && count >= versionCount)
@@ -288,7 +304,7 @@ QVariantMap AddQtData::addQt(const QVariantMap &map) const
     const QString qt = QString::fromLatin1(PREFIX) + QString::number(versionCount);
 
     // Sanitize qmake path:
-    const QString saneQmake = cleanPath(m_qmake);
+    FilePath saneQmake = FilePath::fromUserInput(m_qmake).cleanPath();
 
     // insert data:
     KeyValuePairList data;
@@ -297,12 +313,12 @@ QVariantMap AddQtData::addQt(const QVariantMap &map) const
     data << KeyValuePair(QStringList() << qt << QLatin1String(AUTODETECTED), QVariant(true));
     data << KeyValuePair(QStringList() << qt << QLatin1String(AUTODETECTION_SOURCE), QVariant(sdkId));
 
-    data << KeyValuePair(QStringList() << qt << QLatin1String(QMAKE), QVariant(saneQmake));
+    data << KeyValuePair(QStringList() << qt << QLatin1String(QMAKE), saneQmake.toVariant());
     data << KeyValuePair(QStringList() << qt << QLatin1String(TYPE), QVariant(m_type));
     data << KeyValuePair(QStringList() << qt << ABIS, QVariant(m_abis));
 
     KeyValuePairList qtExtraList;
-    for (const KeyValuePair &pair : std::as_const(m_extra))
+    for (const KeyValuePair &pair : qAsConst(m_extra))
         qtExtraList << KeyValuePair(QStringList() << qt << pair.key, pair.value);
     data.append(qtExtraList);
 

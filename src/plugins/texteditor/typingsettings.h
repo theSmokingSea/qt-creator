@@ -1,13 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "texteditor_global.h"
 
-#include <utils/store.h>
+#include <QVariantMap>
 
 QT_BEGIN_NAMESPACE
+class QSettings;
 class QTextDocument;
 class QTextCursor;
 QT_END_NAMESPACE
@@ -31,33 +54,27 @@ public:
         BackspaceUnindents = 2
     };
 
-    enum CommentPosition {
-        Automatic = 0,
-        StartOfLine = 1,
-        AfterWhitespace = 2,
-    };
-
     TypingSettings();
 
     bool tabShouldIndent(const QTextDocument *document, const QTextCursor &cursor, int *suggestedPosition) const;
 
-    Utils::Store toMap() const;
-    void fromMap(const Utils::Store &map);
+    void toSettings(const QString &category, QSettings *s) const;
+    void fromSettings(const QString &category, QSettings *s);
+
+    QVariantMap toMap() const;
+    void fromMap(const QVariantMap &map);
 
     bool equals(const TypingSettings &ts) const;
+
+    friend bool operator==(const TypingSettings &t1, const TypingSettings &t2) { return t1.equals(t2); }
+    friend bool operator!=(const TypingSettings &t1, const TypingSettings &t2) { return !t1.equals(t2); }
 
     bool m_autoIndent;
     TabKeyBehavior m_tabKeyBehavior;
     SmartBackspaceBehavior m_smartBackspaceBehavior;
 
     bool m_preferSingleLineComments;
-    CommentPosition m_commentPosition = Automatic;
 };
-
-void setupTypingSettings();
-void updateGlobalTypingSettings(const TypingSettings &newTypingSettings);
-
-TEXTEDITOR_EXPORT TypingSettings &globalTypingSettings();
 
 } // namespace TextEditor
 

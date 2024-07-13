@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "dupdatevisitor.h"
 
@@ -65,16 +87,13 @@ void DUpdateVisitor::visitMObject(const MObject *object)
     }
     if (isUpdating(object->name() != dobject->name()))
         dobject->setName(object->name());
-    bool hasLinkedFile = !object->linkedFileName().isEmpty();
-    if (isUpdating(hasLinkedFile != dobject->hasLinkedFile()))
-        dobject->setLinkedFile(hasLinkedFile);
     // TODO unlikely that this is called for all objects if hierarchy is modified
     // PERFORM remove loop
     int depth = 1;
     const MObject *owner = object->owner();
     while (owner) {
         owner = owner->owner();
-        depth += 3;
+        depth += 1;
     }
     if (isUpdating(depth != dobject->depth()))
         dobject->setDepth(depth);
@@ -138,7 +157,7 @@ void DUpdateVisitor::visitMRelation(const MRelation *relation)
         (void) isUpdating(true);
         endAObject = nullptr;
         // TODO use DiagramController::findDelegate
-        for (DElement *diagramElement : m_diagram->diagramElements()) {
+        foreach (DElement *diagramElement, m_diagram->diagramElements()) {
             if (diagramElement->modelUid().isValid() && diagramElement->modelUid() == relation->endAUid()) {
                 endAObject = dynamic_cast<DObject *>(diagramElement);
                 break;
@@ -154,7 +173,7 @@ void DUpdateVisitor::visitMRelation(const MRelation *relation)
         (void) isUpdating(true);
         endBObject = nullptr;
         // TODO use DiagramController::findDelegate
-        for (DElement *diagramElement : m_diagram->diagramElements()) {
+        foreach (DElement *diagramElement, m_diagram->diagramElements()) {
             if (diagramElement->modelUid().isValid() && diagramElement->modelUid() == relation->endBUid()) {
                 endBObject = dynamic_cast<DObject *>(diagramElement);
                 break;

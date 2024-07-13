@@ -1,16 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "FastPreprocessor.h"
 
 #include <cplusplus/Literals.h>
 #include <cplusplus/TranslationUnit.h>
 
-#include <utils/algorithm.h>
-
 #include <QDir>
 
-using namespace Utils;
 using namespace CPlusPlus;
 
 FastPreprocessor::FastPreprocessor(const Snapshot &snapshot)
@@ -26,19 +45,19 @@ QByteArray FastPreprocessor::run(Document::Ptr newDoc,
     std::swap(newDoc, _currentDoc);
     _addIncludesToCurrentDoc = _currentDoc->resolvedIncludes().isEmpty()
             && _currentDoc->unresolvedIncludes().isEmpty();
-    const FilePath filePath = _currentDoc->filePath();
+    const QString fileName = _currentDoc->fileName();
     _preproc.setExpandFunctionlikeMacros(false);
     _preproc.setKeepComments(true);
 
-    if (Document::Ptr doc = _snapshot.document(filePath)) {
-        _merged.insert(filePath);
+    if (Document::Ptr doc = _snapshot.document(fileName)) {
+        _merged.insert(fileName);
 
         for (Snapshot::const_iterator i = _snapshot.begin(), ei = _snapshot.end(); i != ei; ++i) {
             if (isInjectedFile(i.key().toString()))
-                mergeEnvironment(i.key());
+                mergeEnvironment(i.key().toString());
         }
 
-        const QList<Document::Include> &includes = doc->resolvedIncludes();
+        const QList<Document::Include> includes = doc->resolvedIncludes();
         for (const Document::Include &i : includes)
             mergeEnvironment(i.resolvedFileName());
 
@@ -46,30 +65,32 @@ QByteArray FastPreprocessor::run(Document::Ptr newDoc,
             _env.addMacros(_currentDoc->definedMacros());
     }
 
-    const QByteArray preprocessed = _preproc.run(filePath, source);
+    const QByteArray preprocessed = _preproc.run(fileName, source);
 //    qDebug("FastPreprocessor::run for %s produced [[%s]]", fileName.toUtf8().constData(), preprocessed.constData());
     std::swap(newDoc, _currentDoc);
     return preprocessed;
 }
 
-void FastPreprocessor::sourceNeeded(int line, const FilePath &filePath, IncludeType mode,
-                                    const FilePaths &initialIncludes)
+void FastPreprocessor::sourceNeeded(int line, const QString &fileName, IncludeType mode,
+                                    const QStringList &initialIncludes)
 {
     Q_UNUSED(initialIncludes)
     Q_ASSERT(_currentDoc);
     if (_addIncludesToCurrentDoc) {
-        // CHECKME: Is that cleanPath needed?
-        const FilePath cleanPath = filePath.cleanPath();
-        _currentDoc->addIncludeFile(Document::Include(filePath.toString(), cleanPath, line, mode));
+        // CHECKME: Is that cleanName needed?
+        const QString cleanName = QDir::cleanPath(fileName);
+        _currentDoc->addIncludeFile(Document::Include(fileName, cleanName, line, mode));
     }
-    mergeEnvironment(filePath);
+    mergeEnvironment(fileName);
 }
 
-void FastPreprocessor::mergeEnvironment(const FilePath &filePath)
+void FastPreprocessor::mergeEnvironment(const QString &fileName)
 {
-    if (Utils::insert(_merged, filePath)) {
-        if (Document::Ptr doc = _snapshot.document(filePath)) {
-            const QList<Document::Include> &includes = doc->resolvedIncludes();
+    if (! _merged.contains(fileName)) {
+        _merged.insert(fileName);
+
+        if (Document::Ptr doc = _snapshot.document(fileName)) {
+            const QList<Document::Include> includes = doc->resolvedIncludes();
             for (const Document::Include &i : includes)
                 mergeEnvironment(i.resolvedFileName());
 
@@ -85,15 +106,9 @@ void FastPreprocessor::macroAdded(const Macro &macro)
     _currentDoc->appendMacro(macro);
 }
 
-void FastPreprocessor::pragmaAdded(const Pragma &pragma)
-{
-    Q_ASSERT(_currentDoc);
-    _currentDoc->appendPragma(pragma);
-}
-
 static const Macro revision(const Snapshot &s, const Macro &m)
 {
-    if (Document::Ptr d = s.document(m.filePath())) {
+    if (Document::Ptr d = s.document(m.fileName())) {
         Macro newMacro(m);
         newMacro.setFileRevision(d->revision());
         return newMacro;

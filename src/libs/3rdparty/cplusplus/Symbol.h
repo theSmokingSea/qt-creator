@@ -22,10 +22,7 @@
 
 #include "CPlusPlusForwardDeclarations.h"
 
-namespace Utils {
-class FilePath;
-class Link;
-} // Utils
+namespace Utils { class Link; }
 
 namespace CPlusPlus {
 
@@ -66,10 +63,10 @@ public:
     /// Returns this Symbol's source location.
     int sourceLocation() const { return _sourceLocation; }
 
-    /// Returns this Symbol's line number. The line number is 1-based.
+    /// \returns this Symbol's line number. The line number is 1-based.
     int line() const { return _line; }
 
-    /// Returns this Symbol's column number. The column number is 1-based.
+    /// \returns this Symbol's column number. The column number is 1-based.
     int column() const { return _column; }
 
     /// Returns this Symbol's file name.
@@ -80,8 +77,6 @@ public:
 
     /// Returns this Symbol's file name length.
     int fileNameLength() const;
-
-    Utils::FilePath filePath() const;
 
     /// Returns this Symbol's name.
     const Name *name() const { return _name; }

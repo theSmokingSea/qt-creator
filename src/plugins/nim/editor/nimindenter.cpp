@@ -1,5 +1,27 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nimindenter.h"
 
@@ -15,40 +37,13 @@
 
 namespace Nim {
 
-class NimIndenter final : public TextEditor::TextIndenter
+NimIndenter::NimIndenter(QTextDocument *doc)
+    : TextEditor::TextIndenter(doc)
+{}
+
+bool NimIndenter::isElectricCharacter(const QChar &ch) const
 {
-public:
-    explicit NimIndenter(QTextDocument *doc)
-        : TextEditor::TextIndenter(doc)
-    {}
-
-    bool isElectricCharacter(const QChar &ch) const final
-    {
-        return ch == QLatin1Char(':') || ch == QLatin1Char('=');
-    }
-
-    void indentBlock(const QTextBlock &block,
-                     const QChar &typedChar,
-                     const TextEditor::TabSettings &settings,
-                     int cursorPositionInEditor = -1) final;
-
-private:
-    bool startsBlock(const QString &line, int state) const;
-    bool endsBlock(const QString &line, int state) const;
-
-    int calculateIndentationDiff(const QString &previousLine,
-                                 int previousState,
-                                 int indentSize) const;
-};
-
-static QString rightTrimmed(const QString &str)
-{
-    int n = str.size() - 1;
-    for (; n >= 0; --n) {
-        if (!str.at(n).isSpace())
-            return str.left(n + 1);
-    }
-    return QString();
+    return NimIndenter::electricCharacters().contains(ch);
 }
 
 void NimIndenter::indentBlock(const QTextBlock &block,
@@ -87,6 +82,12 @@ void NimIndenter::indentBlock(const QTextBlock &block,
     settings.indentLine(block, std::max(0, indentation));
 }
 
+const QSet<QChar> &NimIndenter::electricCharacters()
+{
+    static QSet<QChar> result{QLatin1Char(':'), QLatin1Char('=')};
+    return result;
+}
+
 bool NimIndenter::startsBlock(const QString &line, int state) const
 {
     NimLexer lexer(line.constData(), line.length(), static_cast<NimLexer::State>(state));
@@ -109,7 +110,7 @@ bool NimIndenter::startsBlock(const QString &line, int state) const
     // electric characters start a new block, and are operators
     if (previous.type == NimLexer::TokenType::Operator) {
         QStringView ref = QStringView(line).mid(previous.begin, previous.length);
-        return ref.isEmpty() ? false : isElectricCharacter(ref.at(0));
+        return ref.isEmpty() ? false : electricCharacters().contains(ref.at(0));
     }
 
     // some keywords starts a new block
@@ -162,9 +163,14 @@ int NimIndenter::calculateIndentationDiff(const QString &previousLine, int previ
     return 0;
 }
 
-TextEditor::Indenter *createNimIndenter(QTextDocument *doc)
+QString NimIndenter::rightTrimmed(const QString &str)
 {
-    return new NimIndenter(doc);
+    int n = str.size() - 1;
+    for (; n >= 0; --n) {
+        if (!str.at(n).isSpace())
+            return str.left(n + 1);
+    }
+    return QString();
 }
 
-} // Nim
+}

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -9,20 +31,13 @@
 #include <QDialog>
 
 QT_BEGIN_NAMESPACE
-class QAbstractButton;
-class QCheckBox;
-class QComboBox;
-class QDoubleSpinBox;
-class QLabel;
-class QListView;
 class QModelIndex;
-class QScrollArea;
-class QToolButton;
 QT_END_NAMESPACE
 
-namespace Utils { class QtColorButton; }
+namespace TextEditor {
+namespace Internal {
 
-namespace TextEditor::Internal {
+namespace Ui { class ColorSchemeEdit; }
 
 class FormatsModel;
 
@@ -76,36 +91,11 @@ private:
     FormatDescriptions m_descriptions;
     ColorScheme m_scheme;
     int m_curItem = -1;
+    Ui::ColorSchemeEdit *m_ui;
     FormatsModel *m_formatsModel;
     bool m_readOnly = false;
-    QListView *m_itemList;
-    QLabel *m_builtinSchemeLabel;
-    QWidget *m_fontProperties;
-    QLabel *m_foregroundLabel;
-    Utils::QtColorButton *m_foregroundToolButton;
-    QAbstractButton *m_eraseForegroundToolButton;
-    QLabel *m_backgroundLabel;
-    Utils::QtColorButton *m_backgroundToolButton;
-    QAbstractButton *m_eraseBackgroundToolButton;
-    QLabel *m_relativeForegroundHeadline;
-    QLabel *m_foregroundLightnessLabel;
-    QDoubleSpinBox *m_foregroundLightnessSpinBox;
-    QLabel *m_foregroundSaturationLabel;
-    QDoubleSpinBox *m_foregroundSaturationSpinBox;
-    QLabel *m_relativeBackgroundHeadline;
-    QLabel *m_backgroundSaturationLabel;
-    QDoubleSpinBox *m_backgroundSaturationSpinBox;
-    QLabel *m_backgroundLightnessLabel;
-    QDoubleSpinBox *m_backgroundLightnessSpinBox;
-    QLabel *m_fontHeadline;
-    QCheckBox *m_boldCheckBox;
-    QCheckBox *m_italicCheckBox;
-    QLabel *m_underlineHeadline;
-    QLabel *m_underlineLabel;
-    Utils::QtColorButton *m_underlineColorToolButton;
-    QAbstractButton *m_eraseUnderlineColorToolButton;
-    QComboBox *m_underlineComboBox;
-
 };
 
-} // TextEditor::Internal
+
+} // namespace Internal
+} // namespace TextEditor

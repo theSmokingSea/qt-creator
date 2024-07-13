@@ -1,8 +1,29 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "consoleitemdelegate.h"
-
 #include "consoleedit.h"
 
 #include <coreplugin/coreconstants.h>
@@ -18,7 +39,14 @@
 
 const int ELLIPSIS_GRADIENT_WIDTH = 16;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
+
+///////////////////////////////////////////////////////////////////////
+//
+// ConsoleItemDelegate
+//
+///////////////////////////////////////////////////////////////////////
 
 ConsoleItemDelegate::ConsoleItemDelegate(ConsoleItemModel *model, QObject *parent) :
     QStyledItemDelegate(parent),
@@ -53,6 +81,7 @@ QColor ConsoleItemDelegate::drawBackground(QPainter *painter, const QRect &rect,
 void ConsoleItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &option,
                                    const QModelIndex &index) const
 {
+    const Utils::Theme *theme = Utils::creatorTheme();
     QStyleOptionViewItem opt = option;
     initStyleOption(&opt, index);
     painter->save();
@@ -64,23 +93,23 @@ void ConsoleItemDelegate::paint(QPainter *painter, const QStyleOptionViewItem &o
                 ConsoleItem::TypeRole).toInt();
     switch (type) {
     case ConsoleItem::DebugType:
-        textColor = creatorColor(Utils::Theme::OutputPanes_NormalMessageTextColor);
+        textColor = theme->color(Utils::Theme::OutputPanes_NormalMessageTextColor);
         taskIcon = m_logIcon;
         break;
     case ConsoleItem::WarningType:
-        textColor = creatorColor(Utils::Theme::OutputPanes_WarningMessageTextColor);
+        textColor = theme->color(Utils::Theme::OutputPanes_WarningMessageTextColor);
         taskIcon = m_warningIcon;
         break;
     case ConsoleItem::ErrorType:
-        textColor = creatorColor(Utils::Theme::OutputPanes_ErrorMessageTextColor);
+        textColor = theme->color(Utils::Theme::OutputPanes_ErrorMessageTextColor);
         taskIcon = m_errorIcon;
         break;
     case ConsoleItem::InputType:
-        textColor = creatorColor(Utils::Theme::TextColorNormal);
+        textColor = theme->color(Utils::Theme::TextColorNormal);
         taskIcon = m_prompt;
         break;
     default:
-        textColor = creatorColor(Utils::Theme::TextColorNormal);
+        textColor = theme->color(Utils::Theme::TextColorNormal);
         break;
     }
 
@@ -240,6 +269,11 @@ QWidget *ConsoleItemDelegate::createEditor(QWidget *parent,
                           "margin-top: 4px;"
                           "background-color: transparent;"
                           "}");
+    connect(editor, &ConsoleEdit::editingFinished, this, [this, editor] {
+        auto delegate = const_cast<ConsoleItemDelegate*>(this);
+        emit delegate->commitData(editor);
+        emit delegate->closeEditor(editor);
+    });
     return editor;
 }
 
@@ -294,4 +328,5 @@ qreal ConsoleItemDelegate::layoutText(QTextLayout &tl, int width,
     return height;
 }
 
-} // Debugger::Internal
+} // Internal
+} // Debugger

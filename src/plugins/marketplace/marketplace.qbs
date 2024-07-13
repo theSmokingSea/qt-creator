@@ -10,11 +10,8 @@ QtcPlugin {
     Depends { name: "Qt.network" }
 
     files: [
-        "marketplaceplugin.cpp",
-        "marketplacetr.h",
-        "productlistmodel.cpp",
-        "productlistmodel.h",
-        "qtmarketplacewelcomepage.cpp",
-        "qtmarketplacewelcomepage.h",
+        "marketplaceplugin.h",
+        "productlistmodel.cpp", "productlistmodel.h",
+        "qtmarketplacewelcomepage.cpp", "qtmarketplacewelcomepage.h",
     ]
 }

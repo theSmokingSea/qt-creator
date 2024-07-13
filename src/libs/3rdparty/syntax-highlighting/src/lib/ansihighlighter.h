@@ -11,17 +11,15 @@
 #include "ksyntaxhighlighting_export.h"
 
 #include <QFlags>
+#include <QIODevice>
 #include <QString>
 
-QT_BEGIN_NAMESPACE
-class QIODevice;
-QT_END_NAMESPACE
+#include <memory>
 
 namespace KSyntaxHighlighting
 {
 class AnsiHighlighterPrivate;
 
-// Exported for a bundled helper program
 class KSYNTAXHIGHLIGHTING_EXPORT AnsiHighlighter final : public AbstractHighlighter
 {
 public:
@@ -30,25 +28,24 @@ public:
         XTerm256Color,
     };
 
-    enum class Option {
+    enum class TraceOption {
         NoOptions,
-        UseEditorBackground = 1 << 0,
-        Unbuffered = 1 << 1,
-
-        // Options that displays a useful visual aid for syntax creation
-        TraceFormat = 1 << 2,
-        TraceRegion = 1 << 3,
-        TraceContext = 1 << 4,
-        TraceStackSize = 1 << 5,
-        TraceAll = TraceFormat | TraceRegion | TraceContext | TraceStackSize,
+        Format = 1 << 0,
+        Region = 1 << 1,
+        Context = 1 << 2,
+        StackSize = 1 << 3,
     };
-    Q_DECLARE_FLAGS(Options, Option)
+    Q_DECLARE_FLAGS(TraceOptions, TraceOption)
 
     AnsiHighlighter();
     ~AnsiHighlighter() override;
 
-    void highlightFile(const QString &fileName, AnsiFormat format = AnsiFormat::TrueColor, Options options = Option::UseEditorBackground);
-    void highlightData(QIODevice *device, AnsiFormat format = AnsiFormat::TrueColor, Options options = Option::UseEditorBackground);
+    void highlightFile(const QString &fileName,
+                       AnsiFormat format = AnsiFormat::TrueColor,
+                       bool useEditorBackground = true,
+                       TraceOptions traceOptions = TraceOptions());
+    void
+    highlightData(QIODevice *device, AnsiFormat format = AnsiFormat::TrueColor, bool useEditorBackground = true, TraceOptions traceOptions = TraceOptions());
 
     void setOutputFile(const QString &fileName);
     void setOutputFile(FILE *fileHandle);
@@ -57,10 +54,10 @@ protected:
     void applyFormat(int offset, int length, const Format &format) override;
 
 private:
-    Q_DECLARE_PRIVATE(AnsiHighlighter)
+    std::unique_ptr<AnsiHighlighterPrivate> d;
 };
 }
 
-Q_DECLARE_OPERATORS_FOR_FLAGS(KSyntaxHighlighting::AnsiHighlighter::Options)
+Q_DECLARE_OPERATORS_FOR_FLAGS(KSyntaxHighlighting::AnsiHighlighter::TraceOptions)
 
 #endif // KSYNTAXHIGHLIGHTING_ANSIHIGHLIGHTER_H

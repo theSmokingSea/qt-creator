@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "documentcontroller.h"
 
@@ -30,9 +52,7 @@
 #include "qmt/tasks/diagramscenecontroller.h"
 #include "qmt/tasks/findrootdiagramvisitor.h"
 
-#include "../../modelinglibtr.h"
-
-using Utils::FilePath;
+#include <QFileInfo>
 
 namespace qmt {
 
@@ -180,7 +200,7 @@ void DocumentController::selectAllOnDiagram(MDiagram *diagram)
 MPackage *DocumentController::createNewPackage(MPackage *parent)
 {
     auto newPackage = new MPackage();
-    newPackage->setName(Tr::tr("New Package"));
+    newPackage->setName(tr("New Package"));
     m_modelController->addObject(parent, newPackage);
     return newPackage;
 }
@@ -188,7 +208,7 @@ MPackage *DocumentController::createNewPackage(MPackage *parent)
 MClass *DocumentController::createNewClass(MPackage *parent)
 {
     auto newClass = new MClass();
-    newClass->setName(Tr::tr("New Class"));
+    newClass->setName(tr("New Class"));
     m_modelController->addObject(parent, newClass);
     return newClass;
 }
@@ -196,7 +216,7 @@ MClass *DocumentController::createNewClass(MPackage *parent)
 MComponent *DocumentController::createNewComponent(MPackage *parent)
 {
     auto newComponent = new MComponent();
-    newComponent->setName(Tr::tr("New Component"));
+    newComponent->setName(tr("New Component"));
     m_modelController->addObject(parent, newComponent);
     return newComponent;
 }
@@ -207,7 +227,7 @@ MCanvasDiagram *DocumentController::createNewCanvasDiagram(MPackage *parent)
     if (!m_diagramSceneController->findDiagramBySearchId(parent, parent->name()))
         newDiagram->setName(parent->name());
     else
-        newDiagram->setName(Tr::tr("New Diagram"));
+        newDiagram->setName(tr("New Diagram"));
     m_modelController->addObject(parent, newDiagram);
     return newDiagram;
 }
@@ -233,7 +253,7 @@ MDiagram *DocumentController::findOrCreateRootDiagram()
     return rootDiagram;
 }
 
-void DocumentController::createNewProject(const FilePath &fileName)
+void DocumentController::createNewProject(const QString &fileName)
 {
     m_diagramsManager->removeAllDiagrams();
     m_treeModel->setModelController(nullptr);
@@ -246,7 +266,7 @@ void DocumentController::createNewProject(const FilePath &fileName)
     m_modelController->setRootPackage(m_projectController->project()->rootPackage());
 }
 
-void DocumentController::loadProject(const FilePath &fileName)
+void DocumentController::loadProject(const QString &fileName)
 {
     m_diagramsManager->removeAllDiagrams();
     m_treeModel->setModelController(nullptr);

@@ -1,114 +1,44 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "optionspopup.h"
 
-#include "../actionmanager/actionmanager.h"
+#include <coreplugin/actionmanager/actionmanager.h>
 
-#include <utils/proxyaction.h>
 #include <utils/qtcassert.h>
-#include <utils/stylehelper.h>
 
 #include <QAction>
 #include <QCheckBox>
 #include <QEvent>
 #include <QKeyEvent>
-#include <QLabel>
 #include <QScreen>
-#include <QSpinBox>
-#include <QStyleOption>
 #include <QVBoxLayout>
 
 using namespace Utils;
 
-const char kNumericOptionProperty[] = "qtc_numericOption";
-
 namespace Core {
-
-static QCheckBox *createCheckboxForAction(QObject *owner, QAction *action)
-{
-    QCheckBox *checkbox = new QCheckBox(action->text());
-    checkbox->setToolTip(action->toolTip());
-    checkbox->setChecked(action->isChecked());
-    checkbox->setEnabled(action->isEnabled());
-    checkbox->installEventFilter(owner); // enter key handling
-    QObject::connect(checkbox, &QCheckBox::clicked, action, &QAction::setChecked);
-    QObject::connect(action, &QAction::enabledChanged, checkbox, &QCheckBox::setEnabled);
-    return checkbox;
-}
-
-static QWidget *createSpinboxForAction(QObject *owner, QAction *action)
-{
-    const std::optional<NumericOption> option = NumericOption::get(action);
-    QTC_ASSERT(option, return nullptr);
-    const auto proxyAction = qobject_cast<ProxyAction *>(action);
-    QTC_ASSERT(proxyAction, return nullptr);
-
-    const auto prefix = action->text().section("{}", 0, 0);
-    const auto suffix = action->text().section("{}", 1);
-
-    const auto widget = new QWidget{};
-    widget->setEnabled(action->isEnabled());
-
-    auto styleOption = QStyleOptionButton{};
-    const QRect box = widget->style()->subElementRect(QStyle::SE_CheckBoxContents, &styleOption);
-
-    const auto spinbox = new QSpinBox{widget};
-    spinbox->installEventFilter(owner); // enter key handling
-    spinbox->setMinimum(option->minimumValue);
-    spinbox->setMaximum(option->maximumValue);
-    spinbox->setValue(option->currentValue);
-
-    QObject::connect(spinbox, &QSpinBox::valueChanged, action, [action](int value) {
-        std::optional<NumericOption> option = NumericOption::get(action);
-        QTC_ASSERT(option, return);
-        option->currentValue = value;
-        NumericOption::set(action, *option);
-        emit action->changed();
-    });
-    const auto updateCurrentAction = [proxyAction] {
-        if (!proxyAction->action())
-            return;
-        const std::optional<NumericOption> option = NumericOption::get(proxyAction);
-        QTC_ASSERT(option, return);
-        NumericOption::set(proxyAction->action(), *option);
-        emit proxyAction->action()->changed();
-    };
-    QObject::connect(proxyAction, &ProxyAction::currentActionChanged, updateCurrentAction);
-    QObject::connect(proxyAction, &QAction::changed, updateCurrentAction);
-    QObject::connect(action, &QAction::enabledChanged, widget, &QWidget::setEnabled);
-
-    const auto layout = new QHBoxLayout{widget};
-    layout->setContentsMargins(box.left(), 0, 0, 0);
-    layout->setSpacing(0); // the label will have spaces before and after the placeholder
-
-    if (!prefix.isEmpty()) {
-        const auto prefixLabel = new QLabel{prefix, widget};
-        const auto prefixSpan = suffix.isEmpty() ? 1 : 0;
-        layout->addWidget(prefixLabel, prefixSpan);
-        prefixLabel->setBuddy(spinbox);
-    }
-
-    layout->addWidget(spinbox);
-
-    if (!suffix.isEmpty()) {
-        const auto suffixLabel = new QLabel{suffix, widget};
-        layout->addWidget(suffixLabel, 1);
-        suffixLabel->setBuddy(spinbox);
-    }
-
-    return widget;
-}
-
-static QWidget *createWidgetForCommand(QObject *owner, Id id)
-{
-    const auto action = ActionManager::command(id)->action();
-
-    if (NumericOption::get(action))
-        return createSpinboxForAction(owner, action);
-    else
-        return createCheckboxForAction(owner, action);
-}
 
 /*!
     \class Core::OptionsPopup
@@ -127,12 +57,12 @@ OptionsPopup::OptionsPopup(QWidget *parent, const QVector<Id> &commands)
 
     bool first = true;
     for (const Id &command : commands) {
-        const auto widget = createWidgetForCommand(this, command);
+        QCheckBox *checkBox = createCheckboxForCommand(command);
         if (first) {
-            widget->setFocus();
+            checkBox->setFocus();
             first = false;
         }
-        layout->addWidget(widget);
+        layout->addWidget(checkBox);
     }
     const QPoint globalPos = parent->mapToGlobal(QPoint(0, -sizeHint().height()));
     const QRect screenGeometry = parent->screen()->availableGeometry();
@@ -165,19 +95,27 @@ bool OptionsPopup::eventFilter(QObject *obj, QEvent *ev)
     return QWidget::eventFilter(obj, ev);
 }
 
-std::optional<NumericOption> NumericOption::get(QObject *o)
+void OptionsPopup::actionChanged()
 {
-    const QVariant opt = o->property(kNumericOptionProperty);
-    if (opt.isValid()) {
-        QTC_ASSERT(opt.canConvert<NumericOption>(), return {});
-        return opt.value<NumericOption>();
-    }
-    return {};
+    auto action = qobject_cast<QAction *>(sender());
+    QTC_ASSERT(action, return);
+    QCheckBox *checkbox = m_checkboxMap.value(action);
+    QTC_ASSERT(checkbox, return);
+    checkbox->setEnabled(action->isEnabled());
 }
 
-void NumericOption::set(QObject *o, const NumericOption &opt)
+QCheckBox *OptionsPopup::createCheckboxForCommand(Id id)
 {
-    o->setProperty(kNumericOptionProperty, QVariant::fromValue(opt));
+    QAction *action = ActionManager::command(id)->action();
+    QCheckBox *checkbox = new QCheckBox(action->text());
+    checkbox->setToolTip(action->toolTip());
+    checkbox->setChecked(action->isChecked());
+    checkbox->setEnabled(action->isEnabled());
+    checkbox->installEventFilter(this); // enter key handling
+    QObject::connect(checkbox, &QCheckBox::clicked, action, &QAction::setChecked);
+    QObject::connect(action, &QAction::changed, this, &OptionsPopup::actionChanged);
+    m_checkboxMap.insert(action, checkbox);
+    return checkbox;
 }
 
 } // namespace Core

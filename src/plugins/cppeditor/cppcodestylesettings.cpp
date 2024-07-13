@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppcodestylesettings.h"
 
@@ -16,8 +38,8 @@
 #include <cplusplus/Overview.h>
 
 #include <utils/qtcassert.h>
+#include <utils/settingsutils.h>
 
-static const char statementMacrosKey[] = "StatementMacros";
 static const char indentBlockBracesKey[] = "IndentBlockBraces";
 static const char indentBlockBodyKey[] = "IndentBlockBody";
 static const char indentClassBracesKey[] = "IndentClassBraces";
@@ -40,18 +62,15 @@ static const char extraPaddingForConditionsIfConfusingAlignKey[] = "ExtraPadding
 static const char alignAssignmentsKey[] = "AlignAssignments";
 static const char shortGetterNameKey[] = "ShortGetterName";
 
-using namespace Utils;
-
 namespace CppEditor {
 
 // ------------------ CppCodeStyleSettingsWidget
 
 CppCodeStyleSettings::CppCodeStyleSettings() = default;
 
-Store CppCodeStyleSettings::toMap() const
+QVariantMap CppCodeStyleSettings::toMap() const
 {
     return {
-        {statementMacrosKey, statementMacros},
         {indentBlockBracesKey, indentBlockBraces},
         {indentBlockBodyKey, indentBlockBody},
         {indentClassBracesKey, indentClassBraces},
@@ -76,9 +95,8 @@ Store CppCodeStyleSettings::toMap() const
     };
 }
 
-void CppCodeStyleSettings::fromMap(const Store &map)
+void CppCodeStyleSettings::fromMap(const QVariantMap &map)
 {
-    statementMacros = map.value(statementMacrosKey, statementMacros).toStringList();
     indentBlockBraces = map.value(indentBlockBracesKey, indentBlockBraces).toBool();
     indentBlockBody = map.value(indentBlockBodyKey, indentBlockBody).toBool();
     indentClassBraces = map.value(indentClassBracesKey, indentClassBraces).toBool();
@@ -131,11 +149,7 @@ bool CppCodeStyleSettings::equals(const CppCodeStyleSettings &rhs) const
            && bindStarToRightSpecifier == rhs.bindStarToRightSpecifier
            && extraPaddingForConditionsIfConfusingAlign == rhs.extraPaddingForConditionsIfConfusingAlign
            && alignAssignments == rhs.alignAssignments
-           && statementMacros == rhs.statementMacros
            && preferGetterNameWithoutGetPrefix == rhs.preferGetterNameWithoutGetPrefix
-#ifdef WITH_TESTS
-           && forceFormatting == rhs.forceFormatting
-#endif
            ;
 }
 
@@ -166,7 +180,7 @@ CppCodeStyleSettings CppCodeStyleSettings::currentProjectCodeStyle()
 
 CppCodeStyleSettings CppCodeStyleSettings::currentGlobalCodeStyle()
 {
-    CppCodeStylePreferences *cppCodeStylePreferences = CppToolsSettings::cppCodeStyle();
+    CppCodeStylePreferences *cppCodeStylePreferences = CppToolsSettings::instance()->cppCodeStyle();
     QTC_ASSERT(cppCodeStylePreferences, return CppCodeStyleSettings());
 
     return cppCodeStylePreferences->currentCodeStyleSettings();
@@ -193,7 +207,8 @@ TextEditor::TabSettings CppCodeStyleSettings::currentProjectTabSettings()
 
 TextEditor::TabSettings CppCodeStyleSettings::currentGlobalTabSettings()
 {
-    CppCodeStylePreferences *cppCodeStylePreferences = CppToolsSettings::cppCodeStyle();
+    CppCodeStylePreferences *cppCodeStylePreferences
+            = CppToolsSettings::instance()->cppCodeStyle();
     QTC_ASSERT(cppCodeStylePreferences, return TextEditor::TabSettings());
 
     return cppCodeStylePreferences->currentTabSettings();
@@ -217,7 +232,7 @@ static void configureOverviewWithCodeStyleSettings(CPlusPlus::Overview &overview
 CPlusPlus::Overview CppCodeStyleSettings::currentProjectCodeStyleOverview()
 {
     CPlusPlus::Overview overview;
-    const std::optional<CppCodeStyleSettings> codeStyleSettings = currentProjectCodeStyle();
+    const Utils::optional<CppCodeStyleSettings> codeStyleSettings = currentProjectCodeStyle();
     configureOverviewWithCodeStyleSettings(overview,
                                            codeStyleSettings.value_or(currentGlobalCodeStyle()));
     return overview;

@@ -1,14 +1,35 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "buildsystem.h"
 
 #include "buildconfiguration.h"
-#include "extracompiler.h"
 #include "projectexplorer.h"
-#include "projectexplorertr.h"
-#include "projectmanager.h"
 #include "runconfiguration.h"
+#include "runcontrol.h"
+#include "session.h"
 #include "target.h"
 
 #include <coreplugin/messagemanager.h>
@@ -19,7 +40,6 @@
 #include <projectexplorer/makestep.h>
 
 #include <utils/algorithm.h>
-#include <utils/processinterface.h>
 #include <utils/qtcassert.h>
 
 #include <QTimer>
@@ -62,8 +82,9 @@ BuildSystem::BuildSystem(Target *target)
     // Timer:
     d->m_delayedParsingTimer.setSingleShot(true);
 
-    connect(&d->m_delayedParsingTimer, &QTimer::timeout, this, [this] {
-        if (ProjectManager::hasProject(project()))
+    connect(&d->m_delayedParsingTimer, &QTimer::timeout, this,
+            [this] {
+        if (SessionManager::hasProject(project()))
             triggerParsing();
         else
             requestDelayedParse();
@@ -190,12 +211,6 @@ void BuildSystem::requestParseHelper(int delay)
     d->m_delayedParsingTimer.start();
 }
 
-ExtraCompiler *BuildSystem::findExtraCompiler(
-        const std::function<bool (const ExtraCompiler *)> &) const
-{
-    return nullptr;
-}
-
 bool BuildSystem::addFiles(Node *, const FilePaths &filePaths, FilePaths *notAdded)
 {
     Q_UNUSED(filePaths)
@@ -240,18 +255,6 @@ bool BuildSystem::addDependencies(Node *, const QStringList &dependencies)
 bool BuildSystem::supportsAction(Node *, ProjectAction, const Node *) const
 {
     return false;
-}
-
-ExtraCompiler *BuildSystem::extraCompilerForSource(const Utils::FilePath &source) const
-{
-    return findExtraCompiler([source](const ExtraCompiler *ec) { return ec->source() == source; });
-}
-
-ExtraCompiler *BuildSystem::extraCompilerForTarget(const Utils::FilePath &target) const
-{
-    return findExtraCompiler([target](const ExtraCompiler *ec) {
-        return ec->targets().contains(target);
-    });
 }
 
 MakeInstallCommand BuildSystem::makeInstallCommand(const FilePath &installRoot) const
@@ -323,6 +326,8 @@ void BuildSystem::setDeploymentData(const DeploymentData &deploymentData)
 {
     if (d->m_deploymentData != deploymentData) {
         d->m_deploymentData = deploymentData;
+        emit deploymentDataChanged();
+        emit applicationTargetsChanged();
         emit target()->deploymentDataChanged();
     }
 }
@@ -334,7 +339,10 @@ DeploymentData BuildSystem::deploymentData() const
 
 void BuildSystem::setApplicationTargets(const QList<BuildTargetInfo> &appTargets)
 {
-    d->m_appTargets = appTargets;
+    if (Utils::toSet(appTargets) != Utils::toSet(d->m_appTargets)) {
+        d->m_appTargets = appTargets;
+        emit applicationTargetsChanged();
+    }
 }
 
 const QList<BuildTargetInfo> BuildSystem::applicationTargets() const
@@ -391,11 +399,11 @@ void BuildSystem::appendBuildSystemOutput(const QString &message)
 QString BuildSystem::disabledReason(const QString &buildKey) const
 {
     if (!hasParsingData()) {
-        QString msg = isParsing() ? Tr::tr("The project is currently being parsed.")
-                                  : Tr::tr("The project could not be fully parsed.");
+        QString msg = isParsing() ? tr("The project is currently being parsed.")
+                                  : tr("The project could not be fully parsed.");
         const FilePath projectFilePath = buildTarget(buildKey).projectFilePath;
         if (!projectFilePath.isEmpty() && !projectFilePath.exists())
-            msg += '\n' + Tr::tr("The project file \"%1\" does not exist.").arg(projectFilePath.toString());
+            msg += '\n' + tr("The project file \"%1\" does not exist.").arg(projectFilePath.toString());
         return msg;
     }
     return {};

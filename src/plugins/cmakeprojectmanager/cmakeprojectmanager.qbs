@@ -8,18 +8,16 @@ QtcPlugin {
 
     Depends { name: "Core" }
     Depends { name: "CppEditor" }
-    Depends { name: "Debugger" }
     Depends { name: "QmlJS" }
     Depends { name: "ProjectExplorer" }
     Depends { name: "TextEditor" }
     Depends { name: "QtSupport" }
+    Depends { name: "app_version_header" }
 
     files: [
         "builddirparameters.cpp",
         "builddirparameters.h",
         "cmake_global.h",
-        "cmakeabstractprocessstep.cpp",
-        "cmakeabstractprocessstep.h",
         "cmakebuildconfiguration.cpp",
         "cmakebuildconfiguration.h",
         "cmakebuildstep.cpp",
@@ -33,12 +31,8 @@ QtcPlugin {
         "cmakeeditor.h",
         "cmakefilecompletionassist.cpp",
         "cmakefilecompletionassist.h",
-        "cmakeformatter.cpp",
-        "cmakeformatter.h",
-        "cmakeinstallstep.cpp",
-        "cmakeinstallstep.h",
-        "cmakekitaspect.h",
-        "cmakekitaspect.cpp",
+        "cmakekitinformation.h",
+        "cmakekitinformation.cpp",
         "cmakelocatorfilter.cpp",
         "cmakelocatorfilter.h",
         "cmakeparser.cpp",
@@ -53,10 +47,10 @@ QtcPlugin {
         "cmakeprojectconstants.h",
         "cmakeprojectmanager.cpp",
         "cmakeprojectmanager.h",
-        "cmakeprojectmanagertr.h",
         "cmakeprojectnodes.cpp",
         "cmakeprojectnodes.h",
         "cmakeprojectplugin.cpp",
+        "cmakeprojectplugin.h",
         "cmaketool.cpp",
         "cmaketool.h",
         "cmaketoolmanager.cpp",
@@ -81,27 +75,7 @@ QtcPlugin {
         "fileapiparser.h",
         "fileapireader.cpp",
         "fileapireader.h",
-        "presetsparser.cpp",
-        "presetsparser.h",
-        "presetsmacros.cpp",
-        "presetsmacros.h",
         "projecttreehelper.cpp",
         "projecttreehelper.h"
     ]
-
-    Group {
-        name: "3rdparty"
-        cpp.includePaths: base.concat("3rdparty/cmake")
-
-        prefix: "3rdparty/"
-        files: [
-            "cmake/cmListFileCache.cxx",
-            "cmake/cmListFileCache.h",
-            "cmake/cmListFileLexer.cxx",
-            "cmake/cmListFileLexer.h",
-            "cmake/cmStandardLexer.h",
-            "rstparser/rstparser.cc",
-            "rstparser/rstparser.h"
-        ]
-    }
 }

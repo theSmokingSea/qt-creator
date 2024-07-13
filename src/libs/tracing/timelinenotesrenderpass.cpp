@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "timelinenotesrenderpass.h"
 #include "timelinerenderstate.h"
@@ -19,7 +41,11 @@ class NotesMaterial : public QSGMaterial
 {
 public:
     QSGMaterialType *type() const final;
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    QSGMaterialShader *createShader() const final;
+#else // < Qt 6
     QSGMaterialShader *createShader(QSGRendererInterface::RenderMode) const final;
+#endif // < Qt 6
 };
 
 struct NotesGeometry
@@ -152,7 +178,9 @@ TimelineNotesRenderPassState::TimelineNotesRenderPassState(int numExpandedRows) 
     m_nullGeometry(NotesGeometry::point2DWithDistanceFromTop(), 0)
 {
     m_material.setFlag(QSGMaterial::Blending, true);
-    m_material.setFlag(QSGMaterial::NoBatching, true);
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+    m_material.setFlag(QSGMaterial::CustomCompileStep, true);
+#endif // >= Qt 6
     m_expandedRows.reserve(numExpandedRows);
     for (int i = 0; i < numExpandedRows; ++i)
         m_expandedRows << createNode();
@@ -204,23 +232,53 @@ class NotesMaterialShader : public QSGMaterialShader
 public:
     NotesMaterialShader();
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    void updateState(const RenderState &state, QSGMaterial *newEffect,
+                     QSGMaterial *oldEffect) override;
+    char const *const *attributeNames() const override;
+#else // < Qt 6
     bool updateUniformData(RenderState &state, QSGMaterial *, QSGMaterial *) override;
+#endif // < Qt 6
+
+private:
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    void initialize() override;
+
+    int m_matrix_id;
+    int m_z_range_id;
+    int m_color_id;
+#endif // < Qt 6
 };
 
 NotesMaterialShader::NotesMaterialShader()
     : QSGMaterialShader()
 {
-    setShaderFileName(VertexStage, ":/qt/qml/QtCreator/Tracing/notes_qt6.vert.qsb");
-    setShaderFileName(FragmentStage, ":/qt/qml/QtCreator/Tracing/notes_qt6.frag.qsb");
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    setShaderSourceFile(QOpenGLShader::Vertex, QStringLiteral(":/QtCreator/Tracing/notes.vert"));
+    setShaderSourceFile(QOpenGLShader::Fragment, QStringLiteral(":/QtCreator/Tracing/notes.frag"));
+#else // < Qt 6
+    setShaderFileName(VertexStage, ":/QtCreator/Tracing/notes_qt6.vert.qsb");
+    setShaderFileName(FragmentStage, ":/QtCreator/Tracing/notes_qt6.frag.qsb");
+#endif // < Qt 6
 }
 
 static QColor notesColor()
 {
     return Utils::creatorTheme()
-            ? Utils::creatorColor(Utils::Theme::Timeline_HighlightColor)
+            ? Utils::creatorTheme()->color(Utils::Theme::Timeline_HighlightColor)
             : QColor(255, 165, 0);
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+void NotesMaterialShader::updateState(const RenderState &state, QSGMaterial *, QSGMaterial *)
+{
+    if (state.isMatrixDirty()) {
+        program()->setUniformValue(m_matrix_id, state.combinedMatrix());
+        program()->setUniformValue(m_z_range_id, GLfloat(1.0));
+        program()->setUniformValue(m_color_id, notesColor());
+    }
+}
+#else // < Qt 6
 bool NotesMaterialShader::updateUniformData(RenderState &state, QSGMaterial *, QSGMaterial *)
 {
     QByteArray *buf = state.uniformData();
@@ -238,6 +296,22 @@ bool NotesMaterialShader::updateUniformData(RenderState &state, QSGMaterial *, Q
 
     return true;
 }
+#endif // < Qt 6
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+char const *const *NotesMaterialShader::attributeNames() const
+{
+    static const char *const attr[] = {"vertexCoord", "distanceFromTop", nullptr};
+    return attr;
+}
+
+void NotesMaterialShader::initialize()
+{
+    m_matrix_id = program()->uniformLocation("matrix");
+    m_z_range_id = program()->uniformLocation("_qt_zRange");
+    m_color_id = program()->uniformLocation("notesColor");
+}
+#endif // < Qt 6
 
 QSGMaterialType *NotesMaterial::type() const
 {
@@ -245,7 +319,11 @@ QSGMaterialType *NotesMaterial::type() const
     return &type;
 }
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+QSGMaterialShader *NotesMaterial::createShader() const
+#else // < Qt 6
 QSGMaterialShader *NotesMaterial::createShader(QSGRendererInterface::RenderMode) const
+#endif // < Qt 6
 {
     return new NotesMaterialShader;
 }

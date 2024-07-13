@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "glslhighlighter.h"
 #include "glsleditor.h"
@@ -9,27 +31,21 @@
 #include <texteditor/textdocumentlayout.h>
 #include <texteditor/textdocument.h>
 
+#include <utils/porting.h>
+
 #include <QDebug>
 
 using namespace TextEditor;
 
 const TextStyle GLSLReservedKeyword = C_REMOVED_LINE;
 
-namespace GlslEditor::Internal {
+namespace GlslEditor {
+namespace Internal {
 
-class GlslHighlighter final : public TextEditor::SyntaxHighlighter
+GlslHighlighter::GlslHighlighter()
 {
-public:
-    GlslHighlighter()
-    {
-        setDefaultTextFormatCategories();
-    }
-
-private:
-    void highlightBlock(const QString &text) final;
-    void highlightLine(const QString &text, int position, int length, const QTextCharFormat &format);
-    bool isPPKeyword(QStringView text) const;
-};
+    setDefaultTextFormatCategories();
+}
 
 void GlslHighlighter::highlightBlock(const QString &text)
 {
@@ -47,7 +63,10 @@ void GlslHighlighter::highlightBlock(const QString &text)
     lex.setState(state);
     lex.setScanKeywords(false);
     lex.setScanComments(true);
-    lex.setVariant(languageVariant(mimeType()));
+    const int variant = languageVariant(parent()
+                         ? static_cast<TextDocument*>(parent())->mimeType()
+                         : QString());
+    lex.setVariant(variant);
 
     int initialState = state;
 
@@ -136,7 +155,7 @@ void GlslHighlighter::highlightBlock(const QString &text)
             highlightAsPreprocessor = true;
 
         } else if (highlightCurrentWordAsPreprocessor
-                   && isPPKeyword(QStringView(text).mid(tk.begin(), tk.length))) {
+                   && isPPKeyword(Utils::midView(text, tk.begin(), tk.length))) {
             setFormat(tk.begin(), tk.length, formatForCategory(C_PREPROCESSOR));
 
         } else if (tk.is(GLSL::Parser::T_NUMBER)) {
@@ -189,14 +208,31 @@ void GlslHighlighter::highlightBlock(const QString &text)
     TextDocumentLayout::setParentheses(currentBlock(), parentheses);
 
     // if the block is ifdefed out, we only store the parentheses, but
+
     // do not adjust the brace depth.
-    if (TextBlockUserData *userData = TextDocumentLayout::textUserData(currentBlock());
-            userData && userData->ifdefedOut()) {
+    if (TextDocumentLayout::ifdefedOut(currentBlock())) {
         braceDepth = initialBraceDepth;
         foldingIndent = initialBraceDepth;
     }
 
     TextDocumentLayout::setFoldingIndent(currentBlock(), foldingIndent);
+
+    // optimization: if only the brace depth changes, we adjust subsequent blocks
+    // to have QSyntaxHighlighter stop the rehighlighting
+    int currentState = currentBlockState();
+    if (currentState != -1) {
+        int oldState = currentState & 0xff;
+        int oldBraceDepth = currentState >> 8;
+        if (oldState == lex.state() && oldBraceDepth != braceDepth) {
+            int delta = braceDepth - oldBraceDepth;
+            QTextBlock block = currentBlock().next();
+            while (block.isValid() && block.userState() != -1) {
+                TextDocumentLayout::changeBraceDepth(block, delta);
+                TextDocumentLayout::changeFoldingIndent(block, delta);
+                block = block.next();
+            }
+        }
+    }
 
     setCurrentBlockState((braceDepth << 8) | lex.state());
 }
@@ -281,10 +317,5 @@ bool GlslHighlighter::isPPKeyword(QStringView text) const
     return false;
 }
 
-
-TextEditor::SyntaxHighlighter *createGlslHighlighter()
-{
-    return new GlslHighlighter;
-}
-
-} // GlslEditor::Internal
+} // namespace Internal
+} // namespace GlslEditor

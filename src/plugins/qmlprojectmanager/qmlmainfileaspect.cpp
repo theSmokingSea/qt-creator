@@ -1,13 +1,34 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmlmainfileaspect.h"
 
 #include "qmlproject.h"
-#include "qmlprojectconstants.h"
-#include "qmlprojectmanagertr.h"
+#include "qmlprojectmanagerconstants.h"
 
-#include <qmljstools/qmljstoolsconstants.h>
+// #include <qmljstools/qmljstoolsconstants.h>
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
@@ -18,9 +39,7 @@
 
 #include <utils/algorithm.h>
 #include <utils/layoutbuilder.h>
-#include <utils/mimeconstants.h>
 #include <utils/mimeutils.h>
-#include <utils/qtcassert.h>
 
 #include <QComboBox>
 
@@ -31,15 +50,15 @@ using namespace Utils;
 namespace QmlProjectManager {
 
 const char M_CURRENT_FILE[] = "CurrentFile";
-const char CURRENT_FILE[]  = QT_TRANSLATE_NOOP("QtC::QmlProjectManager", "<Current File>");
+const char CURRENT_FILE[]  = QT_TRANSLATE_NOOP("QmlManager", "<Current File>");
 
-static bool caseInsensitiveLessThan(const FilePath &s1, const FilePath &s2)
+static bool caseInsensitiveLessThan(const QString &s1, const QString &s2)
 {
-    return s1.toString().toCaseFolded() < s2.toString().toCaseFolded();
+    return s1.toLower() < s2.toLower();
 }
 
-QmlMainFileAspect::QmlMainFileAspect(AspectContainer *container)
-    : BaseAspect(container)
+QmlMainFileAspect::QmlMainFileAspect(Target *target)
+    : m_target(target)
     , m_scriptFile(M_CURRENT_FILE)
 {
     addDataExtractor(this, &QmlMainFileAspect::mainScript, &Data::mainScript);
@@ -49,10 +68,6 @@ QmlMainFileAspect::QmlMainFileAspect(AspectContainer *container)
             this, &QmlMainFileAspect::changeCurrentFile);
     connect(EditorManager::instance(), &EditorManager::currentDocumentStateChanged,
             this, [this] { changeCurrentFile(); });
-    connect(ProjectExplorerPlugin::instance(),
-            &ProjectExplorerPlugin::fileListChanged,
-            this,
-            &QmlMainFileAspect::updateFileComboBox);
 }
 
 QmlMainFileAspect::~QmlMainFileAspect()
@@ -60,24 +75,28 @@ QmlMainFileAspect::~QmlMainFileAspect()
     delete m_fileListCombo;
 }
 
-void QmlMainFileAspect::addToLayoutImpl(Layouting::Layout &parent)
+void QmlMainFileAspect::addToLayout(LayoutBuilder &builder)
 {
     QTC_ASSERT(!m_fileListCombo, delete m_fileListCombo);
     m_fileListCombo = new QComboBox;
     m_fileListCombo->setModel(&m_fileListModel);
 
     updateFileComboBox();
-    connect(m_fileListCombo, &QComboBox::activated, this, &QmlMainFileAspect::setMainScript);
 
-    parent.addItems({Tr::tr("Main QML file:"), m_fileListCombo.data()});
+    connect(ProjectExplorerPlugin::instance(), &ProjectExplorerPlugin::fileListChanged,
+            this, &QmlMainFileAspect::updateFileComboBox);
+    connect(m_fileListCombo, QOverload<int>::of(&QComboBox::activated),
+            this, &QmlMainFileAspect::setMainScript);
+
+    builder.addItems({tr("Main QML file:"), m_fileListCombo.data()});
 }
 
-void QmlMainFileAspect::toMap(Store &map) const
+void QmlMainFileAspect::toMap(QVariantMap &map) const
 {
     map.insert(Constants::QML_MAINSCRIPT_KEY, m_scriptFile);
 }
 
-void QmlMainFileAspect::fromMap(const Store &map)
+void QmlMainFileAspect::fromMap(const QVariantMap &map)
 {
     m_scriptFile = map.value(Constants::QML_MAINSCRIPT_KEY, M_CURRENT_FILE).toString();
 
@@ -91,12 +110,12 @@ void QmlMainFileAspect::fromMap(const Store &map)
 
 void QmlMainFileAspect::updateFileComboBox()
 {
-    const FilePath projectDir = m_target->project()->projectDirectory();
+    QDir projectDir(m_target->project()->projectDirectory().toString());
 
     if (mainScriptSource() == FileInProjectFile) {
-        const FilePath mainScriptInFilePath = mainScript().relativePathFrom(projectDir);
+        const QString mainScriptInFilePath = projectDir.relativeFilePath(mainScript());
         m_fileListModel.clear();
-        m_fileListModel.appendRow(new QStandardItem(mainScriptInFilePath.toString()));
+        m_fileListModel.appendRow(new QStandardItem(mainScriptInFilePath));
         if (m_fileListCombo)
             m_fileListCombo->setEnabled(false);
         return;
@@ -108,25 +127,27 @@ void QmlMainFileAspect::updateFileComboBox()
     m_fileListModel.appendRow(new QStandardItem(CURRENT_FILE));
     QModelIndex currentIndex;
 
-    FilePaths sortedFiles = m_target->project()->files(Project::SourceFiles);
+    QStringList sortedFiles = Utils::transform(m_target->project()->files(Project::SourceFiles),
+                                               &Utils::FilePath::toString);
 
     // make paths relative to project directory
-    FilePaths relativeFiles;
-    for (const FilePath &fn : std::as_const(sortedFiles))
-        relativeFiles += projectDir.relativeChildPath(fn);
+    QStringList relativeFiles;
+    for (const QString &fn : qAsConst(sortedFiles))
+        relativeFiles += projectDir.relativeFilePath(fn);
     sortedFiles = relativeFiles;
 
     std::stable_sort(sortedFiles.begin(), sortedFiles.end(), caseInsensitiveLessThan);
 
-    FilePath mainScriptPath;
+    QString mainScriptPath;
     if (mainScriptSource() != FileInEditor)
-        mainScriptPath = projectDir.relativeChildPath(mainScript());
+        mainScriptPath = projectDir.relativeFilePath(mainScript());
 
-    for (const FilePath &fn : std::as_const(sortedFiles)) {
-        if (fn.suffixView() != u"qml")
+    for (const QString &fn : qAsConst(sortedFiles)) {
+        QFileInfo fileInfo(fn);
+        if (fileInfo.suffix() != "qml")
             continue;
 
-        auto item = new QStandardItem(fn.toString());
+        auto item = new QStandardItem(fn);
         m_fileListModel.appendRow(item);
 
         if (mainScriptPath == fn)
@@ -160,11 +181,6 @@ void QmlMainFileAspect::setMainScript(int index)
     }
 }
 
-void QmlMainFileAspect::setTarget(ProjectExplorer::Target *target)
-{
-    m_target = target;
-}
-
 void QmlMainFileAspect::setScriptSource(MainScriptSource source, const QString &settingsPath)
 {
     if (source == FileInEditor) {
@@ -175,7 +191,7 @@ void QmlMainFileAspect::setScriptSource(MainScriptSource source, const QString &
         m_mainScriptFilename.clear();
     } else { // FileInSettings
         m_scriptFile = settingsPath;
-        m_mainScriptFilename = m_target->project()->projectDirectory() / m_scriptFile;
+        m_mainScriptFilename = m_target->project()->projectDirectory().toString() + '/' + m_scriptFile;
     }
 
     emit changed();
@@ -185,11 +201,14 @@ void QmlMainFileAspect::setScriptSource(MainScriptSource source, const QString &
 /**
   Returns absolute path to main script file.
   */
-FilePath QmlMainFileAspect::mainScript() const
+QString QmlMainFileAspect::mainScript() const
 {
     if (!qmlBuildSystem()->mainFile().isEmpty()) {
-        const FilePath pathInProject = qmlBuildSystem()->mainFilePath();
-        return qmlBuildSystem()->canonicalProjectDir().resolvePath(pathInProject);
+        const QString pathInProject = qmlBuildSystem()->mainFile();
+        if (QFileInfo(pathInProject).isAbsolute())
+            return pathInProject;
+        else
+            return QDir(qmlBuildSystem()->canonicalProjectDir().toString()).absoluteFilePath(pathInProject);
     }
 
     if (!m_mainScriptFilename.isEmpty())
@@ -198,7 +217,7 @@ FilePath QmlMainFileAspect::mainScript() const
     return m_currentFileFilename;
 }
 
-FilePath QmlMainFileAspect::currentFile() const
+QString QmlMainFileAspect::currentFile() const
 {
     return m_currentFileFilename;
 }
@@ -209,7 +228,7 @@ void QmlMainFileAspect::changeCurrentFile(Core::IEditor *editor)
         editor = EditorManager::currentEditor();
 
     if (editor)
-        m_currentFileFilename = editor->document()->filePath();
+        m_currentFileFilename = editor->document()->filePath().toString();
 
     emit changed();
 }
@@ -217,27 +236,28 @@ void QmlMainFileAspect::changeCurrentFile(Core::IEditor *editor)
 bool QmlMainFileAspect::isQmlFilePresent()
 {
     bool qmlFileFound = false;
-    if (mainScriptSource() == FileInEditor && !mainScript().isEmpty()) {
-        using namespace Utils::Constants;
+    if (mainScriptSource() == FileInEditor) {
         IDocument *document = EditorManager::currentDocument();
         const MimeType mainScriptMimeType = mimeTypeForFile(mainScript());
         if (document) {
-            m_currentFileFilename = document->filePath();
-            if (mainScriptMimeType.matchesName(QML_MIMETYPE)
-                    || mainScriptMimeType.matchesName(QMLUI_MIMETYPE)) {
+            m_currentFileFilename = document->filePath().toString();
+            if (mainScriptMimeType.matchesName(ProjectExplorer::Constants::QML_MIMETYPE)
+                    || mainScriptMimeType.matchesName(ProjectExplorer::Constants::QMLUI_MIMETYPE)) {
                 qmlFileFound = true;
             }
         }
         if (!document
-                || mainScriptMimeType.matchesName(QMLPROJECT_MIMETYPE)) {
+                // || mainScriptMimeType.matchesName(QmlJSTools::Constants::QMLPROJECT_MIMETYPE)
+                ) {
             // find a qml file with lowercase filename. This is slow, but only done
             // in initialization/other border cases.
-            const FilePaths files = m_target->project()->files(Project::SourceFiles);
+            const auto files = m_target->project()->files(Project::SourceFiles);
             for (const FilePath &filename : files) {
                 if (!filename.isEmpty() && filename.baseName().at(0).isLower()) {
                     const MimeType type = mimeTypeForFile(filename);
-                    if (type.matchesName(QML_MIMETYPE) || type.matchesName(QMLUI_MIMETYPE)) {
-                        m_currentFileFilename = filename;
+                    if (type.matchesName(ProjectExplorer::Constants::QML_MIMETYPE)
+                            || type.matchesName(ProjectExplorer::Constants::QMLUI_MIMETYPE)) {
+                        m_currentFileFilename = filename.toString();
                         qmlFileFound = true;
                         break;
                     }
@@ -254,5 +274,4 @@ QmlBuildSystem *QmlMainFileAspect::qmlBuildSystem() const
 {
     return static_cast<QmlBuildSystem *>(m_target->buildSystem());
 }
-
-} // QmlProjectManager
+} // namespace QmlProjectManager

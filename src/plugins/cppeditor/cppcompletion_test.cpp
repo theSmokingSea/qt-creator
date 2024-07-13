@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppcompletion_test.h"
 
@@ -8,11 +30,10 @@
 #include "cppmodelmanager.h"
 #include "cpptoolstestcase.h"
 
-#include <coreplugin/editormanager/editormanager.h>
 #include <texteditor/codeassist/iassistproposal.h>
-#include <texteditor/syntaxhighlighter.h>
-#include <texteditor/textdocument.h>
 #include <texteditor/texteditor.h>
+#include <texteditor/textdocument.h>
+#include <coreplugin/editormanager/editormanager.h>
 
 #include <utils/algorithm.h>
 #include <utils/changeset.h>
@@ -27,11 +48,9 @@
 /*!
     Tests for code completion.
  */
-
-using namespace Core;
 using namespace CPlusPlus;
 using namespace TextEditor;
-using namespace Utils;
+using namespace Core;
 
 namespace CppEditor::Internal {
 namespace {
@@ -56,13 +75,12 @@ public:
         m_temporaryDir.reset(new CppEditor::Tests::TemporaryDir());
         QVERIFY(m_temporaryDir->isValid());
         const QByteArray fileExt = isObjC ? "mm" : "h";
-        const FilePath filePath = m_temporaryDir->createFile("file." + fileExt, m_source);
-        QVERIFY(!filePath.isEmpty());
+        const QString fileName = m_temporaryDir->createFile("file." + fileExt, m_source);
+        QVERIFY(!fileName.isEmpty());
 
         // Open in editor
-        m_editor = EditorManager::openEditor(filePath);
+        m_editor = EditorManager::openEditor(Utils::FilePath::fromString(fileName));
         QVERIFY(m_editor);
-
         closeEditorAtEndOfTestCase(m_editor);
         m_editorWidget = TextEditorWidget::fromEditor(m_editor);
         QVERIFY(m_editorWidget);
@@ -70,12 +88,8 @@ public:
         m_textDocument = m_editorWidget->document();
 
         // Get Document
-        const Document::Ptr document = waitForFileInGlobalSnapshot(filePath);
+        const Document::Ptr document = waitForFileInGlobalSnapshot(fileName);
         QVERIFY(document);
-        if (!document->diagnosticMessages().isEmpty()) {
-            for (const Document::DiagnosticMessage &m : document->diagnosticMessages())
-                qDebug().noquote() << m.text();
-        }
         QVERIFY(document->diagnosticMessages().isEmpty());
 
         m_snapshot.insert(document);
@@ -94,19 +108,17 @@ public:
         QTextCursor textCursor = m_editorWidget->textCursor();
         textCursor.setPosition(m_position);
         m_editorWidget->setTextCursor(textCursor);
-        std::unique_ptr<CppCompletionAssistInterface> ai(
-            new CppCompletionAssistInterface(m_editorWidget->textDocument()->filePath(),
-                                             m_editorWidget,
-                                             ExplicitlyInvoked,
-                                             m_snapshot,
-                                             ProjectExplorer::HeaderPaths(),
-                                             languageFeatures));
+        CppCompletionAssistInterface *ai
+            = new CppCompletionAssistInterface(m_editorWidget->textDocument()->filePath(),
+                                               m_editorWidget,
+                                               ExplicitlyInvoked, m_snapshot,
+                                               ProjectExplorer::HeaderPaths(),
+                                               languageFeatures);
         ai->prepareForAsyncUse();
         ai->recreateTextDocument();
         InternalCppCompletionAssistProcessor processor;
-        processor.setupAssistInterface(std::move(ai));
 
-        const QScopedPointer<IAssistProposal> proposal(processor.performAsync());
+        const QScopedPointer<IAssistProposal> proposal(processor.perform(ai));
         if (!proposal)
             return completions;
         ProposalModelPtr model = proposal->model();
@@ -137,19 +149,9 @@ public:
     {
         Utils::ChangeSet change;
         change.insert(m_position, QLatin1String(text));
-        change.apply(m_textDocument);
+        QTextCursor cursor(m_textDocument);
+        change.apply(&cursor);
         m_position += text.length();
-    }
-
-    bool waitForSyntaxHighlighting()
-    {
-        TextEditor::BaseTextEditor *cppEditor = qobject_cast<TextEditor::BaseTextEditor *>(m_editor);
-        if (!cppEditor)
-            return false;
-        if (cppEditor->textDocument()->syntaxHighlighter()->syntaxHighlighterUpToDate())
-            return true;
-        return ::CppEditor::Tests::waitForSignalOrTimeout(
-            cppEditor->textDocument()->syntaxHighlighter(), &SyntaxHighlighter::finished, 5000);
     }
 
 private:
@@ -278,7 +280,7 @@ void CompletionTest::testCompletionTemplateFunction()
 
     QStringList actualCompletions = test.getCompletions();
     QString errorPattern(QLatin1String("Completion not found: %1"));
-    for (const QString &completion : std::as_const(expectedCompletions))  {
+    for (const QString &completion : qAsConst(expectedCompletions))  {
         QByteArray errorMessage = errorPattern.arg(completion).toUtf8();
         QVERIFY2(actualCompletions.contains(completion), errorMessage.data());
     }
@@ -417,7 +419,6 @@ void CompletionTest::testDoxygenTagCompletion()
 
     CompletionTestCase test(code, prefix);
     QVERIFY(test.succeededSoFar());
-    QVERIFY(test.waitForSyntaxHighlighting());
     const QStringList completions = test.getCompletions();
     QVERIFY(isDoxygenTagCompletion(completions));
 }
@@ -426,16 +427,16 @@ static void enumTestCase(const QByteArray &tag, const QByteArray &source,
                          const QByteArray &prefix = QByteArray())
 {
     QByteArray fullSource = source;
-    fullSource.replace('$', "enum E { value1, value2, value3 };");
-    QTest::newRow(tag) << fullSource << (prefix + "value")
-            << QStringList({"value1", "value2", "value3"});
+    fullSource.replace('$', "enum E { val1, val2, val3 };");
+    QTest::newRow(tag) << fullSource << (prefix + "val")
+            << QStringList({"val1", "val2", "val3"});
 
     QTest::newRow(QByteArray{tag + "_cxx11"}) << fullSource << QByteArray{prefix + "E::"}
-            << QStringList({"E", "value1", "value2", "value3"});
+            << QStringList({"E", "val1", "val2", "val3"});
 
     fullSource.replace("enum E ", "enum ");
-    QTest::newRow(QByteArray{tag + "_anon"}) << fullSource << QByteArray{prefix + "value"}
-            << QStringList({"value1", "value2", "value3"});
+    QTest::newRow(QByteArray{tag + "_anon"}) << fullSource << QByteArray{prefix + "val"}
+            << QStringList({"val1", "val2", "val3"});
 }
 
 void CompletionTest::testCompletion_data()
@@ -2889,16 +2890,6 @@ void CompletionTest::testCompletionMemberAccessOperator_data()
         ) << _("p->") << QStringList({"S", "m"})
         << false
         << false;
-    QTest::newRow("dot to arrow: template + reference + double typedef")
-        << _("template <typename T> struct C {\n"
-             "    using ref = T &;\n"
-             "    ref operator[](int i);\n"
-             "};\n"
-             "struct S { int m; };\n"
-             "template<typename T> using CS = C<T>;\n"
-             "CS<S *> v;\n"
-             "@\n")
-        << _("v[0].") << QStringList({"S", "m"}) << false << true;
 }
 
 } // namespace CppEditor::Internal

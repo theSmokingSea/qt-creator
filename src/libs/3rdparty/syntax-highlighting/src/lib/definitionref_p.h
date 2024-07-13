@@ -30,8 +30,10 @@ class DefinitionRef
 {
 public:
     DefinitionRef();
-    explicit DefinitionRef(const Definition &def) noexcept;
-    DefinitionRef &operator=(const Definition &def) noexcept;
+    explicit DefinitionRef(const Definition &def);
+    explicit DefinitionRef(Definition &&def);
+    DefinitionRef &operator=(const Definition &def);
+    DefinitionRef &operator=(Definition &&def);
 
     Definition definition() const;
 
@@ -44,19 +46,6 @@ public:
      * Checks two definition references for inequality.
      */
     bool operator!=(const DefinitionRef &other) const
-    {
-        return !(*this == other);
-    }
-
-    /**
-     * Checks two definition for equality.
-     */
-    bool operator==(const Definition &other) const;
-
-    /**
-     * Checks two definition for inequality.
-     */
-    bool operator!=(const Definition &other) const
     {
         return !(*this == other);
     }

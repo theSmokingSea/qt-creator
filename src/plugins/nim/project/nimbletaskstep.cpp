@@ -1,11 +1,33 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nimbletaskstep.h"
 
 #include "nimconstants.h"
 #include "nimblebuildsystem.h"
-#include "nimtr.h"
+#include "nimbleproject.h"
 
 #include <projectexplorer/abstractprocessstep.h>
 #include <projectexplorer/buildstep.h>
@@ -32,6 +54,8 @@ namespace Nim {
 
 class NimbleTaskStep final : public AbstractProcessStep
 {
+    Q_DECLARE_TR_FUNCTIONS(Nim::NimbleTaskStep)
+
 public:
     NimbleTaskStep(BuildStepList *parentList, Id id);
 
@@ -47,8 +71,8 @@ private:
 
     bool validate();
 
-    StringAspect m_taskName{this};
-    StringAspect m_taskArgs{this};
+    StringAspect *m_taskName = nullptr;
+    StringAspect *m_taskArgs = nullptr;
 
     QStandardItemModel m_tasks;
     bool m_selecting = false;
@@ -57,22 +81,23 @@ private:
 NimbleTaskStep::NimbleTaskStep(BuildStepList *parentList, Id id)
     : AbstractProcessStep(parentList, id)
 {
-    const QString display = Tr::tr("Nimble Task");
-    setDefaultDisplayName(display);
-    setDisplayName(display);
+    setDefaultDisplayName(tr(Constants::C_NIMBLETASKSTEP_DISPLAY));
+    setDisplayName(tr(Constants::C_NIMBLETASKSTEP_DISPLAY));
 
     setCommandLineProvider([this] {
-        QString args = m_taskName() + " " + m_taskArgs();
+        QString args = m_taskName->value() + " " + m_taskArgs->value();
         return CommandLine(Nim::nimblePathFromKit(target()->kit()), args, CommandLine::Raw);
     });
 
     setWorkingDirectoryProvider([this] { return project()->projectDirectory(); });
 
-    m_taskName.setSettingsKey(Constants::C_NIMBLETASKSTEP_TASKNAME);
+    m_taskName = addAspect<StringAspect>();
+    m_taskName->setSettingsKey(Constants::C_NIMBLETASKSTEP_TASKNAME);
 
-    m_taskArgs.setSettingsKey(Constants::C_NIMBLETASKSTEP_TASKARGS);
-    m_taskArgs.setDisplayStyle(StringAspect::LineEditDisplay);
-    m_taskArgs.setLabelText(Tr::tr("Task arguments:"));
+    m_taskArgs = addAspect<StringAspect>();
+    m_taskArgs->setSettingsKey(Constants::C_NIMBLETASKSTEP_TASKARGS);
+    m_taskArgs->setDisplayStyle(StringAspect::LineEditDisplay);
+    m_taskArgs->setLabelText(tr("Task arguments:"));
 }
 
 QWidget *NimbleTaskStep::createConfigWidget()
@@ -86,22 +111,22 @@ QWidget *NimbleTaskStep::createConfigWidget()
     using namespace Layouting;
     auto widget = Form {
         m_taskArgs,
-        Tr::tr("Tasks:"), taskList,
-        noMargin
-    }.emerge();
+        tr("Tasks:"), taskList
+    }.emerge(false);
 
     auto buildSystem = dynamic_cast<NimbleBuildSystem *>(this->buildSystem());
     QTC_ASSERT(buildSystem, return widget);
 
     updateTaskList();
-    selectTask(m_taskName());
+    selectTask(m_taskName->value());
 
     connect(&m_tasks, &QAbstractItemModel::dataChanged, this, &NimbleTaskStep::onDataChanged);
 
     connect(buildSystem, &NimbleBuildSystem::tasksChanged, this, &NimbleTaskStep::updateTaskList);
 
     setSummaryUpdater([this] {
-        return QString("<b>%1:</b> nimble %2 %3").arg(displayName(), m_taskName(), m_taskArgs());
+        return QString("<b>%1:</b> nimble %2 %3")
+                .arg(displayName(), m_taskName->value(), m_taskArgs->value());
     });
 
     return widget;
@@ -196,24 +221,24 @@ void NimbleTaskStep::uncheckedAllDifferentFrom(QStandardItem *toSkip)
 
 void NimbleTaskStep::setTaskName(const QString &name)
 {
-    if (m_taskName() == name)
+    if (m_taskName->value() == name)
         return;
-    m_taskName.setValue(name);
+    m_taskName->setValue(name);
     selectTask(name);
 }
 
 bool NimbleTaskStep::validate()
 {
-    if (m_taskName().isEmpty())
+    if (m_taskName->value().isEmpty())
         return true;
 
     auto nimbleBuildSystem = dynamic_cast<NimbleBuildSystem*>(buildSystem());
     QTC_ASSERT(nimbleBuildSystem, return false);
 
-    auto matchName = [this](const NimbleTask &task) { return task.name == m_taskName(); };
+    auto matchName = [this](const NimbleTask &task) { return task.name == m_taskName->value(); };
     if (!Utils::contains(nimbleBuildSystem->tasks(), matchName)) {
-        emit addTask(BuildSystemTask(Task::Error, Tr::tr("Nimble task %1 not found.")
-                                     .arg(m_taskName())));
+        emit addTask(BuildSystemTask(Task::Error, tr("Nimble task %1 not found.")
+                                     .arg(m_taskName->value())));
         emitFaultyConfigurationMessage();
         return false;
     }
@@ -226,7 +251,7 @@ bool NimbleTaskStep::validate()
 NimbleTaskStepFactory::NimbleTaskStepFactory()
 {
     registerStep<NimbleTaskStep>(Constants::C_NIMBLETASKSTEP_ID);
-    setDisplayName(Tr::tr("Nimble Task"));
+    setDisplayName(NimbleTaskStep::tr("Nimble Task"));
     setSupportedStepLists({ProjectExplorer::Constants::BUILDSTEPS_BUILD,
                            ProjectExplorer::Constants::BUILDSTEPS_CLEAN,
                            ProjectExplorer::Constants::BUILDSTEPS_DEPLOY});

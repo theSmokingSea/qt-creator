@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "../tools/qtcreatorcrashhandler/crashhandlersetup.h"
 
@@ -11,40 +33,47 @@
 #include <qtsingleapplication.h>
 
 #include <utils/algorithm.h>
-#include <utils/appinfo.h>
-#include <utils/aspects.h>
 #include <utils/environment.h>
 #include <utils/fileutils.h>
-#include <utils/fsengine/fsengine.h>
 #include <utils/hostosinfo.h>
+#include <utils/optional.h>
 #include <utils/qtcsettings.h>
 #include <utils/singleton.h>
-#include <utils/stylehelper.h>
 #include <utils/temporarydirectory.h>
 #include <utils/terminalcommand.h>
 
 #include <QDebug>
 #include <QDir>
-#include <QFileInfo>
 #include <QFontDatabase>
+#include <QFileInfo>
 #include <QLibraryInfo>
-#include <QMessageBox>
-#include <QNetworkProxyFactory>
-#include <QPixmapCache>
-#include <QProcess>
 #include <QScopeGuard>
-#include <QStandardPaths>
 #include <QStyle>
-#include <QSurfaceFormat>
-#include <QTextCodec>
 #include <QTextStream>
 #include <QThreadPool>
+#include <QTimer>
 #include <QTranslator>
+#include <QUrl>
+#include <QVariant>
 
-#include <iterator>
-#include <optional>
+#include <QSysInfo>
+
+#include <QNetworkProxyFactory>
+
+#include <QApplication>
+#include <QMessageBox>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QTemporaryDir>
+#include <QTextCodec>
+
 #include <string>
 #include <vector>
+#include <iterator>
+
+#ifdef ENABLE_QT_BREAKPAD
+#include <qtsystemexceptionhandler.h>
+#endif
 
 #ifdef ENABLE_CRASHPAD
 #define NOMINMAX
@@ -53,32 +82,33 @@
 #include "client/settings.h"
 #endif
 
+#ifdef Q_OS_LINUX
+#include <malloc.h>
+#endif
+
 using namespace ExtensionSystem;
 
 enum { OptionIndent = 4, DescriptionIndent = 34 };
 
 const char corePluginNameC[] = "Core";
-const char fixedOptionsC[]
-    = " [OPTION]... [FILE]...\n"
-      "Options:\n"
-      "    -help                         Display this help\n"
-      "    -version                      Display program version\n"
-      "    -client                       Attempt to connect to already running first instance\n"
-      "    -settingspath <path>          Override the default path where user settings are stored\n"
-      "    -installsettingspath <path>   Override the default path from where user-independent "
-      "settings are read\n"
-      "    -temporarycleansettings, -tcs Use clean settings for debug or testing reasons\n"
-      "    -pid <pid>                    Attempt to connect to instance given by pid\n"
-      "    -block                        Block until editor is closed\n"
-      "    -pluginpath <path>            Add a custom search path for plugins\n"
-      "    -language <locale>            Set the UI language\n";
+const char fixedOptionsC[] =
+" [OPTION]... [FILE]...\n"
+"Options:\n"
+"    -help                         Display this help\n"
+"    -version                      Display program version\n"
+"    -client                       Attempt to connect to already running first instance\n"
+"    -settingspath <path>          Override the default path where user settings are stored\n"
+"    -installsettingspath <path>   Override the default path from where user-independent settings are read\n"
+"    -temporarycleansettings, -tcs Use clean settings for debug or testing reasons\n"
+"    -pid <pid>                    Attempt to connect to instance given by pid\n"
+"    -block                        Block until editor is closed\n"
+"    -pluginpath <path>            Add a custom search path for plugins\n";
 
 const char HELP_OPTION1[] = "-h";
 const char HELP_OPTION2[] = "-help";
 const char HELP_OPTION3[] = "/h";
 const char HELP_OPTION4[] = "--help";
 const char VERSION_OPTION[] = "-version";
-const char VERSION_OPTION2[] = "--version";
 const char CLIENT_OPTION[] = "-client";
 const char SETTINGS_OPTION[] = "-settingspath";
 const char INSTALL_SETTINGS_OPTION[] = "-installsettingspath";
@@ -88,8 +118,9 @@ const char TEMPORARY_CLEAN_SETTINGS2[] = "-tcs";
 const char PID_OPTION[] = "-pid";
 const char BLOCK_OPTION[] = "-block";
 const char PLUGINPATH_OPTION[] = "-pluginpath";
-const char LANGUAGE_OPTION[] = "-language";
 const char USER_LIBRARY_PATH_OPTION[] = "-user-library-path"; // hidden option for qtcreator.sh
+
+using PluginSpecSet = QVector<PluginSpec *>;
 
 // Helpers for displaying messages. Note that there is no console on Windows.
 
@@ -110,7 +141,7 @@ static void displayHelpText(const QString &t)
     if (Utils::HostOsInfo::isWindowsHost() && qApp)
         QMessageBox::information(nullptr, QLatin1String(Core::Constants::IDE_DISPLAY_NAME), toHtml(t));
     else
-        printf("%s", qPrintable(t));
+        qWarning("%s", qPrintable(t));
 }
 
 static void displayError(const QString &t)
@@ -177,11 +208,8 @@ static inline int askMsgSendFailed()
 
 static inline QStringList getPluginPaths()
 {
-    QStringList rc;
-    rc << (QDir::cleanPath(QApplication::applicationDirPath()
-                                   + '/' + RELATIVE_PLUGIN_PATH))
-       << (QDir::cleanPath(QApplication::applicationDirPath()
-                           + '/' + RELATIVE_DATA_PATH + "/lua-plugins"));
+    QStringList rc(QDir::cleanPath(QApplication::applicationDirPath()
+                                   + '/' + RELATIVE_PLUGIN_PATH));
     // Local plugin path: <localappdata>/plugins/<ideversion>
     //    where <localappdata> is e.g.
     //    "%LOCALAPPDATA%\QtProject\qtcreator" on Windows Vista and later
@@ -209,37 +237,16 @@ static inline QStringList getPluginPaths()
     return rc;
 }
 
-// Returns plugin path that is set in install settings.
-// The installer (or rather the packaging) can write that to load optional plugins from
-// outside the application bundle on macOS, because installing optional plugins into
-// the application bundle would break code signing.
-static QStringList getInstallPluginPaths()
-{
-    // uses SystemScope because this really must be an "installation" setting
-    QSettings installSettings(QSettings::IniFormat,
-                              QSettings::SystemScope,
-                              QLatin1String(Core::Constants::IDE_SETTINGSVARIANT_STR),
-                              QLatin1String(Core::Constants::IDE_CASED_ID));
-    return Utils::transform(installSettings.value("Settings/InstallPluginPaths").toStringList(),
-                            [](const QString &path) -> QString {
-                                if (QDir::isRelativePath(path))
-                                    return applicationDirPath() + '/' + path;
-                                return path;
-                            });
-}
-
-static void setupInstallSettings(QString &installSettingspath, bool redirect = true)
+static void setupInstallSettings(QString &installSettingspath)
 {
     if (!installSettingspath.isEmpty() && !QFileInfo(installSettingspath).isDir()) {
         displayError(QString("-installsettingspath \"%0\" needs to be the path where a %1/%2.ini exist.").arg(installSettingspath,
             QLatin1String(Core::Constants::IDE_SETTINGSVARIANT_STR), QLatin1String(Core::Constants::IDE_CASED_ID)));
         installSettingspath.clear();
     }
-    QSettings::setPath(QSettings::IniFormat,
-                       QSettings::SystemScope,
-                       installSettingspath.isEmpty() ? resourcePath() : installSettingspath);
-    if (!redirect) // ignore redirection via Settings/InstallSettings
-        return;
+    static const char kInstallSettingsKey[] = "Settings/InstallSettings";
+    QSettings::setPath(QSettings::IniFormat, QSettings::SystemScope,
+        installSettingspath.isEmpty() ? resourcePath() : installSettingspath);
 
     // Check if the default install settings contain a setting for the actual install settings.
     // This can be an absolute path, or a path relative to applicationDirPath().
@@ -249,7 +256,6 @@ static void setupInstallSettings(QString &installSettingspath, bool redirect = t
     // yet a second time. So try this a few times.
     // (Only the first time with QSettings::UserScope, to allow setting the install settings path
     // in the user settings.)
-    static const char kInstallSettingsKey[] = "Settings/InstallSettings";
     QSettings::Scope scope = QSettings::UserScope;
     int count = 0;
     bool containsInstallSettingsKey = false;
@@ -279,26 +285,31 @@ static Utils::QtcSettings *createUserSettings()
 
 static void setHighDpiEnvironmentVariable()
 {
-    if (Utils::StyleHelper::defaultHighDpiScaleFactorRoundingPolicy()
-            == Qt::HighDpiScaleFactorRoundingPolicy::Unset
-        || qEnvironmentVariableIsSet(Utils::StyleHelper::C_QT_SCALE_FACTOR_ROUNDING_POLICY))
+
+    if (Utils::HostOsInfo::isMacHost())
         return;
 
-    std::unique_ptr<Utils::QtcSettings> settings(createUserSettings());
+    std::unique_ptr<QSettings> settings(createUserSettings());
 
-    using Policy = Qt::HighDpiScaleFactorRoundingPolicy;
-    const Policy defaultPolicy = Utils::StyleHelper::defaultHighDpiScaleFactorRoundingPolicy();
-    const Policy userPolicy = settings->value("Core/HighDpiScaleFactorRoundingPolicy",
-                                              int(defaultPolicy)).value<Policy>();
-    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(userPolicy);
-}
+    const bool defaultValue = Utils::HostOsInfo::isWindowsHost();
+    const bool enableHighDpiScaling = settings->value("Core/EnableHighDpiScaling", defaultValue).toBool();
 
-void setPixmapCacheLimit()
-{
-    const int originalLimit = QPixmapCache::cacheLimit();
-    const qreal dpr = qApp->devicePixelRatio();
-    const qreal multiplier = std::clamp(dpr * dpr, 1.0, 4.0);
-    QPixmapCache::setCacheLimit(originalLimit * multiplier);
+    static const char ENV_VAR_QT_DEVICE_PIXEL_RATIO[] = "QT_DEVICE_PIXEL_RATIO";
+    if (enableHighDpiScaling
+            && !qEnvironmentVariableIsSet(ENV_VAR_QT_DEVICE_PIXEL_RATIO) // legacy in 5.6, but still functional
+            && !qEnvironmentVariableIsSet("QT_AUTO_SCREEN_SCALE_FACTOR")
+            && !qEnvironmentVariableIsSet("QT_SCALE_FACTOR")
+            && !qEnvironmentVariableIsSet("QT_SCREEN_SCALE_FACTORS")) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+        QCoreApplication::setAttribute(Qt::AA_EnableHighDpiScaling);
+#endif
+    } else {
+#if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
+        /* AA_DisableHighDpiScaling is deprecated */
+        QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+            Qt::HighDpiScaleFactorRoundingPolicy::Floor);
+#endif
+    }
 }
 
 void loadFonts()
@@ -315,12 +326,11 @@ struct Options
     QString settingsPath;
     QString installSettingsPath;
     QStringList customPluginPaths;
-    QString uiLanguage;
     // list of arguments that were handled and not passed to the application or plugin manager
     QStringList preAppArguments;
     // list of arguments to be passed to the application or plugin manager
     std::vector<char *> appArguments;
-    std::optional<QString> userLibraryPath;
+    Utils::optional<QString> userLibraryPath;
     bool hasTestOption = false;
     bool wantsCleanSettings = false;
 };
@@ -346,10 +356,6 @@ Options parseCommandLine(int argc, char *argv[])
         } else if (arg == PLUGINPATH_OPTION && hasNext) {
             ++it;
             options.customPluginPaths += QDir::fromNativeSeparators(nextArg);
-            options.preAppArguments << arg << nextArg;
-        } else if (arg == LANGUAGE_OPTION && hasNext) {
-            ++it;
-            options.uiLanguage = nextArg;
             options.preAppArguments << arg << nextArg;
         } else if (arg == USER_LIBRARY_PATH_OPTION && hasNext) {
             ++it;
@@ -410,25 +416,13 @@ QStringList lastSessionArgument()
     return hasProjectExplorer ? QStringList({"-lastsession"}) : QStringList();
 }
 
-// should be in sync with src/plugins/coreplugin/icore.cpp -> FilePath ICore::crashReportsPath()
-// and src\tools\qml2puppet\qml2puppet\qmlpuppet.cpp -> QString crashReportsPath()
-QString crashReportsPath()
-{
-    std::unique_ptr<Utils::QtcSettings> settings(createUserSettings());
-    if (Utils::HostOsInfo::isMacHost())
-        return QFileInfo(settings->fileName()).path() + "/crashpad_reports";
-    else
-        return QCoreApplication::applicationDirPath()
-                + '/' + RELATIVE_LIBEXEC_PATH + "crashpad_reports";
-}
-
 #ifdef ENABLE_CRASHPAD
 bool startCrashpad(const QString &libexecPath, bool crashReportingEnabled)
 {
     using namespace crashpad;
 
     // Cache directory that will store crashpad information and minidumps
-    QString databasePath = QDir::cleanPath(crashReportsPath());
+    QString databasePath = QDir::cleanPath(libexecPath + "/crashpad_reports");
     QString handlerPath = QDir::cleanPath(libexecPath + "/crashpad_handler");
 #ifdef Q_OS_WIN
     handlerPath += ".exe";
@@ -450,9 +444,6 @@ bool startCrashpad(const QString &libexecPath, bool crashReportingEnabled)
     std::map<std::string, std::string> annotations;
     annotations["app-version"] = Core::Constants::IDE_VERSION_DISPLAY;
     annotations["qt-version"] = QT_VERSION_STR;
-#ifdef IDE_REVISION
-    annotations["sha1"] = Core::Constants::IDE_REVISION_STR;
-#endif
 
     // Optional arguments to pass to the handler
     std::vector<std::string> arguments;
@@ -474,59 +465,10 @@ bool startCrashpad(const QString &libexecPath, bool crashReportingEnabled)
 }
 #endif
 
-class ShowInGuiHandler
-{
-public:
-    ShowInGuiHandler()
-    {
-        instance = this;
-        oldHandler = qInstallMessageHandler(log);
-    }
-    ~ShowInGuiHandler() { qInstallMessageHandler(oldHandler); };
-
-private:
-    static void log(QtMsgType type, const QMessageLogContext &context, const QString &msg)
-    {
-        instance->messages += msg;
-        if (type == QtFatalMsg) {
-            // Show some kind of GUI with collected messages before exiting.
-            // For Windows, Qt already uses a dialog.
-            if (Utils::HostOsInfo::isLinuxHost()) {
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 5, 0) && QT_VERSION < QT_VERSION_CHECK(6, 5, 3)) \
-    || (QT_VERSION >= QT_VERSION_CHECK(6, 6, 0) && QT_VERSION < QT_VERSION_CHECK(6, 6, 1))
-                // Information about potentially missing libxcb-cursor0 is printed by Qt since Qt 6.5.3 and Qt 6.6.1
-                // Add it manually for other versions >= 6.5.0
-                instance->messages.prepend("From 6.5.0, xcb-cursor0 or libxcb-cursor0 is needed to "
-                                           "load the Qt xcb platform plugin.");
-#endif
-                if (QFile::exists("/usr/bin/xmessage"))
-                    QProcess::startDetached("/usr/bin/xmessage", {instance->messages.join("\n")});
-            } else if (Utils::HostOsInfo::isMacHost()) {
-                QProcess::startDetached("/usr/bin/osascript",
-                                        {"-e",
-                                         "display dialog \""
-                                             + instance->messages.join("\n").replace("\"", "\\\"")
-                                             + "\" buttons \"OK\" with title \""
-                                             + Core::Constants::IDE_DISPLAY_NAME
-                                             + " Failed to Start\""});
-            }
-        }
-        instance->oldHandler(type, context, msg);
-    };
-
-    static ShowInGuiHandler *instance;
-    QStringList messages;
-    QtMessageHandler oldHandler = nullptr;
-};
-
-ShowInGuiHandler *ShowInGuiHandler::instance = nullptr;
-
 int main(int argc, char **argv)
 {
     Restarter restarter(argc, argv);
     Utils::Environment::systemEnvironment(); // cache system environment before we do any changes
-
-    Utils::FSEngine fileSystemEngine;
 
     // Manually determine various command line options
     // We can't use the regular way of the plugin manager,
@@ -534,29 +476,10 @@ int main(int argc, char **argv)
     Options options = parseCommandLine(argc, argv);
     applicationDirPath(argv[0]);
 
-    const bool hasStyleOption = Utils::findOrDefault(options.appArguments, [](char *arg) {
-        return strcmp(arg, "-style") == 0;
-    });
-
     if (qEnvironmentVariableIsSet("QTC_DO_NOT_PROPAGATE_LD_PRELOAD")) {
         Utils::Environment::modifySystemEnvironment(
             {{"LD_PRELOAD", "", Utils::EnvironmentItem::Unset}});
     }
-
-    auto restoreEnvVarFromSquish = [](const QByteArray &squishVar, const QString &var) {
-        if (qEnvironmentVariableIsSet(squishVar)) {
-            Utils::Environment::modifySystemEnvironment(
-                {{var, "", Utils::EnvironmentItem::Unset}});
-            const QString content = qEnvironmentVariable(squishVar);
-            if (!content.isEmpty()) {
-                Utils::Environment::modifySystemEnvironment(
-                    {{var, content, Utils::EnvironmentItem::Prepend}});
-            }
-        }
-    };
-
-    restoreEnvVarFromSquish("SQUISH_SHELL_ORIG_DYLD_LIBRARY_PATH", "DYLD_LIBRARY_PATH");
-    restoreEnvVarFromSquish("SQUISH_ORIG_DYLD_FRAMEWORK_PATH", "DYLD_FRAMEWORK_PATH");
 
     if (options.userLibraryPath) {
         if ((*options.userLibraryPath).isEmpty()) {
@@ -568,20 +491,23 @@ int main(int argc, char **argv)
         }
     }
 
-    if (Utils::HostOsInfo::isMacHost()) {
-        QSurfaceFormat surfaceFormat;
-        surfaceFormat.setStencilBufferSize(8);
-        surfaceFormat.setDepthBufferSize(24);
-        surfaceFormat.setVersion(4, 1);
-        surfaceFormat.setProfile(QSurfaceFormat::CoreProfile);
-        QSurfaceFormat::setDefaultFormat(surfaceFormat);
-    }
-
+#if defined(Q_OS_WIN) && QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    if (!qEnvironmentVariableIsSet("QT_OPENGL"))
+        QCoreApplication::setAttribute(Qt::AA_UseOpenGLES);
+#else
     qputenv("QSG_RHI_BACKEND", "opengl");
+    QGuiApplication::setHighDpiScaleFactorRoundingPolicy(
+                Qt::HighDpiScaleFactorRoundingPolicy::Round);
+#endif
 
     if (qEnvironmentVariableIsSet("QTCREATOR_DISABLE_NATIVE_MENUBAR")
             || qgetenv("XDG_CURRENT_DESKTOP").startsWith("Unity")) {
         QApplication::setAttribute(Qt::AA_DontUseNativeMenuBar);
+    }
+
+    if (Utils::HostOsInfo::isRunningUnderRosetta()) {
+        // work around QTBUG-97085: QRegularExpression jitting is not reentrant under Rosetta
+        qputenv("QT_ENABLE_REGEXP_JIT", "0");
     }
 
 #if defined(QTC_FORCE_XCB)
@@ -627,122 +553,83 @@ int main(int argc, char **argv)
 
     // Must be done before any QSettings class is created
     QSettings::setDefaultFormat(QSettings::IniFormat);
-
-    // HiDPI variables need to be set before creating QApplication.
-    // Since we do not have a QApplication yet, we cannot rely on QApplication::applicationDirPath()
-    // though. So we set up install settings with a educated guess here, and re-setup it later.
     setupInstallSettings(options.installSettingsPath);
+    // plugin manager takes control of this settings object
+
     setHighDpiEnvironmentVariable();
 
     SharedTools::QtSingleApplication::setAttribute(Qt::AA_ShareOpenGLContexts);
 
-    int numberOfArguments = static_cast<int>(options.appArguments.size());
+    int numberofArguments = static_cast<int>(options.appArguments.size());
 
-    // create a custom Qt message handler that shows messages in a bare bones UI
-    // if creation of the QGuiApplication fails.
-    auto handler = std::make_unique<ShowInGuiHandler>();
-    std::unique_ptr<SharedTools::QtSingleApplication>
-        appPtr(SharedTools::createApplication(QLatin1String(Core::Constants::IDE_DISPLAY_NAME),
-                                              numberOfArguments, options.appArguments.data()));
-    handler.reset();
-    SharedTools::QtSingleApplication &app = *appPtr;
+    SharedTools::QtSingleApplication app((QLatin1String(Core::Constants::IDE_DISPLAY_NAME)),
+                                         numberofArguments,
+                                         options.appArguments.data());
     QCoreApplication::setApplicationName(Core::Constants::IDE_CASED_ID);
     QCoreApplication::setApplicationVersion(QLatin1String(Core::Constants::IDE_VERSION_LONG));
     QCoreApplication::setOrganizationName(QLatin1String(Core::Constants::IDE_SETTINGSVARIANT_STR));
     QGuiApplication::setApplicationDisplayName(Core::Constants::IDE_DISPLAY_NAME);
 
-    const QScopeGuard cleanup([] { Utils::Singleton::deleteAll(); });
+    auto cleanup = qScopeGuard([] { Utils::Singleton::deleteAll(); });
 
     const QStringList pluginArguments = app.arguments();
 
-    // Re-setup install settings with QApplication::applicationDirPath() available, but
-    // first read install plugin paths from original install settings, without redirection
-    setupInstallSettings(options.installSettingsPath, /*redirect=*/false);
-    const QStringList installPluginPaths = getInstallPluginPaths();
-    // Re-setup install settings for real
+    /*Initialize global settings and resetup install settings with QApplication::applicationDirPath */
     setupInstallSettings(options.installSettingsPath);
     Utils::QtcSettings *settings = createUserSettings();
-    Utils::QtcSettings *installSettings
+    Utils::QtcSettings *globalSettings
         = new Utils::QtcSettings(QSettings::IniFormat,
                                  QSettings::SystemScope,
                                  QLatin1String(Core::Constants::IDE_SETTINGSVARIANT_STR),
                                  QLatin1String(Core::Constants::IDE_CASED_ID));
-    // warn if -installsettings points to a place where no install settings are located
-    if (!options.installSettingsPath.isEmpty() && !QFileInfo::exists(installSettings->fileName())) {
-        displayError(QLatin1String("The install settings \"%1\" do not exist. The %2 option must "
-                                   "point to a path with existing settings, excluding the %3 part "
-                                   "of the path.")
-                         .arg(QDir::toNativeSeparators(installSettings->fileName()),
-                              INSTALL_SETTINGS_OPTION,
-                              Core::Constants::IDE_SETTINGSVARIANT_STR));
-    }
     Utils::TerminalCommand::setSettings(settings);
-    setPixmapCacheLimit();
     loadFonts();
 
-    if (Utils::HostOsInfo::isWindowsHost() && !hasStyleOption) {
-        // The Windows 11 default style (Qt 6.7) has major issues, therefore
-        // set the previous default style: "windowsvista"
-        // FIXME: check newer Qt Versions
-        QApplication::setStyle(QLatin1String("windowsvista"));
-
-        // On scaling different than 100% or 200% use the "fusion" style
-        qreal tmp;
-        const bool fractionalDpi = !qFuzzyIsNull(std::modf(qApp->devicePixelRatio(), &tmp));
-        if (fractionalDpi)
-            QApplication::setStyle(QLatin1String("fusion"));
+    if (Utils::HostOsInfo::isWindowsHost()
+            && !qFuzzyCompare(qApp->devicePixelRatio(), 1.0)
+            && QApplication::style()->objectName().startsWith(
+                QLatin1String("windows"), Qt::CaseInsensitive)) {
+        QApplication::setStyle(QLatin1String("fusion"));
     }
-
     const int threadCount = QThreadPool::globalInstance()->maxThreadCount();
     QThreadPool::globalInstance()->setMaxThreadCount(qMax(4, 2 * threadCount));
 
     const QString libexecPath = QCoreApplication::applicationDirPath()
             + '/' + RELATIVE_LIBEXEC_PATH;
-
+#ifdef ENABLE_QT_BREAKPAD
+    QtSystemExceptionHandler systemExceptionHandler(libexecPath);
+#else
     // Display a backtrace once a serious signal is delivered (Linux only).
     CrashHandlerSetup setupCrashHandler(Core::Constants::IDE_DISPLAY_NAME,
-                                        CrashHandlerSetup::EnableRestart,
-                                        libexecPath);
+                                        CrashHandlerSetup::EnableRestart, libexecPath);
+#endif
 
 #ifdef ENABLE_CRASHPAD
     bool crashReportingEnabled = settings->value("CrashReportingEnabled", false).toBool();
     startCrashpad(libexecPath, crashReportingEnabled);
 #endif
 
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    app.setAttribute(Qt::AA_UseHighDpiPixmaps);
+    app.setAttribute(Qt::AA_DisableWindowContextHelpButton);
+#endif
+
     PluginManager pluginManager;
     PluginManager::setPluginIID(QLatin1String("org.qt-project.Qt.QtCreatorPlugin"));
-    PluginManager::setInstallSettings(installSettings);
+    PluginManager::setGlobalSettings(globalSettings);
     PluginManager::setSettings(settings);
-    PluginManager::startProfiling();
-
-    Utils::BaseAspect::setQtcSettings(settings);
-
-    using namespace Core;
-    Utils::AppInfo info;
-    info.author = Constants::IDE_AUTHOR;
-    info.year = Constants::IDE_YEAR;
-    info.displayVersion = Constants::IDE_VERSION_DISPLAY;
-    info.id = Constants::IDE_ID;
-    info.revision = Constants::IDE_REVISION_STR;
-    info.revisionUrl = Constants::IDE_REVISION_URL;
-    info.userFileExtension = Constants::IDE_PROJECT_USER_FILE_EXTENSION;
-    Utils::Internal::setAppInfo(info);
 
     QTranslator translator;
     QTranslator qtTranslator;
     QStringList uiLanguages = QLocale::system().uiLanguages();
-    const QString overrideLanguage = options.hasTestOption
-                                         ? QString("C") // force built-in when running tests
-                                         : settings->value("General/OverrideLanguage").toString();
+    QString overrideLanguage = settings->value(QLatin1String("General/OverrideLanguage")).toString();
     if (!overrideLanguage.isEmpty())
         uiLanguages.prepend(overrideLanguage);
-    if (!options.uiLanguage.isEmpty())
-        uiLanguages.prepend(options.uiLanguage);
     const QString &creatorTrPath = resourcePath() + "/translations";
-    for (QString locale : std::as_const(uiLanguages)) {
+    for (QString locale : qAsConst(uiLanguages)) {
         locale = QLocale(locale).name();
         if (translator.load("qtcreator_" + locale, creatorTrPath)) {
-            const QString &qtTrPath = QLibraryInfo::path(QLibraryInfo::TranslationsPath);
+            const QString &qtTrPath = QLibraryInfo::location(QLibraryInfo::TranslationsPath);
             const QString &qtTrFile = QLatin1String("qt_") + locale;
             // Binary installer puts Qt tr files into creatorTrPath
             if (qtTranslator.load(qtTrFile, qtTrPath) || qtTranslator.load(qtTrFile, creatorTrPath)) {
@@ -765,15 +652,14 @@ int main(int argc, char **argv)
     if (!overrideCodecForLocale.isEmpty())
         QTextCodec::setCodecForLocale(QTextCodec::codecForName(overrideCodecForLocale));
 
-    app.setDesktopFileName("org.qt-project.qtcreator");
+    app.setDesktopFileName("org.qt-project.qtcreator.desktop");
 
     // Make sure we honor the system's proxy settings
     QNetworkProxyFactory::setUseSystemConfiguration(true);
 
     // Load
-    const QStringList pluginPaths = getPluginPaths() + installPluginPaths
-                                    + options.customPluginPaths;
-    PluginManager::setPluginPaths(Utils::transform(pluginPaths, &Utils::FilePath::fromUserInput));
+    const QStringList pluginPaths = getPluginPaths() + options.customPluginPaths;
+    PluginManager::setPluginPaths(pluginPaths);
     QMap<QString, QString> foundAppOptions;
     if (pluginArguments.size() > 1) {
         QMap<QString, bool> appOptions;
@@ -782,7 +668,6 @@ int main(int argc, char **argv)
         appOptions.insert(QLatin1String(HELP_OPTION3), false);
         appOptions.insert(QLatin1String(HELP_OPTION4), false);
         appOptions.insert(QLatin1String(VERSION_OPTION), false);
-        appOptions.insert(QLatin1String(VERSION_OPTION2), false);
         appOptions.insert(QLatin1String(CLIENT_OPTION), false);
         appOptions.insert(QLatin1String(PID_OPTION), true);
         appOptions.insert(QLatin1String(BLOCK_OPTION), false);
@@ -803,7 +688,7 @@ int main(int argc, char **argv)
             settingspath};
     PluginManager::setCreatorProcessData(processData);
 
-    const PluginSpecs plugins = PluginManager::plugins();
+    const PluginSpecSet plugins = PluginManager::plugins();
     PluginSpec *coreplugin = nullptr;
     for (PluginSpec *spec : plugins) {
         if (spec->name() == QLatin1String(corePluginNameC)) {
@@ -826,8 +711,7 @@ int main(int argc, char **argv)
         displayError(msgCoreLoadFailure(coreplugin->errorString()));
         return 1;
     }
-    if (foundAppOptions.contains(QLatin1String(VERSION_OPTION))
-            || foundAppOptions.contains(QLatin1String(VERSION_OPTION2))) {
+    if (foundAppOptions.contains(QLatin1String(VERSION_OPTION))) {
         printVersion(coreplugin);
         return 0;
     }
@@ -888,6 +772,33 @@ int main(int argc, char **argv)
 
     // shutdown plugin manager on the exit
     QObject::connect(&app, &QCoreApplication::aboutToQuit, &pluginManager, &PluginManager::shutdown);
+
+#ifdef Q_OS_LINUX
+    class MemoryTrimmer : public QObject
+    {
+    public:
+        MemoryTrimmer()
+        {
+            m_trimTimer.setSingleShot(true);
+            m_trimTimer.setInterval(60000);
+            // glibc may not actually free memory in free().
+            connect(&m_trimTimer, &QTimer::timeout, this, [] { malloc_trim(0); });
+        }
+
+        bool eventFilter(QObject *, QEvent *e) override
+        {
+            if ((e->type() == QEvent::MouseButtonPress || e->type() == QEvent::KeyPress)
+                    && !m_trimTimer.isActive()) {
+                m_trimTimer.start();
+            }
+            return false;
+        }
+
+        QTimer m_trimTimer;
+    };
+    MemoryTrimmer trimmer;
+    app.installEventFilter(&trimmer);
+#endif
 
     return restarter.restartOrExit(app.exec());
 }

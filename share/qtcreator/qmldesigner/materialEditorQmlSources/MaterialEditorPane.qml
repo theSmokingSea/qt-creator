@@ -1,14 +1,34 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import HelperWidgets
+import QtQuick 2.15
+import QtQuickDesignerTheme 1.0
+import HelperWidgets 2.0
 
-Item {
-    id: root
-
-    width: 420
-    height: 420
+PropertyEditorPane {
+    id: itemPane
 
     signal toolBarAction(int action)
     signal previewEnvChanged(string env)
@@ -17,75 +37,62 @@ Item {
     // invoked from C++ to refresh material preview image
     function refreshPreview()
     {
-        itemPane.headerItem.refreshPreview()
+        topSection.refreshPreview()
     }
 
-    // Called from C++ to close context menu on focus out
+    // Called also from C++ to close context menu on focus out
     function closeContextMenu()
     {
-        itemPane.headerItem.closeContextMenu()
-        Controller.closeContextMenu()
+        topSection.closeContextMenu()
     }
 
     // Called from C++ to initialize preview menu checkmarks
     function initPreviewData(env, model)
     {
-        itemPane.headerItem.previewEnv = env
-        itemPane.headerItem.previewModel = model
+        topSection.previewEnv = env;
+        topSection.previewModel = model
     }
 
-    MaterialEditorToolBar {
-        id: toolbar
+    MaterialEditorTopSection {
+        id: topSection
 
-        width: parent.width
-
-        onToolBarAction: (action) => root.toolBarAction(action)
+        onToolBarAction: (action) => itemPane.toolBarAction(action)
+        onPreviewEnvChanged: itemPane.previewEnvChanged(previewEnv)
+        onPreviewModelChanged: itemPane.previewModelChanged(previewModel)
     }
 
-    PropertyEditorPane {
-        id: itemPane
+    Item { width: 1; height: 10 }
 
-        anchors.top: toolbar.bottom
-        anchors.bottom: parent.bottom
-        width: parent.width
+    DynamicPropertiesSection {
+        propertiesModel: MaterialEditorDynamicPropertiesModel {}
+    }
 
-        clip: true
+    Loader {
+        id: specificsTwo
 
-        headerComponent: MaterialEditorTopSection {
-            onPreviewEnvChanged: root.previewEnvChanged(previewEnv)
-            onPreviewModelChanged: root.previewModelChanged(previewModel)
+        property string theSource: specificQmlData
+
+        anchors.left: parent.left
+        anchors.right: parent.right
+        visible: theSource !== ""
+        sourceComponent: specificQmlComponent
+
+        onTheSourceChanged: {
+            active = false
+            active = true
         }
+    }
 
-        DynamicPropertiesSection {
-            propertiesModel: MaterialEditorDynamicPropertiesModel {}
-        }
+    Item {
+        width: 1
+        height: 10
+        visible: specificsTwo.visible
+    }
 
-        Loader {
-            id: specificsTwo
-
-            property string theSource: specificQmlData
-
-            width: parent.width
-            visible: specificsTwo.theSource !== ""
-            sourceComponent: specificQmlComponent
-
-            onTheSourceChanged: {
-                specificsTwo.active = false
-                specificsTwo.active = true
-            }
-        }
-
-        Item { // spacer
-            width: 1
-            height: 10
-            visible: specificsTwo.visible
-        }
-
-        Loader {
-            id: specificsOne
-            anchors.left: parent.left
-            anchors.right: parent.right
-            source: specificsUrl
-        }
+    Loader {
+        id: specificsOne
+        anchors.left: parent.left
+        anchors.right: parent.right
+        source: specificsUrl
     }
 }

@@ -1,25 +1,51 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "qmakeprojectmanager_global.h"
 
 #include <projectexplorer/abstractprocessstep.h>
-#include <projectexplorer/runconfigurationaspects.h>
 
 #include <utils/aspects.h>
 #include <utils/commandline.h>
-#include <utils/guard.h>
 
-#include <QDebug>
+#include <memory>
 
 QT_BEGIN_NAMESPACE
+class QComboBox;
 class QLabel;
+class QLineEdit;
+class QPlainTextEdit;
 class QListWidget;
 QT_END_NAMESPACE
 
-namespace ProjectExplorer { class Abi; }
+namespace ProjectExplorer {
+class Abi;
+class ArgumentsAspect;
+} // namespace ProjectExplorer
 
 namespace QtSupport { class QtVersion; }
 
@@ -40,33 +66,42 @@ public:
 class QMAKEPROJECTMANAGER_EXPORT QMakeStepConfig
 {
 public:
+    // TODO remove, does nothing
+    enum TargetArchConfig { NoArch, X86, X86_64, PowerPC, PowerPC64 };
+
     enum OsType { NoOsType, IphoneSimulator, IphoneOS };
 
+    // TODO remove, does nothing
+    static TargetArchConfig targetArchFor(const ProjectExplorer::Abi &targetAbi,
+                                          const QtSupport::QtVersion *version);
     static OsType osTypeFor(const ProjectExplorer::Abi &targetAbi, const QtSupport::QtVersion *version);
 
     QStringList toArguments() const;
 
     friend bool operator==(const QMakeStepConfig &a, const QMakeStepConfig &b)
     {
-        return a.osType == b.osType
-            && a.linkQmlDebuggingQQ2 == b.linkQmlDebuggingQQ2
-            && a.useQtQuickCompiler == b.useQtQuickCompiler
-            && a.separateDebugInfo == b.separateDebugInfo;
+        return std::tie(a.archConfig, a.osType, a.linkQmlDebuggingQQ2)
+                == std::tie(b.archConfig, b.osType, b.linkQmlDebuggingQQ2)
+                && std::tie(a.useQtQuickCompiler, a.separateDebugInfo)
+                == std::tie(b.useQtQuickCompiler, b.separateDebugInfo);
     }
 
     friend bool operator!=(const QMakeStepConfig &a, const QMakeStepConfig &b) { return !(a == b); }
 
     friend QDebug operator<<(QDebug dbg, const QMakeStepConfig &c)
     {
-        dbg << c.osType
+        dbg << c.archConfig << c.osType
             << (c.linkQmlDebuggingQQ2 == Utils::TriState::Enabled)
             << (c.useQtQuickCompiler == Utils::TriState::Enabled)
             << (c.separateDebugInfo == Utils::TriState::Enabled);
         return dbg;
     }
 
+    // Actual data
     QString sysRoot;
     QString targetTriple;
+    // TODO remove, does nothing
+    TargetArchConfig archConfig = NoArch;
     OsType osType = NoOsType;
     Utils::TriState separateDebugInfo;
     Utils::TriState linkQmlDebuggingQQ2;
@@ -85,10 +120,12 @@ public:
     QmakeBuildSystem *qmakeBuildSystem() const;
     bool init() override;
     void setupOutputFormatter(Utils::OutputFormatter *formatter) override;
+    void doRun() override;
     QWidget *createConfigWidget() override;
     void setForced(bool b);
 
     enum class ArgumentFlag {
+        OmitProjectPath = 0x01,
         Expand = 0x02
     };
     Q_DECLARE_FLAGS(ArgumentFlags, ArgumentFlag);
@@ -99,7 +136,9 @@ public:
     QMakeStepConfig deducedArguments() const;
     // arguments passed to the pro file parser
     QStringList parserArguments();
-
+    // arguments set by the user
+    QString userArguments() const;
+    void setUserArguments(const QString &arguments);
     // Extra arguments for qmake and pro file parser. Not user editable via UI.
     QStringList extraArguments() const;
     void setExtraArguments(const QStringList &args);
@@ -113,17 +152,20 @@ public:
     QString makeArguments(const QString &makefile) const;
     QString effectiveQMakeCall() const;
 
-    void toMap(Utils::Store &map) const override;
-
-    Utils::SelectionAspect buildType{this};
-    ProjectExplorer::ArgumentsAspect userArguments{this};
-    Utils::StringAspect effectiveCall{this};
+    QVariantMap toMap() const override;
 
 protected:
-    void fromMap(const Utils::Store &map) override;
+    bool fromMap(const QVariantMap &map) override;
+    void processStartupFailed() override;
+    bool processSucceeded(int exitCode, QProcess::ExitStatus status) override;
 
 private:
-    Tasking::GroupItem runRecipe() final;
+    void doCancel() override;
+    void finish(bool success) override;
+
+    void startOneCommand(const Utils::CommandLine &command);
+    void runNextCommand();
+
     // slots for handling buildconfiguration/step signals
     void qtVersionChanged();
     void qmakeBuildConfigChanged();
@@ -144,13 +186,16 @@ private:
 
     Utils::CommandLine m_qmakeCommand;
     Utils::CommandLine m_makeCommand;
-
+    ProjectExplorer::ArgumentsAspect *m_userArgs = nullptr;
     // Extra arguments for qmake and pro file parser
     QStringList m_extraArgs;
     // Extra arguments for pro file parser only
     QStringList m_extraParserArgs;
 
     // last values
+    enum class State { IDLE = 0, RUN_QMAKE, RUN_MAKE_QMAKE_ALL, POST_PROCESS };
+    bool m_wasSuccess = true;
+    State m_nextState = State::IDLE;
     bool m_forced = false;
     bool m_needToRunQMake = false; // set in init(), read in run()
 
@@ -159,9 +204,11 @@ private:
     QStringList m_selectedAbis;
     Utils::OutputFormatter *m_outputFormatter = nullptr;
 
-    Utils::Guard m_ignoreChanges;
+    bool m_ignoreChange = false;
 
     QLabel *abisLabel = nullptr;
+    Utils::SelectionAspect *m_buildType = nullptr;
+    Utils::StringAspect *m_effectiveCall = nullptr;
     QListWidget *abisListWidget = nullptr;
 };
 

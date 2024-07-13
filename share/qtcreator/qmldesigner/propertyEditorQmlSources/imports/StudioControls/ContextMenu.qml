@@ -1,75 +1,91 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
+import QtQuick 2.15
 
 Menu {
-    id: control
+    id: contextMenu
 
-    required property Item __parentControl // TextInput or TextEdit
+    property Item myTextEdit
 
     MenuItem {
-        style: control.style
-        text: qsTr("Undo")
-        enabled: control.__parentControl.canUndo
-        onTriggered: control.__parentControl.undo()
+        text: "Undo"
+        enabled: myTextEdit.canUndo
+        onTriggered: myTextEdit.undo()
         /* shortcut: StandardKey.Undo Shortcuts in QQC2 seem to override global shortcuts */
     }
     MenuItem {
-        style: control.style
-        text: qsTr("Redo")
-        enabled: control.__parentControl.canRedo
-        onTriggered: control.__parentControl.redo()
+        text: "Redo"
+        enabled: myTextEdit.canRedo
+        onTriggered: myTextEdit.redo()
         /* shortcut: StandardKey.Redo Shortcuts in QQC2 seem to override global shortcuts */
     }
 
-    MenuSeparator { style: control.style }
+    MenuSeparator {
+    }
 
     MenuItem {
-        style: control.style
-        text: qsTr("Copy")
-        enabled: control.__parentControl.selectedText !== ""
-        onTriggered: control.__parentControl.copy()
+        text: "Copy"
+        enabled: myTextEdit.selectedText !== ""
+        onTriggered: myTextEdit.copy()
         /* shortcut: StandardKey.Copy Shortcuts in QQC2 seem to override global shortcuts */
     }
     MenuItem {
-        style: control.style
-        text: qsTr("Cut")
-        enabled: control.__parentControl.selectedText !== "" && !control.__parentControl.readOnly
-        onTriggered: control.__parentControl.cut()
+        text: "Cut"
+        enabled: myTextEdit.selectedText !== "" && !myTextEdit.readOnly
+        onTriggered: myTextEdit.cut()
         /* shortcut: StandardKey.Cut Shortcuts in QQC2 seem to override global shortcuts */
     }
     MenuItem {
-        style: control.style
-        text: qsTr("Paste")
-        enabled: control.__parentControl.canPaste
-        onTriggered: control.__parentControl.paste()
+        text: "Paste"
+        enabled: myTextEdit.canPaste
+        onTriggered: myTextEdit.paste()
         /* shortcut: StandardKey.Paste Shortcuts in QQC2 seem to override global shortcuts */
     }
     MenuItem {
-        style: control.style
-        text: qsTr("Delete")
-        enabled: control.__parentControl.selectedText !== ""
-        onTriggered: control.__parentControl.remove(control.__parentControl.selectionStart,
-                                                    control.__parentControl.selectionEnd)
+        text: "Delete"
+        enabled: myTextEdit.selectedText !== ""
+        onTriggered: myTextEdit.remove(myTextEdit.selectionStart,
+                                       myTextEdit.selectionEnd)
         /* shortcut: StandardKey.Delete Shortcuts in QQC2 seem to override global shortcuts */
     }
     MenuItem {
-        style: control.style
-        text: qsTr("Clear")
-        enabled: control.__parentControl.text !== ""
-        onTriggered: control.__parentControl.clear()
+        text: "Clear"
+        enabled: myTextEdit.text !== ""
+        onTriggered: myTextEdit.clear()
         /* shortcut: StandardKey.DeleteCompleteLine  Shortcuts in QQC2 seem to override global shortcuts */
     }
 
-    MenuSeparator { style: control.style }
+    MenuSeparator {
+    }
 
     MenuItem {
-        style: control.style
-        text: qsTr("Select All")
-        enabled: control.__parentControl.text !== ""
-                 && control.__parentControl.selectedText !== control.__parentControl.text
-        onTriggered: control.__parentControl.selectAll()
+        text: "Select All"
+        enabled: myTextEdit.text !== ""
+                 && myTextEdit.selectedText !== myTextEdit.text
+        onTriggered: myTextEdit.selectAll()
         /* shortcut: StandardKey.SelectAll Shortcuts in QQC2 seem to override global shortcuts */
     }
 }

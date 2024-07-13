@@ -1,20 +1,38 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "searchresulttreemodel.h"
 #include "searchresulttreeitems.h"
 #include "searchresulttreeitemroles.h"
-#include "../icore.h"
 
 #include <utils/algorithm.h>
-#include <utils/searchresultitem.h>
 
 #include <QApplication>
 #include <QFont>
 #include <QFontMetrics>
 #include <QDebug>
-
-using namespace Utils;
 
 namespace Core {
 namespace Internal {
@@ -28,7 +46,6 @@ public:
     ~SearchResultTreeModel() override;
 
     void setShowReplaceUI(bool show);
-    void setRelativePaths(bool relative);
     void setTextEditorFont(const QFont &font, const SearchResultColors &colors);
 
     Qt::ItemFlags flags(const QModelIndex &index) const override;
@@ -43,7 +60,7 @@ public:
     QModelIndex next(const QModelIndex &idx, bool includeGenerated = false, bool *wrapped = nullptr) const;
     QModelIndex prev(const QModelIndex &idx, bool includeGenerated = false, bool *wrapped = nullptr) const;
 
-    QList<QModelIndex> addResults(const SearchResultItems &items, SearchResult::AddMode mode);
+    QList<QModelIndex> addResults(const QList<SearchResultItem> &items, SearchResult::AddMode mode);
 
     static SearchResultTreeItem *treeItemAtIndex(const QModelIndex &idx);
 
@@ -56,7 +73,7 @@ public slots:
 
 private:
     QModelIndex index(SearchResultTreeItem *item) const;
-    void addResultsToCurrentParent(const SearchResultItems &items, SearchResult::AddMode mode);
+    void addResultsToCurrentParent(const QList<SearchResultItem> &items, SearchResult::AddMode mode);
     QSet<SearchResultTreeItem *> addPath(const QStringList &path);
     QVariant data(const SearchResultTreeItem *row, int role) const;
     bool setCheckState(const QModelIndex &idx, Qt::CheckState checkState, bool firstCall = true);
@@ -71,7 +88,6 @@ private:
     QStringList m_currentPath; // the path that belongs to the current parent
     QFont m_textEditorFont;
     bool m_showReplaceUI;
-    bool m_relativePaths;
     bool m_editorFontIsUsed;
 };
 
@@ -79,7 +95,6 @@ SearchResultTreeModel::SearchResultTreeModel(QObject *parent)
     : QAbstractItemModel(parent)
     , m_currentParent(nullptr)
     , m_showReplaceUI(false)
-    , m_relativePaths(false)
     , m_editorFontIsUsed(false)
 {
     m_rootItem = new SearchResultTreeItem;
@@ -108,12 +123,6 @@ void SearchResultTreeModel::setShowReplaceUI(bool show)
                 changeQueue.append(index(r, 0, current));
         }
     }
-}
-
-void SearchResultTreeModel::setRelativePaths(bool relative)
-{
-    m_relativePaths = relative;
-    emit dataChanged(index(0, 0), index(rowCount() - 1, 0));
 }
 
 void SearchResultTreeModel::setTextEditorFont(const QFont &font, const SearchResultColors &colors)
@@ -305,14 +314,8 @@ QVariant SearchResultTreeModel::data(const SearchResultTreeItem *row, int role) 
         result = m_colors.value(row->item.style()).textBackground;
         break;
     case ItemDataRoles::ResultLineRole:
-        result = row->item.lineText();
-        break;
     case Qt::DisplayRole:
-        if (m_relativePaths && row->isGenerated()) {
-            result = ICore::pathRelativeToActiveProject(FilePath::fromUserInput(row->item.lineText())).toUserOutput();
-        } else {
-            result = row->item.lineText();
-        }
+        result = row->item.lineText();
         break;
     case ItemDataRoles::ResultItemRole:
         result = QVariant::fromValue(row->item);
@@ -338,13 +341,9 @@ QVariant SearchResultTreeModel::data(const SearchResultTreeItem *row, int role) 
     case ItemDataRoles::ResultBeginColumnNumberRole:
         result = row->item.mainRange().begin.column;
         break;
-    case ItemDataRoles::SearchTermLengthRole:{
-        Text::Range range = row->item.mainRange();
-        range.end.line -= range.begin.line - 1;
-        range.begin.line = 1;
-        result = range.length(row->item.lineText());
+    case ItemDataRoles::SearchTermLengthRole:
+        result = row->item.mainRange().length(row->item.lineText());
         break;
-    }
     case ItemDataRoles::ContainingFunctionNameRole:
         result = row->item.containingFunctionName().value_or(QString{});
         break;
@@ -405,8 +404,7 @@ QSet<SearchResultTreeItem *> SearchResultTreeModel::addPath(const QStringList &p
     return pathNodes;
 }
 
-void SearchResultTreeModel::addResultsToCurrentParent(const SearchResultItems &items,
-                                                      SearchResult::AddMode mode)
+void SearchResultTreeModel::addResultsToCurrentParent(const QList<SearchResultItem> &items, SearchResult::AddMode mode)
 {
     if (!m_currentParent)
         return;
@@ -418,10 +416,10 @@ void SearchResultTreeModel::addResultsToCurrentParent(const SearchResultItems &i
             m_currentParent->appendChild(item);
         }
         endInsertRows();
-    } else {
+    } else if (mode == SearchResult::AddSorted) {
         for (const SearchResultItem &item : items) {
             SearchResultTreeItem *existingItem;
-            const int insertionIndex = m_currentParent->insertionIndex(item, &existingItem, mode);
+            const int insertionIndex = m_currentParent->insertionIndex(item, &existingItem);
             if (existingItem) {
                 existingItem->setGenerated(false);
                 existingItem->item = item;
@@ -457,12 +455,12 @@ static bool lessThanByPath(const SearchResultItem &a, const SearchResultItem &b)
  * Adds the search result to the list of results, creating nodes for the path when
  * necessary.
  */
-QList<QModelIndex> SearchResultTreeModel::addResults(const SearchResultItems &items, SearchResult::AddMode mode)
+QList<QModelIndex> SearchResultTreeModel::addResults(const QList<SearchResultItem> &items, SearchResult::AddMode mode)
 {
     QSet<SearchResultTreeItem *> pathNodes;
-    SearchResultItems sortedItems = items;
+    QList<SearchResultItem> sortedItems = items;
     std::stable_sort(sortedItems.begin(), sortedItems.end(), lessThanByPath);
-    SearchResultItems itemSet;
+    QList<SearchResultItem> itemSet;
     for (const SearchResultItem &item : sortedItems) {
         m_editorFontIsUsed |= item.useTextEditorFont();
         if (!m_currentParent || (m_currentPath != item.path())) {
@@ -481,7 +479,7 @@ QList<QModelIndex> SearchResultTreeModel::addResults(const SearchResultItems &it
         itemSet.clear();
     }
     QList<QModelIndex> pathIndices;
-    for (SearchResultTreeItem *item : std::as_const(pathNodes))
+    for (SearchResultTreeItem *item : qAsConst(pathNodes))
         pathIndices << index(item);
     return pathIndices;
 }
@@ -596,17 +594,12 @@ void SearchResultFilterModel::setShowReplaceUI(bool show)
     sourceModel()->setShowReplaceUI(show);
 }
 
-void SearchResultFilterModel::setRelativePaths(bool relative)
-{
-    sourceModel()->setRelativePaths(relative);
-}
-
 void SearchResultFilterModel::setTextEditorFont(const QFont &font, const SearchResultColors &colors)
 {
     sourceModel()->setTextEditorFont(font, colors);
 }
 
-QList<QModelIndex> SearchResultFilterModel::addResults(const SearchResultItems &items,
+QList<QModelIndex> SearchResultFilterModel::addResults(const QList<SearchResultItem> &items,
                                                        SearchResult::AddMode mode)
 {
     QList<QModelIndex> sourceIndexes = sourceModel()->addResults(items, mode);

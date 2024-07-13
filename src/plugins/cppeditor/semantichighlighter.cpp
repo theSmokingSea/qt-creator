@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "semantichighlighter.h"
 
@@ -27,6 +49,69 @@ namespace CppEditor {
 
 static Utils::Id parenSource() { return "CppEditor"; }
 
+static const QList<std::pair<HighlightingResult, QTextBlock>>
+splitRawStringLiteral(const HighlightingResult &result, const QTextBlock &startBlock)
+{
+    if (result.textStyles.mainStyle != C_STRING)
+        return {{result, startBlock}};
+
+    QTextCursor cursor(startBlock);
+    cursor.setPosition(cursor.position() + result.column - 1);
+    cursor.setPosition(cursor.position() + result.length, QTextCursor::KeepAnchor);
+    const QString theString = cursor.selectedText();
+
+    // Find all the components of a raw string literal. If we don't succeed, then it's
+    // something else.
+    if (!theString.endsWith('"'))
+        return {{result, startBlock}};
+    int rOffset = -1;
+    if (theString.startsWith("R\"")) {
+        rOffset = 0;
+    } else if (theString.startsWith("LR\"")
+               || theString.startsWith("uR\"")
+               || theString.startsWith("UR\"")) {
+        rOffset = 1;
+    } else if (theString.startsWith("u8R\"")) {
+        rOffset = 2;
+    }
+    if (rOffset == -1)
+        return {{result, startBlock}};
+    const int delimiterOffset = rOffset + 2;
+    const int openParenOffset = theString.indexOf('(', delimiterOffset);
+    if (openParenOffset == -1)
+        return {{result, startBlock}};
+    const QStringView delimiter = theString.mid(delimiterOffset, openParenOffset - delimiterOffset);
+    const int endDelimiterOffset = theString.length() - 1 - delimiter.length();
+    if (theString.mid(endDelimiterOffset, delimiter.length()) != delimiter)
+        return {{result, startBlock}};
+    if (theString.at(endDelimiterOffset - 1) != ')')
+        return {{result, startBlock}};
+
+    // Now split the result. For clarity, we display only the actual content as a string,
+    // and the rest (including the delimiter) as a keyword.
+    HighlightingResult prefix = result;
+    prefix.textStyles.mainStyle = C_KEYWORD;
+    prefix.textStyles.mixinStyles = {};
+    prefix.length = delimiterOffset + delimiter.length() + 1;
+    cursor.setPosition(startBlock.position() + result.column - 1 + prefix.length);
+    QTextBlock stringBlock = cursor.block();
+    HighlightingResult actualString = result;
+    actualString.line = stringBlock.blockNumber() + 1;
+    actualString.column = cursor.positionInBlock() + 1;
+    actualString.length = endDelimiterOffset - openParenOffset - 2;
+    cursor.setPosition(cursor.position() + actualString.length);
+    QTextBlock suffixBlock = cursor.block();
+    HighlightingResult suffix = result;
+    suffix.textStyles.mainStyle = C_KEYWORD;
+    suffix.textStyles.mixinStyles = {};
+    suffix.line = suffixBlock.blockNumber() + 1;
+    suffix.column = cursor.positionInBlock() + 1;
+    suffix.length = delimiter.length() + 2;
+    QTC_CHECK(prefix.length + actualString.length + suffix.length == result.length);
+
+    return {{prefix, startBlock}, {actualString, stringBlock}, {suffix, suffixBlock}};
+}
+
 SemanticHighlighter::SemanticHighlighter(TextDocument *baseTextDocument)
     : QObject(baseTextDocument)
     , m_baseTextDocument(baseTextDocument)
@@ -35,7 +120,14 @@ SemanticHighlighter::SemanticHighlighter(TextDocument *baseTextDocument)
     updateFormatMapFromFontSettings();
 }
 
-SemanticHighlighter::~SemanticHighlighter() = default;
+SemanticHighlighter::~SemanticHighlighter()
+{
+    if (m_watcher) {
+        disconnectWatcher();
+        m_watcher->cancel();
+        m_watcher->waitForFinished();
+    }
+}
 
 void SemanticHighlighter::setHighlightingRunner(HighlightingRunner highlightingRunner)
 {
@@ -48,34 +140,23 @@ void SemanticHighlighter::run()
 
     qCDebug(log) << "SemanticHighlighter: run()";
 
-    if (m_watcher)
+    if (m_watcher) {
+        disconnectWatcher();
         m_watcher->cancel();
+    }
     m_watcher.reset(new QFutureWatcher<HighlightingResult>);
-    connect(m_watcher.get(), &QFutureWatcherBase::resultsReadyAt,
-            this, &SemanticHighlighter::onHighlighterResultAvailable);
-    connect(m_watcher.get(), &QFutureWatcherBase::finished,
-            this, &SemanticHighlighter::onHighlighterFinished);
+    connectWatcher();
 
     m_revision = documentRevision();
-    m_seenBlocks.clear();
-    m_nextResultToHandle = m_resultCount = 0;
     qCDebug(log) << "starting runner for document revision" << m_revision;
     m_watcher->setFuture(m_highlightingRunner());
-    m_futureSynchronizer.addFuture(m_watcher->future());
 }
 
-Parentheses SemanticHighlighter::getClearedParentheses(const QTextBlock &block)
+static Parentheses getClearedParentheses(const QTextBlock &block)
 {
-    Parentheses parens;
-    if (TextBlockUserData *userData = TextDocumentLayout::textUserData(block))
-        parens = userData->parentheses();
-    if (m_seenBlocks.insert(block.blockNumber()).second) {
-        parens = Utils::filtered(parens, [](const Parenthesis &p) {
-            return p.source != parenSource();
-        });
-    }
-
-    return parens;
+    return Utils::filtered(TextDocumentLayout::parentheses(block), [](const Parenthesis &p) {
+        return p.source != parenSource();
+    });
 }
 
 void SemanticHighlighter::onHighlighterResultAvailable(int from, int to)
@@ -91,27 +172,13 @@ void SemanticHighlighter::onHighlighterResultAvailable(int from, int to)
         return;
     }
 
-    QTC_CHECK(from == m_resultCount);
-    m_resultCount = to;
-    if (to - m_nextResultToHandle >= 100) {
-        handleHighlighterResults();
-        m_nextResultToHandle = to;
-    }
-}
-
-void SemanticHighlighter::handleHighlighterResults()
-{
-    int from = m_nextResultToHandle;
-    const int to = m_resultCount;
-    if (from >= to)
-        return;
-
     QElapsedTimer t;
     t.start();
 
     SyntaxHighlighter *highlighter = m_baseTextDocument->syntaxHighlighter();
     QTC_ASSERT(highlighter, return);
-    incrementalApplyExtraAdditionalFormats(highlighter, m_watcher->future(), from, to, m_formatMap);
+    incrementalApplyExtraAdditionalFormats(highlighter, m_watcher->future(), from, to, m_formatMap,
+                                           &splitRawStringLiteral);
 
     // In addition to the paren matching that the syntactic highlighter does
     // (parentheses, braces, brackets, comments), here we inject info from the code model
@@ -131,12 +198,6 @@ void SemanticHighlighter::handleHighlighterResults()
                     ->findBlock(endRange);
             const QTextBlock endBlock = lastBlockForResult.next();
             for (QTextBlock block = firstBlockForResult; block != endBlock; block = block.next()) {
-                QTC_ASSERT(block.isValid(),
-                           qDebug() << from << to << i << result.line << result.column
-                           << result.kind << result.textStyles.mainStyle
-                           << firstBlockForResult.blockNumber() << firstBlockForResult.position()
-                           << lastBlockForResult.blockNumber() << lastBlockForResult.position();
-                        break);
                 Parentheses syntacticParens = getClearedParentheses(block);
 
                 // Remove mis-detected parentheses inserted by syntactic highlighter.
@@ -191,8 +252,6 @@ void SemanticHighlighter::onHighlighterFinished()
 {
     QTC_ASSERT(m_watcher, return);
 
-    handleHighlighterResults();
-
     QElapsedTimer t;
     t.start();
 
@@ -229,8 +288,26 @@ void SemanticHighlighter::onHighlighterFinished()
         TextDocumentLayout::setParentheses(currentBlock, getClearedParentheses(currentBlock));
     }
 
-    m_watcher.release()->deleteLater();
+    m_watcher.reset();
     qCDebug(log) << "onHighlighterFinished() took" << t.elapsed() << "ms";
+}
+
+void SemanticHighlighter::connectWatcher()
+{
+    using Watcher = QFutureWatcher<HighlightingResult>;
+    connect(m_watcher.data(), &Watcher::resultsReadyAt,
+            this, &SemanticHighlighter::onHighlighterResultAvailable);
+    connect(m_watcher.data(), &Watcher::finished,
+            this, &SemanticHighlighter::onHighlighterFinished);
+}
+
+void SemanticHighlighter::disconnectWatcher()
+{
+    using Watcher = QFutureWatcher<HighlightingResult>;
+    disconnect(m_watcher.data(), &Watcher::resultsReadyAt,
+               this, &SemanticHighlighter::onHighlighterResultAvailable);
+    disconnect(m_watcher.data(), &Watcher::finished,
+               this, &SemanticHighlighter::onHighlighterFinished);
 }
 
 unsigned SemanticHighlighter::documentRevision() const

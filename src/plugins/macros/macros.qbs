@@ -10,6 +10,8 @@ QtcPlugin {
     Depends { name: "Core" }
     Depends { name: "TextEditor" }
 
+    Depends { name: "app_version_header" }
+
     files: [
         "actionmacrohandler.cpp",
         "actionmacrohandler.h",
@@ -27,12 +29,18 @@ QtcPlugin {
         "macromanager.h",
         "macrooptionspage.cpp",
         "macrooptionspage.h",
+        "macrooptionswidget.cpp",
+        "macrooptionswidget.h",
+        "macrooptionswidget.ui",
         "macros.qrc",
         "macrosconstants.h",
         "macrosplugin.cpp",
-        "macrostr.h",
+        "macrosplugin.h",
         "macrotextfind.cpp",
         "macrotextfind.h",
+        "savedialog.cpp",
+        "savedialog.h",
+        "savedialog.ui",
         "texteditormacrohandler.cpp",
         "texteditormacrohandler.h",
     ]

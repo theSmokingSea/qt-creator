@@ -1,12 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "hostosinfo.h"
 
-#include "filepath.h"
-#include "utilstr.h"
-
-#include <QDir>
+#include <QCoreApplication>
 
 #if !defined(QT_NO_OPENGL) && defined(QT_GUI_LIB)
 #include <QOpenGLContext>
@@ -24,16 +43,41 @@
 #include <sys/sysctl.h>
 #endif
 
-namespace Utils {
+using namespace Utils;
 
 Qt::CaseSensitivity HostOsInfo::m_overrideFileNameCaseSensitivity = Qt::CaseSensitive;
 bool HostOsInfo::m_useOverrideFileNameCaseSensitivity = false;
 
-OsArch HostOsInfo::hostArchitecture()
+#ifdef Q_OS_WIN
+static WORD hostProcessorArchitecture()
 {
-    static const OsArch arch
-        = osArchFromString(QSysInfo::currentCpuArchitecture()).value_or(OsArchUnknown);
-    return arch;
+    SYSTEM_INFO info;
+    GetNativeSystemInfo(&info);
+    return info.wProcessorArchitecture;
+}
+#endif
+
+HostOsInfo::HostArchitecture HostOsInfo::hostArchitecture()
+{
+#ifdef Q_OS_WIN
+    static const WORD processorArchitecture = hostProcessorArchitecture();
+    switch (processorArchitecture) {
+    case PROCESSOR_ARCHITECTURE_AMD64:
+        return HostOsInfo::HostArchitectureAMD64;
+    case PROCESSOR_ARCHITECTURE_INTEL:
+        return HostOsInfo::HostArchitectureX86;
+    case PROCESSOR_ARCHITECTURE_IA64:
+        return HostOsInfo::HostArchitectureItanium;
+    case PROCESSOR_ARCHITECTURE_ARM:
+        return HostOsInfo::HostArchitectureArm;
+    case PROCESSOR_ARCHITECTURE_ARM64:
+        return HostOsInfo::HostArchitectureArm64;
+    default:
+        return HostOsInfo::HostArchitectureUnknown;
+    }
+#else
+    return HostOsInfo::HostArchitectureUnknown;
+#endif
 }
 
 bool HostOsInfo::isRunningUnderRosetta()
@@ -66,12 +110,13 @@ bool HostOsInfo::canCreateOpenGLContext(QString *errorMessage)
 #else
     static const bool canCreate = QOpenGLContext().create();
     if (!canCreate)
-        *errorMessage = Tr::tr("Cannot create OpenGL context.");
+        *errorMessage = QCoreApplication::translate("Utils::HostOsInfo",
+                                                    "Cannot create OpenGL context.");
     return canCreate;
 #endif
 }
 
-std::optional<quint64> HostOsInfo::totalMemoryInstalledInBytes()
+optional<quint64> HostOsInfo::totalMemoryInstalledInBytes()
 {
 #ifdef Q_OS_LINUX
     struct sysinfo info;
@@ -94,11 +139,3 @@ std::optional<quint64> HostOsInfo::totalMemoryInstalledInBytes()
 #endif
     return {};
 }
-
-const FilePath &HostOsInfo::root()
-{
-    static const FilePath rootDir = FilePath::fromUserInput(QDir::rootPath());
-    return rootDir;
-}
-
-} // namespace Utils

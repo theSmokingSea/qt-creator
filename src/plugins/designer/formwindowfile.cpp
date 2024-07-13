@@ -1,12 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "formwindowfile.h"
 #include "designerconstants.h"
 #include "resourcehandler.h"
 
-#include <utils/filepath.h>
-#include <utils/mimeconstants.h>
+#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 
 #include <QApplication>
@@ -28,7 +49,7 @@ namespace Internal {
 FormWindowFile::FormWindowFile(QDesignerFormWindowInterface *form, QObject *parent)
   : m_formWindow(form)
 {
-    setMimeType(Utils::Constants::FORM_MIMETYPE);
+    setMimeType(Designer::Constants::FORM_MIMETYPE);
     setParent(parent);
     setId(Utils::Id(Designer::Constants::K_DESIGNER_XML_EDITOR_ID));
     // Designer needs UTF-8 regardless of settings.
@@ -83,17 +104,22 @@ Core::IDocument::OpenResult FormWindowFile::open(QString *errorString,
     return OpenResult::Success;
 }
 
-bool FormWindowFile::saveImpl(QString *errorString, const FilePath &filePath, bool autoSave)
+bool FormWindowFile::save(QString *errorString, const FilePath &filePath, bool autoSave)
 {
+    const FilePath &actualName = filePath.isEmpty() ? this->filePath() : filePath;
+
+    if (Designer::Constants::Internal::debug)
+        qDebug() << Q_FUNC_INFO << filePath << "->" << actualName;
+
     QTC_ASSERT(m_formWindow, return false);
 
-    if (filePath.isEmpty())
+    if (actualName.isEmpty())
         return false;
 
     const QString oldFormName = m_formWindow->fileName();
     if (!autoSave)
-        m_formWindow->setFileName(filePath.toString());
-    const bool writeOK = writeFile(filePath, errorString);
+        m_formWindow->setFileName(actualName.toString());
+    const bool writeOK = writeFile(actualName, errorString);
     m_shouldAutoSave = false;
     if (autoSave)
         return writeOK;
@@ -104,7 +130,7 @@ bool FormWindowFile::saveImpl(QString *errorString, const FilePath &filePath, bo
     }
 
     m_formWindow->setDirty(false);
-    setFilePath(filePath);
+    setFilePath(actualName);
     updateIsModified();
 
     return true;

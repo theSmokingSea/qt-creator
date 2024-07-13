@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmakeparser.h"
 #include "prowriter.h"
@@ -154,12 +176,12 @@ static const ushort *skipToken(ushort tok, const ushort *&tokPtr, int &lineNo)
     return nullptr;
 }
 
-QString ProWriter::compileScope(const QString &device, const QString &scope)
+QString ProWriter::compileScope(const QString &scope)
 {
     if (scope.isEmpty())
         return QString();
     QMakeParser parser(nullptr, nullptr, nullptr);
-    ProFile *includeFile = parser.parsedProBlock(device, QStringView(scope), 0, "no-file", 1);
+    ProFile *includeFile = parser.parsedProBlock(Utils::make_stringview(scope), 0, "no-file", 1);
     if (!includeFile)
         return QString();
     const QString result = includeFile->items();
@@ -181,7 +203,7 @@ static bool startsWithTokens(const ushort *that, const ushort *thatEnd, const us
     return true;
 }
 
-bool ProWriter::locateVarValues(const QString &device, const ushort *tokPtr, const ushort *tokPtrEnd,
+bool ProWriter::locateVarValues(const ushort *tokPtr, const ushort *tokPtrEnd,
     const QString &scope, const QString &var, int *scopeStart, int *bestLine)
 {
     const bool inScope = scope.isEmpty();
@@ -190,7 +212,7 @@ bool ProWriter::locateVarValues(const QString &device, const ushort *tokPtr, con
     const ushort *lastXpr = nullptr;
     bool fresh = true;
 
-    QString compiledScope = compileScope(device, scope);
+    QString compiledScope = compileScope(scope);
     const ushort *cTokPtr = reinterpret_cast<const ushort *>(compiledScope.constData());
 
     while (ushort tok = *tokPtr++) {
@@ -206,7 +228,7 @@ bool ProWriter::locateVarValues(const QString &device, const ushort *tokPtr, con
                     && startsWithTokens(tokPtr - 1, tokPtrEnd, cTokPtr, cTokPtr + compiledScope.size())
                     && *(tokPtr -1 + compiledScope.size()) == TokBranch) {
                 *scopeStart = lineNo - 1;
-                if (locateVarValues(device, tokPtr + compiledScope.size() + 2, tokPtrEnd,
+                if (locateVarValues(tokPtr + compiledScope.size() + 2, tokPtrEnd,
                                     QString(), var, scopeStart, bestLine))
                     return true;
             }
@@ -298,7 +320,7 @@ void ProWriter::putVarValues(ProFile *profile, QStringList *lines, const QString
         return !ci.indent.isEmpty() ? ci.indent : continuationIndent + indent;
     };
     int scopeStart = -1, lineNo;
-    if (locateVarValues(profile->device(), profile->tokPtr(), profile->tokPtrEnd(), scope, var, &scopeStart, &lineNo)) {
+    if (locateVarValues(profile->tokPtr(), profile->tokPtrEnd(), scope, var, &scopeStart, &lineNo)) {
         if (flags & ReplaceValues) {
             // remove continuation lines with old values
             const ContinuationInfo contInfo = skipContLines(lines, lineNo, false);
@@ -534,7 +556,7 @@ QList<int> ProWriter::removeVarValues(ProFile *profile, QStringList *lines,
                    // Entries existed, but were all removed
                    if (contCol < 0) {
                        // This is the last line, so clear continuations leading to it
-                       for (const ContPos &pos : std::as_const(contPos)) {
+                       for (const ContPos &pos : qAsConst(contPos)) {
                            QString &bline = (*lines)[pos.first];
                            bline.remove(pos.second, 1);
                            if (pos.second == bline.length())

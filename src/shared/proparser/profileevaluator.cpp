@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "profileevaluator.h"
 
@@ -62,13 +84,11 @@ QVector<ProFileEvaluator::SourceFile> ProFileEvaluator::fixifiedValues(
         bool expandWildcards) const
 {
     QVector<SourceFile> result;
-    QString deviceRoot = d->deviceRoot();
-    const ProStringList values = d->values(ProKey(variable));
-    for (const ProString &str : values) {
+    foreach (const ProString &str, d->values(ProKey(variable))) {
         const QString &el = d->m_option->expandEnvVars(str.toQString());
-        const QString fn = IoUtils::isAbsolutePath(deviceRoot, el)
+        const QString fn = IoUtils::isAbsolutePath(el)
                 ? QDir::cleanPath(el) : QDir::cleanPath(baseDirectory + QLatin1Char('/') + el);
-        if (IoUtils::exists(deviceRoot, fn)) {
+        if (IoUtils::exists(fn)) {
             result << SourceFile{fn, str.sourceFile()};
             continue;
         }
@@ -87,7 +107,7 @@ QVector<ProFileEvaluator::SourceFile> ProFileEvaluator::fixifiedValues(
                 result << SourceFile({fullFilePath, str.sourceFile()});
             }
         } else {
-            if (IoUtils::isAbsolutePath(deviceRoot, el)) {
+            if (IoUtils::isAbsolutePath(el)) {
                 result << SourceFile{fn, str.sourceFile()};
             } else {
                 result << SourceFile{QDir::cleanPath(buildDirectory + QLatin1Char('/') + el),
@@ -117,10 +137,9 @@ QStringList ProFileEvaluator::absolutePathValues(
         const QString &variable, const QString &baseDirectory) const
 {
     QStringList result;
-    const QStringList valueList = values(variable);
-    for (const QString &el : valueList) {
-        QString absEl = IoUtils::resolvePath(d->deviceRoot(), baseDirectory, el);
-        if (IoUtils::fileType(d->deviceRoot(), absEl) == IoUtils::FileIsDir)
+    foreach (const QString &el, values(variable)) {
+        QString absEl = IoUtils::resolvePath(baseDirectory, el);
+        if (IoUtils::fileType(absEl) == IoUtils::FileIsDir)
             result << absEl;
     }
     return result;
@@ -132,25 +151,24 @@ QVector<ProFileEvaluator::SourceFile> ProFileEvaluator::absoluteFileValues(
 {
     QMakeVfs::VfsFlags flags = (d->m_cumulative ? QMakeVfs::VfsCumulative : QMakeVfs::VfsExact);
     QVector<SourceFile> result;
-    const ProStringList values = d->values(ProKey(variable));
-    for (const ProString &str : values) {
+    foreach (const ProString &str, d->values(ProKey(variable))) {
         bool &seen = (*handled)[str];
         if (seen)
             continue;
         seen = true;
         const QString &el = d->m_option->expandEnvVars(str.toQString());
         QString absEl;
-        if (IoUtils::isAbsolutePath(d->deviceRoot(), el)) {
+        if (IoUtils::isAbsolutePath(el)) {
             QString fn = QDir::cleanPath(el);
-            if (m_vfs->exists(d->deviceRoot(), fn, flags)) {
+            if (m_vfs->exists(fn, flags)) {
                 result << SourceFile{ fn, str.sourceFile() };
                 goto next;
             }
             absEl = fn;
         } else {
-            for (const QString &dir : searchDirs) {
+            foreach (const QString &dir, searchDirs) {
                 QString fn = QDir::cleanPath(dir + QLatin1Char('/') + el);
-                if (m_vfs->exists(d->deviceRoot(), fn, flags)) {
+                if (m_vfs->exists(fn, flags)) {
                     result << SourceFile{fn, str.sourceFile()};
                     goto next;
                 }
@@ -166,15 +184,14 @@ QVector<ProFileEvaluator::SourceFile> ProFileEvaluator::absoluteFileValues(
                 goto next;
             }
             QString absDir = d->m_tmp1.setRawData(absEl.constData(), nameOff);
-            if (IoUtils::exists(d->deviceRoot(), absDir)) {
+            if (IoUtils::exists(absDir)) {
                 QString wildcard = d->m_tmp2.setRawData(absEl.constData() + nameOff + 1,
                                                         absEl.length() - nameOff - 1);
                 if (wildcard.contains(QLatin1Char('*')) || wildcard.contains(QLatin1Char('?'))) {
                     wildcard.detach(); // Keep m_tmp out of QRegExp's cache
                     QDir theDir(absDir);
                     theDir.setFilter(theDir.filter() & ~QDir::AllDirs);
-                    const QStringList list = theDir.entryList(QStringList(wildcard));
-                    for (const QString &fn : list)
+                    foreach (const QString &fn, theDir.entryList(QStringList(wildcard)))
                         if (fn != QLatin1String(".") && fn != QLatin1String(".."))
                             result << SourceFile{absDir + QLatin1Char('/') + fn, str.sourceFile()};
                     QString directoryWithWildcard(absDir);
@@ -198,7 +215,7 @@ ProFileEvaluator::TemplateType ProFileEvaluator::templateType() const
         if (!t.compare(QLatin1String("app"), Qt::CaseInsensitive))
             return TT_Application;
         if (!t.compare(QLatin1String("lib"), Qt::CaseInsensitive))
-            return d->isActiveConfig(QStringView(str_staticlib)) ? TT_StaticLibrary : TT_SharedLibrary;
+            return d->isActiveConfig(Utils::make_stringview(str_staticlib)) ? TT_StaticLibrary : TT_SharedLibrary;
         if (!t.compare(QLatin1String("script"), Qt::CaseInsensitive))
             return TT_Script;
         if (!t.compare(QLatin1String("aux"), Qt::CaseInsensitive))
@@ -232,7 +249,7 @@ bool ProFileEvaluator::accept(ProFile *pro, QMakeEvaluator::LoadFlags flags)
 
         ProStringList &incpath = d->valuesRef(ProKey("INCLUDEPATH"));
         incpath += d->values(ProKey("QMAKE_INCDIR"));
-        if (!d->isActiveConfig(QStringView(str_no_include_pwd))) {
+        if (!d->isActiveConfig(Utils::make_stringview(str_no_include_pwd))) {
             incpath.prepend(ProString(pro->directoryName()));
             // It's pretty stupid that this is appended - it should be the second entry.
             if (pro->directoryName() != d->m_outputDir)
@@ -249,8 +266,8 @@ bool ProFileEvaluator::accept(ProFile *pro, QMakeEvaluator::LoadFlags flags)
             break;
         case TT_SharedLibrary:
             {
-                bool plugin = d->isActiveConfig(QStringView(str_plugin));
-                if (!plugin || !d->isActiveConfig(QStringView(str_plugin_no_share_shlib_cflags)))
+                bool plugin = d->isActiveConfig(Utils::make_stringview(str_plugin));
+                if (!plugin || !d->isActiveConfig(Utils::make_stringview(str_plugin_no_share_shlib_cflags)))
                     cxxflags += d->values(ProKey("QMAKE_CXXFLAGS_SHLIB"));
                 if (plugin)
                     cxxflags += d->values(ProKey("QMAKE_CXXFLAGS_PLUGIN"));

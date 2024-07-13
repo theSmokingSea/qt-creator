@@ -1,11 +1,34 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "buildstepspage.h"
 
+#include "buildconfiguration.h"
 #include "buildsteplist.h"
+#include "projectexplorerconstants.h"
 #include "projectexplorericons.h"
-#include "projectexplorertr.h"
 
 #include <coreplugin/icore.h>
 
@@ -57,21 +80,21 @@ ToolWidget::ToolWidget(QWidget *parent) : FadingPanel(parent)
 
     m_upButton = new QToolButton(m_secondWidget);
     m_upButton->setAutoRaise(true);
-    m_upButton->setToolTip(Tr::tr("Move Up"));
+    m_upButton->setToolTip(BuildStepListWidget::tr("Move Up"));
     m_upButton->setFixedSize(buttonSize);
     m_upButton->setIcon(Icons::BUILDSTEP_MOVEUP.icon());
     hbox->addWidget(m_upButton);
 
     m_downButton = new QToolButton(m_secondWidget);
     m_downButton->setAutoRaise(true);
-    m_downButton->setToolTip(Tr::tr("Move Down"));
+    m_downButton->setToolTip(BuildStepListWidget::tr("Move Down"));
     m_downButton->setFixedSize(buttonSize);
     m_downButton->setIcon(Icons::BUILDSTEP_MOVEDOWN.icon());
     hbox->addWidget(m_downButton);
 
     m_removeButton  = new QToolButton(m_secondWidget);
     m_removeButton->setAutoRaise(true);
-    m_removeButton->setToolTip(Tr::tr("Remove Item"));
+    m_removeButton->setToolTip(BuildStepListWidget::tr("Remove Item"));
     m_removeButton->setFixedSize(buttonSize);
     m_removeButton->setIcon(Icons::BUILDSTEP_REMOVE.icon());
     hbox->addWidget(m_removeButton);
@@ -115,7 +138,8 @@ void ToolWidget::setBuildStepEnabled(bool b)
             m_firstWidget->fadeTo(.999);
     }
     m_disableButton->setChecked(!b);
-    m_disableButton->setToolTip(b ? Tr::tr("Disable") : Tr::tr("Enable"));
+    m_disableButton->setToolTip(b ? BuildStepListWidget::tr("Disable")
+                                  : BuildStepListWidget::tr("Enable"));
 }
 
 void ToolWidget::setUpEnabled(bool b)
@@ -156,7 +180,7 @@ BuildStepsWidgetData::BuildStepsWidgetData(BuildStep *s) :
     toolWidget->setBuildStepEnabled(step->enabled());
 
     detailsWidget->setToolWidget(toolWidget);
-    detailsWidget->setContentsMargins(0, 0, 0, 0);
+    detailsWidget->setContentsMargins(0, 0, 0, 1);
     detailsWidget->setSummaryText(s->summaryText());
 }
 
@@ -168,7 +192,7 @@ BuildStepsWidgetData::~BuildStepsWidgetData()
 
 BuildStepListWidget::BuildStepListWidget(BuildStepList *bsl)
     //: %1 is the name returned by BuildStepList::displayName
-    : NamedWidget(Tr::tr("%1 Steps").arg(bsl->displayName())), m_buildStepList(bsl)
+    : NamedWidget(tr("%1 Steps").arg(bsl->displayName())), m_buildStepList(bsl)
 {
     setupUi();
 
@@ -187,9 +211,9 @@ BuildStepListWidget::BuildStepListWidget(BuildStepList *bsl)
     }
 
     m_noStepsLabel->setVisible(bsl->isEmpty());
-    m_noStepsLabel->setText(Tr::tr("No %1 Steps").arg(m_buildStepList->displayName()));
+    m_noStepsLabel->setText(tr("No %1 Steps").arg(m_buildStepList->displayName()));
 
-    m_addButton->setText(Tr::tr("Add %1 Step").arg(m_buildStepList->displayName()));
+    m_addButton->setText(tr("Add %1 Step").arg(m_buildStepList->displayName()));
 
     updateBuildStepButtonsState();
 }
@@ -209,14 +233,14 @@ void BuildStepListWidget::updateAddBuildStepMenu()
         if (!factory->canHandle(m_buildStepList))
             continue;
 
-        const BuildStep::Flags flags = factory->stepFlags();
-        if (flags & BuildStep::Uncreatable)
+        const BuildStepInfo &info = factory->stepInfo();
+        if (info.flags & BuildStepInfo::Uncreatable)
             continue;
 
-        if ((flags & BuildStep::UniqueStep) && m_buildStepList->contains(factory->stepId()))
+        if ((info.flags & BuildStepInfo::UniqueStep) && m_buildStepList->contains(info.id))
             continue;
 
-        QAction *action = menu->addAction(factory->displayName());
+        QAction *action = menu->addAction(info.displayName);
         connect(action, &QAction::triggered, this, [factory, this] {
             BuildStep *newStep = factory->create(m_buildStepList);
             QTC_ASSERT(newStep, return);
@@ -282,8 +306,9 @@ void BuildStepListWidget::setupUi()
 
     m_vbox = new QVBoxLayout(this);
     m_vbox->setContentsMargins(0, 0, 0, 0);
+    m_vbox->setSpacing(0);
 
-    m_noStepsLabel = new QLabel(Tr::tr("No Build Steps"), this);
+    m_noStepsLabel = new QLabel(tr("No Build Steps"), this);
     m_noStepsLabel->setContentsMargins(0, 0, 0, 0);
     m_vbox->addWidget(m_noStepsLabel);
 
@@ -322,8 +347,8 @@ void BuildStepListWidget::updateBuildStepButtonsState()
                 this, [this, i] {
             if (!m_buildStepList->removeStep(i)) {
                 QMessageBox::warning(Core::ICore::dialogParent(),
-                                     Tr::tr("Removing Step failed"),
-                                     Tr::tr("Cannot remove build step while building"),
+                                     tr("Removing Step failed"),
+                                     tr("Cannot remove build step while building"),
                                      QMessageBox::Ok,
                                      QMessageBox::Ok);
             }

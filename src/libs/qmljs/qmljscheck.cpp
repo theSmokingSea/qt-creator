@@ -1,18 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmljscheck.h"
-
 #include "qmljsbind.h"
 #include "qmljsevaluate.h"
-#include "qmljstr.h"
 #include "qmljsutils.h"
-
 #include "parser/qmljsast_p.h"
 
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcsettings.h>
 
 #include <QColor>
 #include <QDir>
@@ -101,11 +119,11 @@ public:
                 if (!url.isValid() && !url.isEmpty()) {
                     setMessage(ErrInvalidUrl);
                 } else {
-                    Utils::FilePath fileName = Utils::FilePath::fromString(url.toLocalFile());
+                    QString fileName = url.toLocalFile();
                     if (!fileName.isEmpty()) {
-                        if (fileName.isRelativePath())
-                            fileName = _doc->path().pathAppended(fileName.path());
-                        if (!fileName.exists())
+                        if (QFileInfo(fileName).isRelative())
+                            fileName = QString("/%1%2").arg(_doc->path(), fileName);
+                        if (!QFileInfo::exists(fileName))
                             setMessage(WarnFileOrDirectoryDoesNotExist);
                     }
                 }
@@ -437,8 +455,7 @@ protected:
         }
 
         if (_possiblyUndeclaredUses.contains(name)) {
-            const QList<SourceLocation> values = _possiblyUndeclaredUses.value(name);
-            for (const SourceLocation &loc : values) {
+            foreach (const SourceLocation &loc, _possiblyUndeclaredUses.value(name)) {
                 addMessage(WarnVarUsedBeforeDeclaration, loc, name);
             }
             _possiblyUndeclaredUses.remove(name);
@@ -474,8 +491,7 @@ protected:
 
         if (FunctionDeclaration *decl = cast<FunctionDeclaration *>(ast)) {
             if (_possiblyUndeclaredUses.contains(name)) {
-                const QList<SourceLocation> values = _possiblyUndeclaredUses.value(name);
-                for (const SourceLocation &loc : values) {
+                foreach (const SourceLocation &loc, _possiblyUndeclaredUses.value(name)) {
                     addMessage(WarnFunctionUsedBeforeDeclaration, loc, name);
                 }
                 _possiblyUndeclaredUses.remove(name);
@@ -640,52 +656,7 @@ Q_GLOBAL_STATIC(UnsupportedRootObjectTypesByVisualDesigner, unsupportedRootObjec
 Q_GLOBAL_STATIC(UnsupportedRootObjectTypesByQmlUi, unsupportedRootObjectTypesByQmlUi)
 Q_GLOBAL_STATIC(UnsupportedTypesByQmlUi, unsupportedTypesByQmlUi)
 
-QList<StaticAnalysis::Type> Check::defaultDisabledMessages()
-{
-    static const QList<StaticAnalysis::Type> disabled = Utils::sorted(QList<StaticAnalysis::Type>{
-        HintAnonymousFunctionSpacing,
-        HintDeclareVarsInOneLine,
-        HintDeclarationsShouldBeAtStartOfFunction,
-        HintBinaryOperatorSpacing,
-        HintOneStatementPerLine,
-        HintExtraParentheses,
-        WarnAliasReferRootHierarchy,
-
-        // QmlDesigner related
-        WarnImperativeCodeNotEditableInVisualDesigner,
-        WarnUnsupportedTypeInVisualDesigner,
-        WarnReferenceToParentItemNotSupportedByVisualDesigner,
-        WarnUndefinedValueForVisualDesigner,
-        WarnStatesOnlyInRootItemForVisualDesigner,
-        ErrUnsupportedRootTypeInVisualDesigner,
-        ErrInvalidIdeInVisualDesigner,
-
-    });
-    return disabled;
-}
-
-QList<StaticAnalysis::Type> Check::defaultDisabledMessagesForNonQuickUi()
-{
-    static const QList<StaticAnalysis::Type> disabled = Utils::sorted(QList<StaticAnalysis::Type>{
-        // QmlDesigner related
-        ErrUnsupportedRootTypeInQmlUi,
-        ErrUnsupportedTypeInQmlUi,
-        ErrFunctionsNotSupportedInQmlUi,
-        ErrBlocksNotSupportedInQmlUi,
-        ErrBehavioursNotSupportedInQmlUi,
-        ErrStatesOnlyInRootItemInQmlUi,
-        ErrReferenceToParentItemNotSupportedInQmlUi,
-        WarnDoNotMixTranslationFunctionsInQmlUi,
-    });
-    return disabled;
-}
-
-bool Check::incompatibleDesignerQmlId(const QString &id)
-{
-    return idsThatShouldNotBeUsedInDesigner->contains(id);
-}
-
-Check::Check(Document::Ptr doc, const ContextPtr &context, Utils::QtcSettings *qtcSettings)
+Check::Check(Document::Ptr doc, const ContextPtr &context)
     : _doc(doc)
     , _context(context)
     , _scopeChain(doc, _context)
@@ -701,32 +672,16 @@ Check::Check(Document::Ptr doc, const ContextPtr &context, Utils::QtcSettings *q
     }
 
     _enabledMessages = Utils::toSet(Message::allMessageTypes());
-    if (qtcSettings && qtcSettings->value("J.QtQuick/QmlJSEditor.useCustomAnalyzer").toBool()) {
-        auto toIntList = [](const QList<StaticAnalysis::Type> list) {
-            return Utils::transform(list, [](StaticAnalysis::Type t) { return int(t); });
-        };
-        auto disabled = qtcSettings->value("J.QtQuick/QmlJSEditor.disabledMessages",
-                                           QVariant::fromValue(
-                                               toIntList(defaultDisabledMessages()))).toList();
-        for (const QVariant &disabledNumber : disabled)
-            disableMessage(StaticAnalysis::Type(disabledNumber.toInt()));
+    disableMessage(HintAnonymousFunctionSpacing);
+    disableMessage(HintDeclareVarsInOneLine);
+    disableMessage(HintDeclarationsShouldBeAtStartOfFunction);
+    disableMessage(HintBinaryOperatorSpacing);
+    disableMessage(HintOneStatementPerLine);
+    disableMessage(HintExtraParentheses);
 
-        if (!isQtQuick2Ui()) {
-            auto disabled = qtcSettings->value("J.QtQuick/QmlJSEditor.disabledMessagesNonQuickUI",
-                                               QVariant::fromValue(
-                                                   toIntList(defaultDisabledMessagesForNonQuickUi()))).toList();
-            for (const QVariant &disabledNumber : disabled)
-                disableMessage(StaticAnalysis::Type(disabledNumber.toInt()));
-        }
-    } else {
-        for (auto type : defaultDisabledMessages())
-            disableMessage(type);
-
-        if (!isQtQuick2Ui()) {
-            for (auto type : defaultDisabledMessagesForNonQuickUi())
-                disableMessage(type);
-        }
-    }
+    disableQmlDesignerChecks();
+    if (!isQtQuick2Ui())
+        disableQmlDesignerUiFileChecks();
 }
 
 Check::~Check()
@@ -761,8 +716,18 @@ void Check::enableQmlDesignerChecks()
     enableMessage(WarnReferenceToParentItemNotSupportedByVisualDesigner);
     enableMessage(ErrUnsupportedRootTypeInVisualDesigner);
     enableMessage(ErrInvalidIdeInVisualDesigner);
-    enableMessage(WarnAliasReferRootHierarchy);
     //## triggers too often ## check.enableMessage(StaticAnalysis::WarnUndefinedValueForVisualDesigner);
+}
+
+void Check::disableQmlDesignerChecks()
+{
+    disableMessage(WarnImperativeCodeNotEditableInVisualDesigner);
+    disableMessage(WarnUnsupportedTypeInVisualDesigner);
+    disableMessage(WarnReferenceToParentItemNotSupportedByVisualDesigner);
+    disableMessage(WarnUndefinedValueForVisualDesigner);
+    disableMessage(WarnStatesOnlyInRootItemForVisualDesigner);
+    disableMessage(ErrUnsupportedRootTypeInVisualDesigner);
+    disableMessage(ErrInvalidIdeInVisualDesigner);
 }
 
 void Check::enableQmlDesignerUiFileChecks()
@@ -774,7 +739,7 @@ void Check::enableQmlDesignerUiFileChecks()
     enableMessage(ErrBehavioursNotSupportedInQmlUi);
     enableMessage(ErrStatesOnlyInRootItemInQmlUi);
     enableMessage(ErrReferenceToParentItemNotSupportedInQmlUi);
-    enableMessage(WarnDoNotMixTranslationFunctionsInQmlUi);
+    enableMessage(ErrDoNotMixTranslationFunctionsInQmlUi);
 }
 
 void Check::disableQmlDesignerUiFileChecks()
@@ -786,7 +751,7 @@ void Check::disableQmlDesignerUiFileChecks()
     disableMessage(ErrBehavioursNotSupportedInQmlUi);
     disableMessage(ErrStatesOnlyInRootItemInQmlUi);
     disableMessage(ErrReferenceToParentItemNotSupportedInQmlUi);
-    disableMessage(WarnDoNotMixTranslationFunctionsInQmlUi);
+    disableMessage(ErrDoNotMixTranslationFunctionsInQmlUi);
 }
 
 bool Check::preVisit(Node *ast)
@@ -843,32 +808,6 @@ bool Check::visit(UiObjectInitializer *)
     if (m_idStack.isEmpty())
         m_idStack.push(StringSet());
 
-    return true;
-}
-
-bool Check::visit(AST::UiEnumDeclaration *ast)
-{
-    const Value *localLookup = _scopeChain.lookup(ast->name.toString());
-    Utils::FilePath fp;
-    int line, column;
-    if (localLookup->getSourceLocation(&fp, &line, &column)) {
-        // if it's not "us" we get shadowed by another enum declaration
-        if (int(ast->identifierToken.startLine) != line || int(ast->identifierToken.startColumn) != column)
-            addMessage(ErrDuplicateId, SourceLocation(0, 0, line, column));
-    }
-    return true;
-}
-
-bool Check::visit(AST::UiEnumMemberList *ast)
-{
-    QStringList names;
-    for (auto it = ast; it; it = it->next) {
-        if (!it->member.first().isUpper())
-            addMessage(ErrInvalidEnumValue, it->memberToken); // better a different message?
-        if (names.contains(it->member)) // duplicate enum value
-            addMessage(ErrInvalidEnumValue, it->memberToken); // better a different message?
-        names.append(it->member.toString());
-    }
     return true;
 }
 
@@ -1028,7 +967,7 @@ void Check::visitQmlObject(Node *ast, UiQualifiedId *typeId,
     if (checkTypeForDesignerSupport(typeId))
         addMessage(WarnUnsupportedTypeInVisualDesigner, typeErrorLocation, typeName);
 
-    if (typeId->next == nullptr && _doc->fileName().baseName() == typeName)
+    if (typeId->next == nullptr && QFileInfo(_doc->fileName()).baseName() == typeName)
         addMessage(ErrTypeIsInstantiatedRecursively, typeErrorLocation, typeName);
 
     if (checkTypeForQmlUiSupport(typeId))
@@ -1130,7 +1069,7 @@ bool Check::visit(UiScriptBinding *ast)
             return false;
         }
 
-        if (incompatibleDesignerQmlId(id)) {
+        if (idsThatShouldNotBeUsedInDesigner->contains(id)) {
             addMessage(ErrInvalidIdeInVisualDesigner, loc);
         }
 
@@ -1242,7 +1181,7 @@ bool Check::visit(UiPublicMember *ast)
             const Value *init = evaluator(ast->statement);
             QString preferredType;
             if (init->asNumberValue())
-                preferredType = Tr::tr("'int' or 'real'");
+                preferredType = tr("'int' or 'real'");
             else if (init->asStringValue())
                 preferredType = "'string'";
             else if (init->asBooleanValue())
@@ -1297,7 +1236,7 @@ bool Check::visit(IdentifierExpression *)
 //        if (const Reference *ref = value_cast<Reference>(_lastValue)) {
 //            _lastValue = _context->lookupReference(ref);
 //            if (!_lastValue)
-//                error(ast->identifierToken, Tr::tr("could not resolve"));
+//                error(ast->identifierToken, tr("could not resolve"));
 //        }
 //    }
 //    return false;
@@ -1314,7 +1253,7 @@ bool Check::visit(FieldMemberExpression *)
 //    const ObjectValue *obj = _lastValue->asObjectValue();
 //    if (!obj) {
 //        error(locationFromRange(ast->base->firstSourceLocation(), ast->base->lastSourceLocation()),
-//              Tr::tr("does not have members"));
+//              tr("does not have members"));
 //    }
 //    if (!obj || ast->name.isEmpty()) {
 //        _lastValue = 0;
@@ -1322,7 +1261,7 @@ bool Check::visit(FieldMemberExpression *)
 //    }
 //    _lastValue = obj->lookupMember(ast->name.toString(), _context);
 //    if (!_lastValue)
-//        error(ast->identifierToken, Tr::tr("unknown member"));
+//        error(ast->identifierToken, tr("unknown member"));
 //    return false;
 }
 
@@ -1390,6 +1329,71 @@ static bool shouldAvoidNonStrictEqualityCheck(const Value *lhs, const Value *rhs
     return false;
 }
 
+static bool equalIsAlwaysFalse(const Value *lhs, const Value *rhs)
+{
+    if ((lhs->asNullValue() || lhs->asUndefinedValue())
+        && (rhs->asNumberValue() || rhs->asBooleanValue() || rhs->asStringValue()))
+        return true;
+    return false;
+}
+
+static bool isIntegerValue(const Value *value)
+{
+    if (value->asNumberValue() || value->asIntValue())
+        return true;
+    if (auto obj = value->asObjectValue())
+        return obj->className() == "Number" || obj->className() == "int";
+
+    return false;
+}
+
+static bool isStringValue(const Value *value)
+{
+    if (value->asStringValue())
+        return true;
+    if (auto obj = value->asObjectValue())
+        return obj->className() == "QString" || obj->className() == "string" || obj->className() == "String";
+
+    return false;
+}
+
+static bool isBooleanValue(const Value *value)
+{
+    if (value->asBooleanValue())
+        return true;
+    if (auto obj = value->asObjectValue())
+        return obj->className() == "boolean" || obj->className() == "Boolean";
+
+    return false;
+}
+
+static bool strictCompareConstant(const Value *lhs, const Value *rhs)
+{
+    // attached properties and working at runtime cases may be undefined at evaluation time
+    if (lhs->asUndefinedValue() || rhs->asUndefinedValue())
+        return false;
+    if (lhs->asUnknownValue() || rhs->asUnknownValue())
+        return false;
+    if (lhs->asFunctionValue() || rhs->asFunctionValue()) // function evaluation not implemented
+        return false;
+    if (isIntegerValue(lhs) && isIntegerValue(rhs))
+        return false;
+    if (isStringValue(lhs) && isStringValue(rhs))
+        return false;
+    if (isBooleanValue(lhs) && isBooleanValue(rhs))
+        return false;
+    if (lhs->asBooleanValue() && !rhs->asBooleanValue())
+        return true;
+    if (lhs->asNumberValue() && !rhs->asNumberValue())
+        return true;
+    if (lhs->asStringValue() && !rhs->asStringValue())
+        return true;
+    if (lhs->asObjectValue() && (!rhs->asObjectValue() || !rhs->asNullValue()))
+        return true;
+    return false;
+}
+
+
 bool Check::visit(BinaryExpression *ast)
 {
     const QString source = _doc->source();
@@ -1403,11 +1407,7 @@ bool Check::visit(BinaryExpression *ast)
 
     SourceLocation expressionSourceLocation = locationFromRange(ast->firstSourceLocation(),
                                                                 ast->lastSourceLocation());
-
-    const bool isDirectInConnectionsScope = (!m_typeStack.isEmpty()
-                                             && m_typeStack.last() == "Connections");
-
-    if (expressionAffectsVisualAspects(ast) && !isDirectInConnectionsScope)
+    if (expressionAffectsVisualAspects(ast))
         addMessage(WarnImperativeCodeNotEditableInVisualDesigner, expressionSourceLocation);
 
     // check ==, !=
@@ -1418,6 +1418,18 @@ bool Check::visit(BinaryExpression *ast)
         if (shouldAvoidNonStrictEqualityCheck(lhsValue, rhsValue)
                 || shouldAvoidNonStrictEqualityCheck(rhsValue, lhsValue)) {
             addMessage(MaybeWarnEqualityTypeCoercion, ast->operatorToken);
+        }
+        if (equalIsAlwaysFalse(lhsValue, rhsValue)
+            || equalIsAlwaysFalse(rhsValue, lhsValue))
+            addMessage(WarnLogicalValueDoesNotDependOnValues, ast->operatorToken);
+    }
+    if (ast->op == QSOperator::StrictEqual || ast->op == QSOperator::StrictNotEqual) {
+        Evaluate eval(&_scopeChain);
+        const Value *lhsValue = eval(ast->left);
+        const Value *rhsValue = eval(ast->right);
+        if (strictCompareConstant(lhsValue, rhsValue)
+                || strictCompareConstant(rhsValue, lhsValue)) {
+            addMessage(WarnLogicalValueDoesNotDependOnValues, ast->operatorToken);
         }
     }
 
@@ -1652,7 +1664,7 @@ void Check::checkExtraParentheses(ExpressionNode *expression)
 
 void Check::addMessages(const QList<Message> &messages)
 {
-    for (const Message &msg : messages)
+    foreach (const Message &msg, messages)
         addMessage(msg);
 }
 
@@ -1692,8 +1704,7 @@ void Check::scanCommentsForAnnotations()
     m_disabledMessageTypesByLine.clear();
     const QRegularExpression disableCommentPattern = Message::suppressionPattern();
 
-    const QList<SourceLocation> comments = _doc->engine()->comments();
-    for (const SourceLocation &commentLoc : comments) {
+    foreach (const SourceLocation &commentLoc, _doc->engine()->comments()) {
         const QString &comment = _doc->source().mid(int(commentLoc.begin()), int(commentLoc.length));
 
         // enable all checks annotation
@@ -1739,7 +1750,7 @@ void Check::warnAboutUnnecessarySuppressions()
 {
     for (auto it = m_disabledMessageTypesByLine.cbegin(), end = m_disabledMessageTypesByLine.cend();
            it != end; ++it) {
-        for (const MessageTypeAndSuppression &entry : it.value()) {
+        foreach (const MessageTypeAndSuppression &entry, it.value()) {
             if (!entry.wasSuppressed)
                 addMessage(WarnUnnecessaryMessageSuppression, entry.suppressionSource);
         }
@@ -1749,7 +1760,7 @@ void Check::warnAboutUnnecessarySuppressions()
 bool Check::isQtQuick2() const
 {
     if (_doc->language() == Dialect::Qml) {
-        for (const Import &import : _imports->all()) {
+        foreach (const Import &import, _imports->all()) {
             if (import.info.name() == "QtQuick"
                     && import.info.version().majorVersion() == 2)
                 return true;
@@ -1843,32 +1854,16 @@ bool Check::visit(CallExpression *ast)
     static const QStringList translationFunctions = {"qsTr", "qsTrId", "qsTranslate",
                                                      "qsTrNoOp", "qsTrIdNoOp", "qsTranslateNoOp"};
 
-    static const QStringList whiteListedFunctions = {
-        "toString",    "toFixed",           "toExponential", "toPrecision",    "isFinite",
-        "isNaN",       "valueOf",           "toLowerCase",   "toLocaleString", "toLocaleLowerCase",
-        "toUpperCase", "toLocaleUpperCase", "substring",     "charAt",         "charCodeAt",
-        "concat",      "endsWith",          "includes",      "indexOf",        "lastIndexOf",
-        "arg"};
+    static const QStringList whiteListedFunctions = {"toString", "toFixed", "toExponential", "toPrecision", "isFinite", "isNaN", "valueOf",
+                                                     "toLowerCase", "toLocaleString", "toLocaleLowerCase", "toUpperCase", "toLocaleUpperCase",
+                                                     "substring" , "charAt", "charCodeAt", "concat", "endsWith", "includes", "indexOf", "lastIndexOf"};
 
     static const QStringList colorFunctions = {"lighter", "darker", "rgba",  "tint", "hsla", "hsva"};
 
-    static const QStringList qtFunction = {"point",
-                                           "rect",
-                                           "size",
-                                           "vector2d",
-                                           "vector3d",
-                                           "vector4d",
-                                           "quaternion",
-                                           "matrix4x4",
-                                           "formatDate",
-                                           "formatDateTime",
-                                           "formatTime",
-                                           "resolvedUrl"};
+    static const QStringList qtFunction = {"point", "rect", "size", "vector2d", "vector3d", "vector4d", "quaternion" "matrix4x4", "formatDate",
+                                           "formatDateTime", "formatTime", "resolvedUrl"};
 
-    const bool whiteListedFunction = translationFunctions.contains(name)
-                                     || whiteListedFunctions.contains(name)
-                                     || colorFunctions.contains(name) || qtFunction.contains(name);
-
+    const bool whiteListedFunction =  translationFunctions.contains(name) || whiteListedFunctions.contains(name) || colorFunctions.contains(name) || qtFunction.contains(name);
 
     // We allow the Math. functions
     const bool isMathFunction = namespaceName == "Math";
@@ -1890,7 +1885,7 @@ bool Check::visit(CallExpression *ast)
 
         if (lastTransLationfunction != noTranslationfunction
             && lastTransLationfunction != translationFunction)
-            addMessage(WarnDoNotMixTranslationFunctionsInQmlUi, location);
+            addMessage(ErrDoNotMixTranslationFunctionsInQmlUi, location);
 
         lastTransLationfunction = translationFunction;
     }
@@ -1961,19 +1956,9 @@ bool Check::visit(TypeOfExpression *ast)
 /// ### Maybe put this into the context as a helper function.
 const Value *Check::checkScopeObjectMember(const UiQualifiedId *id)
 {
+
     if (!_importsOk)
         return nullptr;
-
-    if (!id)
-        return nullptr; // ### error?
-
-    if (id->name.isEmpty()) // possible after error recovery
-        return nullptr;
-
-    QString propertyName = id->name.toString();
-
-    if (propertyName == "id" && !id->next)
-        return nullptr; // ### should probably be a special value
 
     QList<const ObjectValue *> scopeObjects = _scopeChain.qmlScopeObjects();
     if (scopeObjects.isEmpty())
@@ -1989,8 +1974,23 @@ const Value *Check::checkScopeObjectMember(const UiQualifiedId *id)
         return isAttachedProperty;
     };
 
+
+    if (! id)
+        return nullptr; // ### error?
+
+    if (id->name.isEmpty()) // possible after error recovery
+        return nullptr;
+
+    QString propertyName = id->name.toString();
+
+    if (propertyName == "id" && !id->next)
+        return nullptr; // ### should probably be a special value
+
     // attached properties
     bool isAttachedProperty = getAttachedTypes(propertyName);
+
+    if (scopeObjects.isEmpty())
+        return nullptr;
 
     // global lookup for first part of id
     const Value *value = nullptr;
@@ -2006,14 +2006,7 @@ const Value *Check::checkScopeObjectMember(const UiQualifiedId *id)
         return nullptr;
 
     if (!value) {
-        // We omit M16 messages if the enclosing type have ImmediateProperties classinfo.
-        // Ideally, we should get this information from metaobject by checking the index
-        // metaObject->indexOfClassInfo("ImmediatePropertyNames"), for now it's hard coded.
-        if ( !m_typeStack.isEmpty()
-                                 && ((m_typeStack.last() != "PropertyChanges")
-                                     && m_typeStack.last() != "Binding")) {
-            addMessage(ErrInvalidPropertyName, id->identifierToken, propertyName);
-        }
+        addMessage(ErrInvalidPropertyName, id->identifierToken, propertyName);
         return nullptr;
     }
 
@@ -2082,7 +2075,7 @@ void Check::checkCaseFallthrough(StatementList *statements, SourceLocation error
                     afterLastStatement = it->statement->lastSourceLocation().end();
             }
 
-            for (const SourceLocation &comment : _doc->engine()->comments()) {
+            foreach (const SourceLocation &comment, _doc->engine()->comments()) {
                 if (comment.begin() < afterLastStatement
                         || comment.end() > nextLoc.begin())
                     continue;

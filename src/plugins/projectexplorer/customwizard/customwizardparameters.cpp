@@ -1,16 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "customwizardparameters.h"
-
 #include "customwizardscriptgenerator.h"
-#include "../projectexplorertr.h"
 
 #include <coreplugin/icore.h>
+#include <cppeditor/cppeditorconstants.h>
 
 #include <utils/macroexpander.h>
 #include <utils/mimeutils.h>
-#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 #include <utils/templateengine.h>
@@ -199,13 +219,13 @@ static inline QIcon wizardIcon(const QString &configFileFullPath,
     if (fi.isFile() && fi.isAbsolute())
         return QIcon(fi.absoluteFilePath());
     if (!fi.isRelative())
-        return {};
+        return QIcon();
     // Expand by config path
     const QFileInfo absFi(QFileInfo(configFileFullPath).absolutePath() +
                           QLatin1Char('/') + xmlIconFileName);
     if (absFi.isFile())
         return QIcon(absFi.absoluteFilePath());
-    return {};
+    return QIcon();
 }
 
 // Forward a reader over element text
@@ -230,7 +250,7 @@ static inline bool assignLanguageElementText(QXmlStreamReader &reader,
     const auto elementLanguage = reader.attributes().value(QLatin1String(langAttributeC));
     if (elementLanguage.isEmpty()) {
         // Try to find a translation for our built-in Wizards
-        *target = Tr::tr(reader.readElementText().toLatin1().constData());
+        *target = QCoreApplication::translate("ProjectExplorer::CustomWizard", reader.readElementText().toLatin1().constData());
         return true;
     }
     if (elementLanguage == desiredLanguage) {
@@ -885,10 +905,10 @@ void CustomWizardContext::reset()
     const QTime currentTime = QTime::currentTime();
     baseReplacements.clear();
     baseReplacements.insert(QLatin1String("CppSourceSuffix"),
-                            Utils::mimeTypeForName(QLatin1String(Utils::Constants::CPP_SOURCE_MIMETYPE))
+                            Utils::mimeTypeForName(QLatin1String(CppEditor::Constants::CPP_SOURCE_MIMETYPE))
                             .preferredSuffix());
     baseReplacements.insert(QLatin1String("CppHeaderSuffix"),
-                            Utils::mimeTypeForName(QLatin1String(Utils::Constants::CPP_HEADER_MIMETYPE))
+                            Utils::mimeTypeForName(QLatin1String(CppEditor::Constants::CPP_HEADER_MIMETYPE))
                             .preferredSuffix());
     baseReplacements.insert(QLatin1String("CurrentDate"),
                             currentDate.toString(Qt::ISODate));
@@ -929,13 +949,13 @@ QString CustomWizardContext::processFile(const FieldReplacementMap &fm, QString 
     if (!errorMessage.isEmpty()) {
         qWarning("Error processing custom widget file: %s\nFile:\n%s",
                  qPrintable(errorMessage), qPrintable(in));
-        return {};
+        return QString();
     }
 
     if (!Utils::TemplateEngine::preprocessText(in, &out, &errorMessage)) {
         qWarning("Error preprocessing custom widget file: %s\nFile:\n%s",
                  qPrintable(errorMessage), qPrintable(in));
-        return {};
+        return QString();
     }
     return out;
 }

@@ -603,34 +603,6 @@ static inline int classify7(const char *s, LanguageFeatures features)
       }
     }
   }
-  else if (features.cxx20Enabled && s[0] == 'c') {
-    if (s[1] == 'h') {
-      if (s[2] == 'a') {
-        if (s[3] == 'r') {
-          if (s[4] == '8') {
-            if (s[5] == '_') {
-              if (s[6] == 't') {
-                return T_CHAR8_T;
-              }
-            }
-          }
-        }
-      }
-    }
-    else if (s[1] == 'o') {
-      if (s[2] == 'n') {
-        if (s[3] == 'c') {
-          if (s[4] == 'e') {
-            if (s[5] == 'p') {
-              if (s[6] == 't') {
-                return T_CONCEPT;
-              }
-            }
-          }
-        }
-      }
-    }
-  }
   else if (s[0] == 'd') {
     if (s[1] == 'e') {
       if (s[2] == 'f') {
@@ -875,31 +847,7 @@ static inline int classify8(const char *s, LanguageFeatures features)
       }
     }
     else if (s[1] == 'o') {
-      if (features.cxx20Enabled && s[2] == '_') {
-        if (s[3] == 'a') {
-          if (s[4] == 'w') {
-            if (s[5] == 'a') {
-              if (s[6] == 'i') {
-                if (s[7] == 't') {
-                  return T_CO_AWAIT;
-                }
-              }
-            }
-          }
-        }
-        else if (s[3] == 'y') {
-          if (s[4] == 'i') {
-            if (s[5] == 'e') {
-              if (s[6] == 'l') {
-                if (s[7] == 'd') {
-                  return T_CO_YIELD;
-                }
-              }
-            }
-          }
-        }
-      }
-      else if (s[2] == 'n') {
+      if (s[2] == 'n') {
         if (s[3] == 't') {
           if (s[4] == 'i') {
             if (s[5] == 'n') {
@@ -991,19 +939,6 @@ static inline int classify8(const char *s, LanguageFeatures features)
               if (s[6] == 'e') {
                 if (s[7] == 'r') {
                   return T_REGISTER;
-                }
-              }
-            }
-          }
-        }
-      }
-      else if (features.cxx20Enabled && s[2] == 'q') {
-        if (s[3] == 'u') {
-          if (s[4] == 'i') {
-            if (s[5] == 'r') {
-              if (s[6] == 'e') {
-                if (s[7] == 's') {
-                  return T_REQUIRES;
                 }
               }
             }
@@ -1162,47 +1097,16 @@ static inline int classify9(const char *s, LanguageFeatures features)
       }
     }
   }
-  else if (s[0] == 'c') {
+  else if (features.cxx11Enabled && s[0] == 'c') {
     if (s[1] == 'o') {
-      if (features.cxx20Enabled && s[2] == '_') {
-        if (s[3] == 'r') {
-          if (s[4] == 'e') {
-            if (s[5] == 't') {
-              if (s[6] == 'u') {
-                if (s[7] == 'r') {
-                  if (s[8] == 'n') {
-                    return T_CO_RETURN;
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-      else if (s[2] == 'n') {
+      if (s[2] == 'n') {
         if (s[3] == 's') {
           if (s[4] == 't') {
             if (s[5] == 'e') {
-              if (features.cxx20Enabled && s[6] == 'v') {
-                if (s[7] == 'a') {
-                  if (s[8] == 'l') {
-                    return T_CONSTEVAL;
-                  }
-                }
-              }
-              else if (features.cxx11Enabled && s[6] == 'x') {
+              if (s[6] == 'x') {
                 if (s[7] == 'p') {
                   if (s[8] == 'r') {
                     return T_CONSTEXPR;
-                  }
-                }
-              }
-            }
-            else if (features.cxx20Enabled && s[5] == 'i') {
-              if (s[6] == 'n') {
-                if (s[7] == 'i') {
-                  if (s[8] == 't') {
-                    return T_CONSTINIT;
                   }
                 }
               }

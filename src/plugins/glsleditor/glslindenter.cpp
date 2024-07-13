@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "glslindenter.h"
 
@@ -8,37 +30,18 @@
 #include <cppeditor/cppcodestylepreferences.h>
 #include <texteditor/tabsettings.h>
 
+#include <QChar>
 #include <QTextDocument>
 #include <QTextBlock>
 #include <QTextCursor>
 
-namespace GlslEditor::Internal {
+namespace GlslEditor {
+namespace Internal {
 
-class GlslIndenter final : public TextEditor::TextIndenter
-{
-public:
-    explicit GlslIndenter(QTextDocument *doc)
-        : TextEditor::TextIndenter(doc)
-    {}
-
-    bool isElectricCharacter(const QChar &ch) const final;
-    void indentBlock(const QTextBlock &block,
-                     const QChar &typedChar,
-                     const TextEditor::TabSettings &tabSettings,
-                     int cursorPositionInEditor = -1) final;
-
-    void indent(const QTextCursor &cursor,
-                const QChar &typedChar,
-                const TextEditor::TabSettings &tabSettings,
-                int cursorPositionInEditor = -1) final;
-
-    int indentFor(const QTextBlock &block,
-                  const TextEditor::TabSettings &tabSettings,
-                  int cursorPositionInEditor = -1) final;
-    TextEditor::IndentationForBlock indentationForBlocks(const QVector<QTextBlock> &blocks,
-                                                         const TextEditor::TabSettings &tabSettings,
-                                                         int cursorPositionInEditor = -1) final;
-};
+GlslIndenter::GlslIndenter(QTextDocument *doc)
+    : TextEditor::TextIndenter(doc)
+{}
+GlslIndenter::~GlslIndenter() = default;
 
 bool GlslIndenter::isElectricCharacter(const QChar &ch) const
 {
@@ -53,7 +56,8 @@ void GlslIndenter::indentBlock(const QTextBlock &block,
 {
     // TODO: do something with it
     CppEditor::QtStyleCodeFormatter
-        codeFormatter(tabSettings, CppEditor::CppToolsSettings::cppCodeStyle()->codeStyleSettings());
+        codeFormatter(tabSettings,
+                      CppEditor::CppToolsSettings::instance()->cppCodeStyle()->codeStyleSettings());
 
     codeFormatter.updateStateUntil(block);
     int indent;
@@ -84,7 +88,8 @@ void GlslIndenter::indent(const QTextCursor &cursor,
 
         // TODO: do something with it
         CppEditor::QtStyleCodeFormatter codeFormatter(tabSettings,
-                                                     CppEditor::CppToolsSettings::cppCodeStyle()
+                                                     CppEditor::CppToolsSettings::instance()
+                                                         ->cppCodeStyle()
                                                          ->codeStyleSettings());
         codeFormatter.updateStateUntil(block);
 
@@ -109,7 +114,8 @@ int GlslIndenter::indentFor(const QTextBlock &block,
                             int /*cursorPositionInEditor*/)
 {
     CppEditor::QtStyleCodeFormatter
-        codeFormatter(tabSettings, CppEditor::CppToolsSettings::cppCodeStyle()->codeStyleSettings());
+        codeFormatter(tabSettings,
+                      CppEditor::CppToolsSettings::instance()->cppCodeStyle()->codeStyleSettings());
 
     codeFormatter.updateStateUntil(block);
     int indent;
@@ -125,12 +131,13 @@ TextEditor::IndentationForBlock GlslIndenter::indentationForBlocks(
     int /*cursorPositionInEditor*/)
 {
     CppEditor::QtStyleCodeFormatter
-        codeFormatter(tabSettings, CppEditor::CppToolsSettings::cppCodeStyle()->codeStyleSettings());
+        codeFormatter(tabSettings,
+                      CppEditor::CppToolsSettings::instance()->cppCodeStyle()->codeStyleSettings());
 
     codeFormatter.updateStateUntil(blocks.last());
 
     TextEditor::IndentationForBlock ret;
-    for (const QTextBlock &block : blocks) {
+    foreach (QTextBlock block, blocks) {
         int indent;
         int padding;
         codeFormatter.indentFor(block, &indent, &padding);
@@ -139,9 +146,5 @@ TextEditor::IndentationForBlock GlslIndenter::indentationForBlocks(
     return ret;
 }
 
-TextEditor::TextIndenter *createGlslIndenter(QTextDocument *doc)
-{
-    return new GlslIndenter(doc);
-}
-
-} // GlslEditor::Internal
+} // namespace Internal
+} // namespace GlslEditor

@@ -1,9 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include <extensionsystem/iplugin.h>
+
+#include <QFuture>
 
 QT_BEGIN_NAMESPACE
 class QStandardItemModel;
@@ -15,6 +39,8 @@ class VcsBaseSubmitEditor;
 
 namespace Internal {
 
+class CommonVcsSettings;
+
 class VcsPlugin : public ExtensionSystem::IPlugin
 {
     Q_OBJECT
@@ -24,16 +50,26 @@ public:
     VcsPlugin();
     ~VcsPlugin() override;
 
-    void initialize() override;
+    bool initialize(const QStringList &arguments, QString *errorMessage) override;
 
     static VcsPlugin *instance();
+    static void addFuture(const QFuture<void> &future);
+
+    CommonVcsSettings &settings() const;
 
     // Model of user nick names used for the submit
     // editor. Stored centrally here to achieve delayed
     // initialization and updating on settings change.
     QStandardItemModel *nickNameModel();
 
+signals:
+    void settingsChanged();
+    void submitEditorAboutToClose(VcsBase::VcsBaseSubmitEditor *e, bool *result);
+
 private:
+    void slotSettingsChanged();
+    void populateNickNameModel();
+
     class VcsPluginPrivate *d = nullptr;
 };
 

@@ -1,30 +1,163 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "codestyleselectorwidget.h"
-
+#include "ui_codestyleselectorwidget.h"
 #include "icodestylepreferences.h"
 #include "icodestylepreferencesfactory.h"
 #include "codestylepool.h"
-#include "texteditortr.h"
+#include "tabsettings.h"
 
 #include <utils/fileutils.h>
-#include <utils/layoutbuilder.h>
 
-#include <QApplication>
-#include <QComboBox>
-#include <QDebug>
-#include <QDialog>
+#include <QPushButton>
 #include <QDialogButtonBox>
-#include <QFileDialog>
+#include <QDialog>
 #include <QInputDialog>
 #include <QLabel>
 #include <QMessageBox>
-#include <QPushButton>
+#include <QFileDialog>
 
+#include <QDebug>
+
+using namespace TextEditor;
 using namespace Utils;
 
 namespace TextEditor {
+namespace Internal {
+
+class CodeStyleDialog : public QDialog
+{
+    Q_OBJECT
+public:
+    explicit CodeStyleDialog(ICodeStylePreferencesFactory *factory,
+                             ICodeStylePreferences *codeStyle,
+                             ProjectExplorer::Project *project = nullptr,
+                             QWidget *parent = nullptr);
+    ~CodeStyleDialog() override;
+    ICodeStylePreferences *codeStyle() const;
+private:
+    void slotCopyClicked();
+    void slotDisplayNameChanged();
+
+    ICodeStylePreferences *m_codeStyle;
+    QLineEdit *m_lineEdit;
+    QDialogButtonBox *m_buttons;
+    QLabel *m_warningLabel = nullptr;
+    QPushButton *m_copyButton = nullptr;
+    QString m_originalDisplayName;
+};
+
+CodeStyleDialog::CodeStyleDialog(ICodeStylePreferencesFactory *factory,
+                                 ICodeStylePreferences *codeStyle,
+                                 ProjectExplorer::Project *project,
+                                 QWidget *parent)
+    : QDialog(parent)
+{
+    setWindowTitle(tr("Edit Code Style"));
+    auto layout = new QVBoxLayout(this);
+    QLabel *label = new QLabel(tr("Code style name:"));
+    m_lineEdit = new QLineEdit(codeStyle->displayName(), this);
+    auto nameLayout = new QHBoxLayout;
+    nameLayout->addWidget(label);
+    nameLayout->addWidget(m_lineEdit);
+    layout->addLayout(nameLayout);
+
+    if (codeStyle->isReadOnly()) {
+        auto warningLayout = new QHBoxLayout;
+        m_warningLabel = new QLabel(
+                    tr("You cannot save changes to a built-in code style. "
+                       "Copy it first to create your own version."), this);
+        QFont font = m_warningLabel->font();
+        font.setItalic(true);
+        m_warningLabel->setFont(font);
+        m_warningLabel->setWordWrap(true);
+        m_copyButton = new QPushButton(tr("Copy Built-in Code Style"), this);
+        m_copyButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+        connect(m_copyButton, &QAbstractButton::clicked, this, &CodeStyleDialog::slotCopyClicked);
+        warningLayout->addWidget(m_warningLabel);
+        warningLayout->addWidget(m_copyButton);
+        layout->addLayout(warningLayout);
+    }
+
+    m_originalDisplayName = codeStyle->displayName();
+    m_codeStyle = factory->createCodeStyle();
+    m_codeStyle->setTabSettings(codeStyle->tabSettings());
+    m_codeStyle->setValue(codeStyle->value());
+    m_codeStyle->setId(codeStyle->id());
+    m_codeStyle->setDisplayName(m_originalDisplayName);
+    m_codeStyle->setReadOnly(codeStyle->isReadOnly());
+    TextEditor::CodeStyleEditorWidget *editor = factory->createEditor(m_codeStyle, project, this);
+
+    m_buttons = new QDialogButtonBox(
+                QDialogButtonBox::Ok | QDialogButtonBox::Cancel, Qt::Horizontal, this);
+    if (codeStyle->isReadOnly()) {
+        QPushButton *okButton = m_buttons->button(QDialogButtonBox::Ok);
+        okButton->setEnabled(false);
+    }
+
+    if (editor)
+        layout->addWidget(editor);
+    layout->addWidget(m_buttons);
+    resize(850, 600);
+
+    connect(m_lineEdit, &QLineEdit::textChanged, this, &CodeStyleDialog::slotDisplayNameChanged);
+    connect(m_buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
+    connect(m_buttons, &QDialogButtonBox::accepted, editor, &TextEditor::CodeStyleEditorWidget::apply);
+    connect(m_buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+}
+
+ICodeStylePreferences *CodeStyleDialog::codeStyle() const
+{
+    return m_codeStyle;
+}
+
+void CodeStyleDialog::slotCopyClicked()
+{
+    if (m_warningLabel)
+        m_warningLabel->hide();
+    if (m_copyButton)
+        m_copyButton->hide();
+    QPushButton *okButton = m_buttons->button(QDialogButtonBox::Ok);
+    okButton->setEnabled(true);
+    if (m_lineEdit->text() == m_originalDisplayName)
+        m_lineEdit->setText(tr("%1 (Copy)").arg(m_lineEdit->text()));
+    m_lineEdit->selectAll();
+}
+
+void CodeStyleDialog::slotDisplayNameChanged()
+{
+    m_codeStyle->setDisplayName(m_lineEdit->text());
+}
+
+CodeStyleDialog::~CodeStyleDialog()
+{
+    delete m_codeStyle;
+}
+
+} // Internal
 
 CodeStyleSelectorWidget::CodeStyleSelectorWidget(ICodeStylePreferencesFactory *factory,
                                                  ProjectExplorer::Project *project,
@@ -32,47 +165,30 @@ CodeStyleSelectorWidget::CodeStyleSelectorWidget(ICodeStylePreferencesFactory *f
     : QWidget(parent)
     , m_factory(factory)
     , m_project(project)
+    , m_ui(new Internal::Ui::CodeStyleSelectorWidget)
 {
-    m_delegateComboBox = new QComboBox(this);
-    m_delegateComboBox->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_ui->setupUi(this);
+    m_ui->importButton->setEnabled(false);
+    m_ui->exportButton->setEnabled(false);
 
-    auto copyButton = new QPushButton(Tr::tr("Copy..."));
-
-    m_removeButton = new QPushButton(Tr::tr("Remove"));
-
-    m_exportButton = new QPushButton(Tr::tr("Export..."));
-    m_exportButton->setEnabled(false);
-
-    m_importButton = new QPushButton(Tr::tr("Import..."));
-    m_importButton->setEnabled(false);
-
-    using namespace Layouting;
-
-    Column {
-        Grid {
-            Tr::tr("Custom settings:"),
-            m_delegateComboBox,
-            copyButton,
-            m_removeButton,
-            m_exportButton,
-            m_importButton
-        },
-        noMargin,
-    }.attachTo(this);
-
-    connect(m_delegateComboBox, &QComboBox::activated,
+    connect(m_ui->delegateComboBox, QOverload<int>::of(&QComboBox::activated),
             this, &CodeStyleSelectorWidget::slotComboBoxActivated);
-    connect(copyButton, &QAbstractButton::clicked,
+    connect(m_ui->copyButton, &QAbstractButton::clicked,
             this, &CodeStyleSelectorWidget::slotCopyClicked);
-    connect(m_removeButton, &QAbstractButton::clicked,
+    connect(m_ui->editButton, &QAbstractButton::clicked,
+            this, &CodeStyleSelectorWidget::slotEditClicked);
+    connect(m_ui->removeButton, &QAbstractButton::clicked,
             this, &CodeStyleSelectorWidget::slotRemoveClicked);
-    connect(m_importButton, &QAbstractButton::clicked,
+    connect(m_ui->importButton, &QAbstractButton::clicked,
             this, &CodeStyleSelectorWidget::slotImportClicked);
-    connect(m_exportButton, &QAbstractButton::clicked,
+    connect(m_ui->exportButton, &QAbstractButton::clicked,
             this, &CodeStyleSelectorWidget::slotExportClicked);
 }
 
-CodeStyleSelectorWidget::~CodeStyleSelectorWidget() = default;
+CodeStyleSelectorWidget::~CodeStyleSelectorWidget()
+{
+    delete m_ui;
+}
 
 void CodeStyleSelectorWidget::setCodeStyle(ICodeStylePreferences *codeStyle)
 {
@@ -91,9 +207,9 @@ void CodeStyleSelectorWidget::setCodeStyle(ICodeStylePreferences *codeStyle)
         disconnect(m_codeStyle, &ICodeStylePreferences::currentDelegateChanged,
                 this, &CodeStyleSelectorWidget::slotCurrentDelegateChanged);
 
-        m_exportButton->setEnabled(false);
-        m_importButton->setEnabled(false);
-        m_delegateComboBox->clear();
+        m_ui->exportButton->setEnabled(false);
+        m_ui->importButton->setEnabled(false);
+        m_ui->delegateComboBox->clear();
     }
     m_codeStyle = codeStyle;
     // fillup new
@@ -107,8 +223,8 @@ void CodeStyleSelectorWidget::setCodeStyle(ICodeStylePreferences *codeStyle)
                     this, &CodeStyleSelectorWidget::slotCodeStyleAdded);
             connect(codeStylePool, &CodeStylePool::codeStyleRemoved,
                     this, &CodeStyleSelectorWidget::slotCodeStyleRemoved);
-            m_exportButton->setEnabled(true);
-            m_importButton->setEnabled(true);
+            m_ui->exportButton->setEnabled(true);
+            m_ui->importButton->setEnabled(true);
         }
 
         for (int i = 0; i < delegates.count(); i++)
@@ -123,12 +239,12 @@ void CodeStyleSelectorWidget::setCodeStyle(ICodeStylePreferences *codeStyle)
 
 void CodeStyleSelectorWidget::slotComboBoxActivated(int index)
 {
-    if (m_ignoreChanges.isLocked())
+    if (m_ignoreGuiSignals)
         return;
 
-    if (index < 0 || index >= m_delegateComboBox->count())
+    if (index < 0 || index >= m_ui->delegateComboBox->count())
         return;
-    auto delegate = m_delegateComboBox->itemData(index).value<ICodeStylePreferences *>();
+    auto delegate = m_ui->delegateComboBox->itemData(index).value<ICodeStylePreferences *>();
 
     QSignalBlocker blocker(this);
     m_codeStyle->setCurrentDelegate(delegate);
@@ -136,14 +252,13 @@ void CodeStyleSelectorWidget::slotComboBoxActivated(int index)
 
 void CodeStyleSelectorWidget::slotCurrentDelegateChanged(ICodeStylePreferences *delegate)
 {
-    {
-        const GuardLocker locker(m_ignoreChanges);
-        m_delegateComboBox->setCurrentIndex(m_delegateComboBox->findData(QVariant::fromValue(delegate)));
-        m_delegateComboBox->setToolTip(m_delegateComboBox->currentText());
-    }
+    m_ignoreGuiSignals = true;
+    m_ui->delegateComboBox->setCurrentIndex(m_ui->delegateComboBox->findData(QVariant::fromValue(delegate)));
+    m_ui->delegateComboBox->setToolTip(m_ui->delegateComboBox->currentText());
+    m_ignoreGuiSignals = false;
 
     const bool removeEnabled = delegate && !delegate->isReadOnly() && !delegate->currentDelegate();
-    m_removeButton->setEnabled(removeEnabled);
+    m_ui->removeButton->setEnabled(removeEnabled);
 }
 
 void CodeStyleSelectorWidget::slotCopyClicked()
@@ -155,18 +270,41 @@ void CodeStyleSelectorWidget::slotCopyClicked()
     ICodeStylePreferences *currentPreferences = m_codeStyle->currentPreferences();
     bool ok = false;
     const QString newName = QInputDialog::getText(this,
-                                                  Tr::tr("Copy Code Style"),
-                                                  Tr::tr("Code style name:"),
+                                                  tr("Copy Code Style"),
+                                                  tr("Code style name:"),
                                                   QLineEdit::Normal,
-                                                  Tr::tr("%1 (Copy)").arg(currentPreferences->displayName()),
+                                                  tr("%1 (Copy)").arg(currentPreferences->displayName()),
                                                   &ok);
     if (!ok || newName.trimmed().isEmpty())
         return;
     ICodeStylePreferences *copy = codeStylePool->cloneCodeStyle(currentPreferences);
     if (copy) {
         copy->setDisplayName(newName);
-        emit m_codeStyle->aboutToBeCopied(currentPreferences, copy);
         m_codeStyle->setCurrentDelegate(copy);
+    }
+}
+
+void CodeStyleSelectorWidget::slotEditClicked()
+{
+    if (!m_codeStyle)
+        return;
+
+    ICodeStylePreferences *codeStyle = m_codeStyle->currentPreferences();
+    // check if it's read-only
+
+    Internal::CodeStyleDialog dialog(m_factory, codeStyle, m_project, this);
+    if (dialog.exec() == QDialog::Accepted) {
+        ICodeStylePreferences *dialogCodeStyle = dialog.codeStyle();
+        if (codeStyle->isReadOnly()) {
+            CodeStylePool *codeStylePool = m_codeStyle->delegatingPool();
+            codeStyle = codeStylePool->cloneCodeStyle(dialogCodeStyle);
+            if (codeStyle)
+                m_codeStyle->setCurrentDelegate(codeStyle);
+            return;
+        }
+        codeStyle->setTabSettings(dialogCodeStyle->tabSettings());
+        codeStyle->setValue(dialogCodeStyle->value());
+        codeStyle->setDisplayName(dialogCodeStyle->displayName());
     }
 }
 
@@ -179,14 +317,14 @@ void CodeStyleSelectorWidget::slotRemoveClicked()
     ICodeStylePreferences *currentPreferences = m_codeStyle->currentPreferences();
 
     QMessageBox messageBox(QMessageBox::Warning,
-                           Tr::tr("Delete Code Style"),
-                           Tr::tr("Are you sure you want to delete this code style permanently?"),
+                           tr("Delete Code Style"),
+                           tr("Are you sure you want to delete this code style permanently?"),
                            QMessageBox::Discard | QMessageBox::Cancel,
                            this);
 
     // Change the text and role of the discard button
     auto deleteButton = static_cast<QPushButton*>(messageBox.button(QMessageBox::Discard));
-    deleteButton->setText(Tr::tr("Delete"));
+    deleteButton->setText(tr("Delete"));
     messageBox.addButton(deleteButton, QMessageBox::AcceptRole);
     messageBox.setDefaultButton(deleteButton);
 
@@ -198,29 +336,25 @@ void CodeStyleSelectorWidget::slotRemoveClicked()
 void CodeStyleSelectorWidget::slotImportClicked()
 {
     const FilePath fileName =
-            FileUtils::getOpenFilePath(this, Tr::tr("Import Code Style"), {},
-                                       Tr::tr("Code styles (*.xml);;All files (*)"));
+            FileUtils::getOpenFilePath(this, tr("Import Code Style"), {},
+                                       tr("Code styles (*.xml);;All files (*)"));
     if (!fileName.isEmpty()) {
         CodeStylePool *codeStylePool = m_codeStyle->delegatingPool();
         ICodeStylePreferences *importedStyle = codeStylePool->importCodeStyle(fileName);
         if (importedStyle)
             m_codeStyle->setCurrentDelegate(importedStyle);
         else
-            QMessageBox::warning(this,
-                                 Tr::tr("Import Code Style"),
-                                 Tr::tr("Cannot import code style from \"%1\".")
-                                     .arg(fileName.toUserOutput()));
+            QMessageBox::warning(this, tr("Import Code Style"),
+                                 tr("Cannot import code style from %1"), fileName.toUserOutput());
     }
 }
 
 void CodeStyleSelectorWidget::slotExportClicked()
 {
     ICodeStylePreferences *currentPreferences = m_codeStyle->currentPreferences();
-    const FilePath filePath = FileUtils::getSaveFilePath(
-        this,
-        Tr::tr("Export Code Style"),
-        FileUtils::homePath().pathAppended(QString::fromUtf8(currentPreferences->id() + ".xml")),
-        Tr::tr("Code styles (*.xml);;All files (*)"));
+    const FilePath filePath = FileUtils::getSaveFilePath(this, tr("Export Code Style"),
+                             FilePath::fromString(QString::fromUtf8(currentPreferences->id() + ".xml")),
+                             tr("Code styles (*.xml);;All files (*)"));
     if (!filePath.isEmpty()) {
         CodeStylePool *codeStylePool = m_codeStyle->delegatingPool();
         codeStylePool->exportCodeStyle(filePath, currentPreferences);
@@ -235,64 +369,68 @@ void CodeStyleSelectorWidget::slotCodeStyleAdded(ICodeStylePreferences *codeStyl
 
     const QVariant data = QVariant::fromValue(codeStylePreferences);
     const QString name = displayName(codeStylePreferences);
-    m_delegateComboBox->addItem(name, data);
-    m_delegateComboBox->setItemData(m_delegateComboBox->count() - 1, name, Qt::ToolTipRole);
+    m_ui->delegateComboBox->addItem(name, data);
+    m_ui->delegateComboBox->setItemData(m_ui->delegateComboBox->count() - 1, name, Qt::ToolTipRole);
     connect(codeStylePreferences, &ICodeStylePreferences::displayNameChanged,
-            this, [this, codeStylePreferences] { slotUpdateName(codeStylePreferences); });
+            this, &CodeStyleSelectorWidget::slotUpdateName);
     if (codeStylePreferences->delegatingPool()) {
         connect(codeStylePreferences, &ICodeStylePreferences::currentPreferencesChanged,
-                this, [this, codeStylePreferences] { slotUpdateName(codeStylePreferences); });
+                this, &CodeStyleSelectorWidget::slotUpdateName);
     }
 }
 
 void CodeStyleSelectorWidget::slotCodeStyleRemoved(ICodeStylePreferences *codeStylePreferences)
 {
-    const GuardLocker locker(m_ignoreChanges);
-    m_delegateComboBox->removeItem(m_delegateComboBox->findData(
-                                           QVariant::fromValue(codeStylePreferences)));
-    disconnect(codeStylePreferences, &ICodeStylePreferences::displayNameChanged, this, nullptr);
+    m_ignoreGuiSignals = true;
+    m_ui->delegateComboBox->removeItem(m_ui->delegateComboBox->findData(QVariant::fromValue(codeStylePreferences)));
+    disconnect(codeStylePreferences, &ICodeStylePreferences::displayNameChanged,
+               this, &CodeStyleSelectorWidget::slotUpdateName);
     if (codeStylePreferences->delegatingPool()) {
         disconnect(codeStylePreferences, &ICodeStylePreferences::currentPreferencesChanged,
-                   this, nullptr);
+                   this, &CodeStyleSelectorWidget::slotUpdateName);
     }
+    m_ignoreGuiSignals = false;
 }
 
-void CodeStyleSelectorWidget::slotUpdateName(ICodeStylePreferences *codeStylePreferences)
+void CodeStyleSelectorWidget::slotUpdateName()
 {
-    updateName(codeStylePreferences);
+    auto changedCodeStyle = qobject_cast<ICodeStylePreferences *>(sender());
+    if (!changedCodeStyle)
+        return;
+
+    updateName(changedCodeStyle);
 
     QList<ICodeStylePreferences *> codeStyles = m_codeStyle->delegatingPool()->codeStyles();
     for (int i = 0; i < codeStyles.count(); i++) {
         ICodeStylePreferences *codeStyle = codeStyles.at(i);
-        if (codeStyle->currentDelegate() == codeStylePreferences)
+        if (codeStyle->currentDelegate() == changedCodeStyle)
             updateName(codeStyle);
     }
 
-    m_delegateComboBox->setToolTip(m_delegateComboBox->currentText());
+    m_ui->delegateComboBox->setToolTip(m_ui->delegateComboBox->currentText());
 }
 
 void CodeStyleSelectorWidget::updateName(ICodeStylePreferences *codeStyle)
 {
-    const int idx = m_delegateComboBox->findData(QVariant::fromValue(codeStyle));
+    const int idx = m_ui->delegateComboBox->findData(QVariant::fromValue(codeStyle));
     if (idx < 0)
         return;
 
     const QString name = displayName(codeStyle);
-    m_delegateComboBox->setItemText(idx, name);
-    m_delegateComboBox->setItemData(idx, name, Qt::ToolTipRole);
+    m_ui->delegateComboBox->setItemText(idx, name);
+    m_ui->delegateComboBox->setItemData(idx, name, Qt::ToolTipRole);
 }
 
 QString CodeStyleSelectorWidget::displayName(ICodeStylePreferences *codeStyle) const
 {
     QString name = codeStyle->displayName();
     if (codeStyle->currentDelegate())
-        name = Tr::tr("%1 [proxy: %2]").arg(name).arg(codeStyle->currentDelegate()->displayName());
+        name = tr("%1 [proxy: %2]").arg(name).arg(codeStyle->currentDelegate()->displayName());
     if (codeStyle->isReadOnly())
-        name = Tr::tr("%1 [built-in]").arg(name);
-    else
-        name = Tr::tr("%1 [customizable]").arg(name);
-
+        name = tr("%1 [built-in]").arg(name);
     return name;
 }
 
 } // TextEditor
+
+#include "codestyleselectorwidget.moc"

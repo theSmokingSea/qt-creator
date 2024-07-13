@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sqlstatementbuilder.h"
 
@@ -197,37 +219,30 @@ void SqlStatementBuilder::checkIfPlaceHolderExists(Utils::SmallStringView name) 
 void SqlStatementBuilder::checkIfNoPlaceHoldersAynmoreExists() const
 {
     if (m_sqlStatement.contains('$'))
-        throwException(
-            "SqlStatementBuilder::bind: there are still placeholder in the sql statement!",
-            m_sqlTemplate);
+        throwException("SqlStatementBuilder::bind: there are still placeholder in the sql statement!", m_sqlTemplate.constData());
 }
 
 void SqlStatementBuilder::checkBindingTextIsNotEmpty(Utils::SmallStringView text) const
 {
     if (text.isEmpty())
-        throwException("SqlStatementBuilder::bind: binding text it empty!", m_sqlTemplate);
+        throwException("SqlStatementBuilder::bind: binding text it empty!", m_sqlTemplate.constData());
 }
 
 void SqlStatementBuilder::checkBindingTextVectorIsNotEmpty(const Utils::SmallStringVector &textVector) const
 {
     if (textVector.empty())
-        throwException("SqlStatementBuilder::bind: binding text vector it empty!", m_sqlTemplate);
+        throwException("SqlStatementBuilder::bind: binding text vector it empty!", m_sqlTemplate.constData());
 }
 
 void SqlStatementBuilder::checkBindingIntegerVectorIsNotEmpty(const std::vector<int> &integerVector) const
 {
     if (integerVector.empty())
-        throwException("SqlStatementBuilder::bind: binding integer vector it empty!", m_sqlTemplate);
+        throwException("SqlStatementBuilder::bind: binding integer vector it empty!", m_sqlTemplate.constData());
 }
 
-void SqlStatementBuilder::throwException(const char *whatHasHappened, Utils::SmallString sqlTemplate)
+void SqlStatementBuilder::throwException(const char *whatHasHappened, const char *errorMessage)
 {
-    throw SqlStatementBuilderException(whatHasHappened, std::move(sqlTemplate));
-}
-
-const char *SqlStatementBuilderException::what() const noexcept
-{
-    return m_whatHasHappened;
+    throw SqlStatementBuilderException(whatHasHappened, errorMessage);
 }
 
 } // namespace Sqlite

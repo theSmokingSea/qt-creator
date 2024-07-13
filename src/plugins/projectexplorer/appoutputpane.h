@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -14,6 +36,7 @@
 #include <QVector>
 
 QT_BEGIN_NAMESPACE
+class QTabWidget;
 class QToolButton;
 class QAction;
 class QPoint;
@@ -46,6 +69,8 @@ public:
 
     QWidget *outputWidget(QWidget *) override;
     QList<QWidget *> toolBarWidgets() const override;
+    QString displayName() const override;
+    int priorityInStatusBar() const override;
     void clearContents() override;
     bool canFocus() const override;
     bool hasFocus() const override;
@@ -56,8 +81,6 @@ public:
     void goToNext() override;
     void goToPrev() override;
     bool canNavigate() const override;
-
-    bool hasFilterContext() const override;
 
     void createNewOutputWindow(RunControl *rc);
     void showTabFor(RunControl *rc);
@@ -71,18 +94,21 @@ public:
     // ApplicationOutput specifics
     void projectRemoved();
 
+    void appendMessage(ProjectExplorer::RunControl *rc, const QString &out,
+                       Utils::OutputFormat format);
+
     const AppOutputSettings &settings() const { return m_settings; }
     void setSettings(const AppOutputSettings &settings);
 
 private:
-    void appendMessage(ProjectExplorer::RunControl *rc, const QString &out,
-                       Utils::OutputFormat format);
     void reRunRunControl();
     void stopRunControl();
     void attachToRunControl();
     void tabChanged(int);
     void contextMenuRequested(const QPoint &pos, int index);
-    void runControlFinished(RunControl *runControl);
+    void slotRunControlChanged();
+    void slotRunControlFinished();
+    void slotRunControlFinished2(ProjectExplorer::RunControl *sender);
 
     void aboutToUnloadSession();
     void updateFromSettings();
@@ -106,12 +132,11 @@ private:
     void closeTab(int index, CloseTabMode cm = CloseTabWithPrompt);
     bool optionallyPromptToStop(RunControl *runControl);
 
-    RunControlTab *tabFor(const RunControl *rc);
-    RunControlTab *tabFor(const QWidget *outputWindow);
-    const RunControlTab *tabFor(const QWidget *outputWindow) const;
-    RunControlTab *currentTab();
-    const RunControlTab *currentTab() const;
+    int indexOf(const RunControl *) const;
+    int indexOf(const QWidget *outputWindow) const;
+    int currentIndex() const;
     RunControl *currentRunControl() const;
+    int tabWidgetIndexOf(int runControlIndex) const;
     void handleOldOutput(Core::OutputWindow *window) const;
     void updateCloseActions();
     void updateFilter() override;
@@ -121,6 +146,7 @@ private:
     void loadSettings();
     void storeSettings() const;
 
+    QWidget *m_mainWidget;
     TabWidget *m_tabWidget;
     QVector<RunControlTab> m_runControlTabs;
     int m_runControlCount = 0;

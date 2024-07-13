@@ -1,22 +1,40 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "litehtmlhelpviewer.h"
 
 #include "helpconstants.h"
-#include "helptr.h"
 #include "localhelpmanager.h"
 
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
-#include <utils/theme/theme.h>
 
 #include <QClipboard>
-#include <QFile>
 #include <QGuiApplication>
 #include <QScrollBar>
 #include <QTimer>
-#include <QToolTip>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
@@ -27,55 +45,15 @@ using namespace Help::Internal;
 
 const int kMaxHistoryItems = 20;
 
-static void setLight(QWidget *widget)
+static QByteArray getData(const QUrl &url)
 {
-    QPalette p = widget->palette();
-    p.setColor(QPalette::Base, Qt::white);
-    p.setColor(QPalette::Text, Qt::black);
-    widget->setPalette(p);
-}
-
-static void setPaletteFromTheme(QWidget *widget)
-{
-    if (Utils::creatorTheme())
-        widget->setPalette(Utils::creatorTheme()->palette());
-}
-
-static bool isDarkTheme()
-{
-    return Utils::creatorTheme() && Utils::creatorTheme()->flag(Utils::Theme::DarkUserInterface);
-}
-
-static QByteArray getData(const QUrl &url, QWidget *widget)
-{
-    // This is a hack for Qt documentation,
+    // TODO: this is just a hack for Qt documentation
     // which decides to use a simpler CSS if the viewer does not have JavaScript
-    // which was a hack to decide if we are viewing in QTextBrowser or QtWebEngine et al.
-    // Force it to use the "normal" offline CSS even without JavaScript, since litehtml can
-    // handle that, and inject a dark themed CSS into Qt documentation for dark Qt Creator themes
+    // which was a hack to decide if we are viewing in QTextBrowser or QtWebEngine et al
     QUrl actualUrl = url;
     QString path = url.path(QUrl::FullyEncoded);
     static const char simpleCss[] = "/offline-simple.css";
     if (path.endsWith(simpleCss)) {
-        if (isDarkTheme()) {
-            // check if dark CSS is shipped with documentation
-            QString darkPath = path;
-            darkPath.replace(simpleCss, "/offline-dark.css");
-            actualUrl.setPath(darkPath);
-            LocalHelpManager::HelpData data = LocalHelpManager::helpData(actualUrl);
-            if (!data.resolvedUrl.isValid() || data.data.isEmpty()) {
-                // fallback
-                QFile css(":/help/offline-dark.css");
-                if (css.open(QIODevice::ReadOnly))
-                    data.data = css.readAll();
-            }
-            if (!data.data.isEmpty()) {
-                // we found the dark style
-                // set background dark (by using theme palette)
-                setPaletteFromTheme(widget);
-                return data.data;
-            }
-        }
         path.replace(simpleCss, "/offline.css");
         actualUrl.setPath(path);
     }
@@ -87,7 +65,7 @@ LiteHtmlHelpViewer::LiteHtmlHelpViewer(QWidget *parent)
     : HelpViewer(parent)
     , m_viewer(new QLiteHtmlWidget)
 {
-    m_viewer->setResourceHandler([this](const QUrl &url) { return getData(url, this); });
+    m_viewer->setResourceHandler([](const QUrl &url) { return getData(url); });
     m_viewer->setFrameStyle(QFrame::NoFrame);
     m_viewer->viewport()->installEventFilter(this);
     connect(m_viewer, &QLiteHtmlWidget::linkClicked, this, [this](const QUrl &url) {
@@ -101,11 +79,6 @@ LiteHtmlHelpViewer::LiteHtmlHelpViewer(QWidget *parent)
             &QLiteHtmlWidget::contextMenuRequested,
             this,
             &LiteHtmlHelpViewer::showContextMenu);
-    connect(m_viewer, &QLiteHtmlWidget::linkHighlighted, this, [this](const QUrl &url) {
-        m_highlightedLink = url;
-        if (!url.isValid())
-            QToolTip::hideText();
-    });
     auto layout = new QVBoxLayout;
     setLayout(layout);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -132,11 +105,6 @@ void LiteHtmlHelpViewer::setScale(qreal scale)
 {
     // interpret 0 as "default"
     m_viewer->setZoomFactor(scale == 0 ? qreal(1) : scale);
-}
-
-void LiteHtmlHelpViewer::setAntialias(bool on)
-{
-    m_viewer->setAntialias(on);
 }
 
 QString LiteHtmlHelpViewer::title() const
@@ -166,8 +134,6 @@ void LiteHtmlHelpViewer::setSource(const QUrl &url)
 
 void LiteHtmlHelpViewer::setHtml(const QString &html)
 {
-    // We control the html, so use theme palette
-    setPaletteFromTheme(this);
     m_viewer->setUrl({"about:invalid"});
     m_viewer->setHtml(html);
 }
@@ -214,11 +180,11 @@ void LiteHtmlHelpViewer::addForwardHistoryItems(QMenu *forwardMenu)
 }
 
 bool LiteHtmlHelpViewer::findText(
-    const QString &text, Utils::FindFlags flags, bool incremental, bool fromSearch, bool *wrapped)
+    const QString &text, Core::FindFlags flags, bool incremental, bool fromSearch, bool *wrapped)
 {
     Q_UNUSED(fromSearch)
     return m_viewer->findText(text,
-                              Utils::textDocumentFlagsForFindFlags(flags),
+                              Core::textDocumentFlagsForFindFlags(flags),
                               incremental,
                               wrapped);
 }
@@ -295,17 +261,11 @@ bool LiteHtmlHelpViewer::eventFilter(QObject *src, QEvent *e)
             goForward(1);
             return true;
         }
-    } else if (e->type() == QEvent::ToolTip) {
-        auto he = static_cast<QHelpEvent *>(e);
-        if (m_highlightedLink.isValid())
-            QToolTip::showText(he->globalPos(),
-                               m_highlightedLink.toDisplayString(),
-                               m_viewer->viewport());
     }
     return HelpViewer::eventFilter(src, e);
 }
 
-void LiteHtmlHelpViewer::setSourceInternal(const QUrl &url, std::optional<int> vscroll)
+void LiteHtmlHelpViewer::setSourceInternal(const QUrl &url, Utils::optional<int> vscroll)
 {
     slotLoadStarted();
     QUrl currentUrlWithoutFragment = m_viewer->url();
@@ -313,12 +273,8 @@ void LiteHtmlHelpViewer::setSourceInternal(const QUrl &url, std::optional<int> v
     QUrl newUrlWithoutFragment = url;
     newUrlWithoutFragment.setFragment({});
     m_viewer->setUrl(url);
-    if (currentUrlWithoutFragment != newUrlWithoutFragment) {
-        // We do not expect the documentation to support dark themes, so start with light palette.
-        // We override this if we find Qt's dark style
-        setLight(this);
-        m_viewer->setHtml(QString::fromUtf8(getData(url, this)));
-    }
+    if (currentUrlWithoutFragment != newUrlWithoutFragment)
+        m_viewer->setHtml(QString::fromUtf8(getData(url)));
     if (vscroll)
         m_viewer->verticalScrollBar()->setValue(*vscroll);
     else
@@ -334,20 +290,22 @@ void LiteHtmlHelpViewer::showContextMenu(const QPoint &pos, const QUrl &url)
     QAction *copyAnchorAction = nullptr;
     if (!url.isEmpty() && url.isValid()) {
         if (isActionVisible(HelpViewer::Action::NewPage)) {
-            QAction *action = menu.addAction(Tr::tr(Constants::TR_OPEN_LINK_AS_NEW_PAGE));
+            QAction *action = menu.addAction(
+                QCoreApplication::translate("HelpViewer", Constants::TR_OPEN_LINK_AS_NEW_PAGE));
             connect(action, &QAction::triggered, this, [this, url]() {
                 emit newPageRequested(url);
             });
         }
         if (isActionVisible(HelpViewer::Action::ExternalWindow)) {
-            QAction *action = menu.addAction(Tr::tr(Constants::TR_OPEN_LINK_IN_WINDOW));
+            QAction *action = menu.addAction(
+                QCoreApplication::translate("HelpViewer", Constants::TR_OPEN_LINK_IN_WINDOW));
             connect(action, &QAction::triggered, this, [this, url]() {
                 emit externalPageRequested(url);
             });
         }
-        copyAnchorAction = menu.addAction(Tr::tr("Copy Link"));
+        copyAnchorAction = menu.addAction(tr("Copy Link"));
     } else if (!m_viewer->selectedText().isEmpty()) {
-        connect(menu.addAction(Tr::tr("Copy")), &QAction::triggered, this, &HelpViewer::copy);
+        connect(menu.addAction(tr("Copy")), &QAction::triggered, this, &HelpViewer::copy);
     }
 
     if (copyAnchorAction == menu.exec(m_viewer->mapToGlobal(pos)))

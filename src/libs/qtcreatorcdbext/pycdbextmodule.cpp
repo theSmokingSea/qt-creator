@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "pycdbextmodule.h"
 
@@ -101,9 +123,6 @@ static PyObject *cdbext_resolveSymbol(PyObject *, PyObject *args) // -> Value
     if (!PyArg_ParseTuple(args, "s", &pattern))
         Py_RETURN_NONE;
 
-    if (debugPyCdbextModule)
-        DebugPrint() << "resolve symbol: " << pattern;
-
     CIDebugSymbols *symbols = ExtensionCommandContext::instance()->symbols();
     auto rc = PyList_New(0);
 
@@ -135,9 +154,6 @@ static PyObject *cdbext_getNameByAddress(PyObject *, PyObject *args)
     if (!PyArg_ParseTuple(args, "K", &address))
         Py_RETURN_NONE;
 
-    if (debugPyCdbextModule)
-        DebugPrint() << "name by address: " << address;
-
     CIDebugSymbols *symbols = ExtensionCommandContext::instance()->symbols();
 
     PyObject* ret = NULL;
@@ -158,9 +174,6 @@ static PyObject *cdbext_getAddressByName(PyObject *, PyObject *args)
     char *name = 0;
     if (!PyArg_ParseTuple(args, "s", &name))
         Py_RETURN_NONE;
-
-    if (debugPyCdbextModule)
-        DebugPrint() << "address by name: " << name;
 
     CIDebugSymbols *symbols = ExtensionCommandContext::instance()->symbols();
 
@@ -186,14 +199,6 @@ static PyObject *cdbext_listOfLocals(PyObject *, PyObject *args) // -> [ Value ]
         Py_RETURN_NONE;
 
     const std::string partialVariable(partialVariablesC);
-
-    if (debugPyCdbextModule) {
-        if (partialVariable.empty())
-            DebugPrint() << "list of locals";
-        else
-            DebugPrint() << "list of locals with partial variable: " << partialVariable;
-    }
-
     IDebugSymbolGroup2 *symbolGroup = nullptr;
     auto locals = PyList_New(0);
     if (partialVariable.empty()) {

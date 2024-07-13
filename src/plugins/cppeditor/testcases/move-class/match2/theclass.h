@@ -1,2 +1,0 @@
-class SomeClass {};
-class TheClass {};

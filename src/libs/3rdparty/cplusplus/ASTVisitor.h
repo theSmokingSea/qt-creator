@@ -81,7 +81,6 @@ public:
     virtual bool visit(ArrayDeclaratorAST *) { return true; }
     virtual bool visit(ArrayInitializerAST *) { return true; }
     virtual bool visit(AsmDefinitionAST *) { return true; }
-    virtual bool visit(AwaitExpressionAST *) { return true; }
     virtual bool visit(BaseSpecifierAST *) { return true; }
     virtual bool visit(BinaryExpressionAST *) { return true; }
     virtual bool visit(BoolLiteralAST *) { return true; }
@@ -97,7 +96,6 @@ public:
     virtual bool visit(CompoundExpressionAST *) { return true; }
     virtual bool visit(CompoundLiteralAST *) { return true; }
     virtual bool visit(CompoundStatementAST *) { return true; }
-    virtual bool visit(ConceptDeclarationAST *) { return true; }
     virtual bool visit(ConditionAST *) { return true; }
     virtual bool visit(ConditionalExpressionAST *) { return true; }
     virtual bool visit(ContinueStatementAST *) { return true; }
@@ -107,7 +105,6 @@ public:
     virtual bool visit(DeclarationStatementAST *) { return true; }
     virtual bool visit(DeclaratorAST *) { return true; }
     virtual bool visit(DeclaratorIdAST *) { return true; }
-    virtual bool visit(DecompositionDeclaratorAST *) { return true; }
     virtual bool visit(DecltypeSpecifierAST *) { return true; }
     virtual bool visit(DeleteExpressionAST *) { return true; }
     virtual bool visit(DesignatedInitializerAST *) { return true; }
@@ -183,7 +180,6 @@ public:
     virtual bool visit(OperatorFunctionIdAST *) { return true; }
     virtual bool visit(ParameterDeclarationAST *) { return true; }
     virtual bool visit(ParameterDeclarationClauseAST *) { return true; }
-    virtual bool visit(PlaceholderTypeSpecifierAST *) { return true; }
     virtual bool visit(PointerAST *) { return true; }
     virtual bool visit(PointerLiteralAST *) { return true; }
     virtual bool visit(PointerToMemberAST *) { return true; }
@@ -201,8 +197,6 @@ public:
     virtual bool visit(QualifiedNameAST *) { return true; }
     virtual bool visit(RangeBasedForStatementAST *) { return true; }
     virtual bool visit(ReferenceAST *) { return true; }
-    virtual bool visit(RequiresExpressionAST *) { return true; }
-    virtual bool visit(RequiresClauseAST *) { return true; }
     virtual bool visit(ReturnStatementAST *) { return true; }
     virtual bool visit(SimpleDeclarationAST *) { return true; }
     virtual bool visit(SimpleNameAST *) { return true; }
@@ -220,7 +214,6 @@ public:
     virtual bool visit(TrailingReturnTypeAST *) { return true; }
     virtual bool visit(TranslationUnitAST *) { return true; }
     virtual bool visit(TryBlockStatementAST *) { return true; }
-    virtual bool visit(TypeConstraintAST *) { return true; }
     virtual bool visit(TypeConstructorCallAST *) { return true; }
     virtual bool visit(TypeIdAST *) { return true; }
     virtual bool visit(TypeidExpressionAST *) { return true; }
@@ -231,7 +224,6 @@ public:
     virtual bool visit(UsingAST *) { return true; }
     virtual bool visit(UsingDirectiveAST *) { return true; }
     virtual bool visit(WhileStatementAST *) { return true; }
-    virtual bool visit(YieldExpressionAST *) { return true; }
 
     virtual void endVisit(AccessDeclarationAST *) {}
     virtual void endVisit(AliasDeclarationAST *) {}
@@ -242,7 +234,6 @@ public:
     virtual void endVisit(ArrayDeclaratorAST *) {}
     virtual void endVisit(ArrayInitializerAST *) {}
     virtual void endVisit(AsmDefinitionAST *) {}
-    virtual void endVisit(AwaitExpressionAST *) {}
     virtual void endVisit(BaseSpecifierAST *) {}
     virtual void endVisit(BinaryExpressionAST *) {}
     virtual void endVisit(BoolLiteralAST *) {}
@@ -258,7 +249,6 @@ public:
     virtual void endVisit(CompoundExpressionAST *) {}
     virtual void endVisit(CompoundLiteralAST *) {}
     virtual void endVisit(CompoundStatementAST *) {}
-    virtual void endVisit(ConceptDeclarationAST *) {}
     virtual void endVisit(ConditionAST *) {}
     virtual void endVisit(ConditionalExpressionAST *) {}
     virtual void endVisit(ContinueStatementAST *) {}
@@ -268,7 +258,6 @@ public:
     virtual void endVisit(DeclarationStatementAST *) {}
     virtual void endVisit(DeclaratorAST *) {}
     virtual void endVisit(DeclaratorIdAST *) {}
-    virtual void endVisit(DecompositionDeclaratorAST *) {}
     virtual void endVisit(DecltypeSpecifierAST *) {}
     virtual void endVisit(DeleteExpressionAST *) {}
     virtual void endVisit(DesignatedInitializerAST *) {}
@@ -344,7 +333,6 @@ public:
     virtual void endVisit(OperatorFunctionIdAST *) {}
     virtual void endVisit(ParameterDeclarationAST *) {}
     virtual void endVisit(ParameterDeclarationClauseAST *) {}
-    virtual void endVisit(PlaceholderTypeSpecifierAST *) {}
     virtual void endVisit(PointerAST *) {}
     virtual void endVisit(PointerLiteralAST *) {}
     virtual void endVisit(PointerToMemberAST *) {}
@@ -362,8 +350,6 @@ public:
     virtual void endVisit(QualifiedNameAST *) {}
     virtual void endVisit(RangeBasedForStatementAST *) {}
     virtual void endVisit(ReferenceAST *) {}
-    virtual void endVisit(RequiresExpressionAST *) {}
-    virtual void endVisit(RequiresClauseAST *) {}
     virtual void endVisit(ReturnStatementAST *) {}
     virtual void endVisit(SimpleDeclarationAST *) {}
     virtual void endVisit(SimpleNameAST *) {}
@@ -381,7 +367,6 @@ public:
     virtual void endVisit(TrailingReturnTypeAST *) {}
     virtual void endVisit(TranslationUnitAST *) {}
     virtual void endVisit(TryBlockStatementAST *) {}
-    virtual void endVisit(TypeConstraintAST *) {}
     virtual void endVisit(TypeConstructorCallAST *) {}
     virtual void endVisit(TypeIdAST *) {}
     virtual void endVisit(TypeidExpressionAST *) {}
@@ -392,7 +377,6 @@ public:
     virtual void endVisit(UsingAST *) {}
     virtual void endVisit(UsingDirectiveAST *) {}
     virtual void endVisit(WhileStatementAST *) {}
-    virtual void endVisit(YieldExpressionAST *) {}
 
 private:
    TranslationUnit *_translationUnit;

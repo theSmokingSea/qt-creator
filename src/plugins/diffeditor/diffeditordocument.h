@@ -1,12 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "diffutils.h"
 
-#include <coreplugin/patchtool.h>
 #include <coreplugin/textdocument.h>
+
+QT_FORWARD_DECLARE_CLASS(QMenu)
 
 namespace DiffEditor {
 
@@ -30,17 +53,17 @@ public:
         LoadFailed
     };
 
-    static ChunkData filterChunk(const ChunkData &data, const ChunkSelection &selection,
-                                 Core::PatchAction patchAction);
+    static ChunkData filterChunk(const ChunkData &data,
+                                 const ChunkSelection &selection, bool revert);
     QString makePatch(int fileIndex, int chunkIndex, const ChunkSelection &selection,
-                      Core::PatchAction patchAction, bool addPrefix = false,
-                      const QString &overriddenFileName = {}) const;
+                      bool revert, bool addPrefix = false,
+                      const QString &overriddenFileName = QString()) const;
 
-    void setDiffFiles(const QList<FileData> &data);
+    void setDiffFiles(const QList<FileData> &data, const Utils::FilePath &directory,
+                      const QString &startupFile = QString());
     QList<FileData> diffFiles() const;
-    Utils::FilePath workingDirectory() const;
-    void setWorkingDirectory(const Utils::FilePath &directory);
-    void setStartupFile(const QString &startupFile);
+    Utils::FilePath baseDirectory() const;
+    void setBaseDirectory(const Utils::FilePath &directory);
     QString startupFile() const;
 
     void setDescription(const QString &description);
@@ -58,6 +81,7 @@ public:
     QString fallbackSaveAsFileName() const override;
 
     bool isSaveAsAllowed() const override;
+    bool save(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override;
     void reload();
     bool reload(QString *errorString, ReloadFlag flag, ChangeType type) override;
     OpenResult open(QString *errorString, const Utils::FilePath &filePath,
@@ -72,9 +96,6 @@ signals:
     void documentChanged();
     void descriptionChanged();
 
-protected:
-    bool saveImpl(QString *errorString, const Utils::FilePath &filePath, bool autoSave) override;
-
 private:
     void beginReload();
     void endReload(bool success);
@@ -82,7 +103,7 @@ private:
 
     DiffEditorController *m_controller = nullptr;
     QList<FileData> m_diffFiles;
-    Utils::FilePath m_workingDirectory;
+    Utils::FilePath m_baseDirectory;
     QString m_startupFile;
     QString m_description;
     int m_contextLineCount = 3;

@@ -1,26 +1,45 @@
-// Copyright (C) 2016 Petar Perisin <petar.perisin@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Petar Perisin <petar.perisin@gmail.com>
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "unstartedappwatcherdialog.h"
 
 #include "debuggeritem.h"
-#include "debuggerkitaspect.h"
-#include "debuggertr.h"
+#include "debuggerkitinformation.h"
 
 #include <utils/pathchooser.h>
 
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/kit.h>
 #include <projectexplorer/kitchooser.h>
-#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projecttree.h>
 #include <projectexplorer/runconfiguration.h>
+#include <projectexplorer/runcontrol.h>
 #include <projectexplorer/target.h>
-
-#include <utils/processinterface.h>
 
 #include <QCheckBox>
 #include <QDialogButtonBox>
@@ -31,11 +50,13 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QVBoxLayout>
 
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 static bool isLocal(RunConfiguration *runConfiguration)
 {
@@ -68,11 +89,11 @@ static bool isLocal(RunConfiguration *runConfiguration)
 UnstartedAppWatcherDialog::UnstartedAppWatcherDialog(QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(Tr::tr("Attach to Process Not Yet Started"));
+    setWindowTitle(tr("Attach to Process Not Yet Started"));
 
     m_kitChooser = new KitChooser(this);
     m_kitChooser->setKitPredicate([](const Kit *k) {
-        return ToolchainKitAspect::targetAbi(k).os() == Abi::hostAbi().os();
+        return ToolChainKitAspect::targetAbi(k).os() == Abi::hostAbi().os();
     });
     m_kitChooser->setShowIcons(true);
     m_kitChooser->populate();
@@ -84,7 +105,7 @@ UnstartedAppWatcherDialog::UnstartedAppWatcherDialog(QWidget *parent)
 
     if (kit)
         m_kitChooser->setCurrentKitId(kit->id());
-    else if (KitManager::waitForLoaded() && KitManager::defaultKit())
+    else if (KitManager::defaultKit())
         m_kitChooser->setCurrentKitId(KitManager::defaultKit()->id());
 
     auto pathLayout = new QHBoxLayout;
@@ -93,13 +114,13 @@ UnstartedAppWatcherDialog::UnstartedAppWatcherDialog(QWidget *parent)
     m_pathChooser->setHistoryCompleter("LocalExecutable", true);
     m_pathChooser->setMinimumWidth(400);
 
-    auto resetExecutable = new QPushButton(Tr::tr("Reset"));
+    auto resetExecutable = new QPushButton(tr("Reset"));
     resetExecutable->setEnabled(false);
     pathLayout->addWidget(m_pathChooser);
     pathLayout->addWidget(resetExecutable);
     if (activeTarget) {
         if (RunConfiguration *runConfig = activeTarget->activeRunConfiguration()) {
-            const ProcessRunData runnable = runConfig->runnable();
+            const Runnable runnable = runConfig->runnable();
             if (isLocal(runConfig)) {
                 resetExecutable->setEnabled(true);
                 connect(resetExecutable, &QPushButton::clicked, this, [this, runnable] {
@@ -109,14 +130,14 @@ UnstartedAppWatcherDialog::UnstartedAppWatcherDialog(QWidget *parent)
         }
     }
 
-    m_hideOnAttachCheckBox = new QCheckBox(Tr::tr("Reopen dialog when application finishes"), this);
-    m_hideOnAttachCheckBox->setToolTip(Tr::tr("Reopens this dialog when application finishes."));
+    m_hideOnAttachCheckBox = new QCheckBox(tr("Reopen dialog when application finishes"), this);
+    m_hideOnAttachCheckBox->setToolTip(tr("Reopens this dialog when application finishes."));
 
     m_hideOnAttachCheckBox->setChecked(false);
     m_hideOnAttachCheckBox->setVisible(true);
 
-    m_continueOnAttachCheckBox = new QCheckBox(Tr::tr("Continue on attach"), this);
-    m_continueOnAttachCheckBox->setToolTip(Tr::tr("Debugger does not stop the"
+    m_continueOnAttachCheckBox = new QCheckBox(tr("Continue on attach"), this);
+    m_continueOnAttachCheckBox->setToolTip(tr("Debugger does not stop the"
                                               " application after attach."));
 
     m_continueOnAttachCheckBox->setChecked(true);
@@ -126,15 +147,15 @@ UnstartedAppWatcherDialog::UnstartedAppWatcherDialog(QWidget *parent)
     m_waitingLabel->setAlignment(Qt::AlignCenter);
 
     auto buttonBox = new QDialogButtonBox(QDialogButtonBox::Close, this);
-    m_watchingPushButton = buttonBox->addButton(Tr::tr("Start Watching"), QDialogButtonBox::ActionRole);
+    m_watchingPushButton = buttonBox->addButton(tr("Start Watching"), QDialogButtonBox::ActionRole);
     m_watchingPushButton->setCheckable(true);
     m_watchingPushButton->setChecked(false);
     m_watchingPushButton->setEnabled(false);
     m_watchingPushButton->setDefault(true);
 
     auto mainLayout = new QFormLayout(this);
-    mainLayout->addRow(new QLabel(Tr::tr("Kit: "), this), m_kitChooser);
-    mainLayout->addRow(new QLabel(Tr::tr("Executable: "), this), pathLayout);
+    mainLayout->addRow(new QLabel(tr("Kit: "), this), m_kitChooser);
+    mainLayout->addRow(new QLabel(tr("Executable: "), this), pathLayout);
     mainLayout->addRow(m_hideOnAttachCheckBox);
     mainLayout->addRow(m_continueOnAttachCheckBox);
     mainLayout->addRow(m_waitingLabel);
@@ -146,8 +167,8 @@ UnstartedAppWatcherDialog::UnstartedAppWatcherDialog(QWidget *parent)
             this, &UnstartedAppWatcherDialog::selectExecutable);
     connect(m_watchingPushButton, &QAbstractButton::toggled,
             this, &UnstartedAppWatcherDialog::startStopWatching);
-    connect(m_pathChooser, &Utils::PathChooser::textChanged,
-            this, &UnstartedAppWatcherDialog::stopAndCheckExecutable);
+    connect(m_pathChooser, &Utils::PathChooser::pathChanged, this,
+            &UnstartedAppWatcherDialog::stopAndCheckExecutable);
     connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
     connect(&m_timer, &QTimer::timeout,
             this, &UnstartedAppWatcherDialog::findProcess);
@@ -180,7 +201,7 @@ void UnstartedAppWatcherDialog::selectExecutable()
 
     if (activeTarget) {
         if (RunConfiguration *runConfig = activeTarget->activeRunConfiguration()) {
-            const ProcessRunData runnable = runConfig->runnable();
+            const Runnable runnable = runConfig->runnable();
             if (isLocal(runConfig))
                 path = runnable.command.executable().parentDir();
         }
@@ -223,7 +244,7 @@ void UnstartedAppWatcherDialog::pidFound(const ProcessInfo &p)
 void UnstartedAppWatcherDialog::startStopWatching(bool start)
 {
     setWaitingState(start ? WatchingState : NotWatchingState);
-    m_watchingPushButton->setText(start ? Tr::tr("Stop Watching") : Tr::tr("Start Watching"));
+    m_watchingPushButton->setText(start ? tr("Stop Watching") : tr("Start Watching"));
     startStopTimer(start);
 }
 
@@ -241,8 +262,6 @@ void UnstartedAppWatcherDialog::findProcess()
     ProcessInfo fallback;
     const QList<ProcessInfo> processInfoList = ProcessInfo::processInfoList();
     for (const ProcessInfo &processInfo : processInfoList) {
-        if (m_excluded.contains(processInfo.processId))
-            continue;
         if (Utils::FileUtils::normalizedPathName(processInfo.executable) == appName) {
             pidFound(processInfo);
             return;
@@ -306,7 +325,7 @@ void UnstartedAppWatcherDialog::setWaitingState(UnstartedAppWacherState state)
 {
     switch (state) {
     case InvalidWacherState:
-        m_waitingLabel->setText(Tr::tr("Select valid executable."));
+        m_waitingLabel->setText(tr("Select valid executable."));
         m_watchingPushButton->setEnabled(false);
         m_watchingPushButton->setChecked(false);
         m_pathChooser->setEnabled(true);
@@ -314,28 +333,23 @@ void UnstartedAppWatcherDialog::setWaitingState(UnstartedAppWacherState state)
         break;
 
     case NotWatchingState:
-        m_waitingLabel->setText(Tr::tr("Not watching."));
+        m_waitingLabel->setText(tr("Not watching."));
         m_watchingPushButton->setEnabled(true);
         m_watchingPushButton->setChecked(false);
         m_pathChooser->setEnabled(true);
         m_kitChooser->setEnabled(true);
         break;
 
-    case WatchingState: {
-        m_waitingLabel->setText(Tr::tr("Waiting for process to start..."));
+    case WatchingState:
+        m_waitingLabel->setText(tr("Waiting for process to start..."));
         m_watchingPushButton->setEnabled(true);
         m_watchingPushButton->setChecked(true);
         m_pathChooser->setEnabled(false);
         m_kitChooser->setEnabled(false);
-        m_excluded.clear();
-        const QList<ProcessInfo> processInfoList = ProcessInfo::processInfoList();
-        for (const ProcessInfo &processInfo : processInfoList)
-            m_excluded.insert(processInfo.processId);
         break;
-    }
 
     case FoundState:
-        m_waitingLabel->setText(Tr::tr("Attach"));
+        m_waitingLabel->setText(tr("Attach"));
         m_watchingPushButton->setEnabled(false);
         m_watchingPushButton->setChecked(true);
         m_pathChooser->setEnabled(false);
@@ -344,4 +358,5 @@ void UnstartedAppWatcherDialog::setWaitingState(UnstartedAppWacherState state)
     }
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

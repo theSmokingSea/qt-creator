@@ -1,9 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "corejsextensions.h"
 
-#include <utils/appinfo.h>
+#include <app/app_version.h>
+
 #include <utils/fileutils.h>
 #include <utils/mimeutils.h>
 #include <utils/qtcassert.h>
@@ -15,9 +38,8 @@
 #include <QVariant>
 #include <QVersionNumber>
 
-using namespace Utils;
-
-namespace Core::Internal {
+namespace Core {
+namespace Internal {
 
 QString UtilsJsExtension::qtVersion() const
 {
@@ -26,12 +48,7 @@ QString UtilsJsExtension::qtVersion() const
 
 QString UtilsJsExtension::qtCreatorVersion() const
 {
-    return appInfo().displayVersion;
-}
-
-QString UtilsJsExtension::qtCreatorIdeVersion() const
-{
-    return QCoreApplication::applicationVersion();
+    return QLatin1String(Constants::IDE_VERSION_DISPLAY);
 }
 
 QString UtilsJsExtension::toNativeSeparators(const QString &in) const
@@ -88,9 +105,7 @@ QString UtilsJsExtension::absoluteFilePath(const QString &in) const
 
 QString UtilsJsExtension::relativeFilePath(const QString &path, const QString &base) const
 {
-    const FilePath basePath = FilePath::fromString(base).cleanPath();
-    const FilePath filePath = FilePath::fromString(path).cleanPath();
-    return FilePath::calcRelativePath(filePath.toFSPathString(), basePath.toFSPathString());
+    return QDir(base).relativeFilePath(path);
 }
 
 bool UtilsJsExtension::exists(const QString &in) const
@@ -136,15 +151,21 @@ QString UtilsJsExtension::mktemp(const QString &pattern) const
 
     QTemporaryFile file(tmp);
     file.setAutoRemove(false);
-    const bool isOpen = file.open();
-    QTC_ASSERT(isOpen, return {});
+    QTC_ASSERT(file.open(), return QString());
     file.close();
     return file.fileName();
 }
 
 QString UtilsJsExtension::asciify(const QString &input) const
 {
-    return Utils::asciify(input);
+    QString result;
+    for (const QChar &c : input) {
+        if (c.isPrint() && c.unicode() < 128)
+            result.append(c);
+        else
+            result.append(QString::fromLatin1("u%1").arg(c.unicode(), 4, 16, QChar('0')));
+    }
+    return result;
 }
 
 QString UtilsJsExtension::qtQuickVersion(const QString &filePath) const
@@ -176,4 +197,5 @@ QString UtilsJsExtension::qtQuickVersion(const QString &filePath) const
     return QLatin1String("2.15");
 }
 
-} // Core::Internal
+} // namespace Internal
+} // namespace Core

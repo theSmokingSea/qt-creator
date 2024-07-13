@@ -1,14 +1,34 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Templates as T
+import QtQuick 2.15
+import QtQuick.Templates 2.15 as T
 import StudioTheme 1.0 as StudioTheme
 
 T.SpinBox {
-    id: control
-
-    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
+    id: mySpinBox
 
     property real realFrom: 0.0
     property real realTo: 99.0
@@ -21,44 +41,41 @@ T.SpinBox {
     property int decimals: 0
 
     property real minStepSize: {
-        var tmpMinStepSize = Number((control.realStepSize * 0.1).toFixed(control.decimals))
-        return (tmpMinStepSize) ? tmpMinStepSize : control.realStepSize
+        var tmpMinStepSize = Number((mySpinBox.realStepSize * 0.1).toFixed(mySpinBox.decimals))
+        return (tmpMinStepSize) ? tmpMinStepSize : mySpinBox.realStepSize
     }
     property real maxStepSize: {
-        var tmpMaxStepSize = Number((control.realStepSize * 10.0).toFixed(control.decimals))
-        return (tmpMaxStepSize < control.realTo) ? tmpMaxStepSize : control.realStepSize
+        var tmpMaxStepSize = Number((mySpinBox.realStepSize * 10.0).toFixed(mySpinBox.decimals))
+        return (tmpMaxStepSize < mySpinBox.realTo) ? tmpMaxStepSize : mySpinBox.realStepSize
     }
 
     property bool edit: spinBoxInput.activeFocus
     // This property is used to indicate the global hover state
     property bool hover: (spinBoxInput.hover || actionIndicator.hover || spinBoxIndicatorUp.hover
                          || spinBoxIndicatorDown.hover || sliderIndicator.hover)
-                         && control.enabled
+                         && mySpinBox.enabled
     property bool drag: false
     property bool sliderDrag: sliderPopup.drag
-
-    property bool trailingZeroes: true
 
     property bool dirty: false // user modification flag
 
     // TODO Not used anymore. Will be removed when all dependencies were removed.
-    property real realDragRange: control.realTo - control.realFrom
+    property real realDragRange: mySpinBox.realTo - mySpinBox.realFrom
 
     property alias actionIndicatorVisible: actionIndicator.visible
-    property real __actionIndicatorWidth: control.style.actionIndicatorSize.width
-    property real __actionIndicatorHeight: control.style.actionIndicatorSize.height
+    property real __actionIndicatorWidth: StudioTheme.Values.actionIndicatorWidth
+    property real __actionIndicatorHeight: StudioTheme.Values.actionIndicatorHeight
 
     property bool spinBoxIndicatorVisible: true
-    property real __spinBoxIndicatorWidth: control.style.spinBoxIndicatorSize.width
-    property real __spinBoxIndicatorHeight: control.style.spinBoxIndicatorSize.height
+    property real __spinBoxIndicatorWidth: StudioTheme.Values.spinBoxIndicatorWidth
+    property real __spinBoxIndicatorHeight: StudioTheme.Values.spinBoxIndicatorHeight
 
     property alias sliderIndicatorVisible: sliderIndicator.visible
-    property real __sliderIndicatorWidth: control.style.squareControlSize.width
-    property real __sliderIndicatorHeight: control.style.squareControlSize.height
+    property real __sliderIndicatorWidth: StudioTheme.Values.sliderIndicatorWidth
+    property real __sliderIndicatorHeight: StudioTheme.Values.sliderIndicatorHeight
 
     property alias __devicePixelRatio: spinBoxInput.devicePixelRatio
     property alias pixelsPerUnit: spinBoxInput.pixelsPerUnit
-    property alias inputHAlignment: spinBoxInput.horizontalAlignment
 
     property alias compressedValueTimer: myTimer
 
@@ -76,13 +93,13 @@ T.SpinBox {
     wheelEnabled: false
     hoverEnabled: true
 
-    width: control.style.controlSize.width
-    height: control.style.controlSize.height
+    width: StudioTheme.Values.defaultControlWidth
+    height: StudioTheme.Values.defaultControlHeight
 
     leftPadding: spinBoxIndicatorDown.x + spinBoxIndicatorDown.width
-    rightPadding: sliderIndicator.width + control.style.borderWidth
+    rightPadding: sliderIndicator.width + StudioTheme.Values.border
 
-    font.pixelSize: control.style.baseFontSize
+    font.pixelSize: StudioTheme.Values.myFontSize
     editable: true
 
     // Leave this in for now
@@ -90,133 +107,109 @@ T.SpinBox {
     value: 0
     to: 99
 
-    function checkAndClearFocus() {
-        if (!spinBoxIndicatorUp.activeFocus && !spinBoxIndicatorDown.activeFocus && !spinBoxInput.activeFocus)
-            control.focus = false
-    }
-
-    DoubleValidator {
+    validator: DoubleValidator {
         id: doubleValidator
-        locale: control.locale.name
+        locale: mySpinBox.locale.name
         notation: DoubleValidator.StandardNotation
-        decimals: control.decimals
-        bottom: Math.min(control.realFrom, control.realTo)
-        top: Math.max(control.realFrom, control.realTo)
+        decimals: mySpinBox.decimals
+        bottom: Math.min(mySpinBox.realFrom, mySpinBox.realTo)
+        top: Math.max(mySpinBox.realFrom, mySpinBox.realTo)
     }
-
-    IntValidator {
-        id: intValidator
-        locale: control.locale.name
-        bottom: Math.round(Math.min(control.realFrom, control.realTo))
-        top: Math.round(Math.max(control.realFrom, control.realTo))
-    }
-
-    validator: control.decimals === 0 ? intValidator : doubleValidator
 
     ActionIndicator {
         id: actionIndicator
-        style: control.style
-        __parentControl: control
+        myControl: mySpinBox
         x: 0
         y: 0
-        width: actionIndicator.visible ? control.__actionIndicatorWidth : 0
-        height: actionIndicator.visible ? control.__actionIndicatorHeight : 0
+        width: actionIndicator.visible ? mySpinBox.__actionIndicatorWidth : 0
+        height: actionIndicator.visible ? mySpinBox.__actionIndicatorHeight : 0
     }
 
     up.indicator: RealSpinBoxIndicator {
         id: spinBoxIndicatorUp
-        style: control.style
-        __parentControl: control
+        myControl: mySpinBox
         iconFlip: -1
-        visible: control.spinBoxIndicatorVisible
-        onRealPressed: control.indicatorPressed()
-        onRealReleased: control.realIncrease()
-        onRealPressAndHold: control.realIncrease()
-        x: actionIndicator.width + control.style.borderWidth
-        y: control.style.borderWidth
-        width: control.spinBoxIndicatorVisible ? control.__spinBoxIndicatorWidth : 0
-        height: control.spinBoxIndicatorVisible ? control.__spinBoxIndicatorHeight : 0
+        visible: mySpinBox.spinBoxIndicatorVisible
+        onRealPressed: mySpinBox.indicatorPressed()
+        onRealReleased: mySpinBox.realIncrease()
+        onRealPressAndHold: mySpinBox.realIncrease()
+        x: actionIndicator.width + StudioTheme.Values.border
+        y: StudioTheme.Values.border
+        width: mySpinBox.spinBoxIndicatorVisible ? mySpinBox.__spinBoxIndicatorWidth : 0
+        height: mySpinBox.spinBoxIndicatorVisible ? mySpinBox.__spinBoxIndicatorHeight : 0
 
-        realEnabled: (control.realFrom < control.realTo) ? (control.realValue < control.realTo)
-                                                         : (control.realValue > control.realTo)
+        realEnabled: (mySpinBox.realFrom < mySpinBox.realTo) ? (mySpinBox.realValue < mySpinBox.realTo)
+                                                             : (mySpinBox.realValue > mySpinBox.realTo)
     }
 
     down.indicator: RealSpinBoxIndicator {
         id: spinBoxIndicatorDown
-        style: control.style
-        __parentControl: control
-        visible: control.spinBoxIndicatorVisible
-        onRealPressed: control.indicatorPressed()
-        onRealReleased: control.realDecrease()
-        onRealPressAndHold: control.realDecrease()
-        x: actionIndicator.width + control.style.borderWidth
+        myControl: mySpinBox
+        visible: mySpinBox.spinBoxIndicatorVisible
+        onRealPressed: mySpinBox.indicatorPressed()
+        onRealReleased: mySpinBox.realDecrease()
+        onRealPressAndHold: mySpinBox.realDecrease()
+        x: actionIndicator.width + StudioTheme.Values.border
         y: spinBoxIndicatorUp.y + spinBoxIndicatorUp.height
-        width: control.spinBoxIndicatorVisible ? control.__spinBoxIndicatorWidth : 0
-        height: control.spinBoxIndicatorVisible ? control.__spinBoxIndicatorHeight : 0
+        width: mySpinBox.spinBoxIndicatorVisible ? mySpinBox.__spinBoxIndicatorWidth : 0
+        height: mySpinBox.spinBoxIndicatorVisible ? mySpinBox.__spinBoxIndicatorHeight : 0
 
-        realEnabled: (control.realFrom < control.realTo) ? (control.realValue > control.realFrom)
-                                                         : (control.realValue < control.realFrom)
+        realEnabled: (mySpinBox.realFrom < mySpinBox.realTo) ? (mySpinBox.realValue > mySpinBox.realFrom)
+                                                             : (mySpinBox.realValue < mySpinBox.realFrom)
     }
 
     contentItem: RealSpinBoxInput {
         id: spinBoxInput
-        style: control.style
-        __parentControl: control
-        validator: control.validator
+        myControl: mySpinBox
+        validator: doubleValidator
 
         function handleEditingFinished() {
-            control.checkAndClearFocus()
+            mySpinBox.focus = false
 
             // Keep the dirty state before calling setValueFromInput(),
             // it will be set to false (cleared) internally
-            var valueModified = control.dirty
+            var valueModified = mySpinBox.dirty
 
-            control.setValueFromInput()
+            mySpinBox.setValueFromInput()
             myTimer.stop()
 
             // Only trigger the signal, if the value was modified
             if (valueModified)
-                control.compressedRealValueModified()
+                mySpinBox.compressedRealValueModified()
         }
 
-        onEditingFinished: {
-            spinBoxInput.focus = false
-            spinBoxInput.handleEditingFinished()
-        }
-
-        onTextEdited: control.dirty = true
+        onEditingFinished: spinBoxInput.handleEditingFinished()
+        onTextEdited: mySpinBox.dirty = true
     }
 
     background: Rectangle {
         id: spinBoxBackground
-        color: control.style.background.idle
-        border.color: control.style.border.idle
-        border.width: control.style.borderWidth
+        color: StudioTheme.Values.themeControlOutline
+        border.color: StudioTheme.Values.themeControlOutline
+        border.width: StudioTheme.Values.border
         x: actionIndicator.width
-        width: control.width - actionIndicator.width
-        height: control.height
+        width: mySpinBox.width - actionIndicator.width
+        height: mySpinBox.height
     }
 
     CheckIndicator {
         id: sliderIndicator
-        style: control.style
-        __parentControl: control
-        __parentPopup: sliderPopup
+        myControl: mySpinBox
+        myPopup: sliderPopup
         x: spinBoxInput.x + spinBoxInput.width
-        y: control.style.borderWidth
-        width: sliderIndicator.visible ? control.__sliderIndicatorWidth - control.style.borderWidth : 0
-        height: sliderIndicator.visible ? control.__sliderIndicatorHeight - (control.style.borderWidth * 2) : 0
+        y: StudioTheme.Values.border
+        width: sliderIndicator.visible ? mySpinBox.__sliderIndicatorWidth - StudioTheme.Values.border : 0
+        height: sliderIndicator.visible ? mySpinBox.__sliderIndicatorHeight - (StudioTheme.Values.border * 2) : 0
         visible: false // reasonable default
     }
 
     RealSliderPopup {
         id: sliderPopup
-        style: control.style
-        __parentControl: control
-        x: actionIndicator.width + control.style.borderWidth
-        y: control.style.controlSize.height
-        width: control.width - actionIndicator.width - (control.style.borderWidth * 2)
-        height: control.style.smallControlSize.height
+        myControl: mySpinBox
+        x: actionIndicator.width + StudioTheme.Values.border
+        y: StudioTheme.Values.height
+        width: mySpinBox.width - actionIndicator.width - (StudioTheme.Values.border * 2)
+        height: StudioTheme.Values.sliderHeight
 
         enter: Transition {}
         exit: Transition {}
@@ -224,24 +217,21 @@ T.SpinBox {
 
     textFromValue: function (value, locale) {
         locale.numberOptions = Locale.OmitGroupSeparator
-        var decimals = trailingZeroes ? control.decimals : decimalCounter(value)
-
-        return Number(control.realValue).toLocaleString(locale, 'f', decimals)
+        return Number(mySpinBox.realValue).toLocaleString(locale, 'f', mySpinBox.decimals)
     }
 
     valueFromText: function (text, locale) {
-        control.setRealValue(Number.fromLocaleString(locale, spinBoxInput.text))
-
+        mySpinBox.setRealValue(Number.fromLocaleString(locale, spinBoxInput.text))
         return 0
     }
 
     states: [
         State {
             name: "default"
-            when: control.enabled && !control.hover && !control.hovered
-                  && !control.edit && !control.drag && !control.sliderDrag
+            when: mySpinBox.enabled && !mySpinBox.hover && !mySpinBox.hovered
+                  && !mySpinBox.edit && !mySpinBox.drag && !mySpinBox.sliderDrag
             PropertyChanges {
-                target: control
+                target: mySpinBox
                 __wheelEnabled: false
             }
             PropertyChanges {
@@ -250,23 +240,15 @@ T.SpinBox {
             }
             PropertyChanges {
                 target: spinBoxBackground
-                border.color: control.style.border.idle
-            }
-        },
-        State {
-            name: "hover"
-            when: control.enabled && control.hover && control.hovered
-                  && !control.edit && !control.drag && !control.sliderDrag
-            PropertyChanges {
-                target: spinBoxBackground
-                border.color: control.style.border.hover
+                color: StudioTheme.Values.themeControlBackground
+                border.color: StudioTheme.Values.themeControlOutline
             }
         },
         State {
             name: "edit"
-            when: control.edit
+            when: mySpinBox.edit
             PropertyChanges {
-                target: control
+                target: mySpinBox
                 __wheelEnabled: true
             }
             PropertyChanges {
@@ -275,23 +257,26 @@ T.SpinBox {
             }
             PropertyChanges {
                 target: spinBoxBackground
-                border.color: control.style.border.idle
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutline
             }
         },
         State {
             name: "drag"
-            when: control.drag || control.sliderDrag
+            when: mySpinBox.drag || mySpinBox.sliderDrag
             PropertyChanges {
                 target: spinBoxBackground
-                border.color: control.style.border.interaction
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
         },
         State {
             name: "disable"
-            when: !control.enabled
+            when: !mySpinBox.enabled
             PropertyChanges {
                 target: spinBoxBackground
-                border.color: control.style.border.disabled
+                color: StudioTheme.Values.themeControlOutlineDisabled
+                border.color: StudioTheme.Values.themeControlOutlineDisabled
             }
         }
     ]
@@ -301,63 +286,62 @@ T.SpinBox {
         repeat: false
         running: false
         interval: 400
-        onTriggered: control.compressedRealValueModified()
+        onTriggered: mySpinBox.compressedRealValueModified()
     }
 
     onRealValueChanged: {
-        control.setRealValue(control.realValue) // sanitize and clamp realValue
-        spinBoxInput.text = control.textFromValue(control.realValue, control.locale)
-        control.value = 0 // Without setting value back to 0, it can happen that one of
-                          // the indicator will be disabled due to range logic.
+        mySpinBox.setRealValue(mySpinBox.realValue) // sanitize and clamp realValue
+        spinBoxInput.text = mySpinBox.textFromValue(mySpinBox.realValue, mySpinBox.locale)
+        mySpinBox.value = 0 // Without setting value back to 0, it can happen that one of
+                            // the indicator will be disabled due to range logic.
     }
     onRealValueModified: myTimer.restart()
     onFocusChanged: {
-        if (control.focus)
-            control.dirty = false
-    }
-    onDisplayTextChanged: spinBoxInput.text = control.displayText
-    onActiveFocusChanged: {
-        if (control.activeFocus) { // QTBUG-75862 && mySpinBox.focusReason === Qt.TabFocusReason)
-            control.preFocusText = spinBoxInput.text
-            spinBoxInput.selectAll()
+        if (mySpinBox.focus) {
+            mySpinBox.dirty = false
         } else {
             // Make sure displayed value is correct after focus loss, as onEditingFinished
             // doesn't trigger when value is something validator doesn't accept.
-            if (spinBoxInput.text === "")
-                spinBoxInput.text = control.textFromValue(control.realValue, control.locale)
+            spinBoxInput.text = mySpinBox.textFromValue(mySpinBox.realValue, mySpinBox.locale)
 
-            if (control.dirty)
+            if (mySpinBox.dirty)
                 spinBoxInput.handleEditingFinished()
         }
     }
-    onDecimalsChanged: spinBoxInput.text = control.textFromValue(control.realValue, control.locale)
+    onDisplayTextChanged: spinBoxInput.text = mySpinBox.displayText
+    onActiveFocusChanged: {
+        if (mySpinBox.activeFocus) { // QTBUG-75862 && mySpinBox.focusReason === Qt.TabFocusReason)
+            mySpinBox.preFocusText = spinBoxInput.text
+            spinBoxInput.selectAll()
+        }
+    }
 
     Keys.onPressed: function(event) {
         if (event.key === Qt.Key_Up || event.key === Qt.Key_Down) {
             event.accepted = true
 
             // Store current step size
-            var currStepSize = control.realStepSize
+            var currStepSize = mySpinBox.realStepSize
 
             // Set realStepSize according to used modifier key
             if (event.modifiers & Qt.ControlModifier)
-                control.realStepSize = control.minStepSize
+                mySpinBox.realStepSize = mySpinBox.minStepSize
 
             if (event.modifiers & Qt.ShiftModifier)
-                control.realStepSize = control.maxStepSize
+                mySpinBox.realStepSize = mySpinBox.maxStepSize
 
             if (event.key === Qt.Key_Up)
-                control.realIncrease()
+                mySpinBox.realIncrease()
             else
-                control.realDecrease()
+                mySpinBox.realDecrease()
 
             // Reset realStepSize
-            control.realStepSize = currStepSize
+            mySpinBox.realStepSize = currStepSize
         }
 
         if (event.key === Qt.Key_Escape) {
-            spinBoxInput.text = control.preFocusText
-            control.dirty = true
+            spinBoxInput.text = mySpinBox.preFocusText
+            mySpinBox.dirty = true
             spinBoxInput.handleEditingFinished()
         }
     }
@@ -367,70 +351,60 @@ T.SpinBox {
     }
 
     function setValueFromInput() {
-        if (!control.dirty)
+        if (!mySpinBox.dirty)
             return
 
         // FIX: This is a temporary fix for QTBUG-74239
-        var currValue = control.realValue
+        var currValue = mySpinBox.realValue
 
         // Call the function but don't use return value. The realValue property
         // will be implicitly set inside the function/procedure.
-        control.valueFromText(spinBoxInput.text, control.locale)
+        mySpinBox.valueFromText(spinBoxInput.text, mySpinBox.locale)
 
-        if (control.realValue !== currValue) {
-            control.realValueModified()
+        if (mySpinBox.realValue !== currValue) {
+            mySpinBox.realValueModified()
         } else {
             // Check if input text differs in format from the current value
-            var tmpInputValue = control.textFromValue(control.realValue, control.locale)
+            var tmpInputValue = mySpinBox.textFromValue(mySpinBox.realValue, mySpinBox.locale)
 
             if (tmpInputValue !== spinBoxInput.text)
                 spinBoxInput.text = tmpInputValue
         }
 
-        control.dirty = false
+        mySpinBox.dirty = false
     }
 
     function setRealValue(value) {
         if (Number.isNaN(value))
             value = 0
 
-        if (control.decimals === 0)
+        if (mySpinBox.decimals === 0)
             value = Math.round(value)
 
-        control.realValue = control.clamp(value,
-                                          control.validator.bottom,
-                                          control.validator.top)
+        mySpinBox.realValue = mySpinBox.clamp(value,
+                                              mySpinBox.validator.bottom,
+                                              mySpinBox.validator.top)
     }
 
     function realDecrease() {
         // Store the current value for comparison
-        var currValue = control.realValue
-        control.valueFromText(spinBoxInput.text, control.locale)
+        var currValue = mySpinBox.realValue
+        mySpinBox.valueFromText(spinBoxInput.text, mySpinBox.locale)
 
-        control.setRealValue(control.realValue - control.realStepSize)
+        mySpinBox.setRealValue(mySpinBox.realValue - mySpinBox.realStepSize)
 
-        if (control.realValue !== currValue)
-            control.realValueModified()
+        if (mySpinBox.realValue !== currValue)
+            mySpinBox.realValueModified()
     }
 
     function realIncrease() {
         // Store the current value for comparison
-        var currValue = control.realValue
-        control.valueFromText(spinBoxInput.text, control.locale)
+        var currValue = mySpinBox.realValue
+        mySpinBox.valueFromText(spinBoxInput.text, mySpinBox.locale)
 
-        control.setRealValue(control.realValue + control.realStepSize)
+        mySpinBox.setRealValue(mySpinBox.realValue + mySpinBox.realStepSize)
 
-        if (control.realValue !== currValue)
-            control.realValueModified()
-    }
-
-    function decimalCounter(number) {
-        var strNumber = Math.abs(number).toString()
-        var decimalIndex = strNumber.indexOf('.')
-
-        // Set 'index' to a minimum of 1 if there are no fractions
-        var index = decimalIndex == -1 ? 1 : strNumber.length - decimalIndex - 1
-
-        return Math.min(index, control.decimals);
+        if (mySpinBox.realValue !== currValue)
+            mySpinBox.realValueModified()
     }
 }

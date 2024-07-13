@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "stackhandler.h"
 
@@ -9,7 +31,6 @@
 #include "debuggerengine.h"
 #include "debuggericons.h"
 #include "debuggerprotocol.h"
-#include "debuggertr.h"
 #include "memoryagent.h"
 #include "simplifytype.h"
 
@@ -33,7 +54,8 @@
 
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 /*!
     \class Debugger::Internal::StackHandler
@@ -45,11 +67,11 @@ StackHandler::StackHandler(DebuggerEngine *engine)
   : m_engine(engine)
 {
     setObjectName("StackModel");
-    setHeader({Tr::tr("Level"), Tr::tr("Function"), Tr::tr("File"), Tr::tr("Line"), Tr::tr("Address") });
+    setHeader({tr("Level"), tr("Function"), tr("File"), tr("Line"), tr("Address") });
 
-    connect(settings().expandStack.action(), &QAction::triggered,
+    connect(debuggerSettings()->expandStack.action(), &QAction::triggered,
             this, &StackHandler::reloadFullStack);
-    connect(settings().maximalStackDepth.action(), &QAction::triggered,
+    connect(debuggerSettings()->maximalStackDepth.action(), &QAction::triggered,
             this, &StackHandler::reloadFullStack);
 
     // For now there's always only "the" current thread.
@@ -61,12 +83,12 @@ StackHandler::~StackHandler() = default;
 QVariant SpecialStackItem::data(int column, int role) const
 {
     if (role == Qt::DisplayRole && column == StackLevelColumn)
-        return Tr::tr("...");
+        return StackHandler::tr("...");
     if (role == Qt::DisplayRole && column == StackFunctionNameColumn)
-        return Tr::tr("<More>");
+        return StackHandler::tr("<More>");
     if (role == Qt::DecorationRole && column == StackLevelColumn)
         return Icons::EMPTY.icon();
-    return {};
+    return QVariant();
 }
 
 QVariant StackFrameItem::data(int column, int role) const
@@ -86,16 +108,16 @@ QVariant StackFrameItem::data(int column, int role) const
                 return QString("0x%1").arg(frame.address, 0, 16);
             return QString();
         }
-        return {};
+        return QVariant();
     }
 
     if (role == Qt::DecorationRole && column == StackLevelColumn)
         return handler->iconForRow(row);
 
-    if (role == Qt::ToolTipRole && settings().useToolTipsInStackView())
+    if (role == Qt::ToolTipRole && debuggerSettings()->useToolTipsInStackView.value())
         return frame.toToolTip();
 
-    return {};
+    return QVariant();
 }
 
 Qt::ItemFlags StackFrameItem::flags(int column) const
@@ -234,8 +256,8 @@ void StackHandler::setFramesAndCurrentIndex(const GdbMi &frames, bool isFull)
             targetFrame = i;
     }
 
-    bool canExpand = !isFull && n >= settings().maximalStackDepth();
-    settings().expandStack.setEnabled(canExpand);
+    bool canExpand = !isFull && (n >= debuggerSettings()->maximalStackDepth.value());
+    debuggerSettings()->expandStack.setEnabled(canExpand);
     setFrames(stackFrames, canExpand);
 
     // We can't jump to any file if we don't have any frames.
@@ -312,8 +334,8 @@ static StackFrame inputFunctionForDisassembly()
     StackFrame frame;
     QInputDialog dialog;
     dialog.setInputMode(QInputDialog::TextInput);
-    dialog.setLabelText(Tr::tr("Function:"));
-    dialog.setWindowTitle(Tr::tr("Disassemble Function"));
+    dialog.setLabelText(StackHandler::tr("Function:"));
+    dialog.setWindowTitle(StackHandler::tr("Disassemble Function"));
     if (dialog.exec() != QDialog::Accepted)
         return frame;
     const QString function = dialog.textValue();
@@ -400,9 +422,9 @@ void StackHandler::saveTaskFile()
         const QString fileName = fileDialog.selectedFiles().constFirst();
         file.setFileName(fileName);
         if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-            QString msg = Tr::tr("Cannot open \"%1\": %2")
+            QString msg = tr("Cannot open \"%1\": %2")
                     .arg(QDir::toNativeSeparators(fileName), file.errorString());
-            Core::AsynchronousMessageBox::warning(Tr::tr("Cannot Open Task File"), msg);
+            Core::AsynchronousMessageBox::warning(tr("Cannot Open Task File"), msg);
         }
     }
 
@@ -424,45 +446,45 @@ bool StackHandler::contextMenuEvent(const ItemViewEvent &ev)
         frame = frameAt(row);
     const quint64 address = frame.address;
 
-    menu->addAction(settings().expandStack.action());
+    menu->addAction(debuggerSettings()->expandStack.action());
 
-    addAction(this, menu, Tr::tr("Copy Contents to Clipboard"), true, [ev] {
+    addAction(this, menu, tr("Copy Contents to Clipboard"), true, [ev] {
         setClipboardAndSelection(selectedText(ev.view(), true));
     });
 
-    addAction(this, menu, Tr::tr("Copy Selection to Clipboard"), true, [ev] {
+    addAction(this, menu, tr("Copy Selection to Clipboard"), true, [ev] {
         setClipboardAndSelection(selectedText(ev.view(), false));
     });
 
-    addAction(this, menu, Tr::tr("Save as Task File..."), true, [this] { saveTaskFile(); });
+    addAction(this, menu, tr("Save as Task File..."), true, [this] { saveTaskFile(); });
 
     if (m_engine->hasCapability(CreateFullBacktraceCapability))
-        menu->addAction(settings().createFullBacktrace.action());
+        menu->addAction(debuggerSettings()->createFullBacktrace.action());
 
     if (m_engine->hasCapability(AdditionalQmlStackCapability))
-        addAction(this, menu, Tr::tr("Load QML Stack"), true, [this] { m_engine->loadAdditionalQmlStack(); });
+        addAction(this, menu, tr("Load QML Stack"), true, [this] { m_engine->loadAdditionalQmlStack(); });
 
     if (m_engine->hasCapability(ShowMemoryCapability))
-        addAction(this, menu, Tr::tr("Open Memory Editor at 0x%1").arg(address, 0, 16),
-                  Tr::tr("Open Memory Editor"),
+        addAction(this, menu, tr("Open Memory Editor at 0x%1").arg(address, 0, 16),
+                  tr("Open Memory Editor"),
                   address,
                   [this, row, frame, address] {
                         MemoryViewSetupData data;
                         data.startAddress = address;
-                        data.title = Tr::tr("Memory at Frame #%1 (%2) 0x%3")
+                        data.title = tr("Memory at Frame #%1 (%2) 0x%3")
                                         .arg(row).arg(frame.function).arg(address, 0, 16);
                         data.markup.push_back(MemoryMarkup(address, 1, QColor(Qt::blue).lighter(),
-                                                  Tr::tr("Frame #%1 (%2)").arg(row).arg(frame.function)));
+                                                  tr("Frame #%1 (%2)").arg(row).arg(frame.function)));
                         m_engine->openMemoryView(data);
                    });
 
     if (m_engine->hasCapability(DisassemblerCapability)) {
-        addAction(this, menu, Tr::tr("Open Disassembler at 0x%1").arg(address, 0, 16),
-                  Tr::tr("Open Disassembler"),
+        addAction(this, menu, tr("Open Disassembler at 0x%1").arg(address, 0, 16),
+                  tr("Open Disassembler"),
                   address,
                   [this, frame] { m_engine->openDisassemblerView(frame); });
 
-        addAction(this, menu, Tr::tr("Open Disassembler at Address..."), true,
+        addAction(this, menu, tr("Open Disassembler at Address..."), true,
                   [this, address] {
                         AddressDialog dialog;
                         if (address)
@@ -471,7 +493,7 @@ bool StackHandler::contextMenuEvent(const ItemViewEvent &ev)
                             m_engine->openDisassemblerView(Location(dialog.address()));
                    });
 
-        addAction(this, menu, Tr::tr("Disassemble Function..."), true,
+        addAction(this, menu, tr("Disassemble Function..."), true,
                   [this] {
                         const StackFrame frame = inputFunctionForDisassembly();
                         if (!frame.function.isEmpty())
@@ -480,13 +502,13 @@ bool StackHandler::contextMenuEvent(const ItemViewEvent &ev)
     }
 
     if (m_engine->hasCapability(ShowModuleSymbolsCapability)) {
-        addAction(this, menu, Tr::tr("Try to Load Unknown Symbols"), true,
+        addAction(this, menu, tr("Try to Load Unknown Symbols"), true,
                   [this] { m_engine->loadSymbolsForStack(); });
     }
 
     menu->addSeparator();
-    menu->addAction(settings().useToolTipsInStackView.action());
-    menu->addAction(settings().settingsDialog.action());
+    menu->addAction(debuggerSettings()->useToolTipsInStackView.action());
+    menu->addAction(debuggerSettings()->settingsDialog.action());
     connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
     menu->popup(ev.globalPos());
     return true;
@@ -497,4 +519,5 @@ void StackHandler::reloadFullStack()
     m_engine->reloadFullStack();
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

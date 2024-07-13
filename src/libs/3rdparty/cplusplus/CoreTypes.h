@@ -26,31 +26,37 @@
 
 namespace CPlusPlus {
 
-class CPLUSPLUS_EXPORT UndefinedType final : public Type
+class CPLUSPLUS_EXPORT UndefinedType : public Type
 {
 public:
     static UndefinedType instance;
 
-    const UndefinedType *asUndefinedType() const override { return this; }
-    UndefinedType *asUndefinedType() override { return this; }
+    const UndefinedType *asUndefinedType() const override
+    { return this; }
+
+    UndefinedType *asUndefinedType() override
+    { return this; }
 
 protected:
     void accept0(TypeVisitor *visitor) override;
     bool match0(const Type *otherType, Matcher *matcher) const override;
 };
 
-class CPLUSPLUS_EXPORT VoidType final : public Type
+class CPLUSPLUS_EXPORT VoidType: public Type
 {
 public:
-    const VoidType *asVoidType() const override { return this; }
-    VoidType *asVoidType() override { return this; }
+    const VoidType *asVoidType() const override
+    { return this; }
+
+    VoidType *asVoidType() override
+    { return this; }
 
 protected:
     void accept0(TypeVisitor *visitor) override;
     bool match0(const Type *otherType, Matcher *matcher) const override;
 };
 
-class CPLUSPLUS_EXPORT IntegerType final : public Type
+class CPLUSPLUS_EXPORT IntegerType: public Type
 {
 public:
     enum Kind {
@@ -66,13 +72,16 @@ public:
     };
 
 public:
-    IntegerType(int kind) : _kind(kind) {}
-    ~IntegerType() override = default;
+    IntegerType(int kind);
+    virtual ~IntegerType();
 
-    int kind() const { return _kind; }
+    int kind() const;
 
-    IntegerType *asIntegerType() override { return this; }
-    const IntegerType *asIntegerType() const override { return this; }
+    IntegerType *asIntegerType() override
+    { return this; }
+
+    const IntegerType *asIntegerType() const override
+    { return this; }
 
 protected:
     void accept0(TypeVisitor *visitor) override;
@@ -82,7 +91,7 @@ private:
     int _kind;
 };
 
-class CPLUSPLUS_EXPORT FloatType final : public Type
+class CPLUSPLUS_EXPORT FloatType: public Type
 {
 public:
     enum Kind {
@@ -92,13 +101,16 @@ public:
     };
 
 public:
-    FloatType(int kind) : _kind(kind) {}
-    ~FloatType() override = default;
+    FloatType(int kind);
+    virtual ~FloatType();
 
-    int kind() const { return _kind; }
+    int kind() const;
 
-    const FloatType *asFloatType() const override { return this; }
-    FloatType *asFloatType() override { return this; }
+    const FloatType *asFloatType() const override
+    { return this; }
+
+    FloatType *asFloatType() override
+    { return this; }
 
 protected:
     void accept0(TypeVisitor *visitor) override;
@@ -108,16 +120,19 @@ private:
     int _kind;
 };
 
-class CPLUSPLUS_EXPORT PointerType final : public Type
+class CPLUSPLUS_EXPORT PointerType: public Type
 {
 public:
-    PointerType(const FullySpecifiedType &elementType) : _elementType(elementType) {}
-    ~PointerType() override = default;
+    PointerType(const FullySpecifiedType &elementType);
+    virtual ~PointerType();
 
-    FullySpecifiedType elementType() const { return _elementType; }
+    FullySpecifiedType elementType() const;
 
-    const PointerType *asPointerType() const override { return this; }
-    PointerType *asPointerType() override { return this; }
+    const PointerType *asPointerType() const override
+    { return this; }
+
+    PointerType *asPointerType() override
+    { return this; }
 
 protected:
     void accept0(TypeVisitor *visitor) override;
@@ -127,17 +142,20 @@ private:
     FullySpecifiedType _elementType;
 };
 
-class CPLUSPLUS_EXPORT PointerToMemberType final : public Type
+class CPLUSPLUS_EXPORT PointerToMemberType: public Type
 {
 public:
     PointerToMemberType(const Name *memberName, const FullySpecifiedType &elementType);
-    ~PointerToMemberType() override = default;
+    virtual ~PointerToMemberType();
 
-    const Name *memberName() const { return _memberName; }
-    FullySpecifiedType elementType() const { return _elementType; }
+    const Name *memberName() const;
+    FullySpecifiedType elementType() const;
 
-    const PointerToMemberType *asPointerToMemberType() const override { return this; }
-    PointerToMemberType *asPointerToMemberType() override { return this; }
+    const PointerToMemberType *asPointerToMemberType() const override
+    { return this; }
+
+    PointerToMemberType *asPointerToMemberType() override
+    { return this; }
 
 protected:
     void accept0(TypeVisitor *visitor) override;
@@ -148,17 +166,20 @@ private:
     FullySpecifiedType _elementType;
 };
 
-class CPLUSPLUS_EXPORT ReferenceType final : public Type
+class CPLUSPLUS_EXPORT ReferenceType: public Type
 {
 public:
     ReferenceType(const FullySpecifiedType &elementType, bool rvalueRef);
-    ~ReferenceType() override = default;
+    virtual ~ReferenceType();
 
-    FullySpecifiedType elementType() const { return _elementType; }
-    bool isRvalueReference() const { return _rvalueReference; }
+    FullySpecifiedType elementType() const;
+    bool isRvalueReference() const;
 
-    const ReferenceType *asReferenceType() const override { return this; }
-    ReferenceType *asReferenceType() override { return this; }
+    const ReferenceType *asReferenceType() const override
+    { return this; }
+
+    ReferenceType *asReferenceType() override
+    { return this; }
 
 protected:
     void accept0(TypeVisitor *visitor) override;
@@ -169,17 +190,20 @@ private:
     bool _rvalueReference;
 };
 
-class CPLUSPLUS_EXPORT ArrayType final : public Type
+class CPLUSPLUS_EXPORT ArrayType: public Type
 {
 public:
     ArrayType(const FullySpecifiedType &elementType, unsigned size);
-    ~ArrayType() override = default;
+    virtual ~ArrayType();
 
-    FullySpecifiedType elementType() const { return _elementType; }
-    unsigned size() const { return _size; }
+    FullySpecifiedType elementType() const;
+    unsigned size() const;
 
-    const ArrayType *asArrayType() const override { return this; }
-    ArrayType *asArrayType() override { return this; }
+    const ArrayType *asArrayType() const override
+    { return this; }
+
+    ArrayType *asArrayType() override
+    { return this; }
 
 protected:
     void accept0(TypeVisitor *visitor) override;
@@ -190,16 +214,19 @@ private:
     unsigned _size;
 };
 
-class CPLUSPLUS_EXPORT NamedType final : public Type
+class CPLUSPLUS_EXPORT NamedType: public Type
 {
 public:
-    NamedType(const Name *name) : _name(name) {}
-    ~NamedType() override = default;
+    NamedType(const Name *name);
+    virtual ~NamedType();
 
-    const Name *name() const { return _name; }
+    const Name *name() const;
 
-    const NamedType *asNamedType() const override { return this; }
-    NamedType *asNamedType() override { return this; }
+    const NamedType *asNamedType() const override
+    { return this; }
+
+    NamedType *asNamedType() override
+    { return this; }
 
 protected:
     void accept0(TypeVisitor *visitor) override;

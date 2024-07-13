@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -40,17 +62,20 @@ public:
     Lexer(Engine *engine, const char *source, unsigned size);
     ~Lexer();
 
-    // Extra flag bits added to tokens by Lexer::classify() that
-    // indicate which variant of GLSL the keyword belongs to.
-    static const int Variant_GLSL_120            = 0x00010000;   // 1.20 and higher
-    static const int Variant_GLSL_150            = 0x00020000;   // 1.50 and higher
-    static const int Variant_GLSL_400            = 0x00040000;   // 4.00 and higher
-    static const int Variant_GLSL_ES_100         = 0x00080000;   // ES 1.00 and higher
-    static const int Variant_VertexShader        = 0x00200000;
-    static const int Variant_FragmentShader      = 0x00400000;
-    static const int Variant_Reserved            = 0x80000000;
-    static const int Variant_Mask                = 0xFFFF0000;
-    static const int Variant_All                 = 0xFFFF0000;
+    enum
+    {
+        // Extra flag bits added to tokens by Lexer::classify() that
+        // indicate which variant of GLSL the keyword belongs to.
+        Variant_GLSL_120            = 0x00010000,   // 1.20 and higher
+        Variant_GLSL_150            = 0x00020000,   // 1.50 and higher
+        Variant_GLSL_400            = 0x00040000,   // 4.00 and higher
+        Variant_GLSL_ES_100         = 0x00080000,   // ES 1.00 and higher
+        Variant_VertexShader        = 0x00200000,
+        Variant_FragmentShader      = 0x00400000,
+        Variant_Reserved            = 0x80000000,
+        Variant_Mask                = 0xFFFF0000,
+        Variant_All                 = 0xFFFF0000
+    };
 
     union Value {
         int i;

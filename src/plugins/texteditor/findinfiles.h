@@ -1,21 +1,43 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "basefilefind.h"
 
+#include <utils/fileutils.h>
+
 #include <QPointer>
+#include <QStringListModel>
 
 QT_BEGIN_NAMESPACE
 class QComboBox;
 class QStackedWidget;
 QT_END_NAMESPACE
 
-namespace Utils {
-class PathChooser;
-class QtcSettings;
-} // Utils
+namespace Utils { class PathChooser; }
 
 namespace TextEditor {
 
@@ -30,37 +52,38 @@ public:
     QString id() const override;
     QString displayName() const override;
     QWidget *createConfigWidget() override;
-    Utils::Store save() const override;
-    void restore(const Utils::Store &s) override;
+    void writeSettings(QSettings *settings) override;
+    void readSettings(QSettings *settings) override;
     bool isValid() const override;
 
     void setDirectory(const Utils::FilePath &directory);
     void setBaseDirectory(const Utils::FilePath &directory);
+    Utils::FilePath directory() const;
     static void findOnFileSystem(const QString &path);
     static FindInFiles *instance();
 
-    // deprecated
-    QByteArray settingsKey() const override;
+signals:
+    void pathChanged(const Utils::FilePath &directory);
 
 protected:
+    Utils::FileIterator *files(const QStringList &nameFilters,
+                               const QStringList &exclusionFilters,
+                               const QVariant &additionalParameters) const override;
+    QVariant additionalParameters() const override;
     QString label() const override;
     QString toolTip() const override;
     void syncSearchEngineCombo(int selectedSearchEngineIndex) override;
 
 private:
-    FileContainerProvider fileContainerProvider() const override;
     void setValid(bool valid);
     void searchEnginesSelectionChanged(int index);
-    void currentEditorChanged(Core::IEditor *editor);
+    Utils::FilePath path() const;
 
     QPointer<QWidget> m_configWidget;
     QPointer<Utils::PathChooser> m_directory;
-    QAbstractButton *m_currentDirectory;
     QStackedWidget *m_searchEngineWidget = nullptr;
     QComboBox *m_searchEngineCombo = nullptr;
     bool m_isValid = false;
 };
-
-namespace Internal { void setupFindInFiles(QObject *guard); }
 
 } // namespace TextEditor

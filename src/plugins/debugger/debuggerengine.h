@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -7,19 +29,15 @@
 #include "debuggerconstants.h"
 #include "debuggerprotocol.h"
 #include "breakhandler.h"
+#include "projectexplorer/abi.h"
 #include "threadshandler.h"
 
 #include <coreplugin/icontext.h>
-
-#include <projectexplorer/abi.h>
 #include <projectexplorer/devicesupport/idevicefwd.h>
-
+#include <projectexplorer/runcontrol.h>
 #include <texteditor/textmark.h>
 
 #include <utils/filepath.h>
-#include <utils/outputformat.h>
-#include <utils/processhandle.h>
-#include <utils/processinterface.h>
 
 QT_BEGIN_NAMESPACE
 class QDebug;
@@ -101,10 +119,10 @@ public:
     DebuggerStartMode startMode = NoStartMode;
     DebuggerCloseMode closeMode = KillAtClose;
 
-    Utils::ProcessRunData inferior;
+    ProjectExplorer::Runnable inferior;
     QString displayName; // Used in the Snapshots view.
     Utils::ProcessHandle attachPID;
-    Utils::FilePaths solibSearchPath;
+    QStringList solibSearchPath;
 
     // Used by Qml debugging.
     QUrl qmlServer;
@@ -146,21 +164,19 @@ public:
     QString additionalStartupCommands;
 
     DebuggerEngineType cppEngineType = NoEngineType;
-    QString version;
 
     bool isQmlDebugging = false;
-    bool isPythonDebugging = false;
     bool breakOnMain = false;
     bool multiProcess = false; // Whether to set detach-on-fork off.
     bool useTerminal = false;
     bool runAsRoot = false;
 
-    Utils::ProcessRunData debugger;
+    ProjectExplorer::Runnable debugger;
     Utils::FilePath overrideStartScript; // Used in attach to core and remote debugging
     QString startMessage; // First status message shown.
     Utils::FilePath debugInfoLocation; // Gdb "set-debug-file-directory".
     QStringList debugSourceLocation; // Gdb "directory"
-    Utils::FilePath qtSourceLocation;
+    QString qtPackageSourceLocation;
     bool isSnapshot = false; // Set if created internally.
     ProjectExplorer::Abi toolChainAbi;
 
@@ -181,15 +197,15 @@ public:
 
     const Utils::MacroExpander *macroExpander = nullptr;
 
-    std::optional<int> exitCode = {};
+    Utils::optional<int> exitCode = {};
 
     // For Debugger testing.
     int testCase = 0;
 
     QStringList validationErrors;
 
-    int qtVersion = 0;
-    QString qtNamespace;
+    Utils::FilePath dumperPath;
+    int fallbackQtVersion = 0x50200;
 
     // Common debugger constants.
     Utils::FilePath peripheralDescriptionFile;
@@ -215,7 +231,6 @@ public:
     }
 
     QString partialVariable;
-    bool qmlFocusOnFrame = true; // QTCREATORBUG-29874
 };
 
 class Location
@@ -225,14 +240,12 @@ public:
     Location(quint64 address) { m_address = address; }
     Location(const Utils::FilePath &file) { m_fileName = file; }
     Location(const Utils::FilePath &file, int line, bool marker = true)
-        { m_textPosition = {line, -1}; m_fileName = file; m_needsMarker = marker; }
-    Location(const Utils::FilePath &file, const Utils::Text::Position &pos, bool marker = true)
-        { m_textPosition = pos; m_fileName = file; m_needsMarker = marker; }
+        { m_lineNumber = line; m_fileName = file; m_needsMarker = marker; }
     Location(const StackFrame &frame, bool marker = true);
     Utils::FilePath fileName() const { return m_fileName; }
     QString functionName() const { return m_functionName; }
     QString from() const { return m_from; }
-    Utils::Text::Position textPosition() const { return m_textPosition; }
+    int lineNumber() const { return m_lineNumber; }
     void setNeedsRaise(bool on) { m_needsRaise = on; }
     void setNeedsMarker(bool on) { m_needsMarker = on; }
     void setFileName(const Utils::FilePath &fileName) { m_fileName = fileName; }
@@ -248,7 +261,7 @@ private:
     bool m_needsMarker = false;
     bool m_needsRaise = true;
     bool m_hasDebugInfo = true;
-    Utils::Text::Position m_textPosition;
+    int m_lineNumber = -1;
     Utils::FilePath m_fileName;
     QString m_functionName;
     QString m_from;
@@ -270,7 +283,7 @@ public:
     QString runId() const;
 
     const DebuggerRunParameters &runParameters() const;
-    void addCompanionEngine(DebuggerEngine *engine);
+    void setCompanionEngine(DebuggerEngine *engine);
     void setSecondaryEngine();
 
     void start();
@@ -292,8 +305,6 @@ public:
 
     virtual bool canHandleToolTip(const DebuggerToolTipContext &) const;
     virtual void expandItem(const QString &iname); // Called when item in tree gets expanded.
-    virtual void reexpandItems(
-        const QSet<QString> &inames); // Called when items in tree need to be reexpanded.
     virtual void updateItem(const QString &iname); // Called for fresh watch items.
     void updateWatchData(const QString &iname); // FIXME: Merge with above.
     virtual void selectWatchData(const QString &iname);
@@ -314,11 +325,11 @@ public:
 
     virtual void reloadModules();
     virtual void examineModules();
-    virtual void loadSymbols(const Utils::FilePath &moduleName);
+    virtual void loadSymbols(const QString &moduleName);
     virtual void loadSymbolsForStack();
     virtual void loadAllSymbols();
-    virtual void requestModuleSymbols(const Utils::FilePath &moduleName);
-    virtual void requestModuleSections(const Utils::FilePath &moduleName);
+    virtual void requestModuleSymbols(const QString &moduleName);
+    virtual void requestModuleSections(const QString &moduleName);
 
     virtual void reloadRegisters();
     virtual void reloadPeripheralRegisters();
@@ -456,7 +467,6 @@ public:
     void updateLocalsWindow(bool showReturn);
     void raiseWatchersWindow();
     QString debuggerName() const;
-    QString debuggerType() const;
 
     bool isRegistersWindowVisible() const;
     bool isPeripheralRegistersWindowVisible() const;
@@ -464,8 +474,8 @@ public:
 
     void openMemoryEditor();
 
-    static void showModuleSymbols(const Utils::FilePath &moduleName, const QVector<Symbol> &symbols);
-    static void showModuleSections(const Utils::FilePath &moduleName, const QVector<Section> &sections);
+    static void showModuleSymbols(const QString &moduleName, const QVector<Symbol> &symbols);
+    static void showModuleSections(const QString &moduleName, const QVector<Section> &sections);
 
     void handleExecDetach();
     void handleExecContinue();
@@ -499,7 +509,6 @@ public:
 
 protected:
     void setDebuggerName(const QString &name);
-    void setDebuggerType(const QString &type);
     void notifyDebuggerProcessFinished(const Utils::ProcessResultData &resultData,
                                        const QString &backendName);
 
@@ -554,7 +563,7 @@ protected:
     void startDying() const;
 
     ProjectExplorer::IDeviceConstPtr device() const;
-    QList<DebuggerEngine *> companionEngines() const;
+    DebuggerEngine *companionEngine() const;
 
 private:
     friend class DebuggerPluginPrivate;

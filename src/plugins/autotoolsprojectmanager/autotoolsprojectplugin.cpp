@@ -1,5 +1,31 @@
-// Copyright (C) 2016 Openismus GmbH.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Openismus GmbH.
+** Author: Peter Penz (ppenz@openismus.com)
+** Author: Patricia Santana Cruz (patriciasantanacruz@gmail.com)
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
+
+#include "autotoolsprojectplugin.h"
 
 #include "autogenstep.h"
 #include "autoreconfstep.h"
@@ -12,94 +38,53 @@
 #include <coreplugin/icontext.h>
 
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/project.h>
 #include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
 
-#include <extensionsystem/iplugin.h>
+namespace AutotoolsProjectManager {
+namespace Internal {
 
-#include <utils/mimeconstants.h>
-
-using namespace ProjectExplorer;
-
-namespace AutotoolsProjectManager::Internal {
-
-/**
- * @brief Implementation of the ProjectExplorer::Project interface.
- *
- * Loads the autotools project and embeds it into the QtCreator project tree.
- * The class AutotoolsProject is the core of the autotools project plugin.
- * It is responsible to parse the Makefile.am files and do trigger project
- * updates if a Makefile.am file or a configure.ac file has been changed.
- */
-class AutotoolsProject : public Project
+AutotoolsProject::AutotoolsProject(const Utils::FilePath &fileName)
+    : Project(Constants::MAKEFILE_MIMETYPE, fileName)
 {
-public:
-    explicit AutotoolsProject(const Utils::FilePath &fileName)
-        : Project(Utils::Constants::MAKEFILE_MIMETYPE, fileName)
-    {
-        setId(Constants::AUTOTOOLS_PROJECT_ID);
-        setProjectLanguages(Core::Context(ProjectExplorer::Constants::CXX_LANGUAGE_ID));
-        setDisplayName(projectDirectory().fileName());
+    setId(Constants::AUTOTOOLS_PROJECT_ID);
+    setProjectLanguages(Core::Context(ProjectExplorer::Constants::CXX_LANGUAGE_ID));
+    setDisplayName(projectDirectory().fileName());
 
-        setHasMakeInstallEquivalent(true);
+    setHasMakeInstallEquivalent(true);
 
-        setBuildSystemCreator([](Target *t) { return new AutotoolsBuildSystem(t); });
-    }
-};
-
-/**
- * @brief Implementation of the ExtensionsSystem::IPlugin interface.
- *
- * The plugin creates the following components:
- *
- * - AutotoolsManager: Will manage the new autotools project and
- *   tell QtCreator for which MIME types the autotools project should
- *   be instantiated.
- *
- * - MakeStepFactory: This factory is used to create make steps.
- *
- * - AutogenStepFactory: This factory is used to create autogen steps.
- *
- * - AutoreconfStepFactory: This factory is used to create autoreconf
- *   steps.
- *
- * - ConfigureStepFactory: This factory is used to create configure steps.
- *
- * - MakefileEditorFactory: Provides a specialized editor with automatic
- *   syntax highlighting for Makefile.am files.
- *
- * - AutotoolsTargetFactory: Our current target is desktop.
- *
- * - AutotoolsBuildConfigurationFactory: Creates build configurations that
- *   contain the steps (make, autogen, autoreconf or configure) that will
- *   be executed in the build process)
- */
+    setBuildSystemCreator([](ProjectExplorer::Target *t) { return new AutotoolsBuildSystem(t); });
+}
 
 class AutotoolsProjectPluginPrivate
 {
 public:
-    AutotoolsBuildConfigurationFactory buildConfigFactory;
-    MakeStepFactory makeStepFactory;
+    AutotoolsBuildConfigurationFactory buildConfigurationFactory;
+    MakeStepFactory makeStepFaactory;
     AutogenStepFactory autogenStepFactory;
     ConfigureStepFactory configureStepFactory;
     AutoreconfStepFactory autoreconfStepFactory;
 };
 
-class AutotoolsProjectPlugin final : public ExtensionSystem::IPlugin
+AutotoolsProjectPlugin::~AutotoolsProjectPlugin()
 {
-    Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "AutotoolsProjectManager.json")
+    delete d;
+}
 
-    void initialize() final
-    {
-        ProjectManager::registerProjectType<AutotoolsProject>(Utils::Constants::MAKEFILE_MIMETYPE);
-        d = std::make_unique<AutotoolsProjectPluginPrivate>();
-    }
+void AutotoolsProjectPlugin::extensionsInitialized()
+{ }
 
-    std::unique_ptr<AutotoolsProjectPluginPrivate> d;
-};
+bool AutotoolsProjectPlugin::initialize(const QStringList &arguments,
+                                        QString *errorString)
+{
+    Q_UNUSED(arguments)
+    Q_UNUSED(errorString)
 
-} // AutotoolsProjectManager::Internal
+    d = new AutotoolsProjectPluginPrivate;
+    ProjectExplorer::ProjectManager::registerProjectType<AutotoolsProject>(Constants::MAKEFILE_MIMETYPE);
 
-#include "autotoolsprojectplugin.moc"
+    return true;
+}
+
+} // namespace Internal
+} // AutotoolsProjectManager

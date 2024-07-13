@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cpptoolsjsextension.h"
 
@@ -10,14 +32,12 @@
 #include <coreplugin/icore.h>
 
 #include <projectexplorer/project.h>
-#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projectnodes.h>
-#include <projectexplorer/projecttree.h>
+#include <projectexplorer/session.h>
 
 #include <cplusplus/AST.h>
 #include <cplusplus/ASTPath.h>
 #include <cplusplus/Overview.h>
-
 #include <utils/codegeneration.h>
 #include <utils/fileutils.h>
 
@@ -28,13 +48,6 @@
 
 namespace CppEditor::Internal {
 
-static CppFileSettings fileSettings()
-{
-    // Note that the user can set a different project in the wizard *after* the file names
-    // have been determined. There's nothing we can do about that here.
-    return cppFileSettingsForProject(ProjectExplorer::ProjectTree::currentProject());
-}
-
 static QString fileName(const QString &path, const QString &extension)
 {
     return Utils::FilePath::fromStringWithExtension(path, extension).toString();
@@ -42,17 +55,7 @@ static QString fileName(const QString &path, const QString &extension)
 
 QString CppToolsJsExtension::headerGuard(const QString &in) const
 {
-    return fileSettings().headerGuard(Utils::FilePath::fromString(in));
-}
-
-QString CppToolsJsExtension::licenseTemplate() const
-{
-    return fileSettings().licenseTemplate();
-}
-
-bool CppToolsJsExtension::usePragmaOnce() const
-{
-    return fileSettings().headerPragmaOnce;
+    return Utils::headerGuard(in);
 }
 
 static QStringList parts(const QString &klass)
@@ -81,7 +84,8 @@ QString CppToolsJsExtension::className(const QString &klass) const
 QString CppToolsJsExtension::classToFileName(const QString &klass, const QString &extension) const
 {
     const QString raw = fileName(className(klass), extension);
-    const CppFileSettings &settings = fileSettings();
+    CppFileSettings settings;
+    settings.fromSettings(Core::ICore::settings());
     if (!settings.lowerCaseFiles)
         return raw;
 
@@ -96,6 +100,11 @@ QString CppToolsJsExtension::classToFileName(const QString &klass, const QString
     if (!ext.isEmpty())
         ext = QString(QLatin1Char('.')) + ext;
     return finalPath + name + ext;
+}
+
+QString CppToolsJsExtension::classToHeaderGuard(const QString &klass, const QString &extension) const
+{
+    return Utils::headerGuard(fileName(className(klass), extension), namespaces(klass));
 }
 
 QString CppToolsJsExtension::openNamespaces(const QString &klass) const
@@ -145,15 +154,17 @@ bool CppToolsJsExtension::hasQObjectParent(const QString &klassName) const
     const IndexItem::Ptr item = candidates.first();
 
     // Find class in AST.
-    const CPlusPlus::Snapshot snapshot = CppModelManager::snapshot();
-    const WorkingCopy workingCopy = CppModelManager::workingCopy();
-    std::optional<QByteArray> source = workingCopy.source(item->filePath());
-    if (!source) {
-        const Utils::expected_str<QByteArray> contents = item->filePath().fileContents();
-        QTC_ASSERT_EXPECTED(contents, return false);
-        source = *contents;
+    const CPlusPlus::Snapshot snapshot = CppModelManager::instance()->snapshot();
+    const WorkingCopy workingCopy = CppModelManager::instance()->workingCopy();
+    QByteArray source = workingCopy.source(item->fileName());
+    if (source.isEmpty()) {
+        QFile file(item->fileName());
+        if (!file.open(QIODevice::ReadOnly | QIODevice::Text))
+            return false;
+        source = file.readAll();
     }
-    const auto doc = snapshot.preprocessedDocument(*source, item->filePath());
+    const auto doc = snapshot.preprocessedDocument(source,
+                                                   Utils::FilePath::fromString(item->fileName()));
     if (!doc)
         return false;
     doc->check();
@@ -247,7 +258,7 @@ QString CppToolsJsExtension::includeStatement(
         }
         return false;
     };
-    for (const Project * const p : ProjectManager::projects()) {
+    for (const Project * const p : SessionManager::projects()) {
         const Node *theNode = p->rootProjectNode()->findNode(nodeMatchesFileName);
         if (theNode) {
             const bool sameDir = pathOfIncludingFile == theNode->filePath().toFileInfo().path();
@@ -259,16 +270,6 @@ QString CppToolsJsExtension::includeStatement(
         }
     }
     return {};
-}
-
-QString CppToolsJsExtension::cxxHeaderSuffix() const
-{
-    return fileSettings().headerSuffix;
-}
-
-QString CppToolsJsExtension::cxxSourceSuffix() const
-{
-    return fileSettings().sourceSuffix;
 }
 
 } // namespace CppEditor::Internal

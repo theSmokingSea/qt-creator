@@ -4,7 +4,7 @@ QtcPlugin {
     name: "CppEditor"
 
     Depends { name: "Qt.widgets" }
-    Depends { condition: project.withPluginTests; name: "Qt.testlib" }
+    Depends { condition: project.withAutotests; name: "Qt.testlib" }
 
     Depends { name: "CPlusPlus" }
     Depends { name: "Utils" }
@@ -12,6 +12,8 @@ QtcPlugin {
     Depends { name: "Core" }
     Depends { name: "TextEditor" }
     Depends { name: "ProjectExplorer" }
+
+    Depends { name: "app_version_header" }
 
     pluginTestDepends: [
         "QmakeProjectManager",
@@ -27,6 +29,7 @@ QtcPlugin {
     files: [
         "abstracteditorsupport.cpp",
         "abstracteditorsupport.h",
+        "abstractoverviewmodel.h",
         "baseeditordocumentparser.cpp",
         "baseeditordocumentparser.h",
         "baseeditordocumentprocessor.cpp",
@@ -37,6 +40,9 @@ QtcPlugin {
         "builtineditordocumentparser.h",
         "builtineditordocumentprocessor.cpp",
         "builtineditordocumentprocessor.h",
+        "builtinindexingsupport.cpp",
+        "builtinindexingsupport.h",
+        "clangbasechecks.ui", // FIXME: Is this used at all?
         "clangdiagnosticconfig.cpp",
         "clangdiagnosticconfig.h",
         "clangdiagnosticconfigsmodel.cpp",
@@ -45,8 +51,7 @@ QtcPlugin {
         "clangdiagnosticconfigsselectionwidget.h",
         "clangdiagnosticconfigswidget.cpp",
         "clangdiagnosticconfigswidget.h",
-        "clangdsettings.cpp",
-        "clangdsettings.h",
+        "clangdiagnosticconfigswidget.ui",
         "compileroptionsbuilder.cpp",
         "compileroptionsbuilder.h",
         "cppautocompleter.cpp",
@@ -61,10 +66,14 @@ QtcPlugin {
         "cppcodeformatter.h",
         "cppcodemodelinspectordialog.cpp",
         "cppcodemodelinspectordialog.h",
+        "cppcodemodelinspectordialog.ui",
         "cppcodemodelinspectordumper.cpp",
         "cppcodemodelinspectordumper.h",
         "cppcodemodelsettings.cpp",
         "cppcodemodelsettings.h",
+        "cppcodemodelsettingspage.cpp",
+        "cppcodemodelsettingspage.h",
+        "cppcodemodelsettingspage.ui",
         "cppcodestylepreferences.cpp",
         "cppcodestylepreferences.h",
         "cppcodestylepreferencesfactory.cpp",
@@ -73,6 +82,7 @@ QtcPlugin {
         "cppcodestylesettings.h",
         "cppcodestylesettingspage.cpp",
         "cppcodestylesettingspage.h",
+        "cppcodestylesettingspage.ui",
         "cppcodestylesnippets.h",
         "cppcompletionassist.cpp",
         "cppcompletionassist.h",
@@ -80,39 +90,36 @@ QtcPlugin {
         "cppcompletionassistprocessor.h",
         "cppcompletionassistprovider.cpp",
         "cppcompletionassistprovider.h",
+        "cppcurrentdocumentfilter.cpp",
+        "cppcurrentdocumentfilter.h",
         "cppcursorinfo.h",
         "cppdoxygen.cpp",
         "cppdoxygen.h",
         "cppdoxygen.kwgen",
-        "cppeditorlogging.cpp",
-        "cppeditorlogging.h",
         "cppeditorwidget.cpp",
         "cppeditorwidget.h",
         "cppeditor.qrc",
         "cppeditor_global.h",
-        "cppeditortr.h",
         "cppeditorconstants.h",
         "cppeditordocument.cpp",
         "cppeditordocument.h",
         "cppeditoroutline.cpp",
         "cppeditoroutline.h",
         "cppeditorplugin.cpp",
+        "cppeditorplugin.h",
         "cppelementevaluator.cpp",
         "cppelementevaluator.h",
         "cppfileiterationorder.cpp",
         "cppfileiterationorder.h",
         "cppfilesettingspage.cpp",
         "cppfilesettingspage.h",
+        "cppfilesettingspage.ui",
         "cppfindreferences.cpp",
         "cppfindreferences.h",
         "cppfollowsymbolundercursor.cpp",
         "cppfollowsymbolundercursor.h",
         "cppfunctiondecldeflink.cpp",
         "cppfunctiondecldeflink.h",
-        "cppfunctionparamrenaminghandler.cpp",
-        "cppfunctionparamrenaminghandler.h",
-        "cppheadersource.cpp",
-        "cppheadersource.h",
         "cpphighlighter.cpp",
         "cpphighlighter.h",
         "cppincludehierarchy.cpp",
@@ -121,6 +128,8 @@ QtcPlugin {
         "cppincludesfilter.h",
         "cppindexingsupport.cpp",
         "cppindexingsupport.h",
+        "cppinsertvirtualmethods.cpp",
+        "cppinsertvirtualmethods.h",
         "cpplocalrenaming.cpp",
         "cpplocalrenaming.h",
         "cpplocalsymbols.cpp",
@@ -135,8 +144,8 @@ QtcPlugin {
         "cppmodelmanagersupport.h",
         "cppoutline.cpp",
         "cppoutline.h",
-        "cppoutlinemodel.cpp",
-        "cppoutlinemodel.h",
+        "cppoverviewmodel.cpp",
+        "cppoverviewmodel.h",
         "cppparsecontext.cpp",
         "cppparsecontext.h",
         "cpppointerdeclarationformatter.cpp",
@@ -145,6 +154,7 @@ QtcPlugin {
         "cppprojectpartchooser.h",
         "cpppreprocessordialog.cpp",
         "cpppreprocessordialog.h",
+        "cpppreprocessordialog.ui",
         "cppprojectfile.cpp",
         "cppprojectfile.h",
         "cppprojectfilecategorizer.cpp",
@@ -153,6 +163,25 @@ QtcPlugin {
         "cppprojectinfogenerator.h",
         "cppprojectupdater.cpp",
         "cppprojectupdater.h",
+        "cppprojectupdaterinterface.h",
+        "cppquickfix.cpp",
+        "cppquickfix.h",
+        "cppquickfixassistant.cpp",
+        "cppquickfixassistant.h",
+        "cppquickfixes.cpp",
+        "cppquickfixes.h",
+        "cppquickfixprojectsettings.cpp",
+        "cppquickfixprojectsettings.h",
+        "cppquickfixprojectsettingswidget.cpp",
+        "cppquickfixprojectsettingswidget.h",
+        "cppquickfixprojectsettingswidget.ui",
+        "cppquickfixsettings.cpp",
+        "cppquickfixsettings.h",
+        "cppquickfixsettingspage.cpp",
+        "cppquickfixsettingspage.h",
+        "cppquickfixsettingswidget.cpp",
+        "cppquickfixsettingswidget.h",
+        "cppquickfixsettingswidget.ui",
         "cppqtstyleindenter.cpp",
         "cppqtstyleindenter.h",
         "cpprefactoringchanges.cpp",
@@ -207,110 +236,33 @@ QtcPlugin {
         "searchsymbols.h",
         "semantichighlighter.cpp",
         "semantichighlighter.h",
+        "senddocumenttracker.cpp",
+        "senddocumenttracker.h",
+        "stringtable.cpp",
+        "stringtable.h",
         "symbolfinder.cpp",
         "symbolfinder.h",
         "symbolsfindfilter.cpp",
         "symbolsfindfilter.h",
         "typehierarchybuilder.cpp",
         "typehierarchybuilder.h",
-        "wrappablelineedit.cpp",
+        "wrappablelineedit.cpp", // FIXME: Is this used?
         "wrappablelineedit.h",
     ]
 
     Group {
-        name: "Quickfixes"
-        prefix: "quickfixes/"
-        files: [
-            "assigntolocalvariable.cpp",
-            "assigntolocalvariable.h",
-            "bringidentifierintoscope.cpp",
-            "bringidentifierintoscope.h",
-            "completeswitchstatement.cpp",
-            "completeswitchstatement.h",
-            "convertfromandtopointer.cpp",
-            "convertfromandtopointer.h",
-            "convertnumericliteral.cpp",
-            "convertnumericliteral.h",
-            "convertqt4connect.cpp",
-            "convertqt4connect.h",
-            "convertstringliteral.cpp",
-            "convertstringliteral.h",
-            "converttocamelcase.cpp",
-            "converttocamelcase.h",
-            "converttometamethodcall.cpp",
-            "converttometamethodcall.h",
-            "cppcodegenerationquickfixes.cpp",
-            "cppcodegenerationquickfixes.h",
-            "cppinsertvirtualmethods.cpp",
-            "cppinsertvirtualmethods.h",
-            "cppquickfix.cpp",
-            "cppquickfix.h",
-            "cppquickfixassistant.cpp",
-            "cppquickfixassistant.h",
-            "cppquickfixhelpers.cpp",
-            "cppquickfixhelpers.h",
-            "cppquickfixprojectsettings.cpp",
-            "cppquickfixprojectsettings.h",
-            "cppquickfixprojectsettingswidget.cpp",
-            "cppquickfixprojectsettingswidget.h",
-            "cppquickfixsettings.cpp",
-            "cppquickfixsettings.h",
-            "cppquickfixsettingspage.cpp",
-            "cppquickfixsettingspage.h",
-            "cppquickfixsettingswidget.cpp",
-            "cppquickfixsettingswidget.h",
-            "createdeclarationfromuse.cpp",
-            "createdeclarationfromuse.h",
-            "extractfunction.cpp",
-            "extractfunction.h",
-            "extractliteralasparameter.cpp",
-            "extractliteralasparameter.h",
-            "insertfunctiondefinition.cpp",
-            "insertfunctiondefinition.h",
-            "logicaloperationquickfixes.cpp",
-            "logicaloperationquickfixes.h",
-            "moveclasstoownfile.cpp",
-            "moveclasstoownfile.h",
-            "movefunctiondefinition.cpp",
-            "movefunctiondefinition.h",
-            "rearrangeparamdeclarationlist.cpp",
-            "rearrangeparamdeclarationlist.h",
-            "reformatpointerdeclaration.cpp",
-            "reformatpointerdeclaration.h",
-            "removeusingnamespace.cpp",
-            "removeusingnamespace.h",
-            "rewritecomment.cpp",
-            "rewritecomment.h",
-            "rewritecontrolstatements.cpp",
-            "rewritecontrolstatements.h",
-            "splitsimpledeclaration.cpp",
-            "splitsimpledeclaration.h",
-            "synchronizememberfunctionorder.cpp",
-            "synchronizememberfunctionorder.h",
-        ]
-    }
-
-    Group {
         name: "TestCase"
-        condition: qtc.withPluginTests || qtc.withAutotests
+        condition: qtc.testsEnabled || project.withAutotests
         files: [
             "cpptoolstestcase.cpp",
             "cpptoolstestcase.h",
         ]
     }
 
-    QtcTestFiles {
+    Group {
+        name: "Tests"
+        condition: qtc.testsEnabled
         cpp.defines: outer.concat(['SRCDIR="' + FileInfo.path(filePath) + '"'])
-
-        Group {
-            name: "Quickfix tests"
-            prefix: "quickfixes/"
-            files: [
-                "cppquickfix_test.cpp",
-                "cppquickfix_test.h",
-            ]
-        }
-
         files: [
             "compileroptionsbuilder_test.cpp",
             "compileroptionsbuilder_test.h",
@@ -320,6 +272,8 @@ QtcPlugin {
             "cppcompletion_test.h",
             "cppdoxygen_test.cpp",
             "cppdoxygen_test.h",
+            "cppheadersource_test.cpp",
+            "cppheadersource_test.h",
             "cppincludehierarchy_test.cpp",
             "cppincludehierarchy_test.h",
             "cpplocalsymbols_test.cpp",
@@ -330,8 +284,8 @@ QtcPlugin {
             "cppmodelmanager_test.h",
             "cpppointerdeclarationformatter_test.cpp",
             "cpppointerdeclarationformatter_test.h",
-            "cpprenaming_test.cpp",
-            "cpprenaming_test.h",
+            "cppquickfix_test.cpp",
+            "cppquickfix_test.h",
             "cppsourceprocessor_test.cpp",
             "cppsourceprocessor_test.h",
             "cppsourceprocessertesthelper.cpp",

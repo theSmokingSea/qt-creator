@@ -99,7 +99,6 @@ enum Kind {
     T_LESS_EQUAL,
     T_LESS_LESS,
     T_LESS_LESS_EQUAL,
-    T_LESS_EQUAL_GREATER,
     T_MINUS,
     T_MINUS_EQUAL,
     T_MINUS_MINUS,
@@ -130,15 +129,9 @@ enum Kind {
     T_CASE,
     T_CATCH,
     T_CLASS,
-    T_CO_AWAIT,
-    T_CO_RETURN,
-    T_CO_YIELD,
-    T_CONCEPT,
     T_CONST,
     T_CONST_CAST,
-    T_CONSTEVAL,
     T_CONSTEXPR,
-    T_CONSTINIT,
     T_CONTINUE,
     T_DECLTYPE,
     T_DEFAULT,
@@ -167,7 +160,6 @@ enum Kind {
     T_PUBLIC,
     T_REGISTER,
     T_REINTERPRET_CAST,
-    T_REQUIRES,
     T_RETURN,
     T_SIZEOF,
     T_STATIC,
@@ -230,7 +222,6 @@ enum Kind {
     T_FIRST_PRIMITIVE,
     T_BOOL = T_FIRST_PRIMITIVE,
     T_CHAR,
-    T_CHAR8_T,
     T_CHAR16_T,
     T_CHAR32_T,
     T_DOUBLE,
@@ -455,8 +446,6 @@ struct LanguageFeatures
             unsigned int cxxEnabled : 1;
             unsigned int cxx11Enabled : 1;
             unsigned int cxx14Enabled : 1;
-            unsigned int cxx17Enabled : 1;
-            unsigned int cxx20Enabled : 1;
             unsigned int objCEnabled : 1;
             unsigned int c99Enabled : 1;
         };

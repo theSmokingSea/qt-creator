@@ -1,20 +1,41 @@
-// Copyright (C) 2016 Alexander Drozdov.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Alexander Drozdov.
+** Contact: adrozdoff@gmail.com
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "configmodelitemdelegate.h"
 
 #include "configmodel.h"
-#include "cmakeprojectmanagertr.h"
 
 #include <utils/pathchooser.h>
 
 #include <QCheckBox>
 
-using namespace Utils;
+namespace CMakeProjectManager {
+namespace Internal {
 
-namespace CMakeProjectManager::Internal {
-
-ConfigModelItemDelegate::ConfigModelItemDelegate(const FilePath &base, QObject* parent)
+ConfigModelItemDelegate::ConfigModelItemDelegate(const Utils::FilePath &base, QObject* parent)
     : QStyledItemDelegate(parent)
     , m_base(base)
 { }
@@ -26,17 +47,17 @@ QWidget *ConfigModelItemDelegate::createEditor(QWidget *parent, const QStyleOpti
     if (index.column() == 1) {
         ConfigModel::DataItem data = ConfigModel::dataItemFromIndex(index);
         if (data.type == ConfigModel::DataItem::FILE || data.type == ConfigModel::DataItem::DIRECTORY) {
-            auto edit = new PathChooser(parent);
+            auto edit = new Utils::PathChooser(parent);
             edit->setAttribute(Qt::WA_MacSmallSize);
             edit->setFocusPolicy(Qt::StrongFocus);
             edit->setBaseDirectory(m_base);
             edit->setAutoFillBackground(true);
             if (data.type == ConfigModel::DataItem::FILE) {
-                edit->setExpectedKind(PathChooser::File);
-                edit->setPromptDialogTitle(Tr::tr("Select a file for %1").arg(data.key));
+                edit->setExpectedKind(Utils::PathChooser::File);
+                edit->setPromptDialogTitle(tr("Select a file for %1").arg(data.key));
             } else {
-                edit->setExpectedKind(PathChooser::Directory);
-                edit->setPromptDialogTitle(Tr::tr("Select a directory for %1").arg(data.key));
+                edit->setExpectedKind(Utils::PathChooser::Directory);
+                edit->setPromptDialogTitle(tr("Select a directory for %1").arg(data.key));
             }
             return edit;
         } else if (!data.values.isEmpty()) {
@@ -44,7 +65,7 @@ QWidget *ConfigModelItemDelegate::createEditor(QWidget *parent, const QStyleOpti
             edit->setAttribute(Qt::WA_MacSmallSize);
             edit->setFocusPolicy(Qt::StrongFocus);
             edit->setAutoFillBackground(true);
-            for (const QString &s : std::as_const(data.values))
+            for (const QString &s : qAsConst(data.values))
                 edit->addItem(s);
             return edit;
         } else if (data.type == ConfigModel::DataItem::BOOLEAN) {
@@ -66,8 +87,8 @@ void ConfigModelItemDelegate::setEditorData(QWidget *editor, const QModelIndex &
     if (index.column() == 1) {
         ConfigModel::DataItem data = ConfigModel::dataItemFromIndex(index);
         if (data.type == ConfigModel::DataItem::FILE || data.type == ConfigModel::DataItem::DIRECTORY) {
-            auto edit = static_cast<PathChooser *>(editor);
-            edit->setFilePath(FilePath::fromUserInput(data.value));
+            auto edit = static_cast<Utils::PathChooser *>(editor);
+            edit->setFilePath(Utils::FilePath::fromUserInput(data.value));
             return;
         } else if (!data.values.isEmpty()) {
             auto edit = static_cast<QComboBox *>(editor);
@@ -93,9 +114,9 @@ void ConfigModelItemDelegate::setModelData(QWidget *editor, QAbstractItemModel *
     if (index.column() == 1) {
         ConfigModel::DataItem data = ConfigModel::dataItemFromIndex(index);
         if (data.type == ConfigModel::DataItem::FILE || data.type == ConfigModel::DataItem::DIRECTORY) {
-            auto edit = static_cast<PathChooser *>(editor);
-            if (edit->unexpandedFilePath().toString() != data.value)
-                model->setData(index, edit->unexpandedFilePath().toString(), Qt::EditRole);
+            auto edit = static_cast<Utils::PathChooser *>(editor);
+            if (edit->rawPath() != data.value)
+                model->setData(index, edit->filePath().toString(), Qt::EditRole);
             return;
         } else if (!data.values.isEmpty()) {
             auto edit = static_cast<QComboBox *>(editor);
@@ -135,4 +156,6 @@ QSize ConfigModelItemDelegate::sizeHint(const QStyleOptionViewItem &option,
     return QSize(100, height);
 }
 
-} // CMakeProjectManager::Internal
+} // namespace Internal
+} // namespace CMakeProjectManager
+

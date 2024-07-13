@@ -1,18 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "startremotedialog.h"
-
-#include "../debuggertr.h"
 
 #include <coreplugin/icore.h>
 
 #include <projectexplorer/devicesupport/idevice.h>
 #include <projectexplorer/devicesupport/sshparameters.h>
-#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/kitchooser.h>
-
-#include <utils/commandline.h>
+#include <projectexplorer/kitinformation.h>
+#include <projectexplorer/runcontrol.h>
 
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -41,7 +60,7 @@ StartRemoteDialog::StartRemoteDialog(QWidget *parent)
     : QDialog(parent)
     , d(new Internal::StartRemoteDialogPrivate)
 {
-    setWindowTitle(Tr::tr("Start Remote Analysis"));
+    setWindowTitle(tr("Start Remote Analysis"));
 
     d->kitChooser = new KitChooser(this);
     d->kitChooser->setKitPredicate([](const Kit *kit) {
@@ -58,19 +77,19 @@ StartRemoteDialog::StartRemoteDialog(QWidget *parent)
 
     auto formLayout = new QFormLayout;
     formLayout->setFieldGrowthPolicy(QFormLayout::ExpandingFieldsGrow);
-    formLayout->addRow(Tr::tr("Kit:"), d->kitChooser);
-    formLayout->addRow(Tr::tr("Executable:"), d->executable);
-    formLayout->addRow(Tr::tr("Arguments:"), d->arguments);
-    formLayout->addRow(Tr::tr("Working directory:"), d->workingDirectory);
+    formLayout->addRow(tr("Kit:"), d->kitChooser);
+    formLayout->addRow(tr("Executable:"), d->executable);
+    formLayout->addRow(tr("Arguments:"), d->arguments);
+    formLayout->addRow(tr("Working directory:"), d->workingDirectory);
 
     auto verticalLayout = new QVBoxLayout(this);
     verticalLayout->addLayout(formLayout);
     verticalLayout->addWidget(d->buttonBox);
 
-    QtcSettings *settings = Core::ICore::settings();
+    QSettings *settings = Core::ICore::settings();
     settings->beginGroup("AnalyzerStartRemoteDialog");
     d->kitChooser->populate();
-    d->kitChooser->setCurrentKitId(Id::fromSetting(settings->value("profile")));
+    d->kitChooser->setCurrentKitId(Utils::Id::fromSetting(settings->value("profile")));
     d->executable->setText(settings->value("executable").toString());
     d->workingDirectory->setText(settings->value("workingDirectory").toString());
     d->arguments->setText(settings->value("arguments").toString());
@@ -93,7 +112,7 @@ StartRemoteDialog::~StartRemoteDialog()
 
 void StartRemoteDialog::accept()
 {
-    QtcSettings *settings = Core::ICore::settings();
+    QSettings *settings = Core::ICore::settings();
     settings->beginGroup("AnalyzerStartRemoteDialog");
     settings->setValue("profile", d->kitChooser->currentKitId().toString());
     settings->setValue("executable", d->executable->text());
@@ -122,4 +141,4 @@ FilePath StartRemoteDialog::workingDirectory() const
     return FilePath::fromString(d->workingDirectory->text());
 }
 
-} // Debugger
+} // namespace Debugger

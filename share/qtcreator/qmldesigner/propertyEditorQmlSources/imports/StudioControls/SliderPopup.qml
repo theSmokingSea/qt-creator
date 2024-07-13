@@ -1,16 +1,36 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Templates as T
+import QtQuick 2.15
+import QtQuick.Templates 2.15 as T
 import StudioTheme 1.0 as StudioTheme
 
 T.Popup {
-    id: control
+    id: sliderPopup
 
-    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
-
-    property T.Control __parentControl
+    property T.Control myControl
 
     property bool drag: slider.pressed
 
@@ -20,7 +40,7 @@ T.Popup {
                  | T.Popup.CloseOnReleaseOutsideParent
 
     background: Rectangle {
-        color: control.style.popup.background
+        color: StudioTheme.Values.themePopupBackground
         border.width: 0
     }
 
@@ -33,54 +53,54 @@ T.Popup {
         rightPadding: 3
         leftPadding: 3
 
-        from: control.__parentControl.from
-        value: control.__parentControl.value
-        to: control.__parentControl.to
+        from: myControl.from
+        value: myControl.value
+        to: myControl.to
 
         focusPolicy: Qt.NoFocus
 
         handle: Rectangle {
             x: slider.leftPadding + slider.visualPosition * (slider.availableWidth - width)
             y: slider.topPadding + (slider.availableHeight / 2) - (height / 2)
-            width: control.style.sliderHandleSize.width
-            height: control.style.sliderHandleSize.height
+            width: StudioTheme.Values.sliderHandleWidth
+            height: StudioTheme.Values.sliderHandleHeight
             radius: 0
-            color: slider.pressed ? control.style.slider.handleInteraction
-                                  : control.style.slider.handle
+            color: slider.pressed ? StudioTheme.Values.themeSliderHandleInteraction
+                                  : StudioTheme.Values.themeSliderHandle
         }
 
         background: Rectangle {
             x: slider.leftPadding
             y: slider.topPadding + (slider.availableHeight / 2) - (height / 2)
             width: slider.availableWidth
-            height: control.style.sliderTrackHeight
+            height: StudioTheme.Values.sliderTrackHeight
             radius: 0
-            color: control.style.slider.inactiveTrack
+            color: StudioTheme.Values.themeSliderInactiveTrack
 
             Rectangle {
                 width: slider.visualPosition * parent.width
                 height: parent.height
-                color: control.style.slider.activeTrack
+                color: StudioTheme.Values.themeSliderActiveTrack
                 radius: 0
             }
         }
 
         onMoved: {
-            var currValue = control.__parentControl.value
-            control.__parentControl.value = slider.value
+            var currValue = myControl.value
+            myControl.value = slider.value
 
-            if (currValue !== control.__parentControl.value)
-                control.__parentControl.valueModified()
+            if (currValue !== myControl.value)
+                myControl.valueModified()
         }
     }
 
     onOpened: {
         // Check if value is in sync with text input, if not sync it!
-        var val = control.__parentControl.valueFromText(control.__parentControl.contentItem.text,
-                                                        control.__parentControl.locale)
-        if (control.__parentControl.value !== val) {
-            control.__parentControl.value = val
-            control.__parentControl.valueModified()
+        var val = myControl.valueFromText(myControl.contentItem.text,
+                                          myControl.locale)
+        if (myControl.value !== val) {
+            myControl.value = val
+            myControl.valueModified()
         }
     }
 }

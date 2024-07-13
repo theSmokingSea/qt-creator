@@ -1,8 +1,8 @@
-# TODO: Make Qt::Gui optional -- if really needed that is.
+# TODO: Make Qt5::Gui optional -- if really needed that is.
 
 add_qtc_library(CPlusPlus
-  DEPENDS Utils Qt::Concurrent
-  PUBLIC_DEPENDS 3rd_cplusplus Qt::Gui
+  DEPENDS Utils Qt5::Concurrent
+  PUBLIC_DEPENDS 3rd_cplusplus Qt5::Gui
   SOURCES
     ASTParent.cpp ASTParent.h
     ASTPath.cpp ASTPath.h
@@ -32,7 +32,6 @@ add_qtc_library(CPlusPlus
     TypeOfExpression.cpp TypeOfExpression.h
     TypePrettyPrinter.cpp TypePrettyPrinter.h
     cppmodelmanagerbase.cpp cppmodelmanagerbase.h
-    declarationcomments.cpp declarationcomments.h
     findcdbbreakpoint.cpp findcdbbreakpoint.h
     pp-cctype.h pp-engine.cpp
     pp-engine.h pp-scanner.cpp

@@ -16,11 +16,14 @@ QtcPlugin {
         "compilationdatabaseutils.cpp",
         "compilationdatabaseutils.h",
         "compilationdatabaseprojectmanagerplugin.cpp",
+        "compilationdatabaseprojectmanagerplugin.h",
         "compilationdbparser.cpp",
         "compilationdbparser.h",
     ]
 
-    QtcTestFiles {
+    Group {
+        name: "Tests"
+        condition: qtc.testsEnabled
         files: [
             "compilationdatabasetests.cpp",
             "compilationdatabasetests.h",

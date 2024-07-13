@@ -1,25 +1,46 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmakemakestep.h"
 
-#include "qmakebuildconfiguration.h"
-#include "qmakenodes.h"
 #include "qmakeparser.h"
 #include "qmakeproject.h"
+#include "qmakenodes.h"
+#include "qmakebuildconfiguration.h"
 #include "qmakeprojectmanagerconstants.h"
-#include "qmakeprojectmanagertr.h"
 #include "qmakesettings.h"
 #include "qmakestep.h"
 
+#include <projectexplorer/target.h>
+#include <projectexplorer/toolchain.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/gnumakeparser.h>
-#include <projectexplorer/kitaspects.h>
 #include <projectexplorer/processparameters.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/target.h>
-#include <projectexplorer/toolchain.h>
+#include <projectexplorer/kitinformation.h>
 #include <projectexplorer/xcodebuildparser.h>
 
 #include <utils/qtcprocess.h>
@@ -36,13 +57,16 @@ namespace Internal {
 
 class QmakeMakeStep : public MakeStep
 {
+    Q_DECLARE_TR_FUNCTIONS(QmakeProjectManager::QmakeMakeStep)
+
 public:
     QmakeMakeStep(BuildStepList *bsl, Id id);
 
 private:
+    void finish(bool success) override;
     bool init() override;
     void setupOutputFormatter(OutputFormatter *formatter) override;
-    Tasking::GroupItem runRecipe() final;
+    void doRun() override;
     QStringList displayArguments() const override;
 
     bool m_scriptTarget = false;
@@ -179,7 +203,7 @@ bool QmakeMakeStep::init()
 void QmakeMakeStep::setupOutputFormatter(OutputFormatter *formatter)
 {
     formatter->addLineParser(new GnuMakeParser());
-    Toolchain *tc = ToolchainKitAspect::cxxToolchain(kit());
+    ToolChain *tc = ToolChainKitAspect::cxxToolChain(kit());
     OutputTaskParser *xcodeBuildParser = nullptr;
     if (tc && tc->targetAbi().os() == Abi::DarwinOS) {
         xcodeBuildParser = new XcodebuildParser;
@@ -191,7 +215,7 @@ void QmakeMakeStep::setupOutputFormatter(OutputFormatter *formatter)
     additionalParsers << new QMakeParser;
 
     if (xcodeBuildParser) {
-        for (OutputLineParser * const p : std::as_const(additionalParsers))
+        for (OutputLineParser * const p : qAsConst(additionalParsers))
             p->setRedirectionDetector(xcodeBuildParser);
     }
     formatter->addLineParsers(additionalParsers);
@@ -200,38 +224,33 @@ void QmakeMakeStep::setupOutputFormatter(OutputFormatter *formatter)
     AbstractProcessStep::setupOutputFormatter(formatter);
 }
 
-Tasking::GroupItem QmakeMakeStep::runRecipe()
+void QmakeMakeStep::doRun()
 {
-    using namespace Tasking;
+    if (m_scriptTarget || m_ignoredNonTopLevelBuild) {
+        emit finished(true);
+        return;
+    }
 
-    const auto onSetup = [this] {
-        if (m_scriptTarget || m_ignoredNonTopLevelBuild)
-            return SetupResult::StopWithSuccess;
+    if (!m_makeFileToCheck.exists()) {
+        if (!ignoreReturnValue())
+            emit addOutput(tr("Cannot find Makefile. Check your build settings."), BuildStep::OutputFormat::NormalMessage);
+        const bool success = ignoreReturnValue();
+        emit finished(success);
+        return;
+    }
 
-        if (!m_makeFileToCheck.exists()) {
-            const bool success = ignoreReturnValue();
-            if (!success) {
-                emit addOutput(Tr::tr("Cannot find Makefile. Check your build settings."),
-                               OutputFormat::NormalMessage);
-            }
-            return success ? SetupResult::StopWithSuccess : SetupResult::StopWithError;
-        }
-        return SetupResult::Continue;
-    };
-    const auto onError = [this] {
-        if (m_unalignedBuildDir && settings().warnAgainstUnalignedBuildDir()) {
-            const QString msg = Tr::tr("The build directory is not at the same level as the source "
-                                       "directory, which could be the reason for the build failure.");
-            emit addTask(BuildSystemTask(Task::Warning, msg));
-        }
-    };
+    AbstractProcessStep::doRun();
+}
 
-    return Group {
-        ignoreReturnValue() ? finishAllAndSuccess : stopOnError,
-        onGroupSetup(onSetup),
-        onGroupDone(onError, CallDoneIf::Error),
-        defaultProcessTask()
-    };
+void QmakeMakeStep::finish(bool success)
+{
+    if (!success && !isCanceled() && m_unalignedBuildDir
+            && QmakeSettings::warnAgainstUnalignedBuildDir()) {
+        const QString msg = tr("The build directory is not at the same level as the source "
+                               "directory, which could be the reason for the build failure.");
+        emit addTask(BuildSystemTask(Task::Warning, msg));
+    }
+    MakeStep::finish(success);
 }
 
 QStringList QmakeMakeStep::displayArguments() const

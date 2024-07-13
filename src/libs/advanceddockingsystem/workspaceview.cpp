@@ -1,18 +1,48 @@
-// Copyright (C) 2020 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-2.1-or-later OR GPL-3.0-or-later
+/****************************************************************************
+**
+** Copyright (C) 2020 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 2.1 or (at your option) any later version.
+** The licenses are as published by the Free Software Foundation
+** and appearing in the file LICENSE.LGPLv21 included in the packaging
+** of this file. Please review the following information to ensure
+** the GNU Lesser General Public License version 2.1 requirements
+** will be met: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "workspaceview.h"
 
-#include "advanceddockingsystemtr.h"
 #include "dockmanager.h"
+#include "workspacedialog.h"
 
 #include <utils/algorithm.h>
 
 #include <QFileDialog>
 #include <QHeaderView>
 #include <QItemSelection>
-#include <QMessageBox>
-#include <QMimeData>
 #include <QStringList>
 #include <QStyledItemDelegate>
 
@@ -41,126 +71,59 @@ void RemoveItemFocusDelegate::paint(QPainter *painter,
     QStyledItemDelegate::paint(painter, opt, index);
 }
 
-WorkspaceView::WorkspaceView(DockManager *manager, QWidget *parent)
-    : Utils::TreeView(parent)
-    , m_manager(manager)
-    , m_workspaceModel(manager)
+WorkspaceDialog *WorkspaceView::castToWorkspaceDialog(QWidget *widget)
 {
-    setUniformRowHeights(false);
+    auto dialog = qobject_cast<WorkspaceDialog *>(widget);
+    Q_ASSERT(dialog);
+    return dialog;
+}
+
+WorkspaceView::WorkspaceView(QWidget *parent)
+    : Utils::TreeView(parent)
+    , m_manager(WorkspaceView::castToWorkspaceDialog(parent)->dockManager())
+    , m_workspaceModel(m_manager)
+{
     setItemDelegate(new RemoveItemFocusDelegate(this));
     setSelectionBehavior(QAbstractItemView::SelectRows);
     setSelectionMode(QAbstractItemView::SingleSelection);
     setWordWrap(false);
     setRootIsDecorated(false);
-    setSortingEnabled(false);
-    setDragEnabled(true);
-    setAcceptDrops(true);
-    setDropIndicatorShown(true);
-    setDragDropMode(QAbstractItemView::InternalMove);
+    setSortingEnabled(true);
 
     setModel(&m_workspaceModel);
+    sortByColumn(0, Qt::AscendingOrder);
 
-    header()->setDefaultSectionSize(150);
+    // Ensure that the full workspace name is visible.
+    header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
 
     QItemSelection firstRow(m_workspaceModel.index(0, 0),
                             m_workspaceModel.index(0, m_workspaceModel.columnCount() - 1));
     selectionModel()->select(firstRow, QItemSelectionModel::QItemSelectionModel::SelectCurrent);
 
-    connect(this, &Utils::TreeView::activated, this, [this](const QModelIndex &index) {
+    connect(this, &Utils::TreeView::activated, [this](const QModelIndex &index) {
         emit workspaceActivated(m_workspaceModel.workspaceAt(index.row()));
     });
-    connect(selectionModel(), &QItemSelectionModel::selectionChanged, this, [this] {
+    connect(selectionModel(), &QItemSelectionModel::selectionChanged, [this] {
         emit workspacesSelected(selectedWorkspaces());
     });
 
     connect(&m_workspaceModel,
+            &WorkspaceModel::workspaceSwitched,
+            this,
+            &WorkspaceView::workspaceSwitched);
+    connect(&m_workspaceModel,
             &WorkspaceModel::modelReset,
             this,
             &WorkspaceView::selectActiveWorkspace);
+    connect(&m_workspaceModel,
+            &WorkspaceModel::workspaceCreated,
+            this,
+            &WorkspaceView::selectWorkspace);
 }
 
 void WorkspaceView::createNewWorkspace()
 {
-    WorkspaceNameInputDialog workspaceInputDialog(m_manager, this);
-    workspaceInputDialog.setWindowTitle(Tr::tr("New Workspace Name"));
-    workspaceInputDialog.setActionText(Tr::tr("&Create"), Tr::tr("Create and &Open"));
-
-    runWorkspaceNameInputDialog(&workspaceInputDialog, [this](const QString &newName) {
-        Utils::expected_str<QString> result = m_manager->createWorkspace(newName);
-
-        if (!result)
-            QMessageBox::warning(this, Tr::tr("Cannot Create Workspace"), result.error());
-
-        return result;
-    });
-}
-
-void WorkspaceView::cloneCurrentWorkspace()
-{
-    const QString fileName = currentWorkspace();
-
-    QString displayName = "Unknown";
-    Workspace *workspace = m_manager->workspace(fileName);
-    if (workspace)
-        displayName = workspace->name();
-
-    WorkspaceNameInputDialog workspaceInputDialog(m_manager, this);
-    workspaceInputDialog.setWindowTitle(Tr::tr("New Workspace Name"));
-    workspaceInputDialog.setActionText(Tr::tr("&Clone"), Tr::tr("Clone and &Open"));
-    workspaceInputDialog.setValue(Tr::tr("%1 Copy").arg(displayName));
-
-    runWorkspaceNameInputDialog(&workspaceInputDialog, [this, fileName](const QString &newName) {
-        Utils::expected_str<QString> result = m_manager->cloneWorkspace(fileName, newName);
-
-        if (!result)
-            QMessageBox::warning(this, Tr::tr("Cannot Clone Workspace"), result.error());
-
-        return result;
-    });
-}
-
-void WorkspaceView::renameCurrentWorkspace()
-{
-    const QString fileName = currentWorkspace();
-
-    QString displayName = "Unknown";
-    Workspace *workspace = m_manager->workspace(fileName);
-    if (workspace)
-        displayName = workspace->name();
-
-    WorkspaceNameInputDialog workspaceInputDialog(m_manager, this);
-    workspaceInputDialog.setWindowTitle(Tr::tr("Rename Workspace"));
-    workspaceInputDialog.setActionText(Tr::tr("&Rename"), Tr::tr("Rename and &Open"));
-    workspaceInputDialog.setValue(displayName);
-
-    runWorkspaceNameInputDialog(&workspaceInputDialog, [this, fileName](const QString &newName) {
-        Utils::expected_str<QString> result = m_manager->renameWorkspace(fileName, newName);
-
-        if (!result)
-            QMessageBox::warning(this, Tr::tr("Cannot Rename Workspace"), result.error());
-
-        return result;
-    });
-}
-
-void WorkspaceView::resetCurrentWorkspace()
-{
-    const QString fileName = currentWorkspace();
-
-    if (m_manager->resetWorkspacePreset(fileName) && fileName == *m_manager->activeWorkspace()) {
-        if (m_manager->reloadActiveWorkspace())
-            m_workspaceModel.resetWorkspaces();
-    }
-}
-
-void WorkspaceView::switchToCurrentWorkspace()
-{
-    Utils::expected_str<void> result = m_manager->openWorkspace(currentWorkspace());
-
-    if (!result)
-        QMessageBox::warning(this, Tr::tr("Cannot Switch Workspace"), result.error());
-
-    emit workspaceSwitched();
+    m_workspaceModel.newWorkspace(this);
 }
 
 void WorkspaceView::deleteSelectedWorkspaces()
@@ -168,72 +131,61 @@ void WorkspaceView::deleteSelectedWorkspaces()
     deleteWorkspaces(selectedWorkspaces());
 }
 
+void WorkspaceView::deleteWorkspaces(const QStringList &workspaces)
+{
+    m_workspaceModel.deleteWorkspaces(workspaces);
+}
+
 void WorkspaceView::importWorkspace()
 {
-    static QString previousDirectory;
-    const QString currentDirectory = previousDirectory.isEmpty() ? "" : previousDirectory;
-    const auto filePath
-        = QFileDialog::getOpenFileName(this,
-                                       Tr::tr("Import Workspace"),
-                                       currentDirectory,
-                                       QString("Workspaces (*.%1)").arg(workspaceFileExtension));
+    static QString lastDir;
+    const QString currentDir = lastDir.isEmpty() ? "" : lastDir;
+    const auto fileName = QFileDialog::getOpenFileName(this,
+                                                       tr("Import Workspace"),
+                                                       currentDir,
+                                                       "Workspaces (*" + m_manager->workspaceFileExtension() + ")");
 
-    // If the user presses Cancel, it returns a null string
-    if (filePath.isEmpty())
-        return;
+    if (!fileName.isEmpty())
+        lastDir = QFileInfo(fileName).absolutePath();
 
-    previousDirectory = QFileInfo(filePath).absolutePath();
-
-    const Utils::expected_str<QString> newFileName = m_manager->importWorkspace(filePath);
-    if (newFileName)
-        m_workspaceModel.resetWorkspaces();
-    else
-        QMessageBox::warning(this, Tr::tr("Cannot Import Workspace"), newFileName.error());
+    m_workspaceModel.importWorkspace(fileName);
 }
 
 void WorkspaceView::exportCurrentWorkspace()
 {
-    static QString previousDirectory;
-    const QString currentDirectory = previousDirectory.isEmpty() ? "" : previousDirectory;
-    QFileInfo fileInfo(currentDirectory, currentWorkspace());
+    static QString lastDir;
+    const QString currentDir = lastDir.isEmpty() ? "" : lastDir;
+    QFileInfo fileInfo(currentDir, m_manager->workspaceNameToFileName(currentWorkspace()));
 
-    const auto filePath
-        = QFileDialog::getSaveFileName(this,
-                                       Tr::tr("Export Workspace"),
-                                       fileInfo.absoluteFilePath(),
-                                       QString("Workspaces (*.%1)").arg(workspaceFileExtension));
+    const auto fileName = QFileDialog::getSaveFileName(this,
+                                                       tr("Export Workspace"),
+                                                       fileInfo.absoluteFilePath(),
+                                                       "Workspaces (*" + m_manager->workspaceFileExtension() + ")");
 
-    // If the user presses Cancel, it returns a null string
-    if (filePath.isEmpty())
-        return;
+    if (!fileName.isEmpty())
+        lastDir = QFileInfo(fileName).absolutePath();
 
-    previousDirectory = QFileInfo(filePath).absolutePath();
-
-    const Utils::expected_str<QString> result = m_manager->exportWorkspace(filePath,
-                                                                           currentWorkspace());
-
-    if (!result)
-        QMessageBox::warning(this, Tr::tr("Cannot Export Workspace"), result.error());
+    m_workspaceModel.exportWorkspace(fileName, currentWorkspace());
 }
 
-void WorkspaceView::moveWorkspaceUp()
+void WorkspaceView::cloneCurrentWorkspace()
 {
-    const QString w = currentWorkspace();
-    bool hasMoved = m_manager->moveWorkspaceUp(w);
-    if (hasMoved) {
-        m_workspaceModel.resetWorkspaces();
-        selectWorkspace(w);
-    }
+    m_workspaceModel.cloneWorkspace(this, currentWorkspace());
 }
 
-void WorkspaceView::moveWorkspaceDown()
+void WorkspaceView::renameCurrentWorkspace()
 {
-    const QString w = currentWorkspace();
-    bool hasMoved = m_manager->moveWorkspaceDown(w);
-    if (hasMoved) {
-        m_workspaceModel.resetWorkspaces();
-        selectWorkspace(w);
-    }
+    m_workspaceModel.renameWorkspace(this, currentWorkspace());
+}
+
+void WorkspaceView::resetCurrentWorkspace()
+{
+    m_workspaceModel.resetWorkspace(currentWorkspace());
+}
+
+void WorkspaceView::switchToCurrentWorkspace()
+{
+    m_workspaceModel.switchToWorkspace(currentWorkspace());
 }
 
 QString WorkspaceView::currentWorkspace()
@@ -248,22 +200,15 @@ WorkspaceModel *WorkspaceView::workspaceModel()
 
 void WorkspaceView::selectActiveWorkspace()
 {
-    selectWorkspace(m_manager->activeWorkspace()->fileName());
+    selectWorkspace(m_manager->activeWorkspace());
 }
 
-void WorkspaceView::selectWorkspace(const QString &fileName)
+void WorkspaceView::selectWorkspace(const QString &workspaceName)
 {
-    int row = m_workspaceModel.indexOfWorkspace(fileName);
+    int row = m_workspaceModel.indexOfWorkspace(workspaceName);
     selectionModel()->setCurrentIndex(model()->index(row, 0),
                                       QItemSelectionModel::ClearAndSelect
                                           | QItemSelectionModel::Rows);
-}
-
-QStringList WorkspaceView::selectedWorkspaces() const
-{
-    return Utils::transform(selectionModel()->selectedRows(), [this](const QModelIndex &index) {
-        return m_workspaceModel.workspaceAt(index.row());
-    });
 }
 
 void WorkspaceView::showEvent(QShowEvent *event)
@@ -279,83 +224,19 @@ void WorkspaceView::keyPressEvent(QKeyEvent *event)
         TreeView::keyPressEvent(event);
         return;
     }
-    const QStringList fileNames = selectedWorkspaces();
-    if (!Utils::anyOf(fileNames, [this](const QString &fileName) {
-            return fileName == *m_manager->activeWorkspace();
+    const QStringList workspaces = selectedWorkspaces();
+    if (!Utils::anyOf(workspaces, [this](const QString &workspace) {
+            return workspace == m_manager->activeWorkspace();
         })) {
-        deleteWorkspaces(fileNames);
+        deleteWorkspaces(workspaces);
     }
 }
 
-void WorkspaceView::dropEvent(QDropEvent *event)
+QStringList WorkspaceView::selectedWorkspaces() const
 {
-    const QModelIndex dropIndex = indexAt(event->position().toPoint());
-    const DropIndicatorPosition dropIndicator = dropIndicatorPosition();
-
-    const auto droppedWorkspaces = selectedWorkspaces();
-    int from = m_manager->workspaceIndex(droppedWorkspaces.first());
-    int to = dropIndex.row();
-
-    if (dropIndicator == QAbstractItemView::AboveItem && from < to)
-        --to;
-    if (dropIndicator == QAbstractItemView::BelowItem && from > to)
-        ++to;
-
-    bool hasMoved = m_manager->moveWorkspace(from, to);
-
-    if (hasMoved) {
-        m_workspaceModel.resetWorkspaces();
-        selectionModel()->setCurrentIndex(model()->index(to, 0),
-                                          QItemSelectionModel::ClearAndSelect
-                                              | QItemSelectionModel::Rows);
-    }
-
-    event->acceptProposedAction();
-}
-
-void WorkspaceView::deleteWorkspaces(const QStringList &fileNames)
-{
-    if (!confirmWorkspaceDelete(fileNames))
-        return;
-
-    m_manager->deleteWorkspaces(fileNames);
-    m_workspaceModel.resetWorkspaces();
-}
-
-bool WorkspaceView::confirmWorkspaceDelete(const QStringList &fileNames)
-{
-    const QString title = fileNames.size() == 1 ? Tr::tr("Delete Workspace")
-                                                : Tr::tr("Delete Workspaces");
-    const QString question = fileNames.size() == 1
-                                 ? Tr::tr("Delete workspace \"%1\"?").arg(fileNames.first())
-                                 : Tr::tr("Delete these workspaces?")
-                                       + QString("\n    %1").arg(fileNames.join("\n    "));
-    return QMessageBox::question(parentWidget(), title, question, QMessageBox::Yes | QMessageBox::No)
-           == QMessageBox::Yes;
-}
-
-void WorkspaceView::runWorkspaceNameInputDialog(
-    WorkspaceNameInputDialog *workspaceInputDialog,
-    std::function<Utils::expected_str<QString>(const QString &)> callback)
-{
-    if (workspaceInputDialog->exec() == QDialog::Accepted) {
-        const QString newWorkspace = workspaceInputDialog->value();
-        if (newWorkspace.isEmpty() || m_manager->workspaces().contains(newWorkspace))
-            return;
-
-        const Utils::expected_str<QString> fileName = callback(newWorkspace);
-        if (!fileName)
-            return;
-
-        m_workspaceModel.resetWorkspaces();
-
-        if (workspaceInputDialog->isSwitchToRequested()) {
-            m_manager->openWorkspace(*fileName);
-            emit workspaceSwitched();
-        }
-
-        selectWorkspace(*fileName);
-    }
+    return Utils::transform(selectionModel()->selectedRows(), [this](const QModelIndex &index) {
+        return m_workspaceModel.workspaceAt(index.row());
+    });
 }
 
 } // namespace ADS

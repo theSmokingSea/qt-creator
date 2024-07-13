@@ -1,16 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
-#include "commentssettings.h"
 #include "texteditor_global.h"
 
 #include <utils/id.h>
 
 #include <QObject>
-
-#include <functional>
 
 QT_BEGIN_NAMESPACE
 template <typename Key, typename T>
@@ -49,14 +68,15 @@ public:
     static TextEditorSettings *instance();
 
     static const FontSettings &fontSettings();
+    static const TypingSettings &typingSettings();
+    static const StorageSettings &storageSettings();
+    static const BehaviorSettings &behaviorSettings();
     static const MarginSettings &marginSettings();
     static const DisplaySettings &displaySettings();
     static const CompletionSettings &completionSettings();
     static const HighlighterSettings &highlighterSettings();
-
-    static void setCommentsSettingsRetriever(
-        const std::function<CommentsSettings::Data(const Utils::FilePath &)> &);
-    static CommentsSettings::Data commentsSettings(const Utils::FilePath &filePath);
+    static const ExtraEncodingSettings &extraEncodingSettings();
+    static const CommentsSettings &commentsSettings();
 
     static ICodeStylePreferencesFactory *codeStyleFactory(Utils::Id languageId);
     static const QMap<Utils::Id, ICodeStylePreferencesFactory *> &codeStyleFactories();
@@ -76,8 +96,6 @@ public:
 
     static void registerMimeTypeForLanguageId(const char *mimeType, Utils::Id languageId);
     static Utils::Id languageId(const QString &mimeType);
-    static int increaseFontZoom();
-    static int decreaseFontZoom();
     static int increaseFontZoom(int step);
     static void resetFontZoom();
 
@@ -90,12 +108,7 @@ signals:
     void displaySettingsChanged(const TextEditor::DisplaySettings &);
     void completionSettingsChanged(const TextEditor::CompletionSettings &);
     void extraEncodingSettingsChanged(const TextEditor::ExtraEncodingSettings &);
-    void commentsSettingsChanged();
+    void commentsSettingsChanged(const TextEditor::CommentsSettings &);
 };
 
-namespace Internal {
-TextEditorSettings &textEditorSettings();
-void setupTextEditorSettings();
-} // Internal
-
-} // TextEditor
+} // namespace TextEditor

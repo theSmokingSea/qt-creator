@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "basetextfind.h"
 
@@ -12,8 +34,6 @@
 #include <QRegularExpression>
 #include <QTextBlock>
 #include <QTextCursor>
-
-using namespace Utils;
 
 namespace Core {
 
@@ -75,7 +95,7 @@ BaseTextFindPrivate::BaseTextFindPrivate(QPlainTextEdit *editor)
 */
 
 /*!
-    \fn void Core::BaseTextFind::highlightAllRequested(const QString &txt, Utils::FindFlags findFlags)
+    \fn void Core::BaseTextFind::highlightAllRequested(const QString &txt, Core::FindFlags findFlags)
 
     This signal is emitted when the search results for \a txt using the given
     \a findFlags should be highlighted in the editor widget.
@@ -249,7 +269,7 @@ void BaseTextFind::replace(const QString &before, const QString &after, FindFlag
     setTextCursor(cursor);
 }
 
-// QTextCursor::insert moves all other QTextCursors that are the insertion point forward.
+// QTextCursor::insert moves all other QTextCursors that are the the insertion point forward.
 // We do not want that for the replace operation, because then e.g. the find scope would move when
 // replacing a match at the start.
 static void insertTextAfterSelection(const QString &text, QTextCursor &cursor)
@@ -331,8 +351,7 @@ int BaseTextFind::replaceAll(const QString &before, const QString &after, FindFl
     bool usesRegExp = (findFlags & FindRegularExpression);
     bool preserveCase = (findFlags & FindPreserveCase);
     QRegularExpression regexp = regularExpression(before, findFlags);
-    QTextCursor found = findOne(regexp, editCursor,
-                                Utils::textDocumentFlagsForFindFlags(findFlags));
+    QTextCursor found = findOne(regexp, editCursor, textDocumentFlagsForFindFlags(findFlags));
     bool first = true;
     while (!found.isNull()) {
         if (found == editCursor && !first) {
@@ -345,7 +364,7 @@ int BaseTextFind::replaceAll(const QString &before, const QString &after, FindFl
             newPosCursor.movePosition(findFlags & FindBackward ?
                                           QTextCursor::PreviousCharacter :
                                           QTextCursor::NextCharacter);
-            found = findOne(regexp, newPosCursor, Utils::textDocumentFlagsForFindFlags(findFlags));
+            found = findOne(regexp, newPosCursor, textDocumentFlagsForFindFlags(findFlags));
             continue;
         }
         if (first)
@@ -363,7 +382,7 @@ int BaseTextFind::replaceAll(const QString &before, const QString &after, FindFl
         else
             realAfter = after;
         insertTextAfterSelection(realAfter, editCursor);
-        found = findOne(regexp, editCursor, Utils::textDocumentFlagsForFindFlags(findFlags));
+        found = findOne(regexp, editCursor, textDocumentFlagsForFindFlags(findFlags));
     }
     editCursor.endEditBlock();
     return count;
@@ -376,7 +395,7 @@ bool BaseTextFind::find(const QString &txt, FindFlags findFlags, QTextCursor sta
         return true;
     }
     QRegularExpression regexp = regularExpression(txt, findFlags);
-    QTextCursor found = findOne(regexp, start, Utils::textDocumentFlagsForFindFlags(findFlags));
+    QTextCursor found = findOne(regexp, start, textDocumentFlagsForFindFlags(findFlags));
     if (wrapped)
         *wrapped = false;
 
@@ -385,7 +404,7 @@ bool BaseTextFind::find(const QString &txt, FindFlags findFlags, QTextCursor sta
             start.movePosition(QTextCursor::Start);
         else
             start.movePosition(QTextCursor::End);
-        found = findOne(regexp, start, Utils::textDocumentFlagsForFindFlags(findFlags));
+        found = findOne(regexp, start, textDocumentFlagsForFindFlags(findFlags));
         if (found.isNull())
             return false;
         if (wrapped)
@@ -425,17 +444,9 @@ bool BaseTextFind::inScope(const QTextCursor &candidate) const
         return false;
     if (d->m_scope.isNull())
         return true;
-    return inScope(candidate.selectionStart(), candidate.selectionEnd());
-}
-
-bool BaseTextFind::inScope(int candidateStart, int candidateEnd) const
-{
-    if (d->m_scope.isNull())
-        return true;
-    if (candidateStart > candidateEnd)
-        std::swap(candidateStart, candidateEnd);
-    return Utils::anyOf(d->m_scope, [&](const QTextCursor &scope) {
-        return candidateStart >= scope.selectionStart() && candidateEnd <= scope.selectionEnd();
+    return Utils::anyOf(d->m_scope, [candidate](const QTextCursor &scope){
+        return candidate.selectionStart() >= scope.selectionStart()
+               && candidate.selectionEnd() <= scope.selectionEnd();
     });
 }
 
@@ -449,7 +460,9 @@ void BaseTextFind::defineFindScope()
     for (const QTextCursor &c : multiCursor) {
         if (c.hasSelection()) {
             if (foundSelection || c.block() != c.document()->findBlock(c.anchor())) {
-                d->m_scope = Utils::MultiTextCursor(Utils::sorted(multiCursor.cursors()));
+                QList<QTextCursor> sortedCursors = multiCursor.cursors();
+                Utils::sort(sortedCursors);
+                d->m_scope = Utils::MultiTextCursor(sortedCursors);
                 QTextCursor cursor = textCursor();
                 cursor.clearSelection();
                 setTextCursor(cursor);

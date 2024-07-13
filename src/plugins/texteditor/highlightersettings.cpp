@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "highlightersettings.h"
 
@@ -7,40 +29,97 @@
 
 #include <coreplugin/icore.h>
 
-#include <utils/qtcsettings.h>
+#include <utils/fileutils.h>
+#include <utils/hostosinfo.h>
+#include <utils/qtcprocess.h>
+#include <utils/stringutils.h>
+
+#include <QSettings>
+#include <QStringList>
 
 using namespace Utils;
 
 namespace TextEditor {
+namespace Internal {
 
-const char kDefinitionFilesPath[] = "UserDefinitionFilesPath";
-const char kIgnoredFilesPatterns[] = "IgnoredFilesPatterns";
+FilePath findFallbackDefinitionsLocation()
+{
+    if (HostOsInfo::isAnyUnixHost() && !HostOsInfo::isMacHost()) {
+        static const QLatin1String kateSyntaxPaths[] = {
+            QLatin1String("/share/apps/katepart/syntax"),
+            QLatin1String("/share/kde4/apps/katepart/syntax")
+        };
 
-static Key groupSpecifier(const Key &postFix, const Key &category)
+        // Some wild guesses.
+        for (const auto &kateSyntaxPath : kateSyntaxPaths) {
+            const FilePath paths[] = {
+                FilePath("/usr") / kateSyntaxPath,
+                FilePath("/usr/local") / kateSyntaxPath,
+                FilePath("/opt") / kateSyntaxPath
+            };
+            for (const FilePath &path : paths) {
+                if (path.exists() && !path.dirEntries({{"*.xml"}}).isEmpty())
+                    return path;
+            }
+        }
+
+        // Try kde-config.
+        const FilePath programs[] = {"kde-config", "kde4-config"};
+        for (const FilePath &program : programs) {
+            QtcProcess process;
+            process.setTimeoutS(5);
+            process.setCommand({program, {"--prefix"}});
+            process.runBlocking();
+            if (process.result() == ProcessResult::FinishedWithSuccess) {
+                QString output = process.cleanedStdOut();
+                output.remove('\n');
+                const FilePath dir = FilePath::fromString(output);
+                for (auto &kateSyntaxPath : kateSyntaxPaths) {
+                    const FilePath path = dir / kateSyntaxPath;
+                    if (path.exists() && !path.dirEntries({{"*.xml"}}).isEmpty())
+                        return path;
+                }
+            }
+        }
+    }
+
+    const FilePath dir = Core::ICore::resourcePath("generic-highlighter");
+    if (dir.exists() && !dir.dirEntries({{"*.xml"}}).isEmpty())
+        return dir;
+
+    return {};
+}
+
+} // namespace Internal
+
+const QLatin1String kDefinitionFilesPath("UserDefinitionFilesPath");
+const QLatin1String kIgnoredFilesPatterns("IgnoredFilesPatterns");
+
+static QString groupSpecifier(const QString &postFix, const QString &category)
 {
     if (category.isEmpty())
         return postFix;
-    return Key(category + postFix);
+    return QString(category + postFix);
 }
 
-void HighlighterSettings::toSettings(const Key &category, QtcSettings *s) const
+void HighlighterSettings::toSettings(const QString &category, QSettings *s) const
 {
-    const Key group = groupSpecifier(Constants::HIGHLIGHTER_SETTINGS_CATEGORY, category);
+    const QString &group = groupSpecifier(Constants::HIGHLIGHTER_SETTINGS_CATEGORY, category);
     s->beginGroup(group);
-    s->setValue(kDefinitionFilesPath, m_definitionFilesPath.toSettings());
+    s->setValue(kDefinitionFilesPath, m_definitionFilesPath.toVariant());
     s->setValue(kIgnoredFilesPatterns, ignoredFilesPatterns());
     s->endGroup();
 }
 
-void HighlighterSettings::fromSettings(const Key &category, QtcSettings *s)
+void HighlighterSettings::fromSettings(const QString &category, QSettings *s)
 {
-    const Key group = groupSpecifier(Constants::HIGHLIGHTER_SETTINGS_CATEGORY, category);
+    const QString &group = groupSpecifier(Constants::HIGHLIGHTER_SETTINGS_CATEGORY, category);
     s->beginGroup(group);
-    m_definitionFilesPath = FilePath::fromSettings(s->value(kDefinitionFilesPath));
+    m_definitionFilesPath = FilePath::fromVariant(s->value(kDefinitionFilesPath));
     if (!s->contains(kDefinitionFilesPath))
         assignDefaultDefinitionsPath();
     else
-        m_definitionFilesPath = FilePath::fromSettings(s->value(kDefinitionFilesPath));
+        m_definitionFilesPath = FilePath::fromVariant(s->value(kDefinitionFilesPath));
     if (!s->contains(kIgnoredFilesPatterns))
         assignDefaultIgnoredPatterns();
     else

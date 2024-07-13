@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "idevicefactory.h"
 
@@ -37,14 +59,14 @@ namespace ProjectExplorer {
 */
 
 /*!
-    \fn virtual bool canRestore(const Utils::Storage &map) const = 0
+    \fn virtual bool canRestore(const QVariantMap &map) const = 0
 
     Checks whether this factory can restore a device from the serialized state
     specified by \a map.
 */
 
 /*!
-    \fn virtual IDevice::Ptr restore(const Utils::Storage &map) const = 0
+    \fn virtual IDevice::Ptr restore(const QVariantMap &map) const = 0
 
     Loads a device from a serialized state. Only called if \c canRestore()
     returns true for \a map.
@@ -63,24 +85,12 @@ bool IDeviceFactory::canCreate() const
 
 IDevice::Ptr IDeviceFactory::create() const
 {
-    if (!m_creator)
-        return {};
-
-    IDevice::Ptr device = m_creator();
-    if (!device) // e.g. Cancel used on the dialog to create a device
-        return {};
-    return device;
+    return m_creator ? m_creator() : IDevice::Ptr();
 }
 
 IDevice::Ptr IDeviceFactory::construct() const
 {
-    if (!m_constructor)
-        return {};
-
-    IDevice::Ptr device = m_constructor();
-    QTC_ASSERT(device, return {});
-    device->settings()->displayName.setDefaultValue(displayName());
-    return device;
+    return m_constructor ? m_constructor() : IDevice::Ptr();
 }
 
 static QList<IDeviceFactory *> g_deviceFactories;
@@ -111,20 +121,10 @@ void IDeviceFactory::setCombinedIcon(const FilePath &small, const FilePath &larg
                                  Icon({{large, Theme::IconsBaseColor}})});
 }
 
-void IDeviceFactory::setCreator(const std::function<IDevice::Ptr()> &creator)
+void IDeviceFactory::setCreator(const std::function<IDevice::Ptr ()> &creator)
 {
     QTC_ASSERT(creator, return);
     m_creator = creator;
-}
-
-void IDeviceFactory::setQuickCreationAllowed(bool on)
-{
-    m_quickCreationAllowed = on;
-}
-
-bool IDeviceFactory::quickCreationAllowed() const
-{
-    return m_quickCreationAllowed;
 }
 
 void IDeviceFactory::setConstructionFunction(const std::function<IDevice::Ptr ()> &constructor)

@@ -1,12 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "addcmakeoperation.h"
 
 #include "addkeysoperation.h"
+#include "findkeyoperation.h"
 #include "findvalueoperation.h"
 #include "getoperation.h"
 #include "rmkeysoperation.h"
+
+#include "settings.h"
 
 #ifdef WITH_TESTS
 #include <QTest>
@@ -202,9 +227,9 @@ QVariantMap AddCMakeData::addCMake(const QVariantMap &map) const
     data << KeyValuePair({cm, ID_KEY}, QVariant(m_id));
     data << KeyValuePair({cm, DISPLAYNAME_KEY}, QVariant(m_displayName));
     data << KeyValuePair({cm, AUTODETECTED_KEY}, QVariant(true));
-    data << KeyValuePair({cm, PATH_KEY}, QVariant(m_path));
+    data << KeyValuePair({cm, PATH_KEY}, Utils::FilePath::fromUserInput(m_path).toVariant());
     KeyValuePairList extraList;
-    for (const KeyValuePair &pair : std::as_const(m_extra))
+    for (const KeyValuePair &pair : qAsConst(m_extra))
         extraList << KeyValuePair(QStringList({cm}) << pair.key, pair.value);
     data.append(extraList);
     data << KeyValuePair(COUNT, QVariant(count + 1));
@@ -226,7 +251,7 @@ bool AddCMakeData::exists(const QVariantMap &map, const QString &id)
     // support old settings using QByteArray for id's
     valueKeys.append(FindValueOperation::findValue(map, id.toUtf8()));
 
-    for (const QString &k : std::as_const(valueKeys)) {
+    for (const QString &k : qAsConst(valueKeys)) {
         if (k.endsWith(QString('/') + ID_KEY)) {
             return true;
         }

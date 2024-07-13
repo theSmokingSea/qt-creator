@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -9,7 +31,9 @@
 
 #include <utils/aspects.h>
 #include <utils/environment.h>
-#include <utils/store.h>
+
+#include <QList>
+#include <QVariantMap>
 
 namespace ProjectExplorer {
 
@@ -18,10 +42,7 @@ class PROJECTEXPLORER_EXPORT EnvironmentAspect : public Utils::BaseAspect
     Q_OBJECT
 
 public:
-    EnvironmentAspect(Utils::AspectContainer *container = nullptr);
-
-    enum DeviceSelector { HostDevice, BuildDevice, RunDevice };
-    void setDeviceSelector(Target *target, DeviceSelector selector);
+    EnvironmentAspect();
 
     // The environment including the user's modifications.
     Utils::Environment environment() const;
@@ -32,15 +53,13 @@ public:
     int baseEnvironmentBase() const;
     void setBaseEnvironmentBase(int base);
 
-    Utils::EnvironmentItems userEnvironmentChanges() const;
+    Utils::EnvironmentItems userEnvironmentChanges() const { return m_userChanges; }
     void setUserEnvironmentChanges(const Utils::EnvironmentItems &diff);
 
-    int addSupportedBaseEnvironment(const QString &displayName,
-                                    const std::function<Utils::Environment()> &getter);
-    int addPreferredBaseEnvironment(const QString &displayName,
-                                    const std::function<Utils::Environment()> &getter);
-
-    void setSupportForBuildEnvironment(Target *target);
+    void addSupportedBaseEnvironment(const QString &displayName,
+                                     const std::function<Utils::Environment()> &getter);
+    void addPreferredBaseEnvironment(const QString &displayName,
+                                     const std::function<Utils::Environment()> &getter);
 
     QString currentDisplayName() const;
 
@@ -51,34 +70,21 @@ public:
 
     bool isLocal() const { return m_isLocal; }
 
-    Target *target() const { return m_target; }
-
-    bool isPrintOnRunAllowed() const { return m_allowPrintOnRun; }
-    bool isPrintOnRunEnabled() const { return m_printOnRun; }
-    void setPrintOnRun(bool enabled) { m_printOnRun = enabled; }
-
     struct Data : BaseAspect::Data
     {
         Utils::Environment environment;
     };
 
-    using Utils::BaseAspect::createLabel;
-
 signals:
     void baseEnvironmentChanged();
     void userEnvironmentChangesChanged(const Utils::EnvironmentItems &diff);
     void environmentChanged();
-    void userChangesUpdateRequested() const;
 
 protected:
-    void fromMap(const Utils::Store &map) override;
-    void toMap(Utils::Store &map) const override;
+    void fromMap(const QVariantMap &map) override;
+    void toMap(QVariantMap &map) const override;
 
     void setIsLocal(bool local) { m_isLocal = local; }
-    void setAllowPrintOnRun(bool allow) { m_allowPrintOnRun = allow; }
-
-    static constexpr char BASE_KEY[] = "PE.EnvironmentAspect.Base";
-    static constexpr char CHANGES_KEY[] = "PE.EnvironmentAspect.Changes";
 
 private:
     // One possible choice in the Environment aspect.
@@ -94,10 +100,6 @@ private:
     QList<BaseEnvironment> m_baseEnvironments;
     int m_base = -1;
     bool m_isLocal = false;
-    bool m_allowPrintOnRun = true;
-    bool m_printOnRun = false;
-    Target *m_target = nullptr;
-    DeviceSelector m_selector = RunDevice;
 };
 
 } // namespace ProjectExplorer

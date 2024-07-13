@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sqlitedatabase.h"
 
@@ -54,9 +76,10 @@ Database::Database(Utils::PathString databaseFilePath,
     setJournalMode(journalMode);
     open(std::move(databaseFilePath), lockingMode);
 
-#ifdef SQLITE_REVERSE
+#ifndef QT_NO_DEBUG
     if (std::rand() % 2)
         execute("PRAGMA reverse_unordered_selects=1");
+
 #endif
 }
 
@@ -69,7 +92,7 @@ void Database::activateLogging()
 
 void Database::open(LockingMode lockingMode)
 {
-    m_databaseBackend.open(m_databaseFilePath, m_openMode, m_journalMode);
+    m_databaseBackend.open(m_databaseFilePath, m_openMode);
     if (m_busyTimeout > 0ms)
         m_databaseBackend.setBusyTimeout(m_busyTimeout);
     else
@@ -215,27 +238,20 @@ void Database::sessionRollback()
     m_statements->rollbackBegin.execute();
 }
 
-void Database::resetDatabaseForTestsOnly()
+void Database::lock()
 {
-    m_databaseBackend.resetDatabaseForTestsOnly();
-    setIsInitialized(false);
+    m_databaseMutex.lock();
+#ifdef UNIT_TESTS
+    m_isLocked = true;
+#endif
 }
 
-void Database::clearAllTablesForTestsOnly()
+void Database::unlock()
 {
-    m_databaseBackend.disableForeignKeys();
-    {
-        Sqlite::ImmediateTransaction transaction{*this};
-
-        ReadStatement<1> tablesStatement{"SELECT name FROM sqlite_schema WHERE type='table'", *this};
-        auto tables = tablesStatement.template values<Utils::SmallString>();
-        for (const auto &table : tables)
-            execute("DELETE FROM " + table);
-
-        transaction.commit();
-    }
-
-    m_databaseBackend.enableForeignKeys();
+#ifdef UNIT_TESTS
+    m_isLocked = false;
+#endif
+    m_databaseMutex.unlock();
 }
 
 DatabaseBackend &Database::backend()

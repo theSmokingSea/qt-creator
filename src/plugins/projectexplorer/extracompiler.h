@@ -1,15 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "projectnodes.h"
 #include "project.h"
+#include "task.h"
 
 #include <coreplugin/editormanager/ieditor.h>
-
+#include <utils/fileutils.h>
 #include <utils/environment.h>
-#include <utils/filepath.h>
 
 #include <QByteArray>
 #include <QHash>
@@ -18,14 +40,15 @@
 #include <functional>
 #include <memory>
 
+QT_FORWARD_DECLARE_CLASS(QThreadPool);
 QT_BEGIN_NAMESPACE
 template <typename T>
-class QPromise;
-class QThreadPool;
+class QFutureInterface;
+template <typename T>
+class QFutureWatcher;
 QT_END_NAMESPACE
 
-namespace Tasking { class GroupItem; }
-namespace Utils { class Process; }
+namespace Utils { class QtcProcess; }
 
 namespace ProjectExplorer {
 
@@ -44,38 +67,36 @@ public:
     const Project *project() const;
     Utils::FilePath source() const;
 
+    // You can set the contents from the outside. This is done if the file has been (re)created by
+    // the regular build process.
+    void setContent(const Utils::FilePath &file, const QByteArray &content);
     QByteArray content(const Utils::FilePath &file) const;
 
     Utils::FilePaths targets() const;
-    void forEachTarget(std::function<void(const Utils::FilePath &)> func) const;
+    void forEachTarget(std::function<void(const Utils::FilePath &)> func);
 
-    Tasking::GroupItem compileFileItem();
-    void compileFile();
+    void setCompileTime(const QDateTime &time);
+    QDateTime compileTime() const;
+
+    static QThreadPool *extraCompilerThreadPool();
+
+    virtual QFuture<FileNameToContentsHash> run() = 0;
     bool isDirty() const;
-    void block();
-    void unblock();
 
 signals:
     void contentsChanged(const Utils::FilePath &file);
 
 protected:
-    static QThreadPool *extraCompilerThreadPool();
-
-    void setContent(const Utils::FilePath &file, const QByteArray &content);
-    void updateCompileTime();
     Utils::Environment buildEnvironment() const;
-    using ContentProvider = std::function<QByteArray()>;
+    void setCompileIssues(const Tasks &issues);
 
 private:
     void onTargetsBuilt(Project *project);
     void onEditorChanged(Core::IEditor *editor);
     void onEditorAboutToClose(Core::IEditor *editor);
     void setDirty();
-    ContentProvider fromFileProvider() const;
-    void compileContent(const QByteArray &content);
-    void compileImpl(const ContentProvider &provider);
-    void compileIfDirty();
-    virtual Tasking::GroupItem taskItemImpl(const ContentProvider &provider) = 0;
+    // This method may not block!
+    virtual void run(const QByteArray &sourceContent) = 0;
 
     const std::unique_ptr<ExtraCompilerPrivate> d;
 };
@@ -87,8 +108,17 @@ public:
 
     ProcessExtraCompiler(const Project *project, const Utils::FilePath &source,
                          const Utils::FilePaths &targets, QObject *parent = nullptr);
+    ~ProcessExtraCompiler() override;
 
 protected:
+    // This will run a process in a thread, if
+    //  * command() does not return an empty file name
+    //  * command() is exectuable
+    //  * prepareToRun returns true
+    //  * The process is not yet running
+    void run(const QByteArray &sourceContents) override;
+    QFuture<FileNameToContentsHash> run() override;
+
     // Information about the process to run:
     virtual Utils::FilePath workingDirectory() const;
     virtual Utils::FilePath command() const = 0;
@@ -96,30 +126,36 @@ protected:
 
     virtual bool prepareToRun(const QByteArray &sourceContents);
 
-    virtual FileNameToContentsHash handleProcessFinished(Utils::Process *process) = 0;
+    virtual FileNameToContentsHash handleProcessFinished(Utils::QtcProcess *process) = 0;
 
     virtual Tasks parseIssues(const QByteArray &stdErr);
 
 private:
-    Tasking::GroupItem taskItemImpl(const ContentProvider &provider) final;
-    void runInThread(QPromise<FileNameToContentsHash> &promise,
+    using ContentProvider = std::function<QByteArray()>;
+    QFuture<FileNameToContentsHash> runImpl(const ContentProvider &sourceContents);
+    void runInThread(QFutureInterface<FileNameToContentsHash> &futureInterface,
                      const Utils::FilePath &cmd, const Utils::FilePath &workDir,
                      const QStringList &args, const ContentProvider &provider,
                      const Utils::Environment &env);
+    void cleanUp();
+
+    QFutureWatcher<FileNameToContentsHash> *m_watcher = nullptr;
 };
 
-class PROJECTEXPLORER_EXPORT ExtraCompilerFactory
+class PROJECTEXPLORER_EXPORT ExtraCompilerFactory : public QObject
 {
+    Q_OBJECT
 public:
-    ExtraCompilerFactory();
-    virtual ~ExtraCompilerFactory();
+    explicit ExtraCompilerFactory(QObject *parent = nullptr);
+    ~ExtraCompilerFactory() override;
 
     virtual FileType sourceType() const = 0;
     virtual QString sourceTag() const = 0;
 
     virtual ExtraCompiler *create(const Project *project,
                                   const Utils::FilePath &source,
-                                  const Utils::FilePaths &targets) = 0;
+                                  const Utils::FilePaths &targets)
+        = 0;
 
     static QList<ExtraCompilerFactory *> extraCompilerFactories();
 };

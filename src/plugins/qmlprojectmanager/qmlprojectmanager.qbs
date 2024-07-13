@@ -9,7 +9,6 @@ QtcPlugin {
 
     Depends { name: "Core" }
     Depends { name: "ProjectExplorer" }
-    Depends { name: "QmlDesignerBase" }
     Depends { name: "QtSupport" }
     Depends { name: "TextEditor" }
 
@@ -24,7 +23,9 @@ QtcPlugin {
             "qmlproject.cpp", "qmlproject.h",
             "qmlproject.qrc",
             "qmlprojectconstants.h",
-            "qmlprojectmanager_global.h", "qmlprojectmanagertr.h",
+            "qmlprojectmanager_global.h",
+            "qmlprojectmanagerconstants.h",
+            "qmlprojectnodes.cpp", "qmlprojectnodes.h",
             "qmlprojectplugin.cpp", "qmlprojectplugin.h",
             "qmlprojectrunconfiguration.cpp", "qmlprojectrunconfiguration.h",
             project.ide_source_tree + "/src/share/3rdparty/studiofonts/studiofonts.qrc"
@@ -32,14 +33,12 @@ QtcPlugin {
     }
 
     Group {
-        name: "Build System"
-        prefix: "buildsystem/"
+        name: "File Format"
+        prefix: "fileformat/"
         files: [
-            "qmlbuildsystem.cpp", "qmlbuildsystem.h",
-            "projectitem/filefilteritems.cpp", "projectitem/filefilteritems.h",
-            "projectitem/qmlprojectitem.cpp", "projectitem/qmlprojectitem.h",
-            "projectitem/converters.cpp", "projectitem/converters.h",
-            "projectnode/qmlprojectnodes.cpp", "projectnode/qmlprojectnodes.h"
+            "filefilteritems.cpp", "filefilteritems.h",
+            "qmlprojectfileformat.cpp", "qmlprojectfileformat.h",
+            "qmlprojectitem.cpp", "qmlprojectitem.h",
         ]
     }
 
@@ -47,13 +46,16 @@ QtcPlugin {
         name: "CMake Generator"
         prefix: "cmakegen/"
         files: [
-            "cmakegenerator.cpp", "cmakegenerator.h",
-            "cmakewriter.cpp", "cmakewriter.h",
-            "cmakewriterv0.cpp", "cmakewriterv0.h",
-            "cmakewriterv1.cpp", "cmakewriterv1.h"
+            "generatecmakelists.cpp", "generatecmakelists.h",
+            "generatecmakelistsconstants.h",
+            "checkablefiletreeitem.cpp", "checkablefiletreeitem.h",
+            "cmakegeneratordialogtreemodel.cpp", "cmakegeneratordialogtreemodel.h",
+            "cmakegeneratordialog.cpp", "cmakegeneratordialog.h",
+            "cmakeprojectconverter.cpp", "cmakeprojectconverter.h",
+            "cmakeprojectconverterdialog.cpp", "cmakeprojectconverterdialog.h",
         ]
     }
-
+    
     Group {
         name: "QML Project File Generator"
         prefix: "qmlprojectgen/"

@@ -8,5 +8,4 @@ name = "pypi"
 [packages]
 click = "~= 8.0"
 jinja2 = "~= 3.0"
-lxml = "*"
 PyYAML = "*"

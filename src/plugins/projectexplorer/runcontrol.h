@@ -1,5 +1,27 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -10,7 +32,6 @@
 #include <utils/environment.h>
 #include <utils/outputformatter.h>
 #include <utils/processhandle.h>
-#include <utils/processenums.h>
 #include <utils/qtcassert.h>
 
 #include <QHash>
@@ -20,14 +41,10 @@
 #include <functional>
 #include <memory>
 
-namespace Tasking { class Group; }
-
 namespace Utils {
 class Icon;
 class MacroExpander;
 class OutputLineParser;
-class ProcessRunData;
-class Process;
 } // Utils
 
 namespace ProjectExplorer {
@@ -40,6 +57,18 @@ class RunControlPrivate;
 class RunWorkerPrivate;
 class SimpleTargetRunnerPrivate;
 } // Internal
+
+
+class PROJECTEXPLORER_EXPORT Runnable
+{
+public:
+    Runnable() = default;
+
+    Utils::CommandLine command;
+    Utils::FilePath workingDirectory;
+    Utils::Environment environment;
+    QVariantHash extraData;
+};
 
 class PROJECTEXPLORER_EXPORT RunWorker : public QObject
 {
@@ -56,11 +85,15 @@ public:
 
     void setId(const QString &id);
 
-    void recordData(const Utils::Key &channel, const QVariant &data);
-    QVariant recordedData(const Utils::Key &channel) const;
+    void setStartTimeout(int ms, const std::function<void()> &callback = {});
+    void setStopTimeout(int ms, const std::function<void()> &callback = {});
+
+    void recordData(const QString &channel, const QVariant &data);
+    QVariant recordedData(const QString &channel) const;
 
     // Part of read-only interface of RunControl for convenience.
-    void appendMessage(const QString &msg, Utils::OutputFormat format, bool appendNewLine = true);
+    void appendMessage(const QString &msg, Utils::OutputFormat format);
+    void appendMessageChunk(const QString &msg, Utils::OutputFormat format);
     IDeviceConstPtr device() const;
 
     // States
@@ -74,6 +107,7 @@ public:
 
     void reportFailure(const QString &msg = QString());
     void setSupportsReRunning(bool reRunningSupported);
+    bool supportsReRunning() const;
 
     static QString userMessageForProcessError(QProcess::ProcessError,
                                               const Utils::FilePath &programName);
@@ -88,6 +122,7 @@ signals:
 protected:
     void virtual start();
     void virtual stop();
+    void virtual onFinished() {}
 
 private:
     friend class Internal::RunControlPrivate;
@@ -101,32 +136,38 @@ public:
     using WorkerCreator = std::function<RunWorker *(RunControl *)>;
 
     RunWorkerFactory();
+    RunWorkerFactory(const WorkerCreator &producer,
+                     const QList<Utils::Id> &runModes,
+                     const QList<Utils::Id> &runConfigs = {},
+                     const QList<Utils::Id> &deviceTypes = {});
+
     ~RunWorkerFactory();
 
-    static void dumpAll(); // For debugging only.
+    bool canRun(Utils::Id runMode, Utils::Id deviceType, const QString &runConfigId) const;
+    WorkerCreator producer() const { return m_producer; }
+
+    template <typename Worker>
+    static WorkerCreator make()
+    {
+        return [](RunControl *runControl) { return new Worker(runControl); };
+    }
+
+    // For debugging only.
+    static void dumpAll();
 
 protected:
     template <typename Worker>
     void setProduct() { setProducer([](RunControl *rc) { return new Worker(rc); }); }
-    void setId(Utils::Id id) { m_id = id; }
     void setProducer(const WorkerCreator &producer);
-    void setSupportedRunConfigs(const QList<Utils::Id> &runConfigs);
     void addSupportedRunMode(Utils::Id runMode);
     void addSupportedRunConfig(Utils::Id runConfig);
     void addSupportedDeviceType(Utils::Id deviceType);
-    void addSupportForLocalRunConfigs();
-    void cloneProduct(Utils::Id exitstingStepId, Utils::Id overrideId = Utils::Id());
 
 private:
-    friend class RunControl;
-    bool canCreate(Utils::Id runMode, Utils::Id deviceType, const QString &runConfigId) const;
-    RunWorker *create(RunControl *runControl) const;
-
     WorkerCreator m_producer;
     QList<Utils::Id> m_supportedRunModes;
     QList<Utils::Id> m_supportedRunConfigurations;
     QList<Utils::Id> m_supportedDeviceTypes;
-    Utils::Id m_id;
 };
 
 /**
@@ -151,20 +192,15 @@ public:
     void copyDataFromRunConfiguration(RunConfiguration *runConfig);
     void copyDataFromRunControl(RunControl *runControl);
 
-    void setAutoDeleteOnStop(bool autoDelete);
-
-    void setRunRecipe(const Tasking::Group &group);
-
     void initiateStart();
     void initiateReStart();
     void initiateStop();
     void forceStop();
+    void initiateFinish();
 
     bool promptToStop(bool *optionalPrompt = nullptr) const;
     void setPromptToStop(const std::function<bool(bool *)> &promptToStop);
 
-    // Note: Works only in the task tree mode
-    void setSupportsReRunning(bool reRunningSupported);
     bool supportsReRunning() const;
 
     QString displayName() const;
@@ -172,6 +208,7 @@ public:
 
     bool isRunning() const;
     bool isStarting() const;
+    bool isStopping() const;
     bool isStopped() const;
 
     void setIcon(const Utils::Icon &icon);
@@ -187,26 +224,25 @@ public:
     Kit *kit() const;
     const Utils::MacroExpander *macroExpander() const;
 
-    const Utils::BaseAspect::Data *aspectData(Utils::Id instanceId) const;
-    const Utils::BaseAspect::Data *aspectData(Utils::BaseAspect::Data::ClassId classId) const;
-    template <typename T> const typename T::Data *aspectData() const {
-        return dynamic_cast<const typename T::Data *>(aspectData(&T::staticMetaObject));
+    const Utils::BaseAspect::Data *aspect(Utils::Id instanceId) const;
+    const Utils::BaseAspect::Data *aspect(Utils::BaseAspect::Data::ClassId classId) const;
+    template <typename T> const typename T::Data *aspect() const {
+        return dynamic_cast<const typename T::Data *>(aspect(&T::staticMetaObject));
     }
 
     QString buildKey() const;
     Utils::FilePath buildDirectory() const;
     Utils::Environment buildEnvironment() const;
 
-    Utils::Store settingsData(Utils::Id id) const;
+    QVariantMap settingsData(Utils::Id id) const;
 
     Utils::FilePath targetFilePath() const;
     Utils::FilePath projectFilePath() const;
 
     void setupFormatter(Utils::OutputFormatter *formatter) const;
     Utils::Id runMode() const;
-    bool isPrintEnvironmentEnabled() const;
 
-    const Utils::ProcessRunData &runnable() const;
+    const Runnable &runnable() const;
 
     const Utils::CommandLine &commandLine() const;
     void setCommandLine(const Utils::CommandLine &command);
@@ -231,14 +267,14 @@ public:
 
     bool createMainWorker();
     static bool canRun(Utils::Id runMode, Utils::Id deviceType, Utils::Id runConfigId);
-    void postMessage(const QString &msg, Utils::OutputFormat format, bool appendNewLine = true);
 
 signals:
     void appendMessage(const QString &msg, Utils::OutputFormat format);
     void aboutToStart();
     void started();
     void stopped();
-    void applicationProcessHandleChanged(QPrivateSignal);
+    void finished();
+    void applicationProcessHandleChanged(QPrivateSignal); // Use setApplicationProcessHandle
 
 private:
     void setDevice(const IDeviceConstPtr &device);
@@ -271,33 +307,35 @@ protected:
 
     void setEnvironment(const Utils::Environment &environment);
     void setWorkingDirectory(const Utils::FilePath &workingDirectory);
-    void setProcessMode(Utils::ProcessMode processMode);
-    Utils::Process *process() const;
 
-    void suppressDefaultStdOutHandling();
     void forceRunOnHost();
-    void addExtraData(const QString &key, const QVariant &value);
 
 private:
     void start() final;
     void stop() final;
 
-    const Utils::ProcessRunData &runnable() const = delete;
-    void setRunnable(const Utils::ProcessRunData &) = delete;
+    const Runnable &runnable() const = delete;
+    void setRunnable(const Runnable &) = delete;
 
     const std::unique_ptr<Internal::SimpleTargetRunnerPrivate> d;
 };
 
-class PROJECTEXPLORER_EXPORT SimpleTargetRunnerFactory : public RunWorkerFactory
+class PROJECTEXPLORER_EXPORT OutputFormatterFactory
 {
+protected:
+    OutputFormatterFactory();
+
 public:
-    explicit SimpleTargetRunnerFactory(const QList<Utils::Id> &runConfig);
+    virtual ~OutputFormatterFactory();
+
+    static QList<Utils::OutputLineParser *> createFormatters(Target *target);
+
+protected:
+    using FormatterCreator = std::function<QList<Utils::OutputLineParser *>(Target *)>;
+    void setFormatterCreator(const FormatterCreator &creator);
+
+private:
+    FormatterCreator m_creator;
 };
-
-
-PROJECTEXPLORER_EXPORT
-void addOutputParserFactory(const std::function<Utils::OutputLineParser *(Target *)> &);
-
-PROJECTEXPLORER_EXPORT QList<Utils::OutputLineParser *> createOutputParsers(Target *target);
 
 } // namespace ProjectExplorer

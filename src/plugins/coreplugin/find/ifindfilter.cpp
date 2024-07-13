@@ -1,19 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "ifindfilter.h"
 
-#include "../coreicons.h"
-#include "../coreplugintr.h"
-
-#include <utils/qtcsettings.h>
+#include <coreplugin/coreicons.h>
 
 #include <QApplication>
 #include <QKeySequence>
 #include <QPainter>
 #include <QPixmap>
-
-using namespace Utils;
 
 /*!
     \class Core::IFindFilter
@@ -32,7 +49,7 @@ using namespace Utils;
     and \uicontrol {Files in File System} where the user provides a directory and file
     patterns to search.
 
-    \image qtcreator-search-reg-exp.webp {Search Results view with search criteria}
+    \image qtcreator-search-filesystem.png
 
     To make your find scope available to the user, you need to implement this
     class, and register an instance of your subclass in the plugin manager.
@@ -40,7 +57,7 @@ using namespace Utils;
     A common way to present the search results to the user, is to use the
     shared \uicontrol{Search Results} pane.
 
-    \image qtcreator-search-results-reg-exp.webp {Search Results view with search results}
+    \image qtcreator-searchresults.png
 
     If you want to implement a find filter that is doing a file based text
     search, you should use \l Core::BaseTextFind, which already implements all
@@ -94,7 +111,7 @@ using namespace Utils;
     Returns the name of the find filter or scope as presented to the user.
 
     This is the name that appears in the scope selection combo box, for example.
-    Always return a translatable string. That is, use \c {Tr::tr()} for the return
+    Always return a translatable string. That is, use \c tr() for the return
     value.
 */
 
@@ -134,7 +151,7 @@ using namespace Utils;
 */
 
 /*!
-    \fn void Core::IFindFilter::findAll(const QString &txt, Utils::FindFlags findFlags)
+    \fn void Core::IFindFilter::findAll(const QString &txt, Core::FindFlags findFlags)
     This function is called when the user selected this find scope and
     initiated a search.
 
@@ -151,7 +168,7 @@ using namespace Utils;
 */
 
 /*!
-    \fn void Core::IFindFilter::replaceAll(const QString &txt, Utils::FindFlags findFlags)
+    \fn void Core::IFindFilter::replaceAll(const QString &txt, Core::FindFlags findFlags)
     Override this function if you want to support search and replace.
 
     This function is called when the user selected this find scope and
@@ -177,6 +194,18 @@ using namespace Utils;
 
     The widget will be shown below the common options in the \uicontrol {Advanced Find}
     dialog. It will be reparented and deleted by the find plugin.
+*/
+
+/*!
+    \fn void Core::IFindFilter::writeSettings(QSettings *settings)
+    Called at shutdown to write the state of the additional options
+    for this find filter to the \a settings.
+*/
+
+/*!
+    \fn void Core::IFindFilter::readSettings(QSettings *settings)
+    Called at startup to read the state of the additional options
+    for this find filter from the \a settings.
 */
 
 /*!
@@ -244,68 +273,14 @@ QKeySequence IFindFilter::defaultShortcut() const
 
     Depending on the returned value, the default find option widgets are
     enabled or disabled.
-    The default is Utils::FindCaseSensitively, Utils::FindRegularExpression
-    and Uitls::FindWholeWords.
+    The default is Core::FindCaseSensitively, Core::FindRegularExpression
+    and Core::FindWholeWords.
 */
 FindFlags IFindFilter::supportedFindFlags() const
 {
     return FindCaseSensitively
          | FindRegularExpression
          | FindWholeWords;
-}
-
-/*!
-    Returns a Store with the find filter's settings to store
-    in the session. Default values should not be saved.
-    The default implementation returns an empty store.
-
-    \sa restore()
-*/
-Store IFindFilter::save() const
-{
-    return {};
-}
-
-/*!
-    Restores the find filter's settings from the Store \a s.
-    Settings that are not present in the store should be reset to
-    the default.
-    The default implementation does nothing.
-
-    \sa save()
-*/
-void IFindFilter::restore([[maybe_unused]] const Utils::Store &s) {}
-
-/*!
-    Called at shutdown to write the state of the additional options
-    for this find filter to the \a settings.
-
-    \deprecated [14.0] Implement save() instead.
-*/
-void IFindFilter::writeSettings(Utils::QtcSettings *settings)
-{
-    settings->remove(settingsKey()); // make sure defaults are removed
-    storeToSettings(settingsKey(), settings, save());
-}
-
-/*!
-    Called at startup to read the state of the additional options
-    for this find filter from the \a settings.
-
-    \deprecated [14.0] Implement restore() instead.
-*/
-void IFindFilter::readSettings(Utils::QtcSettings *settings)
-{
-    restore(storeFromSettings(settingsKey(), settings));
-}
-
-/*!
-    \internal
-    \deprecated [14.0]
-*/
-QByteArray IFindFilter::settingsKey() const
-{
-    return id().toUtf8();
 }
 
 /*!
@@ -362,18 +337,18 @@ QString IFindFilter::descriptionForFindFlags(FindFlags flags)
 {
     QStringList flagStrings;
     if (flags & FindCaseSensitively)
-        flagStrings.append(Tr::tr("Case sensitive"));
+        flagStrings.append(tr("Case sensitive"));
     if (flags & FindWholeWords)
-        flagStrings.append(Tr::tr("Whole words"));
+        flagStrings.append(tr("Whole words"));
     if (flags & FindRegularExpression)
-        flagStrings.append(Tr::tr("Regular expressions"));
+        flagStrings.append(tr("Regular expressions"));
     if (flags & FindPreserveCase)
-        flagStrings.append(Tr::tr("Preserve case"));
-    QString description = Tr::tr("Flags: %1");
+        flagStrings.append(tr("Preserve case"));
+    QString description = tr("Flags: %1");
     if (flagStrings.isEmpty())
-        description = description.arg(Tr::tr("None"));
+        description = description.arg(tr("None"));
     else
-        description = description.arg(flagStrings.join(Tr::tr(", ")));
+        description = description.arg(flagStrings.join(tr(", ")));
     return description;
 }
 

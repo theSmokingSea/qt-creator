@@ -1,15 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
-#include "qmljsdocument.h"
-#include <qmljs/parser/qmljsastfwd_p.h>
 #include <qmljs/qmljs_global.h>
 #include <qmljs/qmljsconstants.h>
 #include <qmljs/qmljsimportdependencies.h>
+#include <qmljs/parser/qmljsastfwd_p.h>
 
 #include <languageutils/fakemetaobject.h>
+#include <utils/porting.h>
 
 #include <QFileInfoList>
 #include <QHash>
@@ -44,7 +66,6 @@ class NumberValue;
 class ModuleApiInfo;
 class ObjectValue;
 class QmlEnumValue;
-class UiEnumValue;
 class QmlPrototypeReference;
 class RealValue;
 class Reference;
@@ -116,7 +137,6 @@ public:
     virtual const CppComponentValue *asCppComponentValue() const;
     virtual const ASTObjectValue *asAstObjectValue() const;
     virtual const QmlEnumValue *asQmlEnumValue() const;
-    virtual const UiEnumValue *asUiEnumValue() const;
     virtual const QmlPrototypeReference *asQmlPrototypeReference() const;
     virtual const ASTPropertyReference *asAstPropertyReference() const;
     virtual const ASTVariableReference *asAstVariableReference() const;
@@ -130,7 +150,7 @@ public:
 
     virtual void accept(ValueVisitor *) const = 0;
 
-    virtual bool getSourceLocation(Utils::FilePath *fileName, int *line, int *column) const;
+    virtual bool getSourceLocation(QString *fileName, int *line, int *column) const;
 };
 
 template <typename RetTy> const RetTy *value_cast(const Value *)
@@ -245,12 +265,6 @@ template <> Q_INLINE_TEMPLATE const ASTObjectValue *value_cast(const Value *v)
 template <> Q_INLINE_TEMPLATE const QmlEnumValue *value_cast(const Value *v)
 {
     if (v) return v->asQmlEnumValue();
-    else   return nullptr;
-}
-
-template <> Q_INLINE_TEMPLATE const UiEnumValue *value_cast(const Value *v)
-{
-    if (v) return v->asUiEnumValue();
     else   return nullptr;
 }
 
@@ -567,27 +581,6 @@ private:
     int m_enumIndex;
 };
 
-class QMLJS_EXPORT UiEnumValue : public ObjectValue
-{
-public:
-    UiEnumValue(AST::UiEnumDeclaration *uiEnum, ValueOwner *valueOwner,
-                const QString &originId);
-    ~UiEnumValue();
-
-    const UiEnumValue *asUiEnumValue() const override;
-    bool getSourceLocation(Utils::FilePath *path, int *line, int *column) const override;
-    QString name() const;
-    QStringList keys() const;
-
-private:
-    const QString m_name;
-    Utils::FilePath m_path;
-    int m_line;
-    int m_column;
-    QStringList m_keys;
-    QList<int> m_values;
-};
-
 
 // A ObjectValue based on a FakeMetaObject.
 // May only have other CppComponentValue as ancestors.
@@ -602,14 +595,12 @@ public:
 
     const CppComponentValue *asCppComponentValue() const override;
 
-    bool getSourceLocation(Utils::FilePath *fileName, int *line, int *column) const override;
-
     void processMembers(MemberProcessor *processor) const override;
     const Value *valueForCppName(const QString &typeName) const;
 
     using ObjectValue::prototype;
     const CppComponentValue *prototype() const;
-    const QList<const CppComponentValue *> prototypes() const;
+    QList<const CppComponentValue *> prototypes() const;
 
     LanguageUtils::FakeMetaObject::ConstPtr metaObject() const;
 
@@ -721,8 +712,8 @@ public:
     static BuiltinObjects loadQmlTypes(const QFileInfoList &qmltypesFiles,
                              QStringList *errors, QStringList *warnings);
 
-    static BuiltinObjects &defaultQtObjects();
-    static BuiltinObjects &defaultLibraryObjects();
+    static BuiltinObjects defaultQtObjects;
+    static BuiltinObjects defaultLibraryObjects;
 
     // parses the contents of a qmltypes file and fills the newObjects map
     static void parseQmlTypeDescriptions(const QByteArray &contents,
@@ -732,8 +723,6 @@ public:
                                          QString *errorMessage,
                                          QString *warningMessage,
                                          const QString &fileName);
-
-    static std::function<void()> defaultObjectsInitializer;
 };
 
 class QMLJS_EXPORT FakeMetaObjectWithOrigin
@@ -746,7 +735,7 @@ public:
     bool operator ==(const FakeMetaObjectWithOrigin &o) const;
 };
 
-QMLJS_EXPORT size_t qHash(const FakeMetaObjectWithOrigin &fmoo);
+QMLJS_EXPORT Utils::QHashValueType qHash(const FakeMetaObjectWithOrigin &fmoo);
 
 class QMLJS_EXPORT CppQmlTypes
 {
@@ -902,7 +891,7 @@ public:
     const AST::PatternElement *ast() const;
 private:
     const Value *value(ReferenceContext *referenceContext) const override;
-    bool getSourceLocation(Utils::FilePath *fileName, int *line, int *column) const override;
+    bool getSourceLocation(QString *fileName, int *line, int *column) const override;
 };
 
 class QMLJS_EXPORT ASTFunctionValue: public FunctionValue
@@ -923,7 +912,7 @@ public:
     bool isVariadic() const override;
     const ASTFunctionValue *asAstFunctionValue() const override;
 
-    bool getSourceLocation(Utils::FilePath *fileName, int *line, int *column) const override;
+    bool getSourceLocation(QString *fileName, int *line, int *column) const override;
 };
 
 class QMLJS_EXPORT ASTPropertyReference: public Reference
@@ -941,7 +930,7 @@ public:
     AST::UiPublicMember *ast() const { return m_ast; }
     QString onChangedSlotName() const { return m_onChangedSlotName; }
 
-    bool getSourceLocation(Utils::FilePath *fileName, int *line, int *column) const override;
+    bool getSourceLocation(QString *fileName, int *line, int *column) const override;
 
 private:
     const Value *value(ReferenceContext *referenceContext) const override;
@@ -970,7 +959,7 @@ public:
     QString argumentName(int index) const override;
 
     // Value interface
-    bool getSourceLocation(Utils::FilePath *fileName, int *line, int *column) const override;
+    bool getSourceLocation(QString *fileName, int *line, int *column) const override;
 };
 
 class QMLJS_EXPORT ASTObjectValue: public ObjectValue
@@ -991,7 +980,7 @@ public:
 
     const ASTObjectValue *asAstObjectValue() const override;
 
-    bool getSourceLocation(Utils::FilePath *fileName, int *line, int *column) const override;
+    bool getSourceLocation(QString *fileName, int *line, int *column) const override;
     void processMembers(MemberProcessor *processor) const override;
 
     QString defaultPropertyName() const;
@@ -1008,11 +997,9 @@ public:
 
     static ImportInfo moduleImport(QString uri, LanguageUtils::ComponentVersion version,
                                    const QString &as, AST::UiImport *ast = nullptr);
-    static ImportInfo pathImport(const Utils::FilePath &docPath,
-                                 const QString &path,
+    static ImportInfo pathImport(const QString &docPath, const QString &path,
                                  LanguageUtils::ComponentVersion version,
-                                 const QString &as,
-                                 AST::UiImport *ast = nullptr);
+                                 const QString &as, AST::UiImport *ast = nullptr);
     static ImportInfo invalidImport(AST::UiImport *ast = nullptr);
     static ImportInfo implicitDirectoryImport(const QString &directory);
     static ImportInfo qrcDirectoryImport(const QString &directory);
@@ -1054,7 +1041,7 @@ public:
     ImportInfo info;
     DependencyInfo::ConstPtr deps;
     // uri imports: path to library, else empty
-    Utils::FilePath libraryPath;
+    QString libraryPath;
     // whether the import succeeded
     bool valid;
     mutable bool used;
@@ -1142,25 +1129,12 @@ class QMLJS_EXPORT CustomImportsProvider : public QObject
 {
     Q_OBJECT
 public:
-    typedef QHash<const Document *, QSharedPointer<const Imports>> ImportsPerDocument;
     explicit CustomImportsProvider(QObject *parent = nullptr);
     virtual ~CustomImportsProvider();
 
     static const QList<CustomImportsProvider *> allProviders();
 
-    virtual QList<Import> imports(ValueOwner *valueOwner,
-                                  const Document *context,
-                                  Snapshot *snapshot = nullptr) const = 0;
-    virtual void loadBuiltins([[maybe_unused]] ImportsPerDocument *importsPerDocument,
-                              [[maybe_unused]] Imports *imports,
-                              [[maybe_unused]] const Document *context,
-                              [[maybe_unused]] ValueOwner *valueOwner,
-                              [[maybe_unused]] Snapshot *snapshot) {}
-    virtual Utils::FilePaths prioritizeImportPaths([[maybe_unused]] const Document *context,
-                                                   const Utils::FilePaths &importPaths)
-    {
-        return importPaths;
-    }
+    virtual QList<Import> imports(ValueOwner *valueOwner, const Document *context) const = 0;
 };
 
 } // namespace QmlJS

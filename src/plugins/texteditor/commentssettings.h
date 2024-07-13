@@ -1,86 +1,57 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "texteditor_global.h"
 
-#include <coreplugin/dialogs/ioptionspage.h>
-
-namespace ProjectExplorer { class Project; }
+QT_BEGIN_NAMESPACE
+class QSettings;
+QT_END_NAMESPACE
 
 namespace TextEditor {
 
 class TEXTEDITOR_EXPORT CommentsSettings
 {
 public:
-    enum class CommandPrefix { Auto, At, Backslash };
-    class Data {
-    public:
-        CommandPrefix commandPrefix = CommandPrefix::Auto;
-        bool enableDoxygen = true;
-        bool generateBrief = true;
-        bool leadingAsterisks = true;
-    };
-
-    static Data data() { return instance().m_data; }
-    static void setData(const Data &data);
-
-    static Utils::Key mainSettingsKey();
-    static Utils::Key enableDoxygenSettingsKey();
-    static Utils::Key generateBriefSettingsKey();
-    static Utils::Key leadingAsterisksSettingsKey();
-    static Utils::Key commandPrefixKey();
-
-private:
     CommentsSettings();
-    static CommentsSettings &instance();
-    void save() const;
-    void load();
 
-    Data m_data;
-};
-inline bool operator==(const CommentsSettings::Data &a, const CommentsSettings::Data &b)
-{
-    return a.enableDoxygen == b.enableDoxygen
-           && a.commandPrefix == b.commandPrefix
-           && a.generateBrief == b.generateBrief
-           && a.leadingAsterisks == b.leadingAsterisks;
-}
-inline bool operator!=(const CommentsSettings::Data &a, const CommentsSettings::Data &b)
-{
-    return !(a == b);
-}
+    void toSettings(QSettings *s) const;
+    void fromSettings(QSettings *s);
 
+    bool equals(const CommentsSettings &other) const;
 
-class TEXTEDITOR_EXPORT CommentsSettingsWidget final : public Core::IOptionsPageWidget
-{
-    Q_OBJECT
-public:
-    CommentsSettingsWidget(const CommentsSettings::Data &settings);
-    ~CommentsSettingsWidget();
+    friend bool operator==(const CommentsSettings &a, const CommentsSettings &b)
+    { return a.equals(b); }
 
-    CommentsSettings::Data settingsData() const;
+    friend bool operator!=(const CommentsSettings &a, const CommentsSettings &b)
+    { return !(a == b); }
 
-signals:
-    void settingsChanged();
-
-private:
-    void apply() override;
-
-    void initFromSettings(const CommentsSettings::Data &settings);
-
-    class Private;
-    Private * const d;
+    bool m_enableDoxygen;
+    bool m_generateBrief;
+    bool m_leadingAsterisks;
 };
 
-namespace Internal {
-
-class CommentsSettingsPage : public Core::IOptionsPage
-{
-public:
-    CommentsSettingsPage();
-};
-
-} // namespace Internal
 } // namespace TextEditor

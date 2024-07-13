@@ -1,19 +1,61 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
-#include <utils/outputformatter.h>
+#include "ioutputparser.h"
+#include "runcontrol.h"
+#include "task.h"
+
+#include <QObject>
+#include <QVector>
 
 namespace ProjectExplorer::Internal {
 
-Utils::OutputLineParser *createSanitizerOutputParser();
+class SanitizerParser : public OutputTaskParser
+{
+public:
+    static QVector<QObject *> createTestObjects();
 
-void setupSanitizerOutputParser();
+private:
+    Result handleLine(const QString &line, Utils::OutputFormat format) override;
+    void flush() override;
 
-#ifdef WITH_TESTS
-QObject *createSanitizerOutputParserTest();
-#endif
+    Result handleContinuation(const QString &line);
+    void addLinkSpecs(const LinkSpecs &linkSpecs);
 
-} // ProjectExplorer::Internal
+    Task m_task;
+    LinkSpecs m_linkSpecs;
+    quint64 m_id = 0;
+};
+
+class SanitizerOutputFormatterFactory : public ProjectExplorer::OutputFormatterFactory
+{
+public:
+    SanitizerOutputFormatterFactory();
+};
+
+} // namespace ProjectExplorer::Internal
 

@@ -208,7 +208,6 @@ public:
 
     std::vector<Rule> rules;
 
-    bool stopEmptyLineContextSwitchLoop = false;
     bool noIndentationBasedFolding = false;
 };
 }

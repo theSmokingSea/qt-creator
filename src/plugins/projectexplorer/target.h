@@ -1,12 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "projectexplorer_export.h"
 
 #include <utils/id.h>
-#include <utils/store.h>
 
 #include <QObject>
 
@@ -27,13 +48,11 @@ class Project;
 class ProjectConfigurationModel;
 class RunConfiguration;
 
-enum class SetActive : int { Cascade, NoCascade };
-
 class TargetPrivate;
 
 class PROJECTEXPLORER_EXPORT Target : public QObject
 {
-    friend class ProjectManager; // for setActiveBuild and setActiveDeployConfiguration
+    friend class SessionManager; // for setActiveBuild and setActiveDeployConfiguration
     Q_OBJECT
 
 public:
@@ -57,8 +76,8 @@ public:
     QString displayName() const;
     QString toolTip() const;
 
-    static Utils::Key displayNameKey();
-    static Utils::Key deviceTypeKey();
+    static QString displayNameKey();
+    static QString deviceTypeKey();
 
     // Build configuration
     void addBuildConfiguration(BuildConfiguration *bc);
@@ -78,7 +97,6 @@ public:
     const QList<RunConfiguration *> runConfigurations() const;
     void addRunConfiguration(RunConfiguration *rc);
     void removeRunConfiguration(RunConfiguration *rc);
-    void removeAllRunConfigurations();
 
     RunConfiguration *activeRunConfiguration() const;
     void setActiveRunConfiguration(RunConfiguration *rc);
@@ -88,14 +106,14 @@ public:
     void setOverlayIcon(const QIcon &icon);
     QString overlayIconToolTip();
 
-    Utils::Store toMap() const;
+    QVariantMap toMap() const;
 
     void updateDefaultBuildConfigurations();
     void updateDefaultDeployConfigurations();
     void updateDefaultRunConfigurations();
 
-    QVariant namedSettings(const Utils::Key &name) const;
-    void setNamedSettings(const Utils::Key &name, const QVariant &value);
+    QVariant namedSettings(const QString &name) const;
+    void setNamedSettings(const QString &name, const QVariant &value);
 
     QVariant additionalData(Utils::Id id) const;
 
@@ -113,9 +131,6 @@ public:
 
     QString activeBuildKey() const; // Build key of active run configuaration
 
-    void setActiveBuildConfiguration(BuildConfiguration *bc, SetActive cascade);
-    void setActiveDeployConfiguration(DeployConfiguration *dc, SetActive cascade);
-
 signals:
     void targetEnabled(bool);
     void iconChanged();
@@ -132,7 +147,6 @@ signals:
     void removedRunConfiguration(ProjectExplorer::RunConfiguration *rc);
     void addedRunConfiguration(ProjectExplorer::RunConfiguration *rc);
     void activeRunConfigurationChanged(ProjectExplorer::RunConfiguration *rc);
-    void runConfigurationsUpdated();
 
     void removedBuildConfiguration(ProjectExplorer::BuildConfiguration *bc);
     void addedBuildConfiguration(ProjectExplorer::BuildConfiguration *bc);
@@ -146,8 +160,7 @@ signals:
     void deploymentDataChanged();
 
 private:
-    bool fromMap(const Utils::Store &map);
-    bool addConfigurationsFromMap(const Utils::Store &map, bool setActiveConfigurations);
+    bool fromMap(const QVariantMap &map);
 
     void updateDeviceState();
 

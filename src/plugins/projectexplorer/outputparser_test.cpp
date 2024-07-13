@@ -1,41 +1,38 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-#ifdef WITH_TESTS
-
-#include "ioutputparser.h"
 #include "outputparser_test.h"
+#include "projectexplorer.h"
 #include "task.h"
 #include "taskhub.h"
+
+#if defined(WITH_TESTS)
 
 #include <QtTest>
 
 namespace ProjectExplorer {
-
-class TestTerminator final : public OutputTaskParser
-{
-public:
-    explicit TestTerminator(OutputParserTester *t)
-        : m_tester(t)
-    {
-        if (!t->lineParsers().isEmpty()) {
-            for (const Utils::FilePath &searchDir : t->lineParsers().constFirst()->searchDirectories())
-                addSearchDir(searchDir);
-        }
-    }
-
-private:
-    Result handleLine(const QString &line, Utils::OutputFormat type) final
-    {
-        if (type == Utils::StdOutFormat)
-            m_tester->m_receivedStdOutChildLine.append(line + '\n');
-        else
-            m_tester->m_receivedStdErrChildLine.append(line + '\n');
-        return Status::Done;
-    }
-
-    OutputParserTester *m_tester = nullptr;
-};
 
 static inline QByteArray msgFileComparisonFail(const Utils::FilePath &f1, const Utils::FilePath &f2)
 {
@@ -46,14 +43,14 @@ static inline QByteArray msgFileComparisonFail(const Utils::FilePath &f1, const 
 // test functions:
 OutputParserTester::OutputParserTester()
 {
-    connect(&taskHub(), &TaskHub::taskAdded, this, [this](const Task &t) {
+    connect(TaskHub::instance(), &TaskHub::taskAdded, this, [this](const Task &t) {
         m_receivedTasks.append(t);
     });
 }
 
 OutputParserTester::~OutputParserTester()
 {
-    taskHub().disconnect(this);
+    TaskHub::instance()->disconnect(this);
 }
 
 void OutputParserTester::testParsing(const QString &lines,
@@ -124,16 +121,25 @@ void OutputParserTester::reset()
     m_receivedOutput.clear();
 }
 
-class OutputParserTest final : public QObject
+TestTerminator::TestTerminator(OutputParserTester *t) :
+    m_tester(t)
 {
-    Q_OBJECT
+    if (!t->lineParsers().isEmpty()) {
+        for (const Utils::FilePath &searchDir : t->lineParsers().constFirst()->searchDirectories())
+            addSearchDir(searchDir);
+    }
+}
 
-private slots:
-    void testAnsiFilterOutputParser_data();
-    void testAnsiFilterOutputParser();
-};
+Utils::OutputLineParser::Result TestTerminator::handleLine(const QString &line, Utils::OutputFormat type)
+{
+    if (type == Utils::StdOutFormat)
+        m_tester->m_receivedStdOutChildLine.append(line + '\n');
+    else
+        m_tester->m_receivedStdErrChildLine.append(line + '\n');
+    return Status::Done;
+}
 
-void OutputParserTest::testAnsiFilterOutputParser_data()
+void ProjectExplorerPlugin::testAnsiFilterOutputParser_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<OutputParserTester::Channel>("inputChannel");
@@ -178,7 +184,7 @@ void OutputParserTest::testAnsiFilterOutputParser_data()
             << QString::fromLatin1("test\n") << QString();
 }
 
-void OutputParserTest::testAnsiFilterOutputParser()
+void ProjectExplorerPlugin::testAnsiFilterOutputParser()
 {
     OutputParserTester testbench;
     QFETCH(QString, input);
@@ -191,13 +197,6 @@ void OutputParserTest::testAnsiFilterOutputParser()
                           QString());
 }
 
-QObject *createOutputParserTest()
-{
-    return new OutputParserTest;
-}
-
 } // namespace ProjectExplorer
 
-#include "outputparser_test.moc"
-
-#endif // WITH_TESTS
+#endif

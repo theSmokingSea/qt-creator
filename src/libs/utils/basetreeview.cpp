@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "basetreeview.h"
 
@@ -8,7 +30,6 @@
 #include "qtcassert.h"
 #include "qtcsettings.h"
 #include "treemodel.h"
-#include "utilstr.h"
 
 #include <QDebug>
 #include <QFontMetrics>
@@ -18,6 +39,7 @@
 #include <QMap>
 #include <QMenu>
 #include <QMouseEvent>
+#include <QSettings>
 #include <QSortFilterProxyModel>
 #include <QTimer>
 
@@ -91,13 +113,13 @@ public:
         m_userHandled.clear();
         if (m_settings && !m_settingsKey.isEmpty()) {
             m_settings->beginGroup(m_settingsKey);
-            QVariantList l = m_settings->value(ColumnKey).toList();
-            QTC_ASSERT(l.size() % 2 == 0, qDebug() << m_settingsKey.view(); l.append(0));
+            QVariantList l = m_settings->value(QLatin1String(ColumnKey)).toList();
+            QTC_ASSERT(l.size() % 2 == 0, qDebug() << m_settingsKey; l.append(0));
             for (int i = 0; i < l.size(); i += 2) {
                 int column = l.at(i).toInt();
                 int width = l.at(i + 1).toInt();
-                QTC_ASSERT(column >= 0 && column < 20, qDebug() << m_settingsKey.view() << column; continue);
-                QTC_ASSERT(width > 0 && width < 10000, qDebug() << m_settingsKey.view() << width; continue);
+                QTC_ASSERT(column >= 0 && column < 20, qDebug() << m_settingsKey << column; continue);
+                QTC_ASSERT(width > 0 && width < 10000, qDebug() << m_settingsKey << width; continue);
                 m_userHandled[column] = width;
             }
             m_settings->endGroup();
@@ -137,7 +159,7 @@ public:
                 l.append(column);
                 l.append(width);
             }
-            m_settings->setValueWithDefault(ColumnKey, l);
+            QtcSettings::setValueWithDefault(m_settings, ColumnKey, l);
             m_settings->endGroup();
         }
     }
@@ -151,43 +173,45 @@ public:
         }
     }
 
+
+    void considerItems(int column, QModelIndex start, int *minimum, bool single) const
+    {
+        QModelIndex a = start;
+        a = a.sibling(a.row(), column);
+        QFontMetrics fm = q->fontMetrics();
+        const int ind = q->indentation();
+        QAbstractItemModel *m = q->model();
+        for (int i = 0; i < 100 && a.isValid(); ++i) {
+            const QString s = m->data(a).toString();
+            int w = fm.horizontalAdvance(s) + 10;
+            if (column == 0) {
+                for (QModelIndex b = a.parent(); b.isValid(); b = b.parent())
+                    w += ind;
+            }
+            if (w > *minimum)
+                *minimum = w;
+            if (single)
+                break;
+            a = q->indexBelow(a);
+        }
+    }
+
     int suggestedColumnSize(int column) const
     {
-        const QHeaderView *h = q->header();
+        QHeaderView *h = q->header();
         QTC_ASSERT(h, return -1);
-        const QAbstractItemModel *m = q->model();
+        QAbstractItemModel *m = q->model();
         QTC_ASSERT(m, return -1);
 
-        const QFontMetrics fm = q->fontMetrics();
-        const int ind = q->indentation();
-        const int avg = fm.averageCharWidth();
+        QFontMetrics fm = q->fontMetrics();
         int minimum = fm.horizontalAdvance(m->headerData(column, Qt::Horizontal).toString())
-            + 2 * avg;
-
-        auto considerItems = [&](const QModelIndex &start, bool single) {
-            QModelIndex a = start;
-            a = a.sibling(a.row(), column);
-            for (int i = 0; i < 100 && a.isValid(); ++i) {
-                const QString s = m->data(a).toString();
-                int w = avg * s.size() + 20;
-                if (column == 0) {
-                    for (QModelIndex b = a.parent(); b.isValid(); b = b.parent())
-                        w += ind;
-                }
-                if (w > minimum)
-                    minimum = w;
-                if (single)
-                    break;
-                a = q->indexBelow(a);
-            }
-        };
-
-        considerItems(q->indexAt(QPoint(1, 1)), false);
+            + 2 * fm.horizontalAdvance(QLatin1Char('m'));
+        considerItems(column, q->indexAt(QPoint(1, 1)), &minimum, false);
 
         const QVariant extraIndices = m->data(QModelIndex(), BaseTreeView::ExtraIndicesForColumnWidth);
         const QList<QModelIndex> values = extraIndices.value<QModelIndexList>();
         for (const QModelIndex &a : values)
-            considerItems(a, true);
+            considerItems(column, a, &minimum, true);
 
         return minimum;
     }
@@ -305,9 +329,9 @@ public:
 public:
     BaseTreeView *q;
     QMap<int, int> m_userHandled; // column -> width, "not present" means "automatic"
-    QtcSettings *m_settings = nullptr;
+    QSettings *m_settings = nullptr;
     QTimer m_settingsTimer;
-    Key m_settingsKey;
+    QString m_settingsKey;
     bool m_expectUserChanges = false;
     ProgressIndicator *m_progressIndicator = nullptr;
     int m_spanColumn = -1;
@@ -344,6 +368,7 @@ BaseTreeView::BaseTreeView(QWidget *parent)
     setRootIsDecorated(false);
     setIconSize(QSize(16, 16));
     setSelectionMode(QAbstractItemView::ExtendedSelection);
+    setUniformRowHeights(true);
     setItemDelegate(new BaseTreeViewDelegate(this));
     setAlternatingRowColors(false);
 
@@ -539,7 +564,7 @@ void BaseTreeView::enableColumnHiding()
             shown += !isColumnHidden(i);
         for (int i = 0; i < columns; ++i) {
             QString columnName = model()->headerData(i, Qt::Horizontal).toString();
-            QAction *act = menu.addAction(Tr::tr("Show %1 Column").arg(columnName));
+            QAction *act = menu.addAction(tr("Show %1 Column").arg(columnName));
             act->setCheckable(true);
             act->setChecked(!isColumnHidden(i));
             // Prevent disabling the last visible column as there's no way back.
@@ -559,11 +584,11 @@ void BaseTreeView::refreshSpanColumn()
     d->rebalanceColumns();
 }
 
-void BaseTreeView::setSettings(QtcSettings *settings, const QByteArray &key)
+void BaseTreeView::setSettings(QSettings *settings, const QByteArray &key)
 {
     QTC_ASSERT(!d->m_settings, qDebug() << "DUPLICATED setSettings" << key);
     d->m_settings = settings;
-    d->m_settingsKey = key;
+    d->m_settingsKey = QString::fromLatin1(key);
     d->readSettings();
 }
 
@@ -585,7 +610,7 @@ ItemViewEvent::ItemViewEvent(QEvent *ev, QAbstractItemView *view)
     case QEvent::DragEnter:
     case QEvent::DragMove:
     case QEvent::Drop:
-        m_pos = static_cast<QDropEvent *>(ev)->position().toPoint();
+        m_pos = static_cast<QDropEvent *>(ev)->pos();
         m_index = view->indexAt(m_pos);
         break;
     default:

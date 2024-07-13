@@ -1,13 +1,35 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
-
-import QtQuick
-import QtQuick.Layouts
-import QtQuick.Shapes
-import QtQuick.Templates as T
-import StudioTheme as StudioTheme
-import StudioControls as StudioControls
-import QtQuickDesignerColorPalette
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
+import QtQuick 2.15
+import QtQuick.Layouts 1.15
+import QtQuick.Shapes 1.15
+import QtQuick.Templates 2.15 as T
+import QtQuickDesignerTheme 1.0
+import StudioTheme 1.0 as StudioTheme
+import StudioControls 1.0 as StudioControls
+import QtQuickDesignerColorPalette 1.0
 
 SecondColumnLayout {
     id: colorEditor
@@ -15,55 +37,35 @@ SecondColumnLayout {
     property color color
     property bool supportGradient: false
     property variant backendValue
-
     property variant value: {
-        if (!colorEditor.backendValue || !colorEditor.backendValue.value)
+        if (colorEditor.backendValue === undefined
+                || colorEditor.backendValue.value === undefined)
             return "white" // default color for Rectangle
 
-        if (colorEditor.isVector3D) {
+        if (colorEditor.isVector3D)
             return Qt.rgba(colorEditor.backendValue.value.x,
                            colorEditor.backendValue.value.y,
                            colorEditor.backendValue.value.z, 1)
-        }
-
-        return colorEditor.backendValue.value
+        else
+            return colorEditor.backendValue.value
     }
-
-    property alias gradientPropertyName: popupDialog.gradientPropertyName
+    property alias gradientPropertyName: popupLoader.gradientPropertyName
 
     property alias gradientThumbnail: gradientThumbnail
     property alias shapeGradientThumbnail: shapeGradientThumbnail
 
-    property alias showExtendedFunctionButton: hexTextField.showExtendedFunctionButton
-    property alias showHexTextField: hexTextField.visible
-
     property bool shapeGradients: false
-
-    //for now, gradients on MCUs are limited to Basic and Shape Linear Gradient:
-    property bool mcuGradients: false
-
     property color originalColor
     property bool isVector3D: false
 
     property alias spacer: spacer
-
-    property bool __block: false
-
-    property string caption // Legacy Qt5 specifics sheets compatibility
 
     function resetShapeColor() {
         colorEditor.backendValue.resetValue()
     }
 
     function initEditor() {
-        colorEditor.syncColor()
-    }
-
-    // Syncing color from backend to frontend and block reflection
-    function syncColor() {
-        colorEditor.__block = true
         colorEditor.color = colorEditor.value
-        colorEditor.__block = false
     }
 
     Connections {
@@ -71,13 +73,13 @@ SecondColumnLayout {
         target: colorEditor
 
         function onValueChanged() {
-            if (popupDialog.isSolid())
-                colorEditor.syncColor()
+            if (popupLoader.isNotInGradientMode())
+                colorEditor.color = colorEditor.value
         }
 
         function onBackendValueChanged() {
-            if (popupDialog.isSolid())
-                colorEditor.syncColor()
+            if (popupLoader.isNotInGradientMode())
+                colorEditor.color = colorEditor.value
         }
     }
 
@@ -103,16 +105,13 @@ SecondColumnLayout {
     }
 
     onColorChanged: {
-        if (colorEditor.__block)
+        if (!popupLoader.isInValidState)
             return
 
-        if (!popupDialog.isInValidState)
-            return
-
-        popupDialog.commitToGradient()
+        popupLoader.commitToGradient()
 
         // Delay setting the color to keep ui responsive
-        if (popupDialog.isSolid())
+        if (popupLoader.isNotInGradientMode())
             colorEditorTimer.restart()
     }
 
@@ -132,16 +131,17 @@ SecondColumnLayout {
             id: gradientThumbnail
             anchors.fill: parent
             anchors.margins: StudioTheme.Values.border
-            visible: !popupDialog.isSolid()
+            visible: !popupLoader.isNotInGradientMode()
                      && !colorEditor.shapeGradients
-                     && popupDialog.isLinearGradient()
+                     && popupLoader.hasLinearGradient()
         }
 
         Shape {
             id: shape
             anchors.fill: parent
             anchors.margins: StudioTheme.Values.border
-            visible: !popupDialog.isSolid() && colorEditor.shapeGradients
+            visible: !popupLoader.isNotInGradientMode()
+                     && colorEditor.shapeGradients
 
             ShapePath {
                 id: shapeGradientThumbnail
@@ -175,83 +175,78 @@ SecondColumnLayout {
         MouseArea {
             anchors.fill: parent
             onClicked: {
-                popupDialog.visibility ? popupDialog.close() : popupDialog.open()
+                popupLoader.opened ? popupLoader.close() : popupLoader.open()
                 forceActiveFocus()
             }
         }
 
-        StudioControls.PopupDialog {
-            id: popupDialog
+        QtObject {
+            id: popupLoader
 
-            property bool isInValidState: loader.active ? popupDialog.loaderItem.isInValidState : true
-            property QtObject loaderItem: loader.item
+            property bool isInValidState: popupLoader.active ? popupLoader.dialog.isInValidState : true
+
+            property QtObject dialog: popupLoader.loader.item
+
+            property bool opened: popupLoader.active ? popupLoader.dialog.opened : false
+
             property string gradientPropertyName
 
-            keepOpen: loader.item?.eyeDropperActive ?? false
-
-            width: 260
-
             function commitToGradient() {
-                if (!loader.active)
+                if (!popupLoader.active)
                     return
 
-                if (colorEditor.supportGradient && popupDialog.loaderItem.gradientModel.hasGradient) {
+                if (colorEditor.supportGradient && popupLoader.dialog.gradientModel.hasGradient) {
                     var hexColor = convertColorToString(colorEditor.color)
                     hexTextField.text = hexColor
-                    popupDialog.loaderItem.commitGradientColor()
+                    popupLoader.dialog.commitGradientColor()
                 }
             }
 
-            function isSolid() {
-                 if (!loader.active)
+            function isNotInGradientMode() {
+                 if (!popupLoader.active)
                      return true
-
-                 return popupDialog.loaderItem.isSolid()
+                 return popupLoader.dialog.isNotInGradientMode()
             }
 
-            function isLinearGradient(){
-                if (!loader.active)
+            function hasLinearGradient(){
+                if (!popupLoader.active)
                     return false
-
-                return popupDialog.loaderItem.isLinearGradient()
+                return popupLoader.dialog.hasLinearGradient()
             }
 
             function ensureLoader() {
-                if (!loader.active)
-                    loader.active = true
+                if (!popupLoader.active)
+                    popupLoader.active = true
             }
 
             function open() {
-                popupDialog.ensureLoader()
+                popupLoader.ensureLoader()
+                popupLoader.dialog.open()
+            }
 
-                popupDialog.show(preview)
-
-                popupDialog.loaderItem.aboutToBeShown() //need it for now
+            function close() {
+                popupLoader.ensureLoader()
+                popupLoader.dialog.close()
             }
 
             function determineActiveColorMode() {
-                if (loader.active && popupDialog.loaderItem)
-                    popupDialog.loaderItem.determineActiveColorMode()
+                if (popupLoader.active && popupLoader.dialog)
+                    popupLoader.dialog.determineActiveColorMode()
                 else
-                    colorEditor.syncColor()
+                    colorEditor.color = colorEditor.value
             }
 
-            Loader {
-                id: loader
+            property alias active: popupLoader.loader.active
+            property Loader loader: Loader {
+                parent: colorEditor
                 active: colorEditor.supportGradient
-
                 sourceComponent: ColorEditorPopup {
-                    shapeGradients: colorEditor.shapeGradients
-                    mcuGradients: colorEditor.mcuGradients
-                    supportGradient: colorEditor.supportGradient
-                    width: popupDialog.contentWidth
-                    visible: popupDialog.visible
-                    parentWindow: popupDialog.window
+                    id: cePopup
+                    x: cePopup.__defaultX
+                    y: cePopup.__defaultY
                 }
-
                 onLoaded: {
-                    popupDialog.loaderItem.initEditor()
-                    popupDialog.titleBar = loader.item.titleBarContent
+                    popupLoader.dialog.initEditor()
                 }
             }
         }
@@ -265,26 +260,19 @@ SecondColumnLayout {
         id: hexTextField
         implicitWidth: StudioTheme.Values.twoControlColumnWidth
                        + StudioTheme.Values.actionIndicatorWidth
-        width: hexTextField.implicitWidth
-        enabled: popupDialog.isSolid()
+        width: implicitWidth
+        enabled: popupLoader.isNotInGradientMode()
         writeValueManually: true
-        validator: RegularExpressionValidator {
-            regularExpression: /#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?/g
+        validator: RegExpValidator {
+            regExp: /#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?/g
         }
         showTranslateCheckBox: false
-        indicatorVisible: true
-        indicator.icon.text: StudioTheme.Constants.copy_small
-        indicator.onClicked: {
-            hexTextField.selectAll()
-            hexTextField.copy()
-            hexTextField.deselect()
-        }
         backendValue: colorEditor.backendValue
 
         onAccepted: colorEditor.color = colorFromString(hexTextField.text)
         onCommitData: {
             colorEditor.color = colorFromString(hexTextField.text)
-            if (popupDialog.isSolid()) {
+            if (popupLoader.isNotInGradientMode()) {
                 if (colorEditor.isVector3D) {
                     backendValue.value = Qt.vector3d(colorEditor.color.r,
                                                      colorEditor.color.g,
@@ -300,7 +288,9 @@ SecondColumnLayout {
         id: spacer
     }
 
-    Component.onCompleted: popupDialog.determineActiveColorMode()
+    Component.onCompleted: popupLoader.determineActiveColorMode()
 
-    onBackendValueChanged: popupDialog.determineActiveColorMode()
+    onBackendValueChanged: {
+        popupLoader.determineActiveColorMode()
+    }
 }

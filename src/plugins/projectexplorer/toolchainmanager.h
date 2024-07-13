@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -28,28 +50,28 @@ public:
 };
 
 // --------------------------------------------------------------------------
-// ToolchainManager
+// ToolChainManager
 // --------------------------------------------------------------------------
 
-class PROJECTEXPLORER_EXPORT ToolchainManager : public QObject
+class PROJECTEXPLORER_EXPORT ToolChainManager : public QObject
 {
     Q_OBJECT
 
 public:
-    static ToolchainManager *instance();
-    ~ToolchainManager() override;
+    static ToolChainManager *instance();
+    ~ToolChainManager() override;
 
     static const Toolchains &toolchains();
-    static Toolchains toolchains(const Toolchain::Predicate &predicate);
+    static Toolchains toolchains(const ToolChain::Predicate &predicate);
 
-    static Toolchain *toolchain(const Toolchain::Predicate &predicate);
-    static QList<Toolchain *> findToolchains(const Abi &abi);
-    static Toolchain *findToolchain(const QByteArray &id);
+    static ToolChain *toolChain(const ToolChain::Predicate &predicate);
+    static QList<ToolChain *> findToolChains(const Abi &abi);
+    static ToolChain *findToolChain(const QByteArray &id);
 
     static bool isLoaded();
 
-    static bool registerToolchain(Toolchain *tc);
-    static void deregisterToolchain(Toolchain *tc);
+    static bool registerToolChain(ToolChain *tc);
+    static void deregisterToolChain(ToolChain *tc);
 
     static QList<Utils::Id> allLanguages();
     static bool registerLanguage(const Utils::Id &language, const QString &displayName);
@@ -65,29 +87,29 @@ public:
     static bool isBadToolchain(const Utils::FilePath &toolchain);
     static void addBadToolchain(const Utils::FilePath &toolchain);
 
-    void saveToolchains();
+    void saveToolChains();
 
 signals:
-    void toolhainAdded(ProjectExplorer::Toolchain *);
-    // Toolchain is still valid when this call happens!
-    void toolchainRemoved(ProjectExplorer::Toolchain *);
-    // Toolchain was updated.
-    void toolchainUpdated(ProjectExplorer::Toolchain *);
+    void toolChainAdded(ProjectExplorer::ToolChain *);
+    // Tool chain is still valid when this call happens!
+    void toolChainRemoved(ProjectExplorer::ToolChain *);
+    // Tool chain was updated.
+    void toolChainUpdated(ProjectExplorer::ToolChain *);
     // Something changed.
-    void toolchainsChanged();
+    void toolChainsChanged();
     //
-    void toolchainsLoaded();
+    void toolChainsLoaded();
 
 private:
-    explicit ToolchainManager(QObject *parent = nullptr);
+    explicit ToolChainManager(QObject *parent = nullptr);
 
     // Make sure the this is only called after all toolchain factories are registered!
-    static void restoreToolchains();
+    static void restoreToolChains();
 
-    static void notifyAboutUpdate(Toolchain *);
+    static void notifyAboutUpdate(ToolChain *);
 
     friend class ProjectExplorerPlugin; // for constructor
-    friend class Toolchain;
+    friend class ToolChain;
 };
 
 } // namespace ProjectExplorer

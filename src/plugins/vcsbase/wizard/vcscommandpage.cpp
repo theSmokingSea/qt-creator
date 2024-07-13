@@ -1,30 +1,42 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "vcscommandpage.h"
 
-#include "../vcsbaseplugin.h"
-#include "../vcscommand.h"
-#include "../vcsbasetr.h"
-
+#include <coreplugin/iversioncontrol.h>
+#include <coreplugin/shellcommand.h>
 #include <coreplugin/vcsmanager.h>
-
 #include <projectexplorer/jsonwizard/jsonwizard.h>
 
 #include <utils/algorithm.h>
 #include <utils/commandline.h>
-#include <utils/outputformatter.h>
 #include <utils/qtcassert.h>
-#include <utils/theme/theme.h>
 
-#include <QAbstractButton>
-#include <QApplication>
-#include <QDebug>
 #include <QDir>
-#include <QLabel>
-#include <QPlainTextEdit>
+#include <QDebug>
 #include <QTimer>
-#include <QVBoxLayout>
 
 using namespace Core;
 using namespace ProjectExplorer;
@@ -72,9 +84,9 @@ WizardPage *VcsCommandPageFactory::create(JsonWizard *wizard, Id typeId, const Q
     QStringList args;
     const QVariant argsVar = tmp.value(QLatin1String(VCSCOMMAND_EXTRA_ARGS));
     if (!argsVar.isNull()) {
-        if (argsVar.typeId() == QMetaType::QString) {
+        if (argsVar.type() == QVariant::String) {
             args << argsVar.toString();
-        } else if (argsVar.typeId() == QMetaType::QVariantList) {
+        } else if (argsVar.type() == QVariant::List) {
             args = Utils::transform(argsVar.toList(), &QVariant::toString);
         } else {
             return nullptr;
@@ -90,7 +102,7 @@ WizardPage *VcsCommandPageFactory::create(JsonWizard *wizard, Id typeId, const Q
     for (const QVariant &value : values) {
         const QVariantMap job = value.toMap();
         const bool skipEmpty = job.value(QLatin1String(JOB_SKIP_EMPTY), true).toBool();
-        const FilePath workDir = FilePath::fromSettings(job.value(QLatin1String(JOB_WORK_DIRECTORY)));
+        const FilePath workDir = FilePath::fromVariant(job.value(QLatin1String(JOB_WORK_DIRECTORY)));
 
         const QString cmdString = job.value(QLatin1String(JOB_COMMAND)).toString();
         QTC_ASSERT(!cmdString.isEmpty(), continue);
@@ -101,7 +113,7 @@ WizardPage *VcsCommandPageFactory::create(JsonWizard *wizard, Id typeId, const Q
         const QVariant &jobArgVar = job.value(QLatin1String(JOB_ARGUMENTS));
         QStringList jobArgs;
         if (!jobArgVar.isNull()) {
-            if (jobArgVar.typeId() == QMetaType::QVariantList)
+            if (jobArgVar.type() == QVariant::List)
                 jobArgs = Utils::transform(jobArgVar.toList(), &QVariant::toString);
             else
                 jobArgs << jobArgVar.toString();
@@ -127,64 +139,64 @@ bool VcsCommandPageFactory::validateData(Id typeId, const QVariant &data, QStrin
     QTC_ASSERT(canCreate(typeId), return false);
 
     QString em;
-    if (data.typeId() != QMetaType::QVariantMap)
-        em = Tr::tr("\"data\" is no JSON object in \"VcsCommand\" page.");
+    if (data.type() != QVariant::Map)
+        em = tr("\"data\" is no JSON object in \"VcsCommand\" page.");
 
     if (em.isEmpty()) {
         const QVariantMap tmp = data.toMap();
 
         QString str = tmp.value(QLatin1String(VCSCOMMAND_VCSID)).toString();
         if (str.isEmpty()) {
-            em = Tr::tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
+            em = tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
                     .arg(QLatin1String(VCSCOMMAND_VCSID));
         }
         str = tmp.value(QLatin1String(VCSCOMMAND_REPO)).toString();
         if (str.isEmpty()) {
-            em = Tr::tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
+            em = tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
                     .arg(QLatin1String(VCSCOMMAND_REPO));
         }
         str = tmp.value(QLatin1String(VCSCOMMAND_DIR)).toString();
         if (str.isEmpty()) {
-            em = Tr::tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
+            em = tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
                     .arg(QLatin1String(VCSCOMMAND_DIR));;
         }
         str = tmp.value(QLatin1String(VCSCOMMAND_CHECKOUTNAME)).toString();
         if (str.isEmpty()) {
-            em = Tr::tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
+            em = tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
                     .arg(QLatin1String(VCSCOMMAND_CHECKOUTNAME));
         }
 
         str = tmp.value(QLatin1String(VCSCOMMAND_RUN_MESSAGE)).toString();
         if (str.isEmpty()) {
-            em = Tr::tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
+            em = tr("\"%1\" not set in \"data\" section of \"VcsCommand\" page.")
                     .arg(QLatin1String(VCSCOMMAND_RUN_MESSAGE));
         }
 
         const QVariant extra = tmp.value(QLatin1String(VCSCOMMAND_EXTRA_ARGS));
-        if (!extra.isNull() && extra.typeId() != QMetaType::QString && extra.typeId() != QMetaType::QVariantList) {
-            em = Tr::tr("\"%1\" in \"data\" section of \"VcsCommand\" page has unexpected type (unset, String or List).")
+        if (!extra.isNull() && extra.type() != QVariant::String && extra.type() != QVariant::List) {
+            em = tr("\"%1\" in \"data\" section of \"VcsCommand\" page has unexpected type (unset, String or List).")
                     .arg(QLatin1String(VCSCOMMAND_EXTRA_ARGS));
         }
 
         const QVariant jobs = tmp.value(QLatin1String(VCSCOMMAND_JOBS));
-        if (!jobs.isNull() && extra.typeId() != QMetaType::QVariantList) {
-            em = Tr::tr("\"%1\" in \"data\" section of \"VcsCommand\" page has unexpected type (unset or List).")
+        if (!jobs.isNull() && extra.type() != QVariant::List) {
+            em = tr("\"%1\" in \"data\" section of \"VcsCommand\" page has unexpected type (unset or List).")
                     .arg(QLatin1String(VCSCOMMAND_JOBS));
         }
 
         const QVariantList jobList = jobs.toList();
         for (const QVariant &j : jobList) {
             if (j.isNull()) {
-                em = Tr::tr("Job in \"VcsCommand\" page is empty.");
+                em = tr("Job in \"VcsCommand\" page is empty.");
                 break;
             }
-            if (j.typeId() != QMetaType::QVariantMap) {
-                em = Tr::tr("Job in \"VcsCommand\" page is not an object.");
+            if (j.type() != QVariant::Map) {
+                em = tr("Job in \"VcsCommand\" page is not an object.");
                 break;
             }
             const QVariantMap &details = j.toMap();
             if (details.value(QLatin1String(JOB_COMMAND)).isNull()) {
-                em = Tr::tr("Job in \"VcsCommand\" page has no \"%1\" set.").arg(QLatin1String(JOB_COMMAND));
+                em = tr("Job in \"VcsCommand\" page has no \"%1\" set.").arg(QLatin1String(JOB_COMMAND));
                 break;
             }
         }
@@ -200,37 +212,10 @@ bool VcsCommandPageFactory::validateData(Id typeId, const QVariant &data, QStrin
 // VcsCommandPage:
 // ----------------------------------------------------------------------
 
-/*!
-    \class VcsBase::VcsCommandPage
-
-    \brief The VcsCommandPage implements a page showing the
-    progress of a \c VcsCommand.
-
-    Turns complete when the command succeeds.
-*/
-
 VcsCommandPage::VcsCommandPage()
-    : m_startedStatus(Tr::tr("Command started..."))
 {
-    auto verticalLayout = new QVBoxLayout(this);
-    m_logPlainTextEdit = new QPlainTextEdit;
-    m_formatter = new OutputFormatter;
-    m_logPlainTextEdit->setReadOnly(true);
-    m_formatter->setPlainTextEdit(m_logPlainTextEdit);
-
-    verticalLayout->addWidget(m_logPlainTextEdit);
-
-    m_statusLabel = new QLabel;
-    verticalLayout->addWidget(m_statusLabel);
-    setTitle(Tr::tr("Checkout"));
+    setTitle(tr("Checkout"));
 }
-
-VcsCommandPage::~VcsCommandPage()
-{
-    QTC_ASSERT(m_state != Running, QApplication::restoreOverrideCursor());
-    delete m_formatter;
-}
-
 
 void VcsCommandPage::initializePage()
 {
@@ -239,72 +224,62 @@ void VcsCommandPage::initializePage()
     QTimer::singleShot(0, this, &VcsCommandPage::delayedInitialize);
 }
 
-bool VcsCommandPage::isComplete() const
-{
-    return m_state == Succeeded;
-}
-
-bool VcsCommandPage::handleReject()
-{
-    if (m_state != Running)
-        return false;
-
-    if (m_command)
-        m_command->cancel();
-    return true;
-}
-
 void VcsCommandPage::delayedInitialize()
 {
     auto wiz = qobject_cast<JsonWizard *>(wizard());
     QTC_ASSERT(wiz, return);
 
     const QString vcsId = wiz->expander()->expand(m_vcsId);
-    VersionControlBase *vc = static_cast<VersionControlBase *>(
-                VcsManager::versionControl(Id::fromString(vcsId)));
+    IVersionControl *vc = VcsManager::versionControl(Id::fromString(vcsId));
     if (!vc) {
-        qWarning() << Tr::tr("\"%1\" (%2) not found.")
-                          .arg(QLatin1String(VCSCOMMAND_VCSID), vcsId);
+        qWarning() << QCoreApplication::translate("VcsBase::VcsCommandPage",
+                                                  "\"%1\" (%2) not found.")
+                      .arg(QLatin1String(VCSCOMMAND_VCSID), vcsId);
         return;
     }
     if (!vc->isConfigured()) {
-        qWarning() << Tr::tr("Version control \"%1\" is not configured.")
-                          .arg(vcsId);
+        qWarning() << QCoreApplication::translate("VcsBase::VcsCommandPage",
+                                                  "Version control \"%1\" is not configured.")
+                      .arg(vcsId);
         return;
     }
     if (!vc->supportsOperation(IVersionControl::InitialCheckoutOperation)) {
-        qWarning() << Tr::tr("Version control \"%1\" does not support initial checkouts.")
-                          .arg(vcsId);
+        qWarning() << QCoreApplication::translate("VcsBase::VcsCommandPage",
+                                                  "Version control \"%1\" does not support initial checkouts.")
+                      .arg(vcsId);
         return;
     }
 
     const QString repo = wiz->expander()->expand(m_repository);
     if (repo.isEmpty()) {
-        qWarning() << Tr::tr("\"%1\" is empty when trying to run checkout.")
+        qWarning() << QCoreApplication::translate("VcsBase::VcsCommandPage",
+                                                  "\"%1\" is empty when trying to run checkout.")
                       .arg(QLatin1String(VCSCOMMAND_REPO));
         return;
     }
 
     const QString base = wiz->expander()->expand(m_directory);
     if (!QDir(base).exists()) {
-        qWarning() << Tr::tr("\"%1\" (%2) does not exist.")
+        qWarning() << QCoreApplication::translate("VcsBase::VcsCommandPage",
+                                                  "\"%1\" (%2) does not exist.")
                       .arg(QLatin1String(VCSCOMMAND_DIR), base);
         return;
     }
 
     const QString name = wiz->expander()->expand(m_name);
     if (name.isEmpty()) {
-        qWarning() << Tr::tr("\"%1\" is empty when trying to run checkout.")
+        qWarning() << QCoreApplication::translate("VcsBase::VcsCommandPage",
+                                                  "\"%1\" is empty when trying to run checkout.")
                       .arg(QLatin1String(VCSCOMMAND_CHECKOUTNAME));
         return;
     }
 
     const QString runMessage = wiz->expander()->expand(m_runMessage);
     if (!runMessage.isEmpty())
-        m_startedStatus = runMessage;
+        setStartedStatus(runMessage);
 
     QStringList extraArgs;
-    for (const QString &in : std::as_const(m_arguments)) {
+    for (const QString &in : qAsConst(m_arguments)) {
         const QString tmp = wiz->expander()->expand(in);
         if (tmp.isEmpty())
            continue;
@@ -313,16 +288,17 @@ void VcsCommandPage::delayedInitialize()
         extraArgs << tmp;
     }
 
-    VcsCommand *command = vc->createInitialCheckoutCommand(repo, FilePath::fromString(base),
-                                                           name, extraArgs);
+    Core::ShellCommand *command
+            = vc->createInitialCheckoutCommand(repo, FilePath::fromString(base),
+                                               name, extraArgs);
 
-    for (const JobData &job : std::as_const(m_additionalJobs)) {
+    for (const JobData &job : qAsConst(m_additionalJobs)) {
         QTC_ASSERT(!job.job.isEmpty(), continue);
 
         if (!JsonWizard::boolFromVariant(job.condition, wiz->expander()))
             continue;
 
-        const QString commandString = wiz->expander()->expand(job.job.at(0));
+        QString commandString = wiz->expander()->expand(job.job.at(0));
         if (commandString.isEmpty())
             continue;
 
@@ -335,69 +311,11 @@ void VcsCommandPage::delayedInitialize()
         }
 
         const FilePath dir = wiz->expander()->expand(job.workDirectory);
-        const int defaultTimeoutS = 10;
-        const int timeoutS = defaultTimeoutS * job.timeOutFactor;
+        const int timeoutS = command->defaultTimeoutS() * job.timeOutFactor;
         command->addJob({FilePath::fromUserInput(commandString), args}, timeoutS, dir);
     }
 
     start(command);
-}
-
-void VcsCommandPage::start(VcsCommand *command)
-{
-    if (!command) {
-        m_logPlainTextEdit->setPlainText(Tr::tr("No job running, please abort."));
-        return;
-    }
-
-    QTC_ASSERT(m_state != Running, return);
-    m_command = command;
-    m_command->addFlags(RunFlags::ProgressiveOutput);
-    connect(m_command, &VcsCommand::stdOutText, this, [this](const QString &text) {
-        m_formatter->appendMessage(text, StdOutFormat);
-    });
-    connect(m_command, &VcsCommand::stdErrText, this, [this](const QString &text) {
-        m_formatter->appendMessage(text, StdErrFormat);
-    });
-    connect(m_command, &VcsCommand::done, this, [this] {
-        finished(m_command->result() == ProcessResult::FinishedWithSuccess);
-    });
-    QApplication::setOverrideCursor(Qt::WaitCursor);
-    m_logPlainTextEdit->clear();
-    m_overwriteOutput = false;
-    m_statusLabel->setText(m_startedStatus);
-    m_statusLabel->setPalette(QPalette());
-    m_state = Running;
-    m_command->start();
-
-    wizard()->button(QWizard::BackButton)->setEnabled(false);
-}
-
-void VcsCommandPage::finished(bool success)
-{
-    QTC_ASSERT(m_state == Running, return);
-
-    QString message;
-    QPalette palette;
-
-    if (success) {
-        m_state = Succeeded;
-        message = Tr::tr("Succeeded.");
-        palette.setColor(QPalette::WindowText, creatorColor(Theme::TextColorNormal).name());
-    } else {
-        m_state = Failed;
-        message = Tr::tr("Failed.");
-        palette.setColor(QPalette::WindowText, creatorColor(Theme::TextColorError).name());
-    }
-
-    m_statusLabel->setText(message);
-    m_statusLabel->setPalette(palette);
-
-    QApplication::restoreOverrideCursor();
-    wizard()->button(QWizard::BackButton)->setEnabled(true);
-
-    if (success)
-        emit completeChanged();
 }
 
 void VcsCommandPage::setCheckoutData(const QString &repo, const QString &baseDir, const QString &name,

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "templateengine.h"
 
@@ -46,11 +68,11 @@ PreprocessStackEntry::PreprocessStackEntry(PreprocessorSection s, bool p, bool c
 class PreprocessContext {
 public:
     PreprocessContext();
-    bool process(QStringView in, QString *out, QString *errorMessage);
+    bool process(const QString &in, QString *out, QString *errorMessage);
 
 private:
     void reset();
-    PreprocessorSection preprocessorLine(QStringView in, QString *ifExpression) const;
+    PreprocessorSection preprocessorLine(const QString & in, QString *ifExpression) const;
 
     mutable QRegularExpression m_ifPattern;
     mutable QRegularExpression m_elsifPattern;
@@ -81,7 +103,7 @@ void PreprocessContext::reset()
 
 // Determine type of line and return enumeration, cut out
 // expression for '@if/@elsif'.
-PreprocessorSection PreprocessContext::preprocessorLine(QStringView in,
+PreprocessorSection PreprocessContext::preprocessorLine(const QString &in,
                                                         QString *ifExpression) const
 {
     QRegularExpressionMatch match = m_ifPattern.match(in);
@@ -111,7 +133,7 @@ static inline QString msgEmptyStack(int line)
     return QString::fromLatin1("Unmatched '@endif' at line %1.").arg(line);
 }
 
-bool PreprocessContext::process(QStringView in, QString *out, QString *errorMessage)
+bool PreprocessContext::process(const QString &in, QString *out, QString *errorMessage)
 {
     out->clear();
     if (in.isEmpty())
@@ -121,7 +143,7 @@ bool PreprocessContext::process(QStringView in, QString *out, QString *errorMess
     reset();
 
     const QChar newLine = QLatin1Char('\n');
-    const QList<QStringView> lines = in.split(newLine);
+    const QStringList lines = in.split(newLine);
     const int lineCount = lines.size();
     bool first = true;
     for (int l = 0; l < lineCount; l++) {
@@ -235,9 +257,9 @@ QString TemplateEngine::processText(MacroExpander *expander, const QString &inpu
 
     // Expand \n, \t and handle line continuation:
     QString result;
-    result.reserve(out.size());
+    result.reserve(out.count());
     bool isEscaped = false;
-    for (int i = 0; i < out.size(); ++i) {
+    for (int i = 0; i < out.count(); ++i) {
         const QChar c = out.at(i);
 
         if (isEscaped) {

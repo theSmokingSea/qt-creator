@@ -1,11 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "clangdiagnosticconfigsselectionwidget.h"
 
 #include "clangdiagnosticconfigswidget.h"
 #include "cppcodemodelsettings.h"
-#include "cppeditortr.h"
 #include "cpptoolsreuse.h"
 
 #include <coreplugin/icore.h>
@@ -56,7 +77,7 @@ ClangDiagnosticConfigs ClangDiagnosticConfigsSelectionWidget::customConfigs() co
 
 QString ClangDiagnosticConfigsSelectionWidget::label() const
 {
-    return Tr::tr("Diagnostic configuration:");
+    return tr("Diagnostic configuration:");
 }
 
 void ClangDiagnosticConfigsSelectionWidget::setUpUi(bool withLabel)
@@ -81,7 +102,7 @@ void ClangDiagnosticConfigsSelectionWidget::onButtonClicked()
     widget->layout()->setContentsMargins(0, 0, 0, 0);
 
     QDialog dialog;
-    dialog.setWindowTitle(Tr::tr("Diagnostic Configurations"));
+    dialog.setWindowTitle(ClangDiagnosticConfigsWidget::tr("Diagnostic Configurations"));
     dialog.setLayout(new QVBoxLayout);
     dialog.layout()->addWidget(widget);
     auto *buttonsBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel);
@@ -90,7 +111,11 @@ void ClangDiagnosticConfigsSelectionWidget::onButtonClicked()
     connect(buttonsBox, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
     connect(buttonsBox, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
 
+    const bool previousEnableLowerClazyLevels = codeModelSettings()->enableLowerClazyLevels();
     if (dialog.exec() == QDialog::Accepted) {
+        if (previousEnableLowerClazyLevels != codeModelSettings()->enableLowerClazyLevels())
+            codeModelSettings()->toSettings(Core::ICore::settings());
+
         m_diagnosticConfigsModel = ClangDiagnosticConfigsModel(widget->configs());
         m_currentConfigId = widget->currentConfig().id();
         m_button->setText(widget->currentConfig().displayName());

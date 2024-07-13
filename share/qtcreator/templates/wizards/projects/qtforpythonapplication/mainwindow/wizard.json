@@ -8,13 +8,12 @@
     "trDisplayCategory": "Application (Qt for Python)",
     "icon": "../icons/icon.png",
     "iconKind": "Themed",
-    "enabled": "%{JS: value('Plugins').indexOf('Python') >= 0 && (!value('Platform').length || ['Desktop', 'DockerDeviceType', 'GenericLinuxOsType'].includes(value('Platform')))}",
+    "enabled": "%{JS: value('Plugins').indexOf('Python') >= 0}",
 
     "options":
     [
         { "key": "MainPyFileName", "value": "%{ProjectDirectory}/%{SrcFileName}" },
-        { "key": "PyProjectFile", "value": "%{ProjectFileName}" },
-        { "key": "ProjectFilePath", "value": "%{ProjectDirectory}/%{PyProjectFile}" }
+        { "key":  "PyProjectFile", "value": "%{ProjectDirectory}/%{ProjectFileName}" }
     ],
 
     "pages":
@@ -32,6 +31,16 @@
             "data" :
             [
                 {
+                    "name": "PySideVersion",
+                    "trDisplayName": "PySide version:",
+                    "type": "ComboBox",
+                    "data":
+                    {
+                        "index": 1,
+                        "items": [ "PySide2", "PySide6" ]
+                    }
+                },
+                {
                     "name": "Class",
                     "trDisplayName": "Class name:",
                     "mandatory": true,
@@ -39,7 +48,7 @@
                     "data":
                     {
                         "validator": "(?:(?:[a-zA-Z_][a-zA-Z_0-9]*::)*[a-zA-Z_][a-zA-Z_0-9]*|)",
-                        "text": "%{JS: value('BaseCB') ? value('BaseCB').slice(1) : 'MyClass'}"
+                        "trText": "%{JS: value('BaseCB') ? value('BaseCB').slice(1) : 'MyClass'}"
                     }
                 },
                 {
@@ -57,51 +66,16 @@
                     "type": "LineEdit",
                     "trDisplayName": "Source file:",
                     "mandatory": true,
-                    "data": { "text": "%{JS: Cpp.classToFileName(value('Class'), Util.preferredSuffix('text/x-python'))}" }
+                    "data": { "trText": "%{JS: Cpp.classToFileName(value('Class'), Util.preferredSuffix('text/x-python'))}" }
                 },
                 {
                     "name": "ProjectFileName",
                     "type": "LineEdit",
                     "trDisplayName": "Project file:",
                     "mandatory": true,
-                    "data": { "text": "%{JS: Util.fileName('%{ProjectName}', 'pyproject')}" }
+                    "data": { "trText": "%{JS: Util.fileName('%{ProjectName}', 'pyproject')}" }
                 }
             ]
-        },
-        {
-            "trDisplayName": "Define Project Details",
-            "trShortTitle": "Details",
-            "typeId": "PythonConfiguration",
-            "data":
-            {
-                "index": 0,
-                "items":
-                [
-                    {
-                        "trKey": "PySide 6",
-                        "value":
-                        {
-                            "PySideVersion": "PySide6"
-                        }
-                    },
-                    {
-                        "trKey": "PySide 2",
-                        "value":
-                        {
-                            "PySideVersion": "PySide2"
-                        }
-                    }
-                ]
-            }
-        },
-        {
-            "trDisplayName": "Kit Selection",
-            "trShortTitle": "Kits",
-            "typeId": "Kits",
-            "data": {
-                 "projectFilePath": "%{ProjectFilePath}",
-                 "requiredFeatures": [ "Python.Interpreter" ]
-            }
         },
         {
             "trDisplayName": "Project Management",
@@ -124,10 +98,6 @@
                     "source": "../main_mainwindow.py",
                     "target": "%{MainPyFileName}",
                     "openInEditor": true
-                },
-                {
-                    "source": "../requirements.txt",
-                    "target": "requirements.txt"
                 },
                 {
                     "source": "../../git.ignore",

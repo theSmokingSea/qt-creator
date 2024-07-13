@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "textscanner.h"
 
@@ -52,26 +74,26 @@ TextScanner::~TextScanner()
     delete d;
 }
 
-void TextScanner::setKeywords(const QList<QPair<QString, int>> &keywords)
+void TextScanner::setKeywords(const QList<QPair<QString, int> > &keywords)
 {
     d->m_keywordToSubtypeMap.clear();
-    for (const DefTuple &tuple : keywords)
+    foreach (const DefTuple &tuple, keywords)
         d->m_keywordToSubtypeMap.insert(tuple.first.toLower(), tuple.second);
 }
 
-void TextScanner::setOperators(const QList<QPair<QString, int>> &operators)
+void TextScanner::setOperators(const QList<QPair<QString, int> > &operators)
 {
     d->m_operatorToSubtypeMap.clear();
     d->m_maxOperatorLength = 0;
     d->m_operatorFirstCharsSet.clear();
     d->m_operatorCharsSet.clear();
-    for (const DefTuple &tuple : operators) {
-        const QString op = tuple.first;
+    foreach (const DefTuple &tuple, operators) {
+        QString op = tuple.first;
         d->m_operatorToSubtypeMap.insert(op, tuple.second);
         if (op.length() > d->m_maxOperatorLength)
             d->m_maxOperatorLength = op.length();
         d->m_operatorFirstCharsSet.insert(op.at(0));
-        for (const QChar ch : op)
+        foreach (const QChar ch, op)
             d->m_operatorCharsSet.insert(ch);
     }
 }

@@ -9,10 +9,11 @@ add_qtc_plugin(Macros
     macrolocatorfilter.cpp macrolocatorfilter.h
     macromanager.cpp macromanager.h
     macrooptionspage.cpp macrooptionspage.h
+    macrooptionswidget.cpp macrooptionswidget.h macrooptionswidget.ui
     macros.qrc
     macrosconstants.h
-    macrosplugin.cpp
+    macrosplugin.cpp macrosplugin.h
     macrotextfind.cpp macrotextfind.h
-    macrostr.h
+    savedialog.cpp savedialog.h savedialog.ui
     texteditormacrohandler.cpp texteditormacrohandler.h
 )

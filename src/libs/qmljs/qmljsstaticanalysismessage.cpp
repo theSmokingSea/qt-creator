@@ -1,11 +1,30 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmljsstaticanalysismessage.h"
-
 #include "qmljsconstants.h"
-#include "qmljstr.h"
-
 #include "parser/qmljsengine_p.h"
 #include "parser/qmljsdiagnosticmessage_p.h"
 
@@ -22,6 +41,8 @@ namespace {
 
 class StaticAnalysisMessages
 {
+    Q_DECLARE_TR_FUNCTIONS(QmlJS::StaticAnalysisMessages)
+
 public:
     void newMsg(Type type, Enum severity, const QString &message, int placeholders = 0)
     {
@@ -41,9 +62,9 @@ public:
 
 static inline QString msgInvalidConstructor(const char *what)
 {
-    return Tr::tr("Do not use \"%1\" as a constructor."
-                  "\n\nFor more information, see the"
-                  " \"Checking Code Syntax\" documentation.")
+    return StaticAnalysisMessages::tr("Do not use \"%1\" as a constructor."
+                                      "\n\nFor more information, see the"
+                                      " \"Checking Code Syntax\" documentation.")
             .arg(QLatin1String(what));
 }
 
@@ -52,63 +73,63 @@ StaticAnalysisMessages::StaticAnalysisMessages()
     // When changing a message or severity, update the documentation, currently
     // in creator-code-syntax.qdoc, accordingly.
     newMsg(ErrInvalidEnumValue, Error,
-           Tr::tr("Invalid value for enum."));
+           tr("Invalid value for enum."));
     newMsg(ErrEnumValueMustBeStringOrNumber, Error,
-           Tr::tr("Enum value must be a string or a number."));
+           tr("Enum value must be a string or a number."));
     newMsg(ErrNumberValueExpected, Error,
-           Tr::tr("Number value expected."));
+           tr("Number value expected."));
     newMsg(ErrBooleanValueExpected, Error,
-           Tr::tr("Boolean value expected."));
+           tr("Boolean value expected."));
     newMsg(ErrStringValueExpected, Error,
-           Tr::tr("String value expected."));
+           tr("String value expected."));
     newMsg(ErrInvalidUrl, Error,
-           Tr::tr("Invalid URL."));
+           tr("Invalid URL."));
     newMsg(WarnFileOrDirectoryDoesNotExist, Warning,
-           Tr::tr("File or directory does not exist."));
+           tr("File or directory does not exist."));
     newMsg(ErrInvalidColor, Error,
-           Tr::tr("Invalid color."));
+           tr("Invalid color."));
     newMsg(ErrAnchorLineExpected, Error,
-           Tr::tr("Anchor line expected."));
+           tr("Anchor line expected."));
     newMsg(ErrPropertiesCanOnlyHaveOneBinding, Error,
-           Tr::tr("Duplicate property binding."));
+           tr("Duplicate property binding."));
     newMsg(ErrIdExpected, Error,
-           Tr::tr("Id expected."));
+           tr("Id expected."));
     newMsg(ErrInvalidId, Error,
-           Tr::tr("Invalid id."));
+           tr("Invalid id."));
     newMsg(ErrDuplicateId, Error,
-           Tr::tr("Duplicate id."));
+           tr("Duplicate id."));
     newMsg(ErrInvalidPropertyName, Error,
-           Tr::tr("Invalid property name \"%1\"."), 1);
+           tr("Invalid property name \"%1\"."), 1);
     newMsg(ErrDoesNotHaveMembers, Error,
-           Tr::tr("\"%1\" does not have members."), 1);
+           tr("\"%1\" does not have members."), 1);
     newMsg(ErrInvalidMember, Error,
-           Tr::tr("\"%1\" is not a member of \"%2\"."), 2);
+           tr("\"%1\" is not a member of \"%2\"."), 2);
     newMsg(WarnAssignmentInCondition, Warning,
-           Tr::tr("Assignment in condition."));
+           tr("Assignment in condition."));
     newMsg(WarnCaseWithoutFlowControl, Warning,
-           Tr::tr("Unterminated non-empty case block."));
+           tr("Unterminated non-empty case block."));
     newMsg(WarnEval, Warning,
-           Tr::tr("Do not use 'eval'."));
+           tr("Do not use 'eval'."));
     newMsg(WarnUnreachable, Warning,
-           Tr::tr("Unreachable."));
+           tr("Unreachable."));
     newMsg(WarnWith, Warning,
-           Tr::tr("Do not use 'with'."));
+           tr("Do not use 'with'."));
     newMsg(WarnComma, Warning,
-           Tr::tr("Do not use comma expressions."));
+           tr("Do not use comma expressions."));
     newMsg(WarnAlreadyFormalParameter, Warning,
-           Tr::tr("\"%1\" already is a formal parameter."), 1);
+           tr("\"%1\" already is a formal parameter."), 1);
     newMsg(WarnUnnecessaryMessageSuppression, Warning,
-           Tr::tr("Unnecessary message suppression."));
+           tr("Unnecessary message suppression."));
     newMsg(WarnAlreadyFunction, Warning,
-           Tr::tr("\"%1\" already is a function."), 1);
+           tr("\"%1\" already is a function."), 1);
     newMsg(WarnVarUsedBeforeDeclaration, Warning,
-           Tr::tr("var \"%1\" is used before its declaration."), 1);
+           tr("var \"%1\" is used before its declaration."), 1);
     newMsg(WarnAlreadyVar, Warning,
-           Tr::tr("\"%1\" already is a var."), 1);
+           tr("\"%1\" already is a var."), 1);
     newMsg(WarnDuplicateDeclaration, Warning,
-           Tr::tr("\"%1\" is declared more than once."), 1);
+           tr("\"%1\" is declared more than once."), 1);
     newMsg(WarnFunctionUsedBeforeDeclaration, Warning,
-           Tr::tr("Function \"%1\" is used before its declaration."), 1);
+           tr("Function \"%1\" is used before its declaration."), 1);
     newMsg(WarnBooleanConstructor, Warning,
            msgInvalidConstructor("Boolean"));
     newMsg(WarnStringConstructor, Warning,
@@ -120,124 +141,124 @@ StaticAnalysisMessages::StaticAnalysisMessages()
     newMsg(WarnFunctionConstructor, Warning,
            msgInvalidConstructor("Function"));
     newMsg(HintAnonymousFunctionSpacing, Hint,
-           Tr::tr("The 'function' keyword and the opening parenthesis should be separated by a single space."));
+           tr("The 'function' keyword and the opening parenthesis should be separated by a single space."));
     newMsg(WarnBlock, Warning,
-           Tr::tr("Do not use stand-alone blocks."));
+           tr("Do not use stand-alone blocks."));
     newMsg(WarnVoid, Warning,
-           Tr::tr("Do not use void expressions."));
+           tr("Do not use void expressions."));
     newMsg(WarnConfusingPluses, Warning,
-           Tr::tr("Confusing pluses."));
+           tr("Confusing pluses."));
     newMsg(WarnConfusingMinuses, Warning,
-           Tr::tr("Confusing minuses."));
+           tr("Confusing minuses."));
     newMsg(HintDeclareVarsInOneLine, Hint,
-           Tr::tr("Declare all function vars on a single line."));
+           tr("Declare all function vars on a single line."));
     newMsg(HintExtraParentheses, Hint,
-           Tr::tr("Unnecessary parentheses."));
+           tr("Unnecessary parentheses."));
     newMsg(MaybeWarnEqualityTypeCoercion, MaybeWarning,
-           Tr::tr("== and != may perform type coercion, use === or !== to avoid it."));
+           tr("== and != may perform type coercion, use === or !== to avoid it."));
     newMsg(WarnConfusingExpressionStatement, Warning,
-           Tr::tr("Expression statements should be assignments, calls or delete expressions only."));
+           tr("Expression statements should be assignments, calls or delete expressions only."));
     newMsg(HintDeclarationsShouldBeAtStartOfFunction, Hint,
-           Tr::tr("Place var declarations at the start of a function."));
+           tr("Place var declarations at the start of a function."));
     newMsg(HintOneStatementPerLine, Hint,
-           Tr::tr("Use only one statement per line."));
+           tr("Use only one statement per line."));
     newMsg(ErrUnknownComponent, Error,
-           Tr::tr("Unknown component."));
+           tr("Unknown component."));
     newMsg(ErrCouldNotResolvePrototypeOf, Error,
-           Tr::tr("Could not resolve the prototype \"%1\" of \"%2\"."), 2);
+           tr("Could not resolve the prototype \"%1\" of \"%2\"."), 2);
     newMsg(ErrCouldNotResolvePrototype, Error,
-           Tr::tr("Could not resolve the prototype \"%1\"."), 1);
+           tr("Could not resolve the prototype \"%1\"."), 1);
     newMsg(ErrPrototypeCycle, Error,
-           Tr::tr("Prototype cycle, the last non-repeated component is \"%1\"."), 1);
+           tr("Prototype cycle, the last non-repeated component is \"%1\"."), 1);
     newMsg(ErrInvalidPropertyType, Error,
-           Tr::tr("Invalid property type \"%1\"."), 1);
+           tr("Invalid property type \"%1\"."), 1);
     newMsg(WarnEqualityTypeCoercion, Error,
-           Tr::tr("== and != perform type coercion, use === or !== to avoid it."));
-    newMsg(WarnExpectedNewWithUppercaseFunction, Warning,
-           Tr::tr("Calls of functions that start with an uppercase letter should use 'new'."));
+           tr("== and != perform type coercion, use === or !== to avoid it."));
+    newMsg(WarnExpectedNewWithUppercaseFunction, Error,
+           tr("Calls of functions that start with an uppercase letter should use 'new'."));
     newMsg(WarnNewWithLowercaseFunction, Error,
-           Tr::tr("Use 'new' only with functions that start with an uppercase letter."));
+           tr("Use 'new' only with functions that start with an uppercase letter."));
     newMsg(WarnNumberConstructor, Error,
            msgInvalidConstructor("Function"));
     newMsg(HintBinaryOperatorSpacing, Hint,
-           Tr::tr("Use spaces around binary operators."));
+           tr("Use spaces around binary operators."));
     newMsg(WarnUnintentinalEmptyBlock, Error,
-           Tr::tr("Unintentional empty block, use ({}) for empty object literal."));
+           tr("Unintentional empty block, use ({}) for empty object literal."));
     newMsg(HintPreferNonVarPropertyType, Hint,
-           Tr::tr("Use %1 instead of 'var' or 'variant' to improve performance."), 1);
+           tr("Use %1 instead of 'var' or 'variant' to improve performance."), 1);
     newMsg(ErrMissingRequiredProperty, Error,
-           Tr::tr("Missing property \"%1\"."), 1);
+           tr("Missing property \"%1\"."), 1);
     newMsg(ErrObjectValueExpected, Error,
-           Tr::tr("Object value expected."));
+           tr("Object value expected."));
     newMsg(ErrArrayValueExpected, Error,
-           Tr::tr("Array value expected."));
+           tr("Array value expected."));
     newMsg(ErrDifferentValueExpected, Error,
-           Tr::tr("%1 value expected."), 1);
+           tr("%1 value expected."), 1);
     newMsg(ErrSmallerNumberValueExpected, Error,
-           Tr::tr("Maximum number value is %1."), 1);
+           tr("Maximum number value is %1."), 1);
     newMsg(ErrLargerNumberValueExpected, Error,
-           Tr::tr("Minimum number value is %1."), 1);
+           tr("Minimum number value is %1."), 1);
     newMsg(ErrMaximumNumberValueIsExclusive, Error,
-           Tr::tr("Maximum number value is exclusive."));
+           tr("Maximum number value is exclusive."));
     newMsg(ErrMinimumNumberValueIsExclusive, Error,
-           Tr::tr("Minimum number value is exclusive."));
+           tr("Minimum number value is exclusive."));
     newMsg(ErrInvalidStringValuePattern, Error,
-           Tr::tr("String value does not match required pattern."));
+           tr("String value does not match required pattern."));
     newMsg(ErrLongerStringValueExpected, Error,
-           Tr::tr("Minimum string value length is %1."), 1);
+           tr("Minimum string value length is %1."), 1);
     newMsg(ErrShorterStringValueExpected, Error,
-           Tr::tr("Maximum string value length is %1."), 1);
+           tr("Maximum string value length is %1."), 1);
     newMsg(ErrInvalidArrayValueLength, Error,
-           Tr::tr("%1 elements expected in array value."), 1);
-    newMsg(WarnImperativeCodeNotEditableInVisualDesigner,
-           Warning,
-           Tr::tr("JavaScript can break the visual tooling in Qt Design Studio."));
+           tr("%1 elements expected in array value."), 1);
+    newMsg(WarnImperativeCodeNotEditableInVisualDesigner, Warning,
+            tr("Imperative code is not supported in Qt Design Studio."));
     newMsg(WarnUnsupportedTypeInVisualDesigner, Warning,
-           Tr::tr("This type (%1) is not supported in Qt Design Studio."), 1);
+            tr("This type (%1) is not supported in Qt Design Studio."), 1);
     newMsg(WarnReferenceToParentItemNotSupportedByVisualDesigner, Warning,
-           Tr::tr("Reference to parent item cannot be resolved correctly by Qt Design Studio."));
+            tr("Reference to parent item cannot be resolved correctly by Qt Design Studio."));
     newMsg(WarnUndefinedValueForVisualDesigner, Warning,
-           Tr::tr("This visual property binding cannot be evaluated in the local context "
-                  "and might not show up in Qt Design Studio as expected."));
+            tr("This visual property binding cannot be evaluated in the local context "
+               "and might not show up in Qt Design Studio as expected."));
     newMsg(WarnStatesOnlyInRootItemForVisualDesigner, Warning,
-           Tr::tr("Qt Design Studio only supports states in the root item."));
+            tr("Qt Design Studio only supports states in the root item."));
     newMsg(ErrInvalidIdeInVisualDesigner, Error,
-           Tr::tr("This id might be ambiguous and is not supported in Qt Design Studio."));
+           tr("This id might be ambiguous and is not supported in Qt Design Studio."));
     newMsg(ErrUnsupportedRootTypeInVisualDesigner, Error,
-           Tr::tr("This type (%1) is not supported as a root element by Qt Design Studio."), 1);
+           tr("This type (%1) is not supported as a root element by Qt Design Studio."), 1);
     newMsg(ErrUnsupportedRootTypeInQmlUi, Error,
-           Tr::tr("This type (%1) is not supported as a root element of a UI file (.ui.qml)."), 1);
+           tr("This type (%1) is not supported as a root element of a UI file (.ui.qml)."), 1);
     newMsg(ErrUnsupportedTypeInQmlUi, Error,
-           Tr::tr("This type (%1) is not supported in a UI file (.ui.qml)."), 1);
+            tr("This type (%1) is not supported in a UI file (.ui.qml)."), 1);
     newMsg(ErrFunctionsNotSupportedInQmlUi, Error,
-           Tr::tr("Functions are not supported in a UI file (.ui.qml)."));
+            tr("Functions are not supported in a UI file (.ui.qml)."));
     newMsg(ErrBlocksNotSupportedInQmlUi, Error,
-           Tr::tr("JavaScript blocks are not supported in a UI file (.ui.qml)."));
+            tr("JavaScript blocks are not supported in a UI file (.ui.qml)."));
     newMsg(ErrBehavioursNotSupportedInQmlUi, Error,
-           Tr::tr("Behavior type is not supported in a UI file (.ui.qml)."));
+            tr("Behavior type is not supported in a UI file (.ui.qml)."));
     newMsg(ErrStatesOnlyInRootItemInQmlUi, Error,
-           Tr::tr("States are only supported in the root item in a UI file (.ui.qml)."));
+            tr("States are only supported in the root item in a UI file (.ui.qml)."));
     newMsg(ErrReferenceToParentItemNotSupportedInQmlUi, Error,
-           Tr::tr("Referencing the parent of the root item is not supported in a UI file (.ui.qml)."));
-    newMsg(WarnDoNotMixTranslationFunctionsInQmlUi,
-           Warning,
-           Tr::tr("Do not mix translation functions in a UI file (.ui.qml)."));
+            tr("Referencing the parent of the root item is not supported in a UI file (.ui.qml)."));
+    newMsg(ErrDoNotMixTranslationFunctionsInQmlUi, Error,
+           tr("Do not mix translation functions in a UI file (.ui.qml)."));
     newMsg(StateCannotHaveChildItem, Error,
-           Tr::tr("A State cannot have a child item (%1)."), 1);
+            tr("A State cannot have a child item (%1)."), 1);
     newMsg(WarnDuplicateImport, Warning,
-           Tr::tr("Duplicate import (%1)."), 1);
+           tr("Duplicate import (%1)."), 1);
     newMsg(ErrHitMaximumRecursion, Error,
-           Tr::tr("Hit maximum recursion limit when visiting AST."));
+           tr("Hit maximum recursion limit when visiting AST."));
     newMsg(ErrTypeIsInstantiatedRecursively, Error,
-           Tr::tr("Type cannot be instantiated recursively (%1)."), 1);
+            tr("Type cannot be instantiated recursively (%1)."), 1);
+    newMsg(WarnLogicalValueDoesNotDependOnValues, Warning,
+           tr("Logical value does not depend on actual values."));
     newMsg(ErrToManyComponentChildren, Error,
-           Tr::tr("Components are only allowed to have a single child element."));
+           tr("Components are only allowed to have a single child element."));
     newMsg(WarnComponentRequiresChildren, Warning,
-           Tr::tr("Components require a child element."));
+           tr("Components require a child element."));
     newMsg(ErrAliasReferRoot, Error,
-           Tr::tr("Do not reference the root item as alias."));
+           tr("Do not reference the root item as alias."));
     newMsg(WarnAliasReferRootHierarchy, Warning,
-           Tr::tr("Avoid referencing the root item in a hierarchy."));
+           tr("Avoid referencing the root item in a hierarchy."));
 }
 
 } // anonymous namespace

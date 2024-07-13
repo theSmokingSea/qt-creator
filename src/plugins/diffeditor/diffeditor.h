@@ -1,9 +1,29 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
-
-#include "diffenums.h"
 
 #include <coreplugin/editormanager/ieditor.h>
 #include <coreplugin/idocument.h>
@@ -18,8 +38,9 @@ QT_END_NAMESPACE
 
 namespace TextEditor { class TextEditorWidget; }
 
-namespace DiffEditor::Internal {
+namespace DiffEditor {
 
+namespace Internal {
 class DescriptionEditorWidget;
 class DiffEditorDocument;
 class IDiffView;
@@ -39,11 +60,12 @@ public:
     QWidget *toolBar() override;
     TextEditor::TextEditorWidget *descriptionWidget() const;
     TextEditor::TextEditorWidget *unifiedEditorWidget() const;
-    TextEditor::TextEditorWidget *sideEditorWidget(DiffSide side) const;
+    TextEditor::TextEditorWidget *leftEditorWidget() const;
+    TextEditor::TextEditorWidget *rightEditorWidget() const;
 
 private:
     DiffEditor();
-    void setDocument(std::shared_ptr<DiffEditorDocument> doc);
+    void setDocument(QSharedPointer<DiffEditorDocument> doc);
 
     void documentHasChanged();
     void toggleDescription();
@@ -52,14 +74,13 @@ private:
     void ignoreWhitespaceHasChanged();
     void prepareForReload();
     void reloadHasFinished(bool success);
-    void currentIndexChanged(int index);
     void setCurrentDiffFileIndex(int index);
     void documentStateChanged();
 
     void toggleSync();
 
     IDiffView *loadSettings();
-    void saveSetting(const Utils::Key &key, const QVariant &value) const;
+    void saveSetting(const QString &key, const QVariant &value) const;
     void updateEntryToolTip();
     void showDiffView(IDiffView *view);
     void updateDiffEditorSwitcher();
@@ -69,29 +90,29 @@ private:
     IDiffView *nextView();
     void setupView(IDiffView *view);
 
-    std::shared_ptr<DiffEditorDocument> m_document;
+    QSharedPointer<DiffEditorDocument> m_document;
     DescriptionEditorWidget *m_descriptionWidget = nullptr;
     UnifiedView *m_unifiedView = nullptr;
     SideBySideView *m_sideBySideView = nullptr;
     QStackedWidget *m_stackedWidget = nullptr;
-    QList<IDiffView *> m_views;
+    QVector<IDiffView *> m_views;
     QToolBar *m_toolBar = nullptr;
     QComboBox *m_entriesComboBox = nullptr;
     QSpinBox *m_contextSpinBox = nullptr;
     QAction *m_contextSpinBoxAction = nullptr;
-    QAction *m_toggleSyncAction = nullptr;
-    QAction *m_whitespaceButtonAction = nullptr;
-    QAction *m_toggleDescriptionAction = nullptr;
-    QAction *m_reloadAction = nullptr;
+    QAction *m_toggleSyncAction;
+    QAction *m_whitespaceButtonAction;
+    QAction *m_toggleDescriptionAction;
+    QAction *m_reloadAction;
     QAction *m_contextLabelAction = nullptr;
-    QAction *m_viewSwitcherAction = nullptr;
+    QAction *m_viewSwitcherAction;
     QPair<QString, QString> m_currentFileChunk;
     int m_currentViewIndex = -1;
     int m_currentDiffFileIndex = -1;
-    int m_descriptionHeight = 8;
     Utils::Guard m_ignoreChanges;
     bool m_sync = false;
     bool m_showDescription = true;
 };
 
-} // namespace DiffEditor::Internal
+} // namespace Internal
+} // namespace DiffEditor

@@ -1,343 +1,104 @@
-// Copyright (C) 2016 Brian McGillion and Hugues Delorme
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Brian McGillion and Hugues Delorme
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "vcscommand.h"
-
 #include "vcsbaseplugin.h"
 #include "vcsoutputwindow.h"
+#include "vcsplugin.h"
 
-#include <coreplugin/icore.h>
-
+#include <coreplugin/documentmanager.h>
+#include <coreplugin/vcsmanager.h>
 #include <utils/environment.h>
 #include <utils/globalfilechangeblocker.h>
 #include <utils/qtcprocess.h>
-#include <utils/qtcassert.h>
-#include <utils/threadutils.h>
 
-#include <QTextCodec>
-
-using namespace Core;
 using namespace Utils;
 
-using namespace std::chrono;
-
 namespace VcsBase {
-namespace Internal {
-
-class VcsCommandPrivate : public QObject
-{
-public:
-    struct Job {
-        CommandLine command;
-        int timeoutS = 10;
-        FilePath workingDirectory;
-        ExitCodeInterpreter exitCodeInterpreter = {};
-    };
-
-    VcsCommandPrivate(VcsCommand *vcsCommand, const FilePath &defaultWorkingDirectory,
-                      const Environment &environment)
-        : q(vcsCommand)
-        , m_defaultWorkingDirectory(defaultWorkingDirectory)
-        , m_environment(environment)
-    {
-        VcsBase::setProcessEnvironment(&m_environment);
-    }
-
-    Environment environment()
-    {
-        if (!(m_flags & RunFlags::ForceCLocale))
-            return m_environment;
-
-        m_environment.set("LANG", "C");
-        m_environment.set("LANGUAGE", "C");
-        return m_environment;
-    }
-
-    void setup();
-    void cleanup();
-    void setupProcess(Process *process, const Job &job);
-    void installStdCallbacks(Process *process);
-    EventLoopMode eventLoopMode() const;
-    ProcessResult handleDone(Process *process, const Job &job) const;
-    void startAll();
-    void startNextJob();
-    void processDone();
-
-    VcsCommand *q = nullptr;
-
-    QString m_displayName;
-    const FilePath m_defaultWorkingDirectory;
-    Environment m_environment;
-    QTextCodec *m_codec = nullptr;
-    ProgressParser m_progressParser = {};
-    QList<Job> m_jobs;
-
-    int m_currentJob = 0;
-    std::unique_ptr<Process> m_process;
-    QString m_stdOut;
-    QString m_stdErr;
-    ProcessResult m_result = ProcessResult::StartFailed;
-
-    RunFlags m_flags = RunFlags::None;
-};
-
-void VcsCommandPrivate::setup()
-{
-    VcsOutputWindow::setRepository(m_defaultWorkingDirectory);
-    if (m_flags & RunFlags::ExpectRepoChanges)
-        GlobalFileChangeBlocker::instance()->forceBlocked(true);
-}
-
-void VcsCommandPrivate::cleanup()
-{
-    VcsOutputWindow::clearRepository();
-    if (m_flags & RunFlags::ExpectRepoChanges)
-        GlobalFileChangeBlocker::instance()->forceBlocked(false);
-}
-
-void VcsCommandPrivate::setupProcess(Process *process, const Job &job)
-{
-    if (!job.workingDirectory.isEmpty())
-        process->setWorkingDirectory(job.workingDirectory);
-    if (!(m_flags & RunFlags::SuppressCommandLogging))
-        VcsOutputWindow::appendCommand(job.workingDirectory, job.command);
-    process->setCommand(job.command);
-    process->setDisableUnixTerminal();
-    process->setEnvironment(environment());
-    if (m_flags & RunFlags::MergeOutputChannels)
-        process->setProcessChannelMode(QProcess::MergedChannels);
-    if (m_codec)
-        process->setCodec(m_codec);
-    process->setUseCtrlCStub(true);
-
-    installStdCallbacks(process);
-
-    if (m_flags & RunFlags::SuppressCommandLogging)
-        return;
-
-    ProcessProgress *progress = new ProcessProgress(process);
-    progress->setDisplayName(m_displayName);
-    progress->setExpectedDuration(seconds(qMin(1, job.timeoutS / 5)));
-    if (m_progressParser)
-        progress->setProgressParser(m_progressParser);
-}
-
-void VcsCommandPrivate::installStdCallbacks(Process *process)
-{
-    if (!(m_flags & RunFlags::MergeOutputChannels) && (m_flags & RunFlags::ProgressiveOutput
-                              || m_progressParser || !(m_flags & RunFlags::SuppressStdErr))) {
-        process->setTextChannelMode(Channel::Error, TextChannelMode::MultiLine);
-        connect(process, &Process::textOnStandardError, this, [this](const QString &text) {
-            if (!(m_flags & RunFlags::SuppressStdErr))
-                VcsOutputWindow::appendError(text);
-            if (m_flags & RunFlags::ProgressiveOutput)
-                emit q->stdErrText(text);
-        });
-    }
-    if (m_progressParser || m_flags & RunFlags::ProgressiveOutput
-                         || m_flags & RunFlags::ShowStdOut) {
-        process->setTextChannelMode(Channel::Output, TextChannelMode::MultiLine);
-        connect(process, &Process::textOnStandardOutput, this, [this](const QString &text) {
-            if (m_flags & RunFlags::ShowStdOut)
-                VcsOutputWindow::append(text);
-            if (m_flags & RunFlags::ProgressiveOutput)
-                emit q->stdOutText(text);
-        });
-    }
-}
-
-EventLoopMode VcsCommandPrivate::eventLoopMode() const
-{
-    if ((m_flags & RunFlags::UseEventLoop) && isMainThread())
-        return EventLoopMode::On;
-    return EventLoopMode::Off;
-}
-
-ProcessResult VcsCommandPrivate::handleDone(Process *process, const Job &job) const
-{
-    ProcessResult result;
-    if (job.exitCodeInterpreter && process->error() != QProcess::FailedToStart
-        && process->exitStatus() == QProcess::NormalExit) {
-        result = job.exitCodeInterpreter(process->exitCode());
-    } else {
-        result = process->result();
-    }
-    const QString message = Process::exitMessage(process->commandLine(), result,
-                                                 process->exitCode(), process->processDuration());
-    // Success/Fail message in appropriate window?
-    if (result == ProcessResult::FinishedWithSuccess) {
-        if (m_flags & RunFlags::ShowSuccessMessage)
-            VcsOutputWindow::appendMessage(message);
-    } else if (!(m_flags & RunFlags::SuppressFailMessage)) {
-        VcsOutputWindow::appendError(message);
-    }
-    if (m_flags & RunFlags::ExpectRepoChanges) {
-        // TODO tell the document manager that the directory now received all expected changes
-        // DocumentManager::unexpectDirectoryChange(d->m_workingDirectory);
-        VcsManager::emitRepositoryChanged(process->workingDirectory());
-    }
-    return result;
-}
-
-void VcsCommandPrivate::startAll()
-{
-    // Check that the binary path is not empty
-    QTC_ASSERT(!m_jobs.isEmpty(), return);
-    QTC_ASSERT(!m_process, return);
-    setup();
-    m_currentJob = 0;
-    startNextJob();
-}
-
-void VcsCommandPrivate::startNextJob()
-{
-    QTC_ASSERT(m_currentJob < m_jobs.count(), return);
-    m_process.reset(new Process);
-    connect(m_process.get(), &Process::done, this, &VcsCommandPrivate::processDone);
-    setupProcess(m_process.get(), m_jobs.at(m_currentJob));
-    m_process->start();
-}
-
-void VcsCommandPrivate::processDone()
-{
-    m_result = handleDone(m_process.get(), m_jobs.at(m_currentJob));
-    m_stdOut += m_process->cleanedStdOut();
-    m_stdErr += m_process->cleanedStdErr();
-    ++m_currentJob;
-    if (m_currentJob < m_jobs.count() && m_result == ProcessResult::FinishedWithSuccess) {
-        m_process.release()->deleteLater();
-        startNextJob();
-        return;
-    }
-    emit q->done();
-    cleanup();
-    q->deleteLater();
-}
-
-} // namespace Internal
 
 VcsCommand::VcsCommand(const FilePath &workingDirectory, const Environment &environment) :
-    d(new Internal::VcsCommandPrivate(this, workingDirectory, environment))
+    Core::ShellCommand(workingDirectory, environment),
+    m_preventRepositoryChanged(false)
 {
-    connect(ICore::instance(), &ICore::coreAboutToClose, this, [this] {
-        if (d->m_process && d->m_process->isRunning())
-            d->cleanup();
-        d->m_process.reset();
+    VcsOutputWindow::setRepository(workingDirectory.toString());
+    setDisableUnixTerminal();
+    m_sshPrompt = VcsBase::sshPrompt();
+
+    connect(this, &VcsCommand::started, this, [this] {
+        if (flags() & ExpectRepoChanges)
+            Utils::GlobalFileChangeBlocker::instance()->forceBlocked(true);
     });
+    connect(this, &VcsCommand::finished, this, [this] {
+        if (flags() & ExpectRepoChanges)
+            Utils::GlobalFileChangeBlocker::instance()->forceBlocked(false);
+    });
+
+    VcsOutputWindow *outputWindow = VcsOutputWindow::instance();
+    connect(this, &ShellCommand::append, outputWindow, [outputWindow](const QString &t) {
+        outputWindow->append(t);
+    });
+    connect(this, &ShellCommand::appendSilently, outputWindow, &VcsOutputWindow::appendSilently);
+    connect(this, &ShellCommand::appendError, outputWindow, &VcsOutputWindow::appendError);
+    connect(this, &ShellCommand::appendCommand, outputWindow, &VcsOutputWindow::appendCommand);
+    connect(this, &ShellCommand::appendMessage, outputWindow, &VcsOutputWindow::appendMessage);
 }
 
-VcsCommand::~VcsCommand()
+const Environment VcsCommand::processEnvironment() const
 {
-    if (d->m_process && d->m_process->isRunning())
-        d->cleanup();
-    delete d;
+    Environment env = Core::ShellCommand::processEnvironment();
+    VcsBase::setProcessEnvironment(&env, flags() & ForceCLocale, m_sshPrompt);
+    return env;
 }
 
-void VcsCommand::setDisplayName(const QString &name)
+void VcsCommand::runCommand(QtcProcess &proc,
+                            const CommandLine &command,
+                            const FilePath &workingDirectory)
 {
-    d->m_displayName = name;
+    ShellCommand::runCommand(proc, command, workingDirectory);
+    emitRepositoryChanged(workingDirectory);
 }
 
-void VcsCommand::addFlags(RunFlags f)
+void VcsCommand::addTask(QFuture<void> &future)
 {
-    d->m_flags |= f;
+    Core::ShellCommand::addTask(future);
+    Internal::VcsPlugin::addFuture(future);
 }
 
-void VcsCommand::addJob(const CommandLine &command, int timeoutS,
-                        const FilePath &workingDirectory,
-                        const ExitCodeInterpreter &interpreter)
+void VcsCommand::emitRepositoryChanged(const FilePath &workingDirectory)
 {
-    QTC_ASSERT(!command.executable().isEmpty(), return);
-    d->m_jobs.push_back({command, timeoutS, !workingDirectory.isEmpty()
-                         ? workingDirectory : d->m_defaultWorkingDirectory, interpreter});
-}
-
-void VcsCommand::start()
-{
-    if (d->m_jobs.empty())
+    if (m_preventRepositoryChanged || !(flags() & VcsCommand::ExpectRepoChanges))
         return;
-
-    d->startAll();
+    // TODO tell the document manager that the directory now received all expected changes
+    // Core::DocumentManager::unexpectDirectoryChange(d->m_workingDirectory);
+    Core::VcsManager::emitRepositoryChanged(workDirectory(workingDirectory));
 }
 
-void VcsCommand::cancel()
+void VcsCommand::coreAboutToClose()
 {
-    if (d->m_process) {
-        // TODO: we may want to call cancel here...
-        d->m_process->stop();
-        // TODO: we may want to not wait here...
-        d->m_process->waitForFinished();
-        d->m_process.reset();
-    }
+    m_preventRepositoryChanged = true;
+    abort();
 }
-
-QString VcsCommand::cleanedStdOut() const
-{
-    return d->m_stdOut;
-}
-
-QString VcsCommand::cleanedStdErr() const
-{
-    return d->m_stdErr;
-}
-
-ProcessResult VcsCommand::result() const
-{
-    return d->m_result;
-}
-
-CommandResult VcsCommand::runBlocking(const FilePath &workingDirectory,
-                                      const Environment &environment,
-                                      const CommandLine &command, RunFlags flags,
-                                      int timeoutS, QTextCodec *codec)
-{
-    VcsCommand vcsCommand(workingDirectory, environment);
-    vcsCommand.addFlags(flags);
-    vcsCommand.setCodec(codec);
-    return vcsCommand.runBlockingHelper(command, timeoutS);
-}
-
-// TODO: change timeout to std::chrono::seconds
-CommandResult VcsCommand::runBlockingHelper(const CommandLine &command, int timeoutS)
-{
-    Process process;
-    if (command.executable().isEmpty())
-        return {};
-
-    const Internal::VcsCommandPrivate::Job job{command, timeoutS, d->m_defaultWorkingDirectory};
-    d->setupProcess(&process, job);
-
-    const EventLoopMode eventLoopMode = d->eventLoopMode();
-    process.setTimeOutMessageBoxEnabled(eventLoopMode == EventLoopMode::On);
-    process.runBlocking(seconds(timeoutS), eventLoopMode);
-    d->handleDone(&process, job);
-
-    return CommandResult(process);
-}
-
-void VcsCommand::setCodec(QTextCodec *codec)
-{
-    d->m_codec = codec;
-}
-
-void VcsCommand::setProgressParser(const ProgressParser &parser)
-{
-    d->m_progressParser = parser;
-}
-
-CommandResult::CommandResult(const Process &process)
-    : m_result(process.result())
-    , m_exitCode(process.exitCode())
-    , m_exitMessage(process.exitMessage())
-    , m_cleanedStdOut(process.cleanedStdOut())
-    , m_cleanedStdErr(process.cleanedStdErr())
-    , m_rawStdOut(process.rawStdOut())
-{}
-
-CommandResult::CommandResult(const VcsCommand &command)
-    : m_result(command.result())
-    , m_cleanedStdOut(command.cleanedStdOut())
-    , m_cleanedStdErr(command.cleanedStdErr())
-{}
 
 } // namespace VcsBase

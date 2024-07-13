@@ -8,39 +8,36 @@
 
 using namespace KSyntaxHighlighting;
 
-static_assert(sizeof(FoldingRegion) == sizeof(int), "FoldingRegion is size-sensitive to frequent use in KTextEditor!");
+static_assert(sizeof(FoldingRegion) == 2, "FoldingRegion is size-sensitive to frequent use in KTextEditor!");
 
-FoldingRegion::FoldingRegion() = default;
+FoldingRegion::FoldingRegion()
+    : m_type(None)
+    , m_id(0)
+{
+}
 
-FoldingRegion::FoldingRegion(Type type, int id)
-    : m_idWithType((type == End) ? -id : id)
+FoldingRegion::FoldingRegion(Type type, quint16 id)
+    : m_type(type)
+    , m_id(id)
 {
 }
 
 bool FoldingRegion::operator==(const FoldingRegion &other) const
 {
-    return m_idWithType == other.m_idWithType;
+    return m_id == other.m_id && m_type == other.m_type;
 }
 
 bool FoldingRegion::isValid() const
 {
-    return m_idWithType != 0;
+    return type() != None;
 }
 
-int FoldingRegion::id() const
+quint16 FoldingRegion::id() const
 {
-    return (m_idWithType < 0) ? -m_idWithType : m_idWithType;
+    return m_id;
 }
 
 FoldingRegion::Type FoldingRegion::type() const
 {
-    if (isValid()) {
-        return (m_idWithType < 0) ? End : Begin;
-    }
-    return None;
-}
-
-FoldingRegion FoldingRegion::sibling() const
-{
-    return isValid() ? FoldingRegion(type() ? End : Begin, id()) : FoldingRegion();
+    return static_cast<FoldingRegion::Type>(m_type);
 }

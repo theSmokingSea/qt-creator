@@ -1,18 +1,38 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "outputwindow.h"
 
 #include "actionmanager/actionmanager.h"
 #include "coreconstants.h"
 #include "coreplugin.h"
-#include "coreplugintr.h"
 #include "editormanager/editormanager.h"
 #include "find/basetextfind.h"
 #include "icore.h"
 
 #include <aggregation/aggregate.h>
-
 #include <utils/outputformatter.h>
 #include <utils/qtcassert.h>
 
@@ -20,7 +40,6 @@
 #include <QCursor>
 #include <QElapsedTimer>
 #include <QHash>
-#include <QMenu>
 #include <QMimeData>
 #include <QPair>
 #include <QPointer>
@@ -38,7 +57,6 @@
 const int chunkSize = 10000;
 
 using namespace Utils;
-using namespace std::chrono_literals;
 
 namespace Core {
 
@@ -52,7 +70,7 @@ public:
     {
     }
 
-    Key settingsKey;
+    QString settingsKey;
     OutputFormatter formatter;
     QList<QPair<QString, OutputFormat>> queuedOutput;
     QTimer queueTimer;
@@ -70,20 +88,16 @@ public:
     int lastFilteredBlockNumber = -1;
     QPalette originalPalette;
     OutputWindow::FilterModeFlags filterMode = OutputWindow::FilterModeFlag::Default;
-    int beforeContext = 0;
-    int afterContext = 0;
     QTimer scrollTimer;
     QElapsedTimer lastMessage;
     QHash<unsigned int, QPair<int, int>> taskPositions;
-    //: default file name suggested for saving text from output views
-    QString outputFileNameHint{::Core::Tr::tr("output.txt")};
 };
 
 } // namespace Internal
 
 /*******************/
 
-OutputWindow::OutputWindow(Context context, const Key &settingsKey, QWidget *parent)
+OutputWindow::OutputWindow(Context context, const QString &settingsKey, QWidget *parent)
     : QPlainTextEdit(parent)
     , d(new Internal::OutputWindowPrivate(document()))
 {
@@ -95,12 +109,15 @@ OutputWindow::OutputWindow(Context context, const Key &settingsKey, QWidget *par
     d->formatter.setPlainTextEdit(this);
 
     d->queueTimer.setSingleShot(true);
-    d->queueTimer.setInterval(10ms);
+    d->queueTimer.setInterval(10);
     connect(&d->queueTimer, &QTimer::timeout, this, &OutputWindow::handleNextOutputChunk);
 
     d->settingsKey = settingsKey;
 
-    IContext::attach(this, context);
+    auto outputWindowContext = new IContext(this);
+    outputWindowContext->setContext(context);
+    outputWindowContext->setWidget(this);
+    ICore::addContextObject(outputWindowContext);
 
     auto undoAction = new QAction(this);
     auto redoAction = new QAction(this);
@@ -152,7 +169,7 @@ OutputWindow::OutputWindow(Context context, const Key &settingsKey, QWidget *par
     cutAction->setEnabled(false);
     copyAction->setEnabled(false);
 
-    d->scrollTimer.setInterval(10ms);
+    d->scrollTimer.setInterval(10);
     d->scrollTimer.setSingleShot(true);
     connect(&d->scrollTimer, &QTimer::timeout,
             this, &OutputWindow::scrollToBottom);
@@ -196,8 +213,6 @@ void OutputWindow::handleLink(const QPoint &pos)
     if (!href.isEmpty())
         d->formatter.handleLink(href);
 }
-
-void OutputWindow::adaptContextMenu(QMenu *, const QPoint &) {}
 
 void OutputWindow::mouseReleaseEvent(QMouseEvent *e)
 {
@@ -283,28 +298,6 @@ void OutputWindow::wheelEvent(QWheelEvent *e)
     updateMicroFocus();
 }
 
-void OutputWindow::contextMenuEvent(QContextMenuEvent *event)
-{
-    QMenu *menu = createStandardContextMenu(event->pos());
-    menu->setAttribute(Qt::WA_DeleteOnClose);
-
-    adaptContextMenu(menu, event->pos());
-
-    menu->addSeparator();
-    QAction *saveAction = menu->addAction(Tr::tr("Save Contents..."));
-    connect(saveAction, &QAction::triggered, this, [this] {
-        QFileDialog::saveFileContent(toPlainText().toUtf8(), d->outputFileNameHint);
-    });
-    saveAction->setEnabled(!document()->isEmpty());
-
-    menu->addSeparator();
-    QAction *clearAction = menu->addAction(Tr::tr("Clear"));
-    connect(clearAction, &QAction::triggered, this, [this] { clear(); });
-    clearAction->setEnabled(!document()->isEmpty());
-
-    menu->popup(event->globalPos());
-}
-
 void OutputWindow::setBaseFont(const QFont &newFont)
 {
     float zoom = fontZoom();
@@ -339,19 +332,14 @@ void OutputWindow::updateFilterProperties(
         const QString &filterText,
         Qt::CaseSensitivity caseSensitivity,
         bool isRegexp,
-        bool isInverted,
-        int beforeContext,
-        int afterContext
+        bool isInverted
         )
 {
     FilterModeFlags flags;
     flags.setFlag(FilterModeFlag::CaseSensitive, caseSensitivity == Qt::CaseSensitive)
             .setFlag(FilterModeFlag::RegExp, isRegexp)
             .setFlag(FilterModeFlag::Inverted, isInverted);
-    if (d->filterMode == flags
-        && d->filterText == filterText
-        && d->beforeContext == beforeContext
-        && d->afterContext == afterContext)
+    if (d->filterMode == flags && d->filterText == filterText)
         return;
     d->lastFilteredBlockNumber = -1;
     if (d->filterText != filterText) {
@@ -378,71 +366,34 @@ void OutputWindow::updateFilterProperties(
         }
     }
     d->filterMode = flags;
-    d->beforeContext = beforeContext;
-    d->afterContext = afterContext;
     filterNewContent();
-}
-
-void OutputWindow::setOutputFileNameHint(const QString &fileName)
-{
-    d->outputFileNameHint = fileName;
-}
-
-OutputWindow::TextMatchingFunction OutputWindow::makeMatchingFunction() const
-{
-    if (d->filterText.isEmpty()) {
-        return [](const QString &) { return true; };
-    } else if (d->filterMode.testFlag(OutputWindow::FilterModeFlag::RegExp)) {
-        QRegularExpression regExp(d->filterText);
-        if (!d->filterMode.testFlag(OutputWindow::FilterModeFlag::CaseSensitive))
-            regExp.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
-        if (!regExp.isValid())
-            return [](const QString &) { return false; };
-
-        return [regExp](const QString &text) { return regExp.match(text).hasMatch(); };
-    } else {
-        const auto cs = d->filterMode.testFlag(OutputWindow::FilterModeFlag::CaseSensitive)
-                            ? Qt::CaseSensitive : Qt::CaseInsensitive;
-
-        return [cs, filterText = d->filterText](const QString &text) {
-            return text.contains(filterText, cs);
-        };
-    }
-
-    return {};
 }
 
 void OutputWindow::filterNewContent()
 {
-    const auto findNextMatch = makeMatchingFunction();
-    QTC_ASSERT(findNextMatch, return);
-    const bool invert = d->filterMode.testFlag(FilterModeFlag::Inverted)
-                        && !d->filterText.isEmpty();
-    const int requiredBacklog = std::max(d->beforeContext, d->afterContext);
-    const int firstBlockIndex = d->lastFilteredBlockNumber - requiredBacklog;
-
-    std::vector<int> matchedBlocks;
-    QTextBlock lastBlock = document()->findBlockByNumber(firstBlockIndex);
+    QTextBlock lastBlock = document()->findBlockByNumber(d->lastFilteredBlockNumber);
     if (!lastBlock.isValid())
         lastBlock = document()->begin();
 
-    // Find matching text blocks for the current filter.
-    for (; lastBlock != document()->end(); lastBlock = lastBlock.next()) {
-        const bool isMatch = findNextMatch(lastBlock.text()) != invert;
+    const bool invert = d->filterMode.testFlag(FilterModeFlag::Inverted);
+    if (d->filterMode.testFlag(OutputWindow::FilterModeFlag::RegExp)) {
+        QRegularExpression regExp(d->filterText);
+        if (!d->filterMode.testFlag(OutputWindow::FilterModeFlag::CaseSensitive))
+            regExp.setPatternOptions(QRegularExpression::CaseInsensitiveOption);
 
-        if (isMatch)
-            matchedBlocks.emplace_back(lastBlock.blockNumber());
-
-        lastBlock.setVisible(isMatch);
-    }
-
-    // Reveal the context lines before and after the match.
-    if (!d->filterText.isEmpty()) {
-        for (int blockNumber : matchedBlocks) {
-            for (auto i = 1; i <= d->beforeContext; ++i)
-                document()->findBlockByNumber(blockNumber - i).setVisible(true);
-            for (auto i = 1; i <= d->afterContext; ++i)
-                document()->findBlockByNumber(blockNumber + i).setVisible(true);
+        for (; lastBlock != document()->end(); lastBlock = lastBlock.next())
+            lastBlock.setVisible(d->filterText.isEmpty()
+                                 || regExp.match(lastBlock.text()).hasMatch() != invert);
+    } else {
+        if (d->filterMode.testFlag(OutputWindow::FilterModeFlag::CaseSensitive)) {
+            for (; lastBlock != document()->end(); lastBlock = lastBlock.next())
+                lastBlock.setVisible(d->filterText.isEmpty()
+                                     || lastBlock.text().contains(d->filterText) != invert);
+        } else {
+            for (; lastBlock != document()->end(); lastBlock = lastBlock.next()) {
+                lastBlock.setVisible(d->filterText.isEmpty() || lastBlock.text().toLower()
+                                     .contains(d->filterText.toLower()) != invert);
+            }
         }
     }
 
@@ -459,24 +410,12 @@ void OutputWindow::handleNextOutputChunk()
 {
     QTC_ASSERT(!d->queuedOutput.isEmpty(), return);
     auto &chunk = d->queuedOutput.first();
-
-    // We want to break off the chunks along line breaks, if possible.
-    // Otherwise we can get ugly temporary artifacts e.g. for ANSI escape codes.
-    int actualChunkSize = std::min(chunkSize, int(chunk.first.size()));
-    const int minEndPos = std::max(0, actualChunkSize - 1000);
-    for (int i = actualChunkSize - 1; i >= minEndPos; --i) {
-        if (chunk.first.at(i) == '\n') {
-            actualChunkSize = i + 1;
-            break;
-        }
-    }
-
-    if (actualChunkSize == chunk.first.size()) {
+    if (chunk.first.size() <= chunkSize) {
         handleOutputChunk(chunk.first, chunk.second);
         d->queuedOutput.removeFirst();
     } else {
-        handleOutputChunk(chunk.first.left(actualChunkSize), chunk.second);
-        chunk.first.remove(0, actualChunkSize);
+        handleOutputChunk(chunk.first.left(chunkSize), chunk.second);
+        chunk.first.remove(0, chunkSize);
     }
     if (!d->queuedOutput.isEmpty())
         d->queueTimer.start();
@@ -494,7 +433,7 @@ void OutputWindow::handleOutputChunk(const QString &output, OutputFormat format)
         const int elided = out.size() - d->maxCharCount;
         out = out.left(d->maxCharCount / 2)
                 + "[[[... "
-                + Tr::tr("Elided %n characters due to Application Output settings", nullptr, elided)
+                + tr("Elided %n characters due to Application Output settings", nullptr, elided)
                 + " ...]]]"
                 + out.right(d->maxCharCount / 2);
         setMaximumBlockCount(out.count('\n') + 1);
@@ -548,7 +487,7 @@ int OutputWindow::maxCharCount() const
 void OutputWindow::appendMessage(const QString &output, OutputFormat format)
 {
     if (d->queuedOutput.isEmpty() || d->queuedOutput.last().second != format)
-        d->queuedOutput.push_back({output, format});
+        d->queuedOutput << qMakePair(output, format);
     else
         d->queuedOutput.last().first.append(output);
     if (!d->queueTimer.isActive())
@@ -565,7 +504,7 @@ void OutputWindow::registerPositionOf(unsigned taskId, int linkedOutputLines, in
     const int firstLine = blocknumber - linkedOutputLines - skipLines;
     const int lastLine = firstLine + linkedOutputLines - 1;
 
-    d->taskPositions.insert(taskId, {firstLine, lastLine});
+    d->taskPositions.insert(taskId, qMakePair(firstLine, lastLine));
 }
 
 bool OutputWindow::knowsPositionOf(unsigned taskId) const
@@ -634,7 +573,7 @@ void OutputWindow::flush()
         return;
     }
     d->queueTimer.stop();
-    for (const auto &chunk : std::as_const(d->queuedOutput))
+    for (const auto &chunk : qAsConst(d->queuedOutput))
         handleOutputChunk(chunk.first, chunk.second);
     d->queuedOutput.clear();
     d->formatter.flush();
@@ -648,7 +587,7 @@ void OutputWindow::reset()
     d->scrollToBottom = true;
     if (!d->queuedOutput.isEmpty()) {
         d->queuedOutput.clear();
-        d->formatter.appendMessage(Tr::tr("[Discarding excessive amount of pending output.]\n"),
+        d->formatter.appendMessage(tr("[Discarding excessive amount of pending output.]\n"),
                                    ErrorMessageFormat);
     }
     d->flushRequested = false;

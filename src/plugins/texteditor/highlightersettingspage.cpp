@@ -1,162 +1,95 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "highlightersettingspage.h"
-
-#include "highlighter.h"
-#include "highlighterhelper.h"
 #include "highlightersettings.h"
-#include "texteditortr.h"
+#include "highlighter.h"
+#include "ui_highlightersettingspage.h"
 
 #include <coreplugin/icore.h>
-
 #include <utils/hostosinfo.h>
-#include <utils/layoutbuilder.h>
-#include <utils/pathchooser.h>
 
 #include <QDir>
-#include <QLabel>
-#include <QLineEdit>
+#include <QMessageBox>
 #include <QPointer>
-#include <QPushButton>
 
+using namespace TextEditor::Internal;
 using namespace Utils;
 
 namespace TextEditor {
 
-class HighlighterSettingsPageWidget;
-
-class HighlighterSettingsPagePrivate
+class HighlighterSettingsPage::HighlighterSettingsPagePrivate
 {
+    Q_DECLARE_TR_FUNCTIONS(TextEditor::Internal::HighlighterSettingsPage)
+
 public:
-    void ensureInitialized()
-    {
-        if (m_initialized)
-            return;
-        m_initialized = true;
-        m_settings.fromSettings(m_settingsPrefix, Core::ICore::settings());
-        migrateGenericHighlighterFiles();
-    }
+    HighlighterSettingsPagePrivate() = default;
 
-    void migrateGenericHighlighterFiles()
-    {
-        QDir userDefinitionPath(m_settings.definitionFilesPath().toString());
-        if (userDefinitionPath.mkdir("syntax")) {
-            const auto link = Utils::HostOsInfo::isAnyUnixHost()
-                                  ? static_cast<bool(*)(const QString &, const QString &)>(&QFile::link)
-                                  : static_cast<bool(*)(const QString &, const QString &)>(&QFile::copy);
-
-            for (const QFileInfo &file : userDefinitionPath.entryInfoList({"*.xml"}, QDir::Files))
-                link(file.filePath(), file.absolutePath() + "/syntax/" + file.fileName());
-        }
-    }
+    void ensureInitialized();
+    void migrateGenericHighlighterFiles();
 
     bool m_initialized = false;
-    const Key m_settingsPrefix{"Text"};
+    const QString m_settingsPrefix{"Text"};
 
     HighlighterSettings m_settings;
 
-    QPointer<HighlighterSettingsPageWidget> m_widget;
+    QPointer<QWidget> m_widget;
+    Ui::HighlighterSettingsPage *m_page = nullptr;
 };
 
-class HighlighterSettingsPageWidget : public Core::IOptionsPageWidget
+
+void HighlighterSettingsPage::HighlighterSettingsPagePrivate::migrateGenericHighlighterFiles()
 {
-public:
-    HighlighterSettingsPageWidget(HighlighterSettingsPagePrivate *d) : d(d)
-    {
-        d->ensureInitialized();
+    QDir userDefinitionPath(m_settings.definitionFilesPath().toString());
+    if (userDefinitionPath.mkdir("syntax")) {
+        const auto link = Utils::HostOsInfo::isAnyUnixHost()
+                              ? static_cast<bool(*)(const QString &, const QString &)>(&QFile::link)
+                              : static_cast<bool(*)(const QString &, const QString &)>(&QFile::copy);
 
-        auto definitionsInfolabel = new QLabel(this);
-        definitionsInfolabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        definitionsInfolabel->setTextFormat(Qt::RichText);
-        definitionsInfolabel->setAlignment(Qt::AlignLeading|Qt::AlignLeft|Qt::AlignVCenter);
-        definitionsInfolabel->setWordWrap(true);
-        definitionsInfolabel->setOpenExternalLinks(true);
-        definitionsInfolabel->setText(Tr::tr("<html><head/><body><p>Highlight definitions are provided by the "
-                                             "<a href=\"https://api.kde.org/frameworks/syntax-highlighting/html/index.html\">"
-                                             "KSyntaxHighlighting</a> engine.</p></body></html>"));
-
-        auto downloadDefinitions = new QPushButton(Tr::tr("Download Definitions"));
-        downloadDefinitions->setToolTip(Tr::tr("Download missing and update existing syntax definition files."));
-
-        auto updateStatus = new QLabel;
-        updateStatus->setObjectName("updateStatus");
-
-        m_definitionFilesPath = new PathChooser;
-        m_definitionFilesPath->setFilePath(d->m_settings.definitionFilesPath());
-        m_definitionFilesPath->setExpectedKind(PathChooser::ExistingDirectory);
-        m_definitionFilesPath->setHistoryCompleter("TextEditor.Highlighter.History");
-
-        auto reloadDefinitions = new QPushButton(Tr::tr("Reload Definitions"));
-        reloadDefinitions->setToolTip(Tr::tr("Reload externally modified definition files."));
-
-        auto resetCache = new QPushButton(Tr::tr("Reset Remembered Definitions"));
-        resetCache->setToolTip(Tr::tr("Reset definitions remembered for files that can be "
-                                      "associated with more than one highlighter definition."));
-
-        m_ignoreEdit = new QLineEdit(d->m_settings.ignoredFilesPatterns());
-
-        using namespace Layouting;
-        Column {
-            definitionsInfolabel,
-            Space(3),
-            Group {
-                title(Tr::tr("Syntax Highlight Definition Files")),
-                Column {
-                    Row { downloadDefinitions, updateStatus, st },
-                    Row { Tr::tr("User Highlight Definition Files"),
-                                m_definitionFilesPath, reloadDefinitions },
-                    Row { st, resetCache }
-                }
-            },
-            Row { Tr::tr("Ignored file patterns:"), m_ignoreEdit },
-            st
-        }.attachTo(this);
-
-        connect(downloadDefinitions, &QPushButton::pressed,
-                [label = QPointer<QLabel>(updateStatus)]() {
-                    HighlighterHelper::downloadDefinitions([label] {
-                        if (label)
-                            label->setText(Tr::tr("Download finished"));
-                    });
-                });
-
-        connect(reloadDefinitions, &QPushButton::pressed, this, [] {
-            HighlighterHelper::reload();
-        });
-        connect(resetCache, &QPushButton::clicked, this, [] {
-            HighlighterHelper::clearDefinitionForDocumentCache();
-        });
+        for (const QFileInfo &file : userDefinitionPath.entryInfoList({"*.xml"}, QDir::Files))
+            link(file.filePath(), file.absolutePath() + "/syntax/" + file.fileName());
     }
+}
 
-    void apply() final
-    {
-        bool changed = d->m_settings.definitionFilesPath() != m_definitionFilesPath->filePath()
-                    || d->m_settings.ignoredFilesPatterns() != m_ignoreEdit->text();
-
-        if (changed) {
-            d->m_settings.setDefinitionFilesPath(m_definitionFilesPath->filePath());
-            d->m_settings.setIgnoredFilesPatterns(m_ignoreEdit->text());
-            d->m_settings.toSettings(d->m_settingsPrefix, Core::ICore::settings());
-        }
-    }
-
-    PathChooser *m_definitionFilesPath;
-    QLineEdit *m_ignoreEdit;
-    HighlighterSettingsPagePrivate *d;
-};
-
-// HighlighterSettingsPage
+void HighlighterSettingsPage::HighlighterSettingsPagePrivate::ensureInitialized()
+{
+    if (m_initialized)
+        return;
+    m_initialized = true;
+    m_settings.fromSettings(m_settingsPrefix, Core::ICore::settings());
+    migrateGenericHighlighterFiles();
+}
 
 HighlighterSettingsPage::HighlighterSettingsPage()
     : d(new HighlighterSettingsPagePrivate)
 {
     setId(Constants::TEXT_EDITOR_HIGHLIGHTER_SETTINGS);
-    setDisplayName(Tr::tr("Generic Highlighter"));
+    setDisplayName(HighlighterSettingsPagePrivate::tr("Generic Highlighter"));
     setCategory(TextEditor::Constants::TEXT_EDITOR_SETTINGS_CATEGORY);
-    setDisplayCategory(Tr::tr("Text Editor"));
+    setDisplayCategory(QCoreApplication::translate("TextEditor", "Text Editor"));
     setCategoryIconPath(TextEditor::Constants::TEXT_EDITOR_SETTINGS_CATEGORY_ICON_PATH);
-    setWidgetCreator([this] { return new HighlighterSettingsPageWidget(d); });
 }
 
 HighlighterSettingsPage::~HighlighterSettingsPage()
@@ -164,10 +97,77 @@ HighlighterSettingsPage::~HighlighterSettingsPage()
     delete d;
 }
 
+QWidget *HighlighterSettingsPage::widget()
+{
+    if (!d->m_widget) {
+        d->m_widget = new QWidget;
+        d->m_page = new Ui::HighlighterSettingsPage;
+        d->m_page->setupUi(d->m_widget);
+        d->m_page->definitionFilesPath->setExpectedKind(Utils::PathChooser::ExistingDirectory);
+        d->m_page->definitionFilesPath->setHistoryCompleter(QLatin1String("TextEditor.Highlighter.History"));
+        connect(d->m_page->downloadDefinitions,
+                &QPushButton::pressed,
+                [label = QPointer<QLabel>(d->m_page->updateStatus)]() {
+                    Highlighter::downloadDefinitions([label](){
+                        if (label)
+                            label->setText(HighlighterSettingsPagePrivate::tr("Download finished"));
+                    });
+                });
+        connect(d->m_page->reloadDefinitions, &QPushButton::pressed, []() {
+            Highlighter::reload();
+        });
+        connect(d->m_page->resetCache, &QPushButton::clicked, []() {
+            Highlighter::clearDefinitionForDocumentCache();
+        });
+
+        settingsToUI();
+    }
+    return d->m_widget;
+}
+
+void HighlighterSettingsPage::apply()
+{
+    if (!d->m_page) // page was not shown
+        return;
+    if (settingsChanged())
+        settingsFromUI();
+}
+
+void HighlighterSettingsPage::finish()
+{
+    delete d->m_widget;
+    if (!d->m_page) // page was not shown
+        return;
+    delete d->m_page;
+    d->m_page = nullptr;
+}
+
 const HighlighterSettings &HighlighterSettingsPage::highlighterSettings() const
 {
     d->ensureInitialized();
     return d->m_settings;
+}
+
+void HighlighterSettingsPage::settingsFromUI()
+{
+    d->ensureInitialized();
+    d->m_settings.setDefinitionFilesPath(d->m_page->definitionFilesPath->filePath());
+    d->m_settings.setIgnoredFilesPatterns(d->m_page->ignoreEdit->text());
+    d->m_settings.toSettings(d->m_settingsPrefix, Core::ICore::settings());
+}
+
+void HighlighterSettingsPage::settingsToUI()
+{
+    d->ensureInitialized();
+    d->m_page->definitionFilesPath->setFilePath(d->m_settings.definitionFilesPath());
+    d->m_page->ignoreEdit->setText(d->m_settings.ignoredFilesPatterns());
+}
+
+bool HighlighterSettingsPage::settingsChanged() const
+{
+    d->ensureInitialized();
+    return d->m_settings.definitionFilesPath() != d->m_page->definitionFilesPath->filePath()
+        || d->m_settings.ignoredFilesPatterns() != d->m_page->ignoreEdit->text();
 }
 
 } // TextEditor

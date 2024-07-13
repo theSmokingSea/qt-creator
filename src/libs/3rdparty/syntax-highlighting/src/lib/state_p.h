@@ -8,10 +8,8 @@
 #ifndef KSYNTAXHIGHLIGHTING_STATE_P_H
 #define KSYNTAXHIGHLIGHTING_STATE_P_H
 
-#include <vector>
-
 #include <QSharedData>
-#include <QStringList>
+#include <QVector>
 
 #include "definitionref_p.h"
 
@@ -23,25 +21,15 @@ class StateData : public QSharedData
 {
     friend class State;
     friend class AbstractHighlighter;
-    friend std::size_t qHash(const StateData &, std::size_t);
 
 public:
     StateData() = default;
+    static StateData *get(State &state);
 
-    static StateData *reset(State &state);
-    static StateData *detach(State &state);
-
-    static StateData *get(const State &state)
-    {
-        return state.d.data();
-    }
-
-    std::size_t size() const
-    {
-        return m_contextStack.size();
-    }
-
-    void push(Context *context, QStringList &&captures);
+    bool isEmpty() const;
+    void clear();
+    int size() const;
+    void push(Context *context, const QStringList &captures);
 
     /**
      * Pop the number of elements given from the top of the current stack.
@@ -51,47 +39,21 @@ public:
      */
     bool pop(int popCount);
 
-    Context *topContext() const
-    {
-        return m_contextStack.back().context;
-    }
-
-    const QStringList &topCaptures() const
-    {
-        return m_contextStack.back().captures;
-    }
-
-    struct StackValue {
-        Context *context;
-        QStringList captures;
-
-        bool operator==(const StackValue &other) const
-        {
-            return context == other.context && captures == other.captures;
-        }
-    };
+    Context *topContext() const;
+    const QStringList &topCaptures() const;
 
 private:
     /**
-     * definition id to filter out invalid states
+     * weak reference to the used definition to filter out invalid states
      */
-    uint64_t m_defId = 0;
+    DefinitionRef m_defRef;
 
     /**
      * the context stack combines the active context + valid captures
      */
-    std::vector<StackValue> m_contextStack;
+    QVector<QPair<Context *, QStringList>> m_contextStack;
 };
 
-inline std::size_t qHash(const StateData::StackValue &stackValue, std::size_t seed = 0)
-{
-    return qHashMulti(seed, stackValue.context, stackValue.captures);
-}
-
-inline std::size_t qHash(const StateData &k, std::size_t seed = 0)
-{
-    return qHashMulti(seed, k.m_defId, qHashRange(k.m_contextStack.begin(), k.m_contextStack.end(), seed));
-}
 }
 
 #endif

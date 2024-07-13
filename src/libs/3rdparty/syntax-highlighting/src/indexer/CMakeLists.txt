@@ -4,8 +4,13 @@ if(CMAKE_CROSSCOMPILING AND KATEHIGHLIGHTINGINDEXER_EXECUTABLE)
     add_executable(katehighlightingindexer IMPORTED GLOBAL)
     set_target_properties(katehighlightingindexer PROPERTIES IMPORTED_LOCATION ${KATEHIGHLIGHTINGINDEXER_EXECUTABLE})
 elseif(CMAKE_CROSSCOMPILING)
-    include(ECMQueryQt)
-    ecm_query_qt(NATIVE_PREFIX QT_HOST_PREFIX)
+    if (NOT KF5_HOST_TOOLING)
+        message(FATAL_ERROR "Please provide a prefix with a native Qt build and pass -DKF5_HOST_TOOLING=path")
+    endif()
+
+    # search native tooling prefix
+    string(FIND ${KF5_HOST_TOOLING} /lib idx)
+    string(SUBSTRING ${KF5_HOST_TOOLING} 0 ${idx} NATIVE_PREFIX)
     message(STATUS "Building katehighlightingindexer against ${NATIVE_PREFIX}")
 
     include(ExternalProject)
@@ -14,7 +19,7 @@ elseif(CMAKE_CROSSCOMPILING)
                         CMAKE_ARGS -DKSYNTAXHIGHLIGHTING_USE_GUI=OFF
                             -DECM_DIR=${ECM_DIR} -DCMAKE_PREFIX_PATH=${NATIVE_PREFIX}
                             -DCMAKE_INSTALL_PREFIX=${CMAKE_CURRENT_BINARY_DIR}
-                            -DQT_MAJOR_VERSION=6
+                            -DQT_MAJOR_VERSION=${QT_MAJOR_VERSION}
                         INSTALL_COMMAND ""
                         BUILD_BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/native_katehighlightingindexer-prefix/src/native_katehighlightingindexer-build/bin/katehighlightingindexer
                     )
@@ -26,11 +31,9 @@ else()
     # host build
     add_executable(katehighlightingindexer katehighlightingindexer.cpp ../lib/worddelimiters.cpp)
     ecm_mark_nongui_executable(katehighlightingindexer)
-    if(XercesC_FOUND)
-        add_definitions(-DHAS_XERCESC)
-        kde_target_enable_exceptions(katehighlightingindexer PRIVATE)
-        target_link_libraries(katehighlightingindexer Qt6::Core XercesC::XercesC)
+    if(Qt5XmlPatterns_FOUND AND NOT ECM_ENABLE_SANITIZERS)
+        target_link_libraries(katehighlightingindexer Qt5::XmlPatterns)
     else()
-        target_link_libraries(katehighlightingindexer Qt6::Core)
+        target_link_libraries(katehighlightingindexer Qt${QT_MAJOR_VERSION}::Core)
     endif()
 endif()

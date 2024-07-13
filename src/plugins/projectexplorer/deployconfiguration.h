@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -31,8 +53,8 @@ public:
 
     QWidget *createConfigWidget();
 
-    void fromMap(const Utils::Store &map) override;
-    void toMap(Utils::Store &map) const override;
+    bool fromMap(const QVariantMap &map) override;
+    QVariantMap toMap() const override;
 
     bool isActive() const;
 
@@ -66,7 +88,7 @@ public:
     DeployConfiguration *create(Target *parent);
 
     static const QList<DeployConfigurationFactory *> find(Target *parent);
-    static DeployConfiguration *restore(Target *parent, const Utils::Store &map);
+    static DeployConfiguration *restore(Target *parent, const QVariantMap &map);
     static DeployConfiguration *clone(Target *parent, const DeployConfiguration *dc);
 
     void addSupportedTargetDeviceType(Utils::Id id);
@@ -81,7 +103,7 @@ public:
     void setConfigWidgetCreator(const DeployConfiguration::WidgetCreator &configWidgetCreator);
     void setUseDeploymentDataView();
 
-    using PostRestore = std::function<void(DeployConfiguration *dc, const Utils::Store &)>;
+    using PostRestore = std::function<void(DeployConfiguration *dc, const QVariantMap &)>;
     void setPostRestore(const PostRestore &postRestore) {  m_postRestore = postRestore; }
     PostRestore postRestore() const { return m_postRestore; }
 
@@ -98,6 +120,12 @@ private:
     QString m_defaultDisplayName;
     DeployConfiguration::WidgetCreator m_configWidgetCreator;
     PostRestore m_postRestore;
+};
+
+class DefaultDeployConfigurationFactory : public DeployConfigurationFactory
+{
+public:
+    DefaultDeployConfigurationFactory();
 };
 
 } // namespace ProjectExplorer

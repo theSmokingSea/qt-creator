@@ -8,12 +8,12 @@ Project {
     references: [
         "app/app.qbs",
         "app/app_version_header.qbs",
-        "app/images/logo/logo.qbs",
         "libs/libs.qbs",
         "plugins/plugins.qbs",
         "tools/tools.qbs",
         project.sharedSourcesDir + "/json",
         project.sharedSourcesDir + "/proparser",
+        project.sharedSourcesDir + "/pch_files.qbs",
     ]
 
     property bool qbsSubModuleExists: File.exists(qbsProject.qbsBaseDir + "/qbs.qbs")
@@ -30,11 +30,9 @@ Project {
             qbsBaseDir + "/src/lib/libs.qbs",
             qbsBaseDir + "/src/libexec/libexec.qbs",
             qbsBaseDir + "/src/plugins/plugins.qbs",
-            qbsBaseDir + "/src/shared/quickjs/quickjs.qbs",
             qbsBaseDir + "/share/share.qbs",
             qbsBaseDir + "/src/app/apps.qbs",
             qbsBaseDir + "/src/shared/bundledqt/bundledqt.qbs",
-            qbsBaseDir + "/src/shared/lsp/lsp.qbs",
             qbsBaseDir + "/src/shared/json/json.qbs",
             qbsBaseDir + "/src/shared/variant/variant.qbs",
         ]

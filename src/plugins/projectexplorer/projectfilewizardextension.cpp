@@ -1,16 +1,38 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "projectfilewizardextension.h"
 
 #include "editorconfiguration.h"
 #include "project.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
-#include "projectmanager.h"
 #include "projectnodes.h"
 #include "projecttree.h"
+#include "projecttree.h"
 #include "projectwizardpage.h"
+#include "session.h"
 
 #include <coreplugin/icore.h>
 
@@ -27,6 +49,7 @@
 #include <utils/stringutils.h>
 
 #include <QDebug>
+#include <QFileInfo>
 #include <QMessageBox>
 #include <QPointer>
 #include <QTextCursor>
@@ -49,7 +72,7 @@ using namespace Utils;
         managed) and do 'add' if the VCS supports it.
     \endlist
 
-    \sa ProjectExplorer::ProjectWizardPage
+    \sa ProjectExplorer::Internal::ProjectWizardPage
 */
 
 enum { debugExtension = 0 };
@@ -96,7 +119,7 @@ void ProjectFileWizardExtension::firstExtensionPageShown(
     if (debugExtension)
         qDebug() << Q_FUNC_INFO << files.size();
 
-    const FilePaths fileNames = Utils::transform(files, &GeneratedFile::filePath);
+    QStringList fileNames = Utils::transform(files, &GeneratedFile::path);
     m_context->page->setFiles(fileNames);
 
     FilePaths filePaths;
@@ -117,13 +140,13 @@ void ProjectFileWizardExtension::firstExtensionPageShown(
 
     m_context->page->initializeProjectTree(findWizardContextNode(contextNode, project, path),
                                            filePaths, m_context->wizard->kind(),
-                                           projectAction, false);
+                                           projectAction);
     // Refresh combobox on project tree changes:
     connect(ProjectTree::instance(), &ProjectTree::treeChanged,
             m_context->page, [this, project, path, filePaths, kind, projectAction]() {
         m_context->page->initializeProjectTree(
                     findWizardContextNode(m_context->page->currentNode(), project, path), filePaths,
-                    kind, projectAction, false);
+                    kind, projectAction);
     });
 
     m_context->page->initializeVersionControls();
@@ -133,7 +156,7 @@ Node *ProjectFileWizardExtension::findWizardContextNode(Node *contextNode, Proje
                                                         const FilePath &path)
 {
     if (contextNode && !ProjectTree::hasNode(contextNode)) {
-        if (ProjectManager::projects().contains(project) && project->rootProjectNode()) {
+        if (SessionManager::projects().contains(project) && project->rootProjectNode()) {
             contextNode = project->rootProjectNode()->findNode([path](const Node *n) {
                 return path == n->filePath();
             });
@@ -167,8 +190,8 @@ bool ProjectFileWizardExtension::processFiles(
             message.append(QLatin1String("\n\n"));
             errorMessage->clear();
         }
-        message.append(Tr::tr("Open project anyway?"));
-        if (QMessageBox::question(ICore::dialogParent(), Tr::tr("Version Control Failure"), message,
+        message.append(tr("Open project anyway?"));
+        if (QMessageBox::question(ICore::dialogParent(), tr("Version Control Failure"), message,
                                   QMessageBox::Yes, QMessageBox::No) == QMessageBox::No)
             return false;
     }
@@ -189,7 +212,7 @@ bool ProjectFileWizardExtension::processProject(
         return true;
     if (m_context->wizard->kind() == IWizardFactory::ProjectWizard) {
         if (!static_cast<ProjectNode *>(folder)->addSubProject(generatedProject)) {
-            *errorMessage = Tr::tr("Failed to add subproject \"%1\"\nto project \"%2\".")
+            *errorMessage = tr("Failed to add subproject \"%1\"\nto project \"%2\".")
                             .arg(generatedProject.toUserOutput()).arg(folder->filePath().toUserOutput());
             return false;
         }
@@ -197,7 +220,7 @@ bool ProjectFileWizardExtension::processProject(
     } else {
         FilePaths filePaths = Utils::transform(files, &GeneratedFile::filePath);
         if (!folder->addFiles(filePaths)) {
-            *errorMessage = Tr::tr("Failed to add one or more files to project\n\"%1\" (%2).")
+            *errorMessage = tr("Failed to add one or more files to project\n\"%1\" (%2).")
                     .arg(folder->filePath().toUserOutput())
                     .arg(FilePath::formatFilePaths(filePaths, ","));
             return false;
@@ -250,7 +273,7 @@ void ProjectFileWizardExtension::applyCodeStyle(GeneratedFile *file) const
                      QChar::Null,
                      codeStylePrefs->currentTabSettings());
     delete indenter;
-    if (globalStorageSettings().m_cleanWhitespace) {
+    if (TextEditorSettings::storageSettings().m_cleanWhitespace) {
         QTextBlock block = doc.firstBlock();
         while (block.isValid()) {
             TabSettings::removeTrailingWhitespace(cursor, block);

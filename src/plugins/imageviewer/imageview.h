@@ -1,23 +1,42 @@
-// Copyright (C) 2016 Denis Mingulov.
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Denis Mingulov.
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
-#include <utils/filepath.h>
-
 #include <QGraphicsView>
 
-QT_BEGIN_NAMESPACE
-class QImage;
-QT_END_NAMESPACE
+QT_FORWARD_DECLARE_CLASS(QImage)
 
-namespace ImageViewer::Internal {
+namespace ImageViewer {
+namespace Internal {
 
 class ImageViewerFile;
 
 struct ExportData {
-    Utils::FilePath filePath;
+    QString fileName;
     QSize size;
 };
 
@@ -26,13 +45,6 @@ class ImageView : public QGraphicsView
     Q_OBJECT
 
 public:
-    struct Settings
-    {
-        bool showBackground = false;
-        bool showOutline = true;
-        bool fitToScreen = false;
-    };
-
     ImageView(ImageViewerFile *file);
     ~ImageView() override;
 
@@ -47,19 +59,13 @@ public:
     void zoomIn();
     void zoomOut();
     void resetToOriginalSize();
-    void setFitToScreen(bool fit);
-
-    void readSettings();
-    void writeSettings() const;
-    Settings settings() const;
+    void fitToScreen();
 
 signals:
     void scaleFactorChanged(qreal factor);
     void imageSizeChanged(const QSize &size);
-    void fitToScreenChanged(bool fit);
 
 private:
-    void doFitToScreen();
     void emitScaleFactor();
     void doScale(qreal factor);
     QSize svgSize() const;
@@ -70,13 +76,14 @@ private:
     void hideEvent(QHideEvent *event) override;
     void showEvent(QShowEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
-    void resizeEvent(QResizeEvent *event) override;
 
     ImageViewerFile *m_file;
     QGraphicsItem *m_imageItem = nullptr;
     QGraphicsRectItem *m_backgroundItem = nullptr;
     QGraphicsRectItem *m_outlineItem = nullptr;
-    Settings m_settings;
+    bool m_showBackground = false;
+    bool m_showOutline = true;
 };
 
-} // ImageViewer::Internal
+} // namespace Internal
+} // namespace ImageViewer

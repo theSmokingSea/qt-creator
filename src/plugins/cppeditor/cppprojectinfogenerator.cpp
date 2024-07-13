@@ -1,33 +1,60 @@
-// Copyright (C) 2017 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppprojectinfogenerator.h"
 
-#include "cppeditortr.h"
 #include "cppprojectfilecategorizer.h"
 
 #include <projectexplorer/headerpath.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/taskhub.h>
 
-#include <QPromise>
+#include <utils/qtcassert.h>
+
 #include <QTimer>
+
+#include <set>
 
 using namespace ProjectExplorer;
 using namespace Utils;
 
 namespace CppEditor::Internal {
 
-ProjectInfoGenerator::ProjectInfoGenerator(const ProjectUpdateInfo &projectUpdateInfo)
-    : m_projectUpdateInfo(projectUpdateInfo)
+ProjectInfoGenerator::ProjectInfoGenerator(
+        const QFutureInterface<ProjectInfo::ConstPtr> &futureInterface,
+        const ProjectUpdateInfo &projectUpdateInfo)
+    : m_futureInterface(futureInterface)
+    , m_projectUpdateInfo(projectUpdateInfo)
 {
 }
 
-ProjectInfo::ConstPtr ProjectInfoGenerator::generate(const QPromise<ProjectInfo::ConstPtr> &promise)
+ProjectInfo::ConstPtr ProjectInfoGenerator::generate()
 {
     QVector<ProjectPart::ConstPtr> projectParts;
     for (const RawProjectPart &rpp : m_projectUpdateInfo.rawProjectParts) {
-        if (promise.isCanceled())
+        if (m_futureInterface.isCanceled())
             return {};
         for (const ProjectPart::ConstPtr &part : createProjectParts(
                  rpp, m_projectUpdateInfo.projectFilePath)) {
@@ -37,19 +64,19 @@ ProjectInfo::ConstPtr ProjectInfoGenerator::generate(const QPromise<ProjectInfo:
     const auto projectInfo = ProjectInfo::create(m_projectUpdateInfo, projectParts);
 
     static const auto showWarning = [](const QString &message) {
-        QTimer::singleShot(0, &taskHub(), [message] {
+        QTimer::singleShot(0, TaskHub::instance(), [message] {
             TaskHub::addTask(BuildSystemTask(Task::Warning, message));
         });
     };
     if (m_cToolchainMissing) {
-        showWarning(
-            ::CppEditor::Tr::tr("The project contains C source files, but the currently active kit "
-                                "has no C compiler. The code model will not be fully functional."));
+        showWarning(QCoreApplication::translate("CppEditor",
+                "The project contains C source files, but the currently active kit "
+                "has no C compiler. The code model will not be fully functional."));
     }
     if (m_cxxToolchainMissing) {
-        showWarning(::CppEditor::Tr::tr(
-            "The project contains C++ source files, but the currently active kit "
-            "has no C++ compiler. The code model will not be fully functional."));
+        showWarning(QCoreApplication::translate("CppEditor",
+                "The project contains C++ source files, but the currently active kit "
+                "has no C++ compiler. The code model will not be fully functional."));
     }
     return projectInfo;
 }
@@ -66,7 +93,7 @@ const QVector<ProjectPart::ConstPtr> ProjectInfoGenerator::createProjectParts(
     if (!cat.hasParts())
         return result;
 
-    if (m_projectUpdateInfo.cxxToolchainInfo.isValid()) {
+    if (m_projectUpdateInfo.cxxToolChainInfo.isValid()) {
         if (cat.hasCxxSources()) {
             result << createProjectPart(projectFilePath,
                                         rawProjectPart,
@@ -87,7 +114,7 @@ const QVector<ProjectPart::ConstPtr> ProjectInfoGenerator::createProjectParts(
         m_cxxToolchainMissing = true;
     }
 
-    if (m_projectUpdateInfo.cToolchainInfo.isValid()) {
+    if (m_projectUpdateInfo.cToolChainInfo.isValid()) {
         if (cat.hasCSources()) {
             result << createProjectPart(projectFilePath,
                                         rawProjectPart,
@@ -121,36 +148,15 @@ ProjectPart::ConstPtr ProjectInfoGenerator::createProjectPart(
         LanguageExtensions languageExtensions)
 {
     RawProjectPartFlags flags;
-    ToolchainInfo tcInfo;
+    ToolChainInfo tcInfo;
     if (language == Language::C) {
         flags = rawProjectPart.flagsForC;
-        tcInfo = m_projectUpdateInfo.cToolchainInfo;
+        tcInfo = m_projectUpdateInfo.cToolChainInfo;
     }
     // Use Cxx toolchain for C projects without C compiler in kit and for C++ code
     if (!tcInfo.isValid()) {
         flags = rawProjectPart.flagsForCxx;
-        tcInfo = m_projectUpdateInfo.cxxToolchainInfo;
-    }
-
-    QString explicitTarget;
-    if (!tcInfo.targetTripleIsAuthoritative) {
-        for (int i = 0; i < flags.commandLineFlags.size(); ++i) {
-            const QString &flag = flags.commandLineFlags.at(i);
-            if (flag == "-target") {
-                if (i + 1 < flags.commandLineFlags.size())
-                    explicitTarget = flags.commandLineFlags.at(i + 1);
-                break;
-            } else if (flag.startsWith("--target=")) {
-                explicitTarget = flag.mid(9);
-                break;
-            }
-        }
-    }
-    if (!explicitTarget.isEmpty()) {
-        tcInfo.targetTriple = explicitTarget;
-        tcInfo.targetTripleIsAuthoritative = true;
-        if (const Abi abi = Abi::fromString(tcInfo.targetTriple); abi.isValid())
-            tcInfo.abi = abi;
+        tcInfo = m_projectUpdateInfo.cxxToolChainInfo;
     }
 
     return ProjectPart::create(projectFilePath, rawProjectPart, partName, projectFiles,

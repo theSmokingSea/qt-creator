@@ -1,11 +1,34 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "behaviorsettings.h"
 
-#include "texteditorsettings.h"
+#include <utils/settingsutils.h>
 
-#include <coreplugin/icore.h>
+#include <QSettings>
+#include <QString>
 
 static const char mouseHidingKey[] = "MouseHiding";
 static const char mouseNavigationKey[] = "MouseNavigation";
@@ -13,9 +36,8 @@ static const char scrollWheelZoomingKey[] = "ScrollWheelZooming";
 static const char constrainTooltips[] = "ConstrainTooltips";
 static const char camelCaseNavigationKey[] = "CamelCaseNavigation";
 static const char keyboardTooltips[] = "KeyboardTooltips";
+static const char groupPostfix[] = "BehaviorSettings";
 static const char smartSelectionChanging[] = "SmartSelectionChanging";
-
-using namespace Utils;
 
 namespace TextEditor {
 
@@ -30,7 +52,18 @@ BehaviorSettings::BehaviorSettings() :
 {
 }
 
-Store BehaviorSettings::toMap() const
+void BehaviorSettings::toSettings(const QString &category, QSettings *s) const
+{
+    Utils::toSettings(QLatin1String(groupPostfix), category, s, this);
+}
+
+void BehaviorSettings::fromSettings(const QString &category, QSettings *s)
+{
+    *this = BehaviorSettings();
+    Utils::fromSettings(QLatin1String(groupPostfix), category, s, this);
+}
+
+QVariantMap BehaviorSettings::toMap() const
 {
     return {
         {mouseHidingKey, m_mouseHiding},
@@ -43,7 +76,7 @@ Store BehaviorSettings::toMap() const
     };
 }
 
-void BehaviorSettings::fromMap(const Store &map)
+void BehaviorSettings::fromMap(const QVariantMap &map)
 {
     m_mouseHiding = map.value(mouseHidingKey, m_mouseHiding).toBool();
     m_mouseNavigation = map.value(mouseNavigationKey, m_mouseNavigation).toBool();
@@ -64,30 +97,6 @@ bool BehaviorSettings::equals(const BehaviorSettings &ds) const
         && m_keyboardTooltips == ds.m_keyboardTooltips
         && m_smartSelectionChanging == ds.m_smartSelectionChanging
         ;
-}
-
-BehaviorSettings &globalBehaviorSettings()
-{
-    static BehaviorSettings theGlobalBehaviorSettings;
-    return theGlobalBehaviorSettings;
-}
-
-const char behaviorGroup[] = "textBehaviorSettings";
-
-void updateGlobalBehaviorSettings(const BehaviorSettings &newBehaviorSettings)
-{
-    if (newBehaviorSettings.equals(globalBehaviorSettings()))
-        return;
-
-    globalBehaviorSettings() = newBehaviorSettings;
-    storeToSettings(behaviorGroup, Core::ICore::settings(), globalBehaviorSettings().toMap());
-
-    emit TextEditorSettings::instance()->behaviorSettingsChanged(newBehaviorSettings);
-}
-
-void setupBehaviorSettings()
-{
-    globalBehaviorSettings().fromMap(storeFromSettings(behaviorGroup, Core::ICore::settings()));
 }
 
 } // namespace TextEditor

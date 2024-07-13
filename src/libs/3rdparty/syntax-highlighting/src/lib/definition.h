@@ -10,11 +10,15 @@
 
 #include "ksyntaxhighlighting_export.h"
 
-#include <QList>
 #include <QPair>
-#include <QString>
+#include <QVector>
 #include <memory>
 #include <qobjectdefs.h>
+
+QT_BEGIN_NAMESPACE
+class QChar;
+class QString;
+QT_END_NAMESPACE
 
 namespace KSyntaxHighlighting
 {
@@ -181,13 +185,13 @@ public:
     /**
      * Mime types associated with this syntax definition.
      */
-    QList<QString> mimeTypes() const;
+    QVector<QString> mimeTypes() const;
 
     /**
      * File extensions associated with this syntax definition.
      * The returned list contains wildcards.
      */
-    QList<QString> extensions() const;
+    QVector<QString> extensions() const;
 
     /**
      * Returns the definition version.
@@ -356,7 +360,7 @@ public:
      * The order of the Format items equals the order of the itemDatas in the xml file.
      * @since 5.49
      */
-    QList<Format> formats() const;
+    QVector<Format> formats() const;
 
     /**
      * Returns a list of Definitions that are referenced with the IncludeRules rule.
@@ -365,7 +369,7 @@ public:
      *
      * @since 5.49
      */
-    QList<Definition> includedDefinitions() const;
+    QVector<Definition> includedDefinitions() const;
 
     /**
      * Returns the marker that starts a single line comment.
@@ -396,7 +400,7 @@ public:
      * the string \"{A} represents the character Ä.
      * @since 5.50
      */
-    QList<QPair<QChar, QString>> characterEncodings() const;
+    QVector<QPair<QChar, QString>> characterEncodings() const;
 
     /**
      * @}
@@ -405,14 +409,14 @@ public:
 private:
     friend class DefinitionData;
     friend class DefinitionRef;
-    KSYNTAXHIGHLIGHTING_NO_EXPORT explicit Definition(std::shared_ptr<DefinitionData> &&dd);
+    explicit Definition(std::shared_ptr<DefinitionData> &&dd);
     std::shared_ptr<DefinitionData> d;
 };
 
 }
 
 QT_BEGIN_NAMESPACE
-Q_DECLARE_TYPEINFO(KSyntaxHighlighting::Definition, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(KSyntaxHighlighting::Definition, Q_MOVABLE_TYPE);
 QT_END_NAMESPACE
 
 #endif

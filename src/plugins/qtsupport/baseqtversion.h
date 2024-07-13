@@ -1,20 +1,41 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "qtsupport_global.h"
 
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/macroexpander.h>
-#include <utils/store.h>
 
 #include <projectexplorer/abi.h>
 #include <projectexplorer/task.h>
 
 #include <QSet>
 #include <QStringList>
-#include <QVersionNumber>
+#include <QVariantMap>
 
 QT_BEGIN_NAMESPACE
 class ProFileEvaluator;
@@ -28,7 +49,7 @@ class FileInProjectFinder;
 
 namespace ProjectExplorer {
 class Kit;
-class Toolchain;
+class ToolChain;
 class Target;
 } // ProjectExplorer
 
@@ -37,19 +58,43 @@ namespace QtSupport {
 class QtConfigWidget;
 class QtVersion;
 
+class QTSUPPORT_EXPORT QtVersionNumber
+{
+public:
+    QtVersionNumber(int ma = -1, int mi = -1, int p = -1);
+    QtVersionNumber(const QString &versionString);
+
+    QSet<Utils::Id> features() const;
+
+    int majorVersion;
+    int minorVersion;
+    int patchVersion;
+
+    bool matches(int major = -1, int minor = -1, int patch = -1) const;
+
+    bool operator <(const QtVersionNumber &b) const;
+    bool operator <=(const QtVersionNumber &b) const;
+    bool operator >(const QtVersionNumber &b) const;
+    bool operator >=(const QtVersionNumber &b) const;
+    bool operator !=(const QtVersionNumber &b) const;
+    bool operator ==(const QtVersionNumber &b) const;
+};
+
 namespace Internal {
-class QtSettingsPageWidget;
+class QtOptionsPageWidget;
 class QtVersionPrivate;
 }
 
 class QTSUPPORT_EXPORT QtVersion
 {
+    Q_DECLARE_TR_FUNCTIONS(QtSupport::QtVersion)
+
 public:
     using Predicate = std::function<bool(const QtVersion *)>;
 
     virtual ~QtVersion();
 
-    virtual void fromMap(const Utils::Store &map, const Utils::FilePath &filePath = {});
+    virtual void fromMap(const QVariantMap &map);
     virtual bool equals(QtVersion *other);
 
     bool isAutodetected() const;
@@ -64,7 +109,7 @@ public:
 
     QString type() const;
 
-    virtual Utils::Store toMap() const;
+    virtual QVariantMap toMap() const;
     virtual bool isValid() const;
     static Predicate isValidPredicate(const Predicate &predicate = {});
     virtual QString invalidReason() const;
@@ -73,9 +118,7 @@ public:
     virtual QString description() const = 0;
     virtual QString toHtml(bool verbose) const;
 
-    bool hasQtAbisSet() const;
     ProjectExplorer::Abis qtAbis() const;
-    void setQtAbis(const ProjectExplorer::Abis &abis);
     bool hasAbi(ProjectExplorer::Abi::OS, ProjectExplorer::Abi::OSFlavor flavor = ProjectExplorer::Abi::UnknownFlavor) const;
 
     void applyProperties(QMakeGlobals *qmakeGlobals) const;
@@ -84,6 +127,8 @@ public:
 
     // source path defined by qmake property QT_INSTALL_PREFIX/src or by qmake.stash QT_SOURCE_TREE
     Utils::FilePath sourcePath() const;
+    // returns source path for installed qt packages and empty string for self build qt
+    Utils::FilePath qtPackageSourcePath() const;
     bool isInQtSourceDirectory(const Utils::FilePath &filePath) const;
     bool isQtSubProject(const Utils::FilePath &filePath) const;
 
@@ -97,9 +142,9 @@ public:
     Utils::FilePath qmlplugindumpFilePath() const;
 
     QString qtVersionString() const;
-    QVersionNumber qtVersion() const;
+    QtVersionNumber qtVersion() const;
 
-    Utils::FilePaths qtSoPaths() const;
+    QStringList qtSoPaths() const;
 
     bool hasExamples() const;
     bool hasDocs() const;
@@ -110,7 +155,7 @@ public:
 
     /// @returns the name of the mkspec
     QString mkspec() const;
-    QString mkspecFor(ProjectExplorer::Toolchain *tc) const;
+    QString mkspecFor(ProjectExplorer::ToolChain *tc) const;
     /// @returns the full path to the default directory
     /// specifally not the directory the symlink/ORIGINAL_QMAKESPEC points to
     Utils::FilePath mkspecPath() const;
@@ -131,7 +176,7 @@ public:
     /// Check a .pro-file/Qt version combination on possible issues
     /// @return a list of tasks, ordered on severity (errors first, then
     ///         warnings and finally info items.
-    ProjectExplorer::Tasks reportIssues(const Utils::FilePath &proFile, const Utils::FilePath &buildDir) const;
+    ProjectExplorer::Tasks reportIssues(const QString &proFile, const QString &buildDir) const;
 
     static bool isQmlDebuggingSupported(const ProjectExplorer::Kit *k, QString *reason = nullptr);
     bool isQmlDebuggingSupported(QString *reason = nullptr) const;
@@ -198,8 +243,7 @@ protected:
     QtVersion(const QtVersion &other) = delete;
 
     virtual QSet<Utils::Id> availableFeatures() const;
-    virtual ProjectExplorer::Tasks reportIssuesImpl(const Utils::FilePath &proFile,
-                                                    const Utils::FilePath &buildDir) const;
+    virtual ProjectExplorer::Tasks reportIssuesImpl(const QString &proFile, const QString &buildDir) const;
 
     virtual ProjectExplorer::Abis detectQtAbis() const;
 
@@ -218,7 +262,7 @@ private:
     friend class QtVersionFactory;
     friend class QtVersionManager;
     friend class Internal::QtVersionPrivate;
-    friend class Internal::QtSettingsPageWidget;
+    friend class Internal::QtOptionsPageWidget;
 
     void setId(int id);
     QtVersion *clone() const;
@@ -227,10 +271,6 @@ private:
 };
 
 using QtVersions = QList<QtVersion *>;
-
-#ifdef WITH_TESTS
-namespace Internal { QObject *createQtBuildStringParserTest(); }
-#endif
 
 } // QtSupport
 

@@ -1,43 +1,46 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Controls as Controls
-import QtQuick.Layouts
-import StudioControls as StudioControls
-import StudioTheme as StudioTheme
+import QtQuick 2.15
+import QtQuick.Controls 2.15 as Controls
+import QtQuick.Layouts 1.15
+import QtQuickDesignerTheme 1.0
+import StudioControls 1.0 as StudioControls
+import StudioTheme 1.0 as StudioTheme
 
 Item {
     id: section
-
-    property string caption: "Title"
-    property color labelColor: StudioTheme.Values.themeTextColor
-    property int labelCapitalization: Font.AllUppercase
+    property alias caption: label.text
+    property alias labelColor: label.color
     property alias sectionHeight: header.height
     property alias sectionBackgroundColor: header.color
-    property int sectionFontSize: StudioTheme.Values.myFontSize
+    property alias sectionFontSize: label.font.pixelSize
     property alias showTopSeparator: topSeparator.visible
     property alias showArrow: arrow.visible
     property alias showLeftBorder: leftBorder.visible
-    property alias showCloseButton: closeButton.visible
-    property alias closeButtonToolTip: closeButton.tooltip
-    property alias showEyeButton: eyeButton.visible
-    property alias eyeButtonToolTip: eyeButton.tooltip
     property alias spacing: column.spacing
-    property alias draggable: dragButton.visible
-    property alias fillBackground: sectionBackground.visible
-    property alias highlightBorder: sectionBorder.visible
-
-    property Item content: Controls.Label {
-        id: label
-        text: section.caption
-        color: section.labelColor
-        elide: Text.ElideRight
-        font.pixelSize: section.sectionFontSize
-        font.capitalization: section.labelCapitalization
-        anchors.verticalCenter: parent?.verticalCenter
-        textFormat: Text.RichText
-    }
 
     property int leftPadding: StudioTheme.Values.sectionLeftPadding
     property int rightPadding: 0
@@ -54,11 +57,8 @@ Item {
     property bool addBottomPadding: true
     property bool dropEnabled: false
     property bool highlight: false
-    property bool eyeEnabled: true // eye button enabled (on)
 
     property bool useDefaulContextMenu: true
-
-    property string category: "properties"
 
     clip: true
 
@@ -71,28 +71,19 @@ Item {
 
     Connections {
         target: Controller
-        function onCollapseAll(cat) {
-            if (section.collapsible && cat === section.category) {
+        function onCollapseAll() {
+            if (collapsible) {
                 if (section.expandOnClick)
                     section.expanded = false
                 else
                     section.collapse()
             }
         }
-        function onExpandAll(cat) {
-            if (cat === section.category) {
-                if (section.expandOnClick)
-                    section.expanded = true
-                else
-                    section.expand()
-            }
-        }
-        function onCloseContextMenu() {
-            contextMenu.close()
-        }
-        function onCountChanged(cat, count) {
-            if (section.showEyeButton && cat === section.category)
-                dragButton.enabled = count > 1
+        function onExpandAll() {
+            if (section.expandOnClick)
+                section.expanded = true
+            else
+                section.expand()
         }
     }
 
@@ -103,10 +94,6 @@ Item {
     signal toggleExpand()
     signal expand()
     signal collapse()
-    signal closeButtonClicked()
-    signal eyeButtonClicked()
-    signal startDrag(var section)
-    signal stopDrag()
 
     DropArea {
         id: dropArea
@@ -114,25 +101,9 @@ Item {
         enabled: section.dropEnabled
         anchors.fill: parent
 
-        onEntered: (drag) => section.dropEnter(drag)
-        onDropped: (drag) => section.drop(drag)
+        onEntered: (drag)=> section.dropEnter(drag)
+        onDropped: (drag)=> section.drop(drag)
         onExited: section.dropExit()
-    }
-
-    StudioControls.Menu {
-        id: contextMenu
-
-        StudioControls.MenuItem {
-            text: qsTr("Expand All")
-            onTriggered: Controller.expandAll(section.category)
-        }
-
-        StudioControls.MenuItem {
-            text: qsTr("Collapse All")
-            onTriggered: Controller.collapseAll(section.category)
-        }
-
-        onOpenedChanged: Controller.contextMenuOpened = contextMenu.opened
     }
 
     Rectangle {
@@ -144,6 +115,41 @@ Item {
         color: section.highlight ? StudioTheme.Values.themeInteraction
                                  : Qt.lighter(StudioTheme.Values.themeSectionHeadBackground, 1.0
                                               + (0.2 * section.level))
+
+        Item {
+            StudioControls.Menu {
+                id: contextMenu
+
+                StudioControls.MenuItem {
+                    text: qsTr("Expand All")
+                    onTriggered: Controller.expandAll()
+                }
+
+                StudioControls.MenuItem {
+                    text: qsTr("Collapse All")
+                    onTriggered: Controller.collapseAll()
+                }
+            }
+        }
+
+        Image {
+            id: arrow
+            width: 8
+            height: 4
+            source: "image://icons/down-arrow"
+            anchors.left: parent.left
+            anchors.leftMargin: 4 + (section.level * section.levelShift)
+            anchors.verticalCenter: parent.verticalCenter
+        }
+
+        Controls.Label {
+            id: label
+            anchors.verticalCenter: parent.verticalCenter
+            color: StudioTheme.Values.themeTextColor
+            x: 22 + (section.level * section.levelShift)
+            font.pixelSize: StudioTheme.Values.myFontSize
+            font.capitalization: Font.AllUppercase
+        }
 
         MouseArea {
             id: mouseArea
@@ -164,109 +170,7 @@ Item {
                 }
             }
         }
-
-        RowLayout {
-            spacing: 1
-            anchors.fill: parent
-
-            IconButton {
-                id: dragButton
-                visible: false
-                icon: StudioTheme.Constants.dragmarks
-                buttonSize: 21
-                iconScale: dragButton.enabled && dragButton.containsMouse ? 1.2 : 1
-                transparentBg: true
-
-                Layout.alignment: Qt.AlignVCenter
-                Layout.preferredWidth: dragButton.width
-                Layout.maximumWidth: dragButton.width
-
-                drag.target: dragButton.enabled ? section : null
-                drag.axis: Drag.YAxis
-
-                onPressed: {
-                    section.startDrag(section)
-                    section.z = ++section.parent.z // put the dragged section on top
-                }
-
-                onReleased: {
-                    section.stopDrag()
-                }
-            }
-
-            IconButton {
-                id: eyeButton
-
-                visible: false
-                icon: section.eyeEnabled ? StudioTheme.Constants.visible_small
-                                         : StudioTheme.Constants.invisible_small
-                buttonSize: 21
-                iconScale: eyeButton.containsMouse ? 1.2 : 1
-                transparentBg: true
-
-                Layout.alignment: Qt.AlignVCenter
-                Layout.preferredWidth: eyeButton.width
-                Layout.maximumWidth: eyeButton.width
-
-                onClicked: {
-                    section.eyeEnabled = !section.eyeEnabled
-                    section.eyeButtonClicked()
-                }
-            }
-
-            IconButton {
-                id: arrow
-                icon: StudioTheme.Constants.sectionToggle
-                transparentBg: true
-
-                buttonSize: 21
-                iconSize: StudioTheme.Values.smallIconFontSize
-                iconColor: StudioTheme.Values.themeTextColor
-
-                Layout.alignment: Qt.AlignVCenter
-                Layout.preferredWidth: arrow.width
-                Layout.maximumWidth: arrow.width
-
-                onClicked: function(mouse) {
-                    if (!section.collapsible && section.expanded)
-                        return
-
-                    transition.enabled = true
-                    if (section.expandOnClick)
-                        section.expanded = !section.expanded
-                    else
-                        section.toggleExpand()
-                }
-            }
-
-            Item {
-                id: headerContent
-                height: header.height
-                Layout.fillWidth: true
-                children: [ section.content ]
-            }
-
-            IconButton {
-                id: closeButton
-
-                visible: false
-                icon: StudioTheme.Constants.closeCross
-                buttonSize: 21
-                iconScale: closeButton.containsMouse ? 1.2 : 1
-                transparentBg: true
-
-                Layout.alignment: Qt.AlignVCenter
-                Layout.preferredWidth: closeButton.width
-                Layout.maximumWidth: closeButton.width
-                Layout.rightMargin: 10
-
-                onClicked: section.closeButtonClicked()
-            }
-        }
     }
-
-    Drag.active: dragButton.drag.active
-    Drag.source: dragButton
 
     Rectangle {
         id: topSeparator
@@ -284,24 +188,6 @@ Item {
     readonly property alias contentItem: column
 
     implicitHeight: Math.round(column.height + header.height + topSpacer.height + bottomSpacer.height)
-
-    Rectangle {
-        id: sectionBackground
-        anchors.top: header.bottom
-        width: section.width
-        height: topSpacer.height + column.height + bottomSpacer.height
-        color: StudioTheme.Values.themePanelBackground
-        visible: false
-    }
-
-    Rectangle {
-        id: sectionBorder
-        anchors.fill: parent
-        color: "transparent"
-        border.color: StudioTheme.Values.themeInteraction
-        border.width: 1
-        visible: false
-    }
 
     Item {
         id: topSpacer
@@ -322,7 +208,7 @@ Item {
         id: leftBorder
         visible: false
         width: 1
-        height: parent.height - section.bottomPadding
+        height: parent.height - bottomPadding
         color: header.color
     }
 
@@ -354,11 +240,6 @@ Item {
             properties: "implicitHeight,rotation"
             duration: 120
             easing.type: Easing.OutCubic
-        }
-
-        onRunningChanged: {
-            if (!transition.running)
-                transition.enabled = false
         }
     }
 }

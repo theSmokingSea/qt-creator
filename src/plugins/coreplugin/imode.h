@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -10,63 +32,45 @@
 #include <QIcon>
 #include <QMenu>
 
-#include <functional>
-#include <memory.h>
-
-namespace Utils {
-class FancyMainWindow;
-}
-
 namespace Core {
 
-namespace Internal {
-class IModePrivate;
-}
-
-class CORE_EXPORT IMode : public QObject
+class CORE_EXPORT IMode : public IContext
 {
     Q_OBJECT
     Q_PROPERTY(QString displayName READ displayName WRITE setDisplayName)
     Q_PROPERTY(QIcon icon READ icon WRITE setIcon)
     Q_PROPERTY(int priority READ priority WRITE setPriority)
     Q_PROPERTY(Utils::Id id READ id WRITE setId)
+    Q_PROPERTY(QMenu *menu READ menu WRITE setMenu)
     Q_PROPERTY(bool enabled READ isEnabled WRITE setEnabled NOTIFY enabledStateChanged)
 
 public:
     IMode(QObject *parent = nullptr);
-    ~IMode();
 
-    QString displayName() const;
-    QIcon icon() const;
-    int priority() const;
-    Utils::Id id() const;
+    QString displayName() const { return m_displayName; }
+    QIcon icon() const { return m_icon; }
+    int priority() const { return m_priority; }
+    Utils::Id id() const { return m_id; }
     bool isEnabled() const;
-    bool isVisible() const;
-    bool hasMenu() const;
-    void addToMenu(QMenu *menu) const;
-    Context context() const;
-    QWidget *widget() const;
+    QMenu *menu() const { return m_menu; }
 
     void setEnabled(bool enabled);
-    void setVisible(bool visible);
-    void setDisplayName(const QString &displayName);
-    void setIcon(const QIcon &icon);
-    void setPriority(int priority);
-    void setId(Utils::Id id);
-    void setMenu(std::function<void(QMenu *)> menuFunction);
-    void setContext(const Context &context);
-    void setWidget(QWidget *widget);
-    void setWidgetCreator(const std::function<QWidget *()> &widgetCreator);
-
-    Utils::FancyMainWindow *mainWindow();
-    void setMainWindow(Utils::FancyMainWindow *mw);
+    void setDisplayName(const QString &displayName) { m_displayName = displayName; }
+    void setIcon(const QIcon &icon) { m_icon = icon; }
+    void setPriority(int priority) { m_priority = priority; }
+    void setId(Utils::Id id) { m_id = id; }
+    void setMenu(QMenu *menu) { m_menu = menu; }
 
 signals:
     void enabledStateChanged(bool enabled);
-    void visibleChanged(bool visible);
 
 private:
-    std::unique_ptr<Internal::IModePrivate> m_d;
+    QString m_displayName;
+    QIcon m_icon;
+    QMenu *m_menu = nullptr;
+    int m_priority = -1;
+    Utils::Id m_id;
+    bool m_isEnabled = true;
 };
 
 } // namespace Core

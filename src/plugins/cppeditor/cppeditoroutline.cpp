@@ -1,23 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppeditoroutline.h"
-
-#include "cppeditorconstants.h"
-#include "cppeditordocument.h"
-#include "cppeditortr.h"
-#include "cppeditorwidget.h"
 #include "cppmodelmanager.h"
-#include "cppoutlinemodel.h"
+#include "cppoverviewmodel.h"
+#include "cpptoolsreuse.h"
 #include "cpptoolssettings.h"
 
 #include <texteditor/texteditor.h>
 #include <texteditor/textdocument.h>
-
 #include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/icore.h>
 
-#include <utils/storekey.h>
+#include <utils/linecolumn.h>
 #include <utils/treeviewcombobox.h>
 
 #include <QAction>
@@ -34,20 +50,20 @@
 
 enum { UpdateOutlineIntervalInMs = 500 };
 
-using namespace Core;
-using namespace Utils;
+namespace {
 
-namespace CppEditor::Internal {
-
-class OutlineProxyModel final : public QSortFilterProxyModel
+class OverviewProxyModel : public QSortFilterProxyModel
 {
+    Q_OBJECT
+
 public:
-    OutlineProxyModel(OutlineModel &sourceModel, QObject *parent)
+    OverviewProxyModel(CppEditor::AbstractOverviewModel &sourceModel, QObject *parent)
         : QSortFilterProxyModel(parent)
         , m_sourceModel(sourceModel)
-    {}
+    {
+    }
 
-    bool filterAcceptsRow(int sourceRow,const QModelIndex &sourceParent) const final
+    bool filterAcceptsRow(int sourceRow,const QModelIndex &sourceParent) const override
     {
         // Ignore generated symbols, e.g. by macro expansion (Q_OBJECT)
         const QModelIndex sourceIndex = m_sourceModel.index(sourceRow, 0, sourceParent);
@@ -57,42 +73,33 @@ public:
         return QSortFilterProxyModel::filterAcceptsRow(sourceRow, sourceParent);
     }
 private:
-    CppEditor::Internal::OutlineModel &m_sourceModel;
+    CppEditor::AbstractOverviewModel &m_sourceModel;
 };
 
-static Key sortEditorDocumentOutlineKey()
+QTimer *newSingleShotTimer(QObject *parent, int msInternal, const QString &objectName)
 {
-    return Key(Constants::CPPEDITOR_SETTINGSGROUP)
-         + '/' + Constants::CPPEDITOR_SORT_EDITOR_DOCUMENT_OUTLINE;
+    auto *timer = new QTimer(parent);
+    timer->setObjectName(objectName);
+    timer->setSingleShot(true);
+    timer->setInterval(msInternal);
+    return timer;
 }
 
-const bool kSortEditorDocumentOutlineDefault = true;
+} // anonymous namespace
 
-static bool sortedEditorDocumentOutline()
-{
-    return ICore::settings()
-        ->value(sortEditorDocumentOutlineKey(), kSortEditorDocumentOutlineDefault)
-        .toBool();
-}
+namespace CppEditor::Internal {
 
-static void setSortedEditorDocumentOutline(bool sorted)
-{
-    ICore::settings()->setValueWithDefault(sortEditorDocumentOutlineKey(),
-                                           sorted,
-                                           kSortEditorDocumentOutlineDefault);
-}
-
-CppEditorOutline::CppEditorOutline(CppEditorWidget *editorWidget)
+CppEditorOutline::CppEditorOutline(TextEditor::TextEditorWidget *editorWidget)
     : QObject(editorWidget)
     , m_editorWidget(editorWidget)
-    , m_combo(new TreeViewComboBox)
+    , m_combo(new Utils::TreeViewComboBox)
 {
-    m_model = &editorWidget->cppEditorDocument()->outlineModel();
-    m_proxyModel = new OutlineProxyModel(*m_model, this);
-    m_proxyModel->setSourceModel(m_model);
+    m_model = CppModelManager::instance()->createOverviewModel();
+    m_proxyModel = new OverviewProxyModel(*m_model, this);
+    m_proxyModel->setSourceModel(m_model.get());
 
     // Set up proxy model
-    if (sortedEditorDocumentOutline())
+    if (CppToolsSettings::instance()->sortedEditorDocumentOutline())
         m_proxyModel->sort(0, Qt::AscendingOrder);
     else
         m_proxyModel->sort(-1, Qt::AscendingOrder); // don't sort yet, but set column for sortedOutline()
@@ -108,24 +115,34 @@ CppEditorOutline::CppEditorOutline(CppEditorWidget *editorWidget)
     m_combo->setMaxVisibleItems(40);
 
     m_combo->setContextMenuPolicy(Qt::ActionsContextMenu);
-    m_sortAction = new QAction(Tr::tr("Sort Alphabetically"), m_combo);
+    m_sortAction = new QAction(tr("Sort Alphabetically"), m_combo);
     m_sortAction->setCheckable(true);
     m_sortAction->setChecked(isSorted());
-    connect(m_sortAction, &QAction::toggled, &setSortedEditorDocumentOutline);
+    connect(m_sortAction, &QAction::toggled,
+            CppToolsSettings::instance(),
+            &CppToolsSettings::setSortedEditorDocumentOutline);
     m_combo->addAction(m_sortAction);
 
-    connect(m_combo, &QComboBox::activated, this, &CppEditorOutline::gotoSymbolInEditor);
-    connect(m_combo, &QComboBox::currentIndexChanged, this, &CppEditorOutline::updateToolTip);
-
-    connect(m_model, &OutlineModel::modelReset, this, &CppEditorOutline::updateNow);
+    connect(m_combo, QOverload<int>::of(&QComboBox::activated),
+            this, &CppEditorOutline::gotoSymbolInEditor);
+    connect(m_combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &CppEditorOutline::updateToolTip);
 
     // Set up timers
-    m_updateIndexTimer = new QTimer(this);
-    m_updateIndexTimer->setObjectName("CppEditorOutline::m_updateIndexTimer");
-    m_updateIndexTimer->setSingleShot(true);
-    m_updateIndexTimer->setInterval(UpdateOutlineIntervalInMs);
+    m_updateTimer = newSingleShotTimer(this, UpdateOutlineIntervalInMs,
+                                       QLatin1String("CppEditorOutline::m_updateTimer"));
+    connect(m_updateTimer, &QTimer::timeout, this, &CppEditorOutline::updateNow);
+    connect(m_model.get(), &AbstractOverviewModel::needsUpdate, this,
+            &CppEditorOutline::updateNow);
 
+    m_updateIndexTimer = newSingleShotTimer(this, UpdateOutlineIntervalInMs,
+                                            QLatin1String("CppEditorOutline::m_updateIndexTimer"));
     connect(m_updateIndexTimer, &QTimer::timeout, this, &CppEditorOutline::updateIndexNow);
+}
+
+void CppEditorOutline::update()
+{
+    m_updateTimer->start();
 }
 
 bool CppEditorOutline::isSorted() const
@@ -133,13 +150,65 @@ bool CppEditorOutline::isSorted() const
     return m_proxyModel->sortColumn() == 0;
 }
 
+void CppEditorOutline::setSorted(bool sort)
+{
+    if (sort != isSorted()) {
+        if (sort)
+            m_proxyModel->sort(0, Qt::AscendingOrder);
+        else
+            m_proxyModel->sort(-1, Qt::AscendingOrder);
+        {
+            QSignalBlocker blocker(m_sortAction);
+            m_sortAction->setChecked(m_proxyModel->sortColumn() == 0);
+        }
+        updateIndexNow();
+    }
+}
+
+AbstractOverviewModel *CppEditorOutline::model() const
+{
+    return m_model.get();
+}
+
+QModelIndex CppEditorOutline::modelIndex()
+{
+    if (!m_modelIndex.isValid()) {
+        int line = 0, column = 0;
+        m_editorWidget->convertPosition(m_editorWidget->position(), &line, &column);
+        m_modelIndex = indexForPosition(line, column);
+        emit modelIndexChanged(m_modelIndex);
+    }
+
+    return m_modelIndex;
+}
+
 QWidget *CppEditorOutline::widget() const
 {
     return m_combo;
 }
 
+QSharedPointer<CPlusPlus::Document> getDocument(const QString &filePath)
+{
+    const CPlusPlus::Snapshot snapshot = CppModelManager::instance()->snapshot();
+    return snapshot.document(filePath);
+}
+
 void CppEditorOutline::updateNow()
 {
+    const QString filePath = m_editorWidget->textDocument()->filePath().toString();
+    m_document = getDocument(filePath);
+    if (!m_document)
+        return;
+
+    if (m_document->editorRevision()
+            != static_cast<unsigned>(m_editorWidget->document()->revision())) {
+        m_updateTimer->start();
+        return;
+    }
+
+    if (!m_model->rebuild(filePath))
+        m_model->rebuild(m_document);
+
     m_combo->view()->expandAll();
     updateIndexNow();
 }
@@ -151,16 +220,19 @@ void CppEditorOutline::updateIndex()
 
 void CppEditorOutline::updateIndexNow()
 {
-    if (m_model->editorRevision() != m_editorWidget->document()->revision()) {
-        m_editorWidget->cppEditorDocument()->updateOutline();
+    if (!m_document)
+        return;
+
+    const auto revision = static_cast<unsigned>(m_editorWidget->document()->revision());
+    if (m_document->editorRevision() != revision) {
+        m_updateIndexTimer->start();
         return;
     }
 
     m_updateIndexTimer->stop();
 
-    int line = 0, column = 0;
-    m_editorWidget->convertPosition(m_editorWidget->position(), &line, &column);
-    QModelIndex comboIndex = m_model->indexForPosition(line, column);
+    m_modelIndex = QModelIndex(); //invalidate
+    QModelIndex comboIndex = modelIndex();
 
     if (comboIndex.isValid()) {
         QSignalBlocker blocker(m_combo);
@@ -179,14 +251,51 @@ void CppEditorOutline::gotoSymbolInEditor()
     const QModelIndex modelIndex = m_combo->view()->currentIndex();
     const QModelIndex sourceIndex = m_proxyModel->mapToSource(modelIndex);
 
-    const Link link = m_model->linkFromIndex(sourceIndex);
+    const Utils::Link link = m_model->linkFromIndex(sourceIndex);
     if (!link.hasValidTarget())
         return;
 
-    EditorManager::cutForwardNavigationHistory();
-    EditorManager::addCurrentPositionToNavigationHistory();
+    Core::EditorManager::cutForwardNavigationHistory();
+    Core::EditorManager::addCurrentPositionToNavigationHistory();
     m_editorWidget->gotoLine(link.targetLine, link.targetColumn, true, true);
     emit m_editorWidget->activateEditor();
 }
 
+static bool contains(const AbstractOverviewModel::Range &range, int line, int column)
+{
+    if (line < range.first.line || line > range.second.line)
+        return false;
+    if (line == range.first.line && column < range.first.column)
+        return false;
+    if (line == range.second.line && column > range.second.column)
+        return false;
+    return true;
+}
+
+QModelIndex CppEditorOutline::indexForPosition(int line, int column,
+                                               const QModelIndex &rootIndex) const
+{
+    QModelIndex lastIndex = rootIndex;
+    const int rowCount = m_model->rowCount(rootIndex);
+    for (int row = 0; row < rowCount; ++row) {
+        const QModelIndex index = m_model->index(row, 0, rootIndex);
+        const AbstractOverviewModel::Range range = m_model->rangeFromIndex(index);
+        if (range.first.line > line)
+            break;
+        // Skip ranges that do not include current line and column.
+        if (range.second != range.first && !contains(range, line, column))
+            continue;
+        lastIndex = index;
+    }
+
+    if (lastIndex != rootIndex) {
+        // recurse
+        lastIndex = indexForPosition(line, column, lastIndex);
+    }
+
+    return lastIndex;
+}
+
 } // namespace CppEditor::Internal
+
+#include <cppeditoroutline.moc>

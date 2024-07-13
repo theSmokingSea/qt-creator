@@ -1,18 +1,39 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Layouts
-import HelperWidgets 2.0 as HelperWidgets
+import QtQuick 2.15
+import QtQuick.Layouts 1.15
 import StudioControls 1.0 as StudioControls
 import StudioTheme 1.0 as StudioTheme
 
 Item {
-    id: root
+    id: editableListView
 
     ExtendedFunctionLogic {
         id: extFuncLogic
-        backendValue: root.backendValue
+        backendValue: editableListView.backendValue
     }
 
     property var backendValue
@@ -24,18 +45,9 @@ Item {
     property real __actionIndicatorWidth: StudioTheme.Values.squareComponentWidth
     property real __actionIndicatorHeight: StudioTheme.Values.height
     property string typeFilter: "QtQuick3D.Material"
-    // This binding is a workaround to overcome the rather long adaption to new Qt versions. This
-    // should actually be fixed in the ModelSection.qml by setting the textRole: "idAndName".
-    property string textRole: (root.typeFilter === "QtQuick3D.Material") ? "idAndName" : "id"
-    property string valueRole: "id"
     property int activatedReason: ComboBox.ActivatedReason.Other
 
     property bool delegateHover: false
-    property bool allowDuplicates: true
-
-    property string extraButtonIcon: "" // setting this will show an extra button
-    property string extraButtonToolTip: ""
-    signal extraButtonClicked(int idx)
 
     signal add(string value)
     signal remove(int idx)
@@ -44,109 +56,68 @@ Item {
     Layout.preferredWidth: StudioTheme.Values.height * 10
     Layout.preferredHeight: myColumn.height
 
-    HelperWidgets.ListValidator {
-        id: listValidator
-        filterList: itemFilterModel.validationItems
-    }
-
-    HelperWidgets.ItemFilterModel {
-        id: itemFilterModel
-        typeFilter: root.typeFilter
-        modelNodeBackendProperty: modelNodeBackend
-        selectedItems: root.allowDuplicates ? [] : root.model
-        validationRoles: [root.textRole, root.valueRole]
-    }
-
     Component {
         id: myDelegate
 
         Row {
-            property alias comboBox: delegateComboBox
-
+            property alias comboBox: itemFilterComboBox
             ListViewComboBox {
-                id: delegateComboBox
+                id: itemFilterComboBox
 
                 property int myIndex: index
-                property bool empty: delegateComboBox.initialModelData === ""
+                property bool empty: itemFilterComboBox.initialModelData === ""
 
-                validator: listValidator
+                validator: RegExpValidator { regExp: /(^[a-z_]\w*|^[A-Z]\w*\.{1}([a-z_]\w*\.?)+)/ }
+
                 actionIndicatorVisible: false
-                model: itemFilterModel
+                typeFilter: editableListView.typeFilter
+                editText: modelData
                 initialModelData: modelData
-                textRole: root.textRole
-                valueRole: root.valueRole
                 implicitWidth: StudioTheme.Values.singleControlColumnWidth
-                width: delegateComboBox.implicitWidth
-                textElidable: true
+                width: implicitWidth
 
                 onFocusChanged: {
-                    if (delegateComboBox.focus) {
+                    if (itemFilterComboBox.focus)
                         myColumn.currentIndex = index
-                    } else {
-                        if (!delegateComboBox.dirty)
-                            return
 
-                        // If focus is lost check if text was changed and try to search for it in
-                        // the text as well as in the value role.
-                        let idx = delegateComboBox.indexOfString(delegateComboBox.editText)
-                        if (idx === -1) {
-                            delegateComboBox.editText = delegateComboBox.preFocusText
-                        } else {
-                            delegateComboBox.currentIndex = idx
-                            if (delegateComboBox.empty && delegateComboBox.currentValue !== "") {
-                                myRepeater.dirty = false
-                                root.add(delegateComboBox.currentValue)
-                            } else {
-                                root.replace(delegateComboBox.myIndex, delegateComboBox.currentValue)
-                            }
-                        }
-                    }
-                }
-
-                onCompressedActivated: function(index, reason) {
-                    root.activatedReason = reason
-
-                    var curValue = delegateComboBox.availableValue()
-                    if (delegateComboBox.empty && curValue) {
+                    if (itemFilterComboBox.empty && itemFilterComboBox.editText !== "") {
                         myRepeater.dirty = false
-                        root.add(curValue)
-                    } else {
-                        root.replace(delegateComboBox.myIndex, curValue)
+                        editableListView.add(itemFilterComboBox.editText)
                     }
                 }
 
-                onHoverChanged: root.delegateHover = delegateComboBox.hover
+                onCompressedActivated: {
+                    editableListView.activatedReason = reason
+
+                    if (itemFilterComboBox.empty && itemFilterComboBox.editText !== "") {
+                        myRepeater.dirty = false
+                        editableListView.add(itemFilterComboBox.editText)
+                    } else {
+                        editableListView.replace(itemFilterComboBox.myIndex, itemFilterComboBox.editText)
+                    }
+                }
+
+                onHoverChanged: editableListView.delegateHover = itemFilterComboBox.hover
             }
 
-            Spacer { implicitWidth: extraButton.visible ? 5 : StudioTheme.Values.twoControlColumnGap }
-
-            IconIndicator {
-                id: extraButton
-                icon: root.extraButtonIcon
-                tooltip: root.extraButtonToolTip
-                onClicked: root.extraButtonClicked(index)
-                visible: root.extraButtonIcon !== ""
-                enabled: root.model[index] ?? false
-            }
+            Spacer { implicitWidth: StudioTheme.Values.twoControlColumnGap }
 
             IconIndicator {
                 id: closeIndicator
                 icon: StudioTheme.Constants.closeCross
                 onClicked: {
                     var lastItem = index === myRepeater.localModel.length - 1
-                    var tmp = myRepeater.itemAt(index)
-
-                    myColumn.currentIndex = index - 1
-
-                    if (tmp.comboBox.initialModelData === "") {
+                    if (myColumn.currentItem.initialModelData === "") {
                         myRepeater.localModel.pop()
                         myRepeater.dirty = false
                         myRepeater.model = myRepeater.localModel // trigger on change handler
                     } else {
-                        root.remove(index)
+                        editableListView.remove(index)
                     }
+                    if (!lastItem)
+                        myColumn.currentIndex = index - 1
                 }
-                onHoveredChanged: root.delegateHover = closeIndicator.hovered
+                onHoveredChanged: editableListView.delegateHover = closeIndicator.hovered
             }
         }
     }
@@ -154,7 +125,7 @@ Item {
     Row {
         ActionIndicator {
             id: actionIndicator
-            icon.visible: root.delegateHover
+            icon.visible: editableListView.delegateHover
             icon.color: extFuncLogic.color
             icon.text: extFuncLogic.glyph
             onClicked: extFuncLogic.show()
@@ -174,11 +145,6 @@ Item {
                     myColumn.currentItem = tmp.comboBox
             }
 
-            onCurrentItemChanged: {
-                if (myColumn.currentItem !== null)
-                    myColumn.currentItem.forceActiveFocus()
-            }
-
             Repeater {
                 id: myRepeater
 
@@ -189,7 +155,7 @@ Item {
 
                 onItemAdded: function(index, item) {
                     if (index === myColumn.currentIndex)
-                        myColumn.currentItem = item.comboBox
+                        myColumn.currentItem = item
                 }
 
                 function updateModel() {
@@ -197,7 +163,7 @@ Item {
                     myColumn.currentIndex = -1
                     myRepeater.localModel = []
 
-                    root.model.forEach(function(item) {
+                    editableListView.model.forEach(function(item) {
                         myRepeater.localModel.push(item)
                     });
 
@@ -207,12 +173,14 @@ Item {
 
                     myRepeater.model = myRepeater.localModel // trigger on change handler
 
-                    if (myRepeater.localModel.length > lastIndex)
+                    if (lastIndex < 0 && myRepeater.localModel.length > 0)
+                        myColumn.currentIndex = 0
+                    else if (myRepeater.localModel.length > lastIndex)
                         myColumn.currentIndex = lastIndex
                     else
                         myColumn.currentIndex = myRepeater.localModel.length - 1
 
-                    if (root.activatedReason === ComboBox.ActivatedReason.Other
+                    if (editableListView.activatedReason === ComboBox.ActivatedReason.Other
                         && myColumn.currentItem !== null)
                         myColumn.currentItem.forceActiveFocus()
                 }
@@ -221,51 +189,34 @@ Item {
             ListViewComboBox {
                 id: dummyComboBox
                 visible: myRepeater.count === 0
-                validator: listValidator
+                validator: RegExpValidator { regExp: /(^[a-z_]\w*|^[A-Z]\w*\.{1}([a-z_]\w*\.?)+)/ }
                 actionIndicatorVisible: false
-                model: itemFilterModel
-                textRole: root.textRole
-                valueRole: root.valueRole
+                typeFilter: editableListView.typeFilter
                 implicitWidth: StudioTheme.Values.singleControlColumnWidth
-                width: dummyComboBox.implicitWidth
-
-                onVisibleChanged: dummyComboBox.currentIndex = -1
+                width: implicitWidth
 
                 onFocusChanged: {
-                    if (dummyComboBox.focus)
-                        return
-
-                    if (!dummyComboBox.dirty)
-                        return
-
-                    // If focus is lost check if text was changed and try to search for it in
-                    // the text as well as in the value role.
-                    let idx = dummyComboBox.indexOfString(dummyComboBox.editText)
-                    if (idx === -1) {
-                        dummyComboBox.editText = dummyComboBox.preFocusText
-                    } else {
-                        dummyComboBox.currentIndex = idx
-                        if (dummyComboBox.currentValue !== "")
-                            root.add(dummyComboBox.currentValue)
-                    }
+                    if (dummyComboBox.editText !== "")
+                        editableListView.add(dummyComboBox.editText)
                 }
 
-                onCompressedActivated: function(index, reason) {
-                    root.activatedReason = reason
+                onCompressedActivated: {
+                    editableListView.activatedReason = reason
 
-                    var curValue = dummyComboBox.availableValue()
-                    if (curValue !== "")
-                        root.add(curValue)
+                    if (dummyComboBox.editText !== "")
+                        editableListView.add(dummyComboBox.editText)
+                    else
+                        editableListView.replace(dummyComboBox.myIndex, dummyComboBox.editText)
                 }
 
-                onHoverChanged: root.delegateHover = dummyComboBox.hover
+                onHoverChanged: editableListView.delegateHover = dummyComboBox.hover
             }
 
             StudioControls.AbstractButton {
                 id: plusButton
                 buttonIcon: StudioTheme.Constants.plus
-                enabled: !myRepeater.dirty && !(root.backendValue.isInModel
-                                                && !root.backendValue.isIdList)
+                enabled: !myRepeater.dirty && !(editableListView.backendValue.isInModel
+                                                && !editableListView.backendValue.isIdList)
                 onClicked: {
                     var idx = myRepeater.localModel.push("") - 1
                     myRepeater.model = myRepeater.localModel // trigger on change handler
@@ -274,7 +225,7 @@ Item {
                     myColumn.currentItem.forceActiveFocus()
                 }
 
-                onHoveredChanged: root.delegateHover = plusButton.hovered
+                onHoveredChanged: editableListView.delegateHover = plusButton.hovered
             }
         }
     }

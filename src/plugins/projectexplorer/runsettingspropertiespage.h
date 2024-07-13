@@ -1,9 +1,29 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
-
-#include <utils/guard.h>
 
 #include <QWidget>
 
@@ -41,7 +61,6 @@ private:
     void showAddRunConfigDialog();
     void cloneRunConfiguration();
     void removeRunConfiguration();
-    void removeAllRunConfigurations();
     void activeRunConfigurationChanged();
     void renameRunConfiguration();
     void currentDeployConfigurationChanged(int index);
@@ -50,7 +69,7 @@ private:
     void activeDeployConfigurationChanged();
     void renameDeployConfiguration();
 
-    void updateRemoveToolButtons();
+    void updateRemoveToolButton();
 
     QString uniqueDCName(const QString &name);
     QString uniqueRCName(const QString &name);
@@ -71,7 +90,7 @@ private:
     QVBoxLayout *m_deployLayout = nullptr;
     BuildStepListWidget *m_deploySteps = nullptr;
     QMenu *m_addDeployMenu;
-    Utils::Guard m_ignoreChanges;
+    bool m_ignoreChange = false;
     using RunConfigItem = QPair<QWidget *, QLabel *>;
     QList<RunConfigItem> m_subWidgets;
 
@@ -83,7 +102,6 @@ private:
     QPushButton *m_removeDeployToolButton;
     QPushButton *m_addRunToolButton;
     QPushButton *m_removeRunToolButton;
-    QPushButton *m_removeAllRunConfigsButton;
     QPushButton *m_renameRunButton;
     QPushButton *m_cloneRunButton;
     QPushButton *m_renameDeployButton;

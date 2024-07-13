@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sqlitedatabasebackend.h"
 
@@ -84,22 +106,16 @@ void DatabaseBackend::checkpointFullWalLog()
     checkIfLogCouldBeCheckpointed(resultCode);
 }
 
-void DatabaseBackend::open(Utils::SmallStringView databaseFilePath,
-                           OpenMode openMode,
-                           JournalMode journalMode)
+void DatabaseBackend::open(Utils::SmallStringView databaseFilePath, OpenMode mode)
 {
     checkCanOpenDatabase(databaseFilePath);
 
-    sqlite3 *handle = m_databaseHandle.get();
-    int resultCode = sqlite3_open_v2(std::string(databaseFilePath).c_str(),
-                                     &handle,
-                                     createOpenFlags(openMode, journalMode),
-                                     nullptr);
-    m_databaseHandle.reset(handle);
+    int resultCode = sqlite3_open_v2(databaseFilePath.data(), &m_databaseHandle, openMode(mode), nullptr);
 
     checkDatabaseCouldBeOpened(resultCode);
 
-    resultCode = sqlite3_carray_init(m_databaseHandle.get(), nullptr, nullptr);
+    sqlite3_extended_result_codes(m_databaseHandle, true);
+    resultCode = sqlite3_carray_init(m_databaseHandle, nullptr, nullptr);
 
     checkCarrayCannotBeIntialized(resultCode);
 }
@@ -107,7 +123,7 @@ void DatabaseBackend::open(Utils::SmallStringView databaseFilePath,
 sqlite3 *DatabaseBackend::sqliteDatabaseHandle() const
 {
     checkDatabaseHandleIsNotNull();
-    return m_databaseHandle.get();
+    return m_databaseHandle;
 }
 
 void DatabaseBackend::setPragmaValue(Utils::SmallStringView pragmaKey, Utils::SmallStringView newPragmaValue)
@@ -171,19 +187,6 @@ LockingMode DatabaseBackend::lockingMode() const
     return pragmaToLockingMode(pragmaValue("main.locking_mode"));
 }
 
-int DatabaseBackend::version() const
-{
-    return toValue<int>("PRAGMA main.user_version");
-}
-
-void DatabaseBackend::setVersion(int version)
-{
-    ReadWriteStatement<>{Utils::SmallString{"PRAGMA main.user_version = "}
-                             + Utils::SmallString::number(version),
-                         m_database}
-        .execute();
-}
-
 int DatabaseBackend::changesCount() const
 {
     return sqlite3_changes(sqliteDatabaseHandle());
@@ -218,11 +221,12 @@ void DatabaseBackend::close()
 {
     checkForOpenDatabaseWhichCanBeClosed();
 
-    int resultCode = sqlite3_close(m_databaseHandle.get());
+    int resultCode = sqlite3_close(m_databaseHandle);
 
     checkDatabaseClosing(resultCode);
 
-    m_databaseHandle.release();
+    m_databaseHandle = nullptr;
+
 }
 
 bool DatabaseBackend::databaseIsOpen() const
@@ -232,7 +236,12 @@ bool DatabaseBackend::databaseIsOpen() const
 
 void DatabaseBackend::closeWithoutException()
 {
-    m_databaseHandle.reset();
+    if (m_databaseHandle) {
+        int resultCode = sqlite3_close_v2(m_databaseHandle);
+        m_databaseHandle = nullptr;
+        if (resultCode != SQLITE_OK)
+            qWarning() << "SqliteDatabaseBackend::closeWithoutException: Unexpected error at closing the database!";
+    }
 }
 
 namespace {
@@ -248,44 +257,23 @@ int busyHandlerCallback(void *userData, int counter)
 
 void DatabaseBackend::registerBusyHandler()
 {
-    int resultCode = sqlite3_busy_handler(sqliteDatabaseHandle(),
-                                          &busyHandlerCallback,
-                                          &m_busyHandler);
+    int resultCode = sqlite3_busy_handler(sqliteDatabaseHandle(), &busyHandlerCallback, &m_busyHandler);
 
     checkIfBusyTimeoutWasSet(resultCode);
-}
-
-void DatabaseBackend::resetDatabaseForTestsOnly()
-{
-    sqlite3_db_config(sqliteDatabaseHandle(), SQLITE_DBCONFIG_RESET_DATABASE, 1, 0);
-    sqlite3_exec(sqliteDatabaseHandle(), "VACUUM", nullptr, nullptr, nullptr);
-    sqlite3_db_config(sqliteDatabaseHandle(), SQLITE_DBCONFIG_RESET_DATABASE, 0, 0);
-}
-
-void DatabaseBackend::enableForeignKeys()
-{
-    sqlite3_exec(sqliteDatabaseHandle(), "PRAGMA foreign_keys=ON", nullptr, nullptr, nullptr);
-}
-
-void DatabaseBackend::disableForeignKeys()
-{
-    sqlite3_exec(sqliteDatabaseHandle(), "PRAGMA foreign_keys=OFF", nullptr, nullptr, nullptr);
 }
 
 void DatabaseBackend::checkForOpenDatabaseWhichCanBeClosed()
 {
     if (m_databaseHandle == nullptr)
-        throw DatabaseIsAlreadyClosed();
+        throw DatabaseIsAlreadyClosed("SqliteDatabaseBackend::close: database is not open so it cannot be closed.");
 }
 
 void DatabaseBackend::checkDatabaseClosing(int resultCode)
 {
     switch (resultCode) {
         case SQLITE_OK: return;
-        case SQLITE_BUSY:
-        throw DatabaseIsBusy();
-        default:
-        throw UnknowError("SqliteDatabaseBackend::close: unknown error happens at closing!");
+        case SQLITE_BUSY: throw DatabaseIsBusy("SqliteDatabaseBackend::close: database is busy because of e.g. unfinalized statements and will stay open!");
+        default: throwUnknowError("SqliteDatabaseBackend::close: unknown error happens at closing!");
     }
 }
 
@@ -294,8 +282,9 @@ void DatabaseBackend::checkCanOpenDatabase(Utils::SmallStringView databaseFilePa
     if (databaseFilePath.isEmpty())
         throw DatabaseFilePathIsEmpty("SqliteDatabaseBackend::SqliteDatabaseBackend: database cannot be opened because the file path is empty!");
 
-    if (!QFileInfo::exists(QFileInfo(QString{databaseFilePath}).path()))
-        throw WrongFilePath(Utils::SmallString(databaseFilePath));
+    if (!QFileInfo::exists(QFileInfo(QString(databaseFilePath)).path()))
+        throw WrongFilePath("SqliteDatabaseBackend::SqliteDatabaseBackend: database cannot be opened because of wrong file path!",
+                            Utils::SmallString(databaseFilePath));
 
     if (databaseIsOpen())
         throw DatabaseIsAlreadyOpen("SqliteDatabaseBackend::SqliteDatabaseBackend: database cannot be opened because it is already open!");
@@ -303,75 +292,81 @@ void DatabaseBackend::checkCanOpenDatabase(Utils::SmallStringView databaseFilePa
 
 void DatabaseBackend::checkDatabaseCouldBeOpened(int resultCode)
 {
-    if (resultCode != SQLITE_OK) {
-        try {
-            Sqlite::throwError(resultCode, sqliteDatabaseHandle());
-        } catch (...) {
+    switch (resultCode) {
+        case SQLITE_OK:
+            return;
+        default:
             closeWithoutException();
-            throw;
+            throw UnknowError(
+                "SqliteDatabaseBackend::SqliteDatabaseBackend: database cannot be opened:",
+                sqlite3_errmsg(sqliteDatabaseHandle()));
         }
-    }
 }
 
 void DatabaseBackend::checkCarrayCannotBeIntialized(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw DatabaseIsNotOpen();
+        throwDatabaseIsNotOpen(
+            "SqliteDatabaseBackend: database cannot be opened because carray failed!");
 }
 
 void DatabaseBackend::checkPragmaValue(Utils::SmallStringView databaseValue,
                                        Utils::SmallStringView expectedValue)
 {
     if (databaseValue != expectedValue)
-        throw PragmaValueNotSet();
+        throw PragmaValueNotSet("SqliteDatabaseBackend::setPragmaValue: pragma value is not set!");
 }
 
 void DatabaseBackend::checkDatabaseHandleIsNotNull() const
 {
     if (m_databaseHandle == nullptr)
-        throw DatabaseIsNotOpen();
+        throwDatabaseIsNotOpen("SqliteDatabaseBackend: database is not open!");
 }
 
 void DatabaseBackend::checkIfMultithreadingIsActivated(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw MultiTheadingCannotBeActivated{};
+        throwExceptionStatic(
+            "SqliteDatabaseBackend::activateMultiThreading: multithreading can't be activated!");
 }
 
 void DatabaseBackend::checkIfLoogingIsActivated(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw LoggingCannotBeActivated{};
+        throwExceptionStatic("SqliteDatabaseBackend::activateLogging: logging can't be activated!");
 }
 
 void DatabaseBackend::checkMmapSizeIsSet(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw MemoryMappingCannotBeChanged{};
+        throwExceptionStatic(
+            "SqliteDatabaseBackend::checkMmapSizeIsSet: mmap size can't be changed!");
 }
 
 void DatabaseBackend::checkInitializeSqliteLibraryWasSuccesful(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw LibraryCannotBeInitialized{};
+        throwExceptionStatic(
+            "SqliteDatabaseBackend::initializeSqliteLibrary: SqliteLibrary cannot initialized!");
 }
 
 void DatabaseBackend::checkShutdownSqliteLibraryWasSuccesful(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw LibraryCannotBeShutdown{};
+        throwExceptionStatic(
+            "SqliteDatabaseBackend::shutdownSqliteLibrary: SqliteLibrary cannot be shutdowned!");
 }
 
 void DatabaseBackend::checkIfLogCouldBeCheckpointed(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw LogCannotBeCheckpointed{};
+        throwException("SqliteDatabaseBackend::checkpointFullWalLog: WAL log could not be checkpointed!");
 }
 
 void DatabaseBackend::checkIfBusyTimeoutWasSet(int resultCode)
 {
     if (resultCode != SQLITE_OK)
-        throw BusyTimerCannotBeSet{};
+        throwException("SqliteDatabaseBackend::setBusyTimeout: Busy timeout cannot be set!");
 }
 
 namespace {
@@ -403,57 +398,65 @@ JournalMode DatabaseBackend::pragmaToJournalMode(Utils::SmallStringView pragma)
     int index = indexOfPragma(pragma, journalModeStrings);
 
     if (index < 0)
-        throw PragmaValueCannotBeTransformed{};
+        throwExceptionStatic("SqliteDatabaseBackend::pragmaToJournalMode: pragma can't be transformed in a journal mode enumeration!");
 
     return static_cast<JournalMode>(index);
 }
 
-int DatabaseBackend::createOpenFlags(OpenMode openMode, JournalMode journalMode)
+int DatabaseBackend::openMode(OpenMode mode)
 {
-    int sqliteOpenFlags = SQLITE_OPEN_CREATE | SQLITE_OPEN_EXRESCODE;
+    int sqliteMode = SQLITE_OPEN_CREATE;
 
-    if (journalMode == JournalMode::Memory)
-        sqliteOpenFlags |= SQLITE_OPEN_MEMORY;
-
-    switch (openMode) {
-    case OpenMode::ReadOnly:
-        sqliteOpenFlags |= SQLITE_OPEN_READONLY;
-        break;
-    case OpenMode::ReadWrite:
-        sqliteOpenFlags |= SQLITE_OPEN_READWRITE;
-        break;
+    switch (mode) {
+        case OpenMode::ReadOnly: sqliteMode |= SQLITE_OPEN_READONLY; break;
+        case OpenMode::ReadWrite: sqliteMode |= SQLITE_OPEN_READWRITE; break;
     }
 
-    return sqliteOpenFlags;
+    return sqliteMode;
 }
 
 void DatabaseBackend::setBusyTimeout(std::chrono::milliseconds timeout)
 {
-    sqlite3_busy_timeout(m_databaseHandle.get(), int(timeout.count()));
+    sqlite3_busy_timeout(m_databaseHandle, int(timeout.count()));
 }
 
 void DatabaseBackend::walCheckpointFull()
 {
-    int resultCode = sqlite3_wal_checkpoint_v2(m_databaseHandle.get(),
+    int resultCode = sqlite3_wal_checkpoint_v2(m_databaseHandle,
                                                nullptr,
                                                SQLITE_CHECKPOINT_TRUNCATE,
                                                nullptr,
                                                nullptr);
 
-    if (resultCode != SQLITE_OK)
-        Sqlite::throwError(resultCode, sqliteDatabaseHandle());
+    switch (resultCode) {
+    case SQLITE_OK:
+        break;
+    case SQLITE_BUSY_RECOVERY:
+    case SQLITE_BUSY_SNAPSHOT:
+    case SQLITE_BUSY_TIMEOUT:
+    case SQLITE_BUSY:
+        throw DatabaseIsBusy("DatabaseBackend::walCheckpointFull: Operation could not concluded "
+                             "because database is busy!");
+    case SQLITE_ERROR_MISSING_COLLSEQ:
+    case SQLITE_ERROR_RETRY:
+    case SQLITE_ERROR_SNAPSHOT:
+    case SQLITE_ERROR:
+        throwException("DatabaseBackend::walCheckpointFull: Error occurred!");
+    case SQLITE_MISUSE:
+        throwExceptionStatic("DatabaseBackend::walCheckpointFull: Misuse of database!");
+    }
 }
 
 void DatabaseBackend::setUpdateHook(
     void *object,
     void (*callback)(void *object, int, char const *database, char const *, long long rowId))
 {
-    sqlite3_update_hook(m_databaseHandle.get(), callback, object);
+    sqlite3_update_hook(m_databaseHandle, callback, object);
 }
 
 void DatabaseBackend::resetUpdateHook()
 {
-    sqlite3_update_hook(m_databaseHandle.get(), nullptr, nullptr);
+    sqlite3_update_hook(m_databaseHandle, nullptr, nullptr);
 }
 
 void DatabaseBackend::setBusyHandler(DatabaseBackend::BusyHandler &&busyHandler)
@@ -462,34 +465,27 @@ void DatabaseBackend::setBusyHandler(DatabaseBackend::BusyHandler &&busyHandler)
     registerBusyHandler();
 }
 
-namespace {
-
-int progressHandlerCallback(void *userData)
+void DatabaseBackend::throwExceptionStatic(const char *whatHasHappens)
 {
-    auto &&progressHandler = *static_cast<DatabaseBackend::ProgressHandler *>(userData);
-
-    return progressHandler() == Progress::Interrupt;
+    throw Exception(whatHasHappens);
 }
 
-} // namespace
-
-void DatabaseBackend::setProgressHandler(int operationCount, ProgressHandler &&progressHandler)
+void DatabaseBackend::throwException(const char *whatHasHappens) const
 {
-    m_progressHandler = std::move(progressHandler);
-
-    if (m_progressHandler)
-        sqlite3_progress_handler(sqliteDatabaseHandle(),
-                                 operationCount,
-                                 &progressHandlerCallback,
-                                 &m_progressHandler);
-    else {
-        sqlite3_progress_handler(sqliteDatabaseHandle(), 0, nullptr, nullptr);
-    }
+    if (m_databaseHandle)
+        throw ExceptionWithMessage(whatHasHappens, sqlite3_errmsg(m_databaseHandle));
+    else
+        throw Exception(whatHasHappens);
 }
 
-void DatabaseBackend::resetProgressHandler()
+void DatabaseBackend::throwUnknowError(const char *whatHasHappens) const
 {
-    sqlite3_progress_handler(sqliteDatabaseHandle(), 0, nullptr, nullptr);
+    throw UnknowError(whatHasHappens);
+}
+
+void DatabaseBackend::throwDatabaseIsNotOpen(const char *whatHasHappens) const
+{
+    throw DatabaseIsNotOpen(whatHasHappens);
 }
 
 template<typename Type>
@@ -503,16 +499,6 @@ Type DatabaseBackend::toValue(Utils::SmallStringView sqlStatement) const
         return statement.fetchValue<Type>(0);
     } catch (StatementIsBusy &) {
         return toValue<Type>(sqlStatement);
-    }
-}
-
-void DatabaseBackend::Deleter::operator()(sqlite3 *database)
-{
-    if (database) {
-        int resultCode = sqlite3_close_v2(database);
-        if (resultCode != SQLITE_OK)
-            qWarning() << "SqliteDatabaseBackend::closeWithoutException: Unexpected error at "
-                          "closing the database!";
     }
 }
 

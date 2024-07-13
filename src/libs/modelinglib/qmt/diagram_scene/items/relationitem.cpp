@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "relationitem.h"
 
@@ -249,7 +271,7 @@ void RelationItem::moveDelta(const QPointF &delta)
 {
     m_diagramSceneModel->diagramController()->startUpdateElement(m_relation, m_diagramSceneModel->diagram(), DiagramController::UpdateGeometry);
     QList<DRelation::IntermediatePoint> points;
-    for (const DRelation::IntermediatePoint &point : m_relation->intermediatePoints())
+    foreach (const DRelation::IntermediatePoint &point, m_relation->intermediatePoints())
         points << DRelation::IntermediatePoint(point.pos() + delta);
     m_relation->setIntermediatePoints(points);
     m_diagramSceneModel->diagramController()->finishUpdateElement(m_relation, m_diagramSceneModel->diagram(), false);
@@ -259,7 +281,7 @@ void RelationItem::alignItemPositionToRaster(double rasterWidth, double rasterHe
 {
     m_diagramSceneModel->diagramController()->startUpdateElement(m_relation, m_diagramSceneModel->diagram(), DiagramController::UpdateGeometry);
     QList<DRelation::IntermediatePoint> points;
-    for (const DRelation::IntermediatePoint &point : m_relation->intermediatePoints()) {
+    foreach (const DRelation::IntermediatePoint &point, m_relation->intermediatePoints()) {
         QPointF pos = point.pos();
         double x = qRound(pos.x() / rasterWidth) * rasterWidth;
         double y = qRound(pos.y() / rasterHeight) * rasterHeight;
@@ -380,12 +402,7 @@ void RelationItem::setHandlePos(int index, const QPointF &pos)
     }
 }
 
-static inline bool between(double v, double mid, double range)
-{
-    return v >= mid-range && v <= mid+range;
-}
-
-void RelationItem::dropHandle(int index, bool extraSnap, double rasterWidth, double rasterHeight)
+void RelationItem::dropHandle(int index, double rasterWidth, double rasterHeight)
 {
     if (index == 0) {
         m_grabbedEndA = false;
@@ -403,40 +420,9 @@ void RelationItem::dropHandle(int index, bool extraSnap, double rasterWidth, dou
         QMT_ASSERT(index >= 0 && index < intermediatePoints.size(), return);
 
         QPointF pos = intermediatePoints.at(index).pos();
-        static constexpr int ANGLE = 20.0;
-        bool roundX = true;
-        bool roundY = true;
-        if (extraSnap) {
-            if (index >= 1) {
-                double angle = GeometryUtilities::calcAngle(QLineF(intermediatePoints.at(index).pos(),
-                    intermediatePoints.at(index - 1).pos()));
-                if (between(qAbs(angle), 90, ANGLE)) {
-                    pos.setX(intermediatePoints.at(index - 1).pos().x());
-                    roundX = false;
-                }
-                if (between(angle, 0, ANGLE) || between(qAbs(angle), 180, ANGLE)) {
-                    pos.setY(intermediatePoints.at(index - 1).pos().y());
-                    roundY = false;
-                }
-            }
-            if (index < intermediatePoints.size() - 1) {
-                double angle = GeometryUtilities::calcAngle(QLineF(intermediatePoints.at(index).pos(),
-                    intermediatePoints.at(index + 1).pos()));
-                if (between(qAbs(angle), 90, ANGLE)) {
-                    pos.setX(intermediatePoints.at(index + 1).pos().x());
-                    roundX = false;
-                }
-                if (between(angle, 0, ANGLE) || between(qAbs(angle), 180, ANGLE)) {
-                    pos.setY(intermediatePoints.at(index + 1).pos().y());
-                    roundY = false;
-                }
-            }
-        }
-        if (roundX)
-            pos.setX(qRound(pos.x() / rasterWidth) * rasterWidth);
-        if (roundY)
-            pos.setY(qRound(pos.y() / rasterHeight) * rasterHeight);
-        intermediatePoints[index].setPos(pos);
+        double x = qRound(pos.x() / rasterWidth) * rasterWidth;
+        double y = qRound(pos.y() / rasterHeight) * rasterHeight;
+        intermediatePoints[index].setPos(QPointF(x, y));
 
         m_diagramSceneModel->diagramController()->startUpdateElement(m_relation, m_diagramSceneModel->diagram(), DiagramController::UpdateMinor);
         m_relation->setIntermediatePoints(intermediatePoints);
@@ -476,7 +462,7 @@ void RelationItem::update(const Style *style)
 
     QList<QPointF> points;
     points << (endAPos - endAPos);
-    for (const DRelation::IntermediatePoint &point : m_relation->intermediatePoints())
+    foreach (const DRelation::IntermediatePoint &point, m_relation->intermediatePoints())
         points << (point.pos() - endAPos);
     points << (endBPos - endAPos);
 
@@ -543,11 +529,9 @@ void RelationItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 
 const Style *RelationItem::adaptedStyle()
 {
-    const DObject *endAObject = m_diagramSceneModel->diagramController()->findElement<DObject>(m_relation->endAUid(), m_diagramSceneModel->diagram());
-    const DObject *endBObject = m_diagramSceneModel->diagramController()->findElement<DObject>(m_relation->endBUid(), m_diagramSceneModel->diagram());
-    const CustomRelation customRelation = m_diagramSceneModel->stereotypeController()
-                                              ->findCustomRelationByStereotype(m_relation->stereotypes().value(0));
-    StyledRelation styledRelation(m_relation, endAObject, endBObject, &customRelation);
+    DObject *endAObject = m_diagramSceneModel->diagramController()->findElement<DObject>(m_relation->endAUid(), m_diagramSceneModel->diagram());
+    DObject *endBObject = m_diagramSceneModel->diagramController()->findElement<DObject>(m_relation->endBUid(), m_diagramSceneModel->diagram());
+    StyledRelation styledRelation(m_relation, endAObject, endBObject);
     return m_diagramSceneModel->styleController()->adaptRelationStyle(styledRelation);
 }
 

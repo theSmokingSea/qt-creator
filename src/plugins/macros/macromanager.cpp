@@ -1,44 +1,63 @@
-// Copyright (C) 2016 Nicolas Arnaud-Cormos
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Nicolas Arnaud-Cormos
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "macromanager.h"
 
-#include "actionmacrohandler.h"
-#include "findmacrohandler.h"
-#include "imacrohandler.h"
-#include "macro.h"
-#include "macroevent.h"
 #include "macrosconstants.h"
-#include "macrostr.h"
+#include "macroevent.h"
+#include "macro.h"
+#include "imacrohandler.h"
+#include "savedialog.h"
+#include "actionmacrohandler.h"
 #include "texteditormacrohandler.h"
-
-#include <coreplugin/actionmanager/actioncontainer.h>
-#include <coreplugin/actionmanager/actionmanager.h>
-#include <coreplugin/actionmanager/command.h>
-#include <coreplugin/coreconstants.h>
-#include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/editormanager/ieditor.h>
-#include <coreplugin/icontext.h>
-#include <coreplugin/icore.h>
+#include "findmacrohandler.h"
 
 #include <texteditor/texteditorconstants.h>
 
-#include <utils/layoutbuilder.h>
+#include <coreplugin/coreconstants.h>
+#include <coreplugin/actionmanager/actionmanager.h>
+#include <coreplugin/actionmanager/actioncontainer.h>
+#include <coreplugin/actionmanager/command.h>
+#include <coreplugin/icore.h>
+#include <coreplugin/icontext.h>
+#include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/editormanager/ieditor.h>
 #include <utils/qtcassert.h>
 
-#include <QAction>
-#include <QDialogButtonBox>
 #include <QDir>
 #include <QFile>
-#include <QFileDialog>
 #include <QFileInfo>
-#include <QLineEdit>
+#include <QSettings>
 #include <QList>
-#include <QMessageBox>
-#include <QPushButton>
-#include <QRegularExpressionValidator>
 
-namespace Macros::Internal {
+#include <QAction>
+#include <QFileDialog>
+#include <QMessageBox>
+
+namespace Macros {
+namespace Internal {
 
 /*!
     \namespace Macros
@@ -181,7 +200,7 @@ bool MacroManagerPrivate::executeMacro(Macro *macro)
     for (const MacroEvent &macroEvent : macroEvents) {
         if (error)
             break;
-        for (IMacroHandler *handler : std::as_const(handlers)) {
+        for (IMacroHandler *handler : qAsConst(handlers)) {
             if (handler->canExecuteEvent(macroEvent)) {
                 if (!handler->executeEvent(macroEvent))
                     error = true;
@@ -193,8 +212,8 @@ bool MacroManagerPrivate::executeMacro(Macro *macro)
     if (error) {
         QMessageBox::warning(
             Core::ICore::dialogParent(),
-            Tr::tr("Playing Macro"),
-            Tr::tr("An error occurred while replaying the macro, execution stopped."));
+            MacroManager::tr("Playing Macro"),
+            MacroManager::tr("An error occurred while replaying the macro, execution stopped."));
     }
 
     // Set the focus back to the editor
@@ -205,52 +224,9 @@ bool MacroManagerPrivate::executeMacro(Macro *macro)
     return !error;
 }
 
-class SaveDialog : public QDialog
-{
-public:
-    SaveDialog()
-        : QDialog(Core::ICore::dialogParent())
-    {
-        resize(219, 91);
-        setWindowTitle(Tr::tr("Save Macro"));
-
-        m_name = new QLineEdit;
-        m_name->setValidator(new QRegularExpressionValidator(QRegularExpression("\\w+"), this));
-
-        m_description = new QLineEdit;
-
-        auto buttonBox = new QDialogButtonBox;
-        buttonBox->setStandardButtons(QDialogButtonBox::Cancel|QDialogButtonBox::Save);
-        auto saveButton = buttonBox->button(QDialogButtonBox::Save);
-        saveButton->setEnabled(false);
-        connect(m_name, &QLineEdit::textChanged, [saveButton, this]() {
-            saveButton->setEnabled(m_name->hasAcceptableInput());
-        });
-
-        using namespace Layouting;
-
-        Form {
-            Tr::tr("Name:"), m_name, br,
-            Tr::tr("Description:"), m_description, br,
-            buttonBox
-        }.attachTo(this);
-
-        connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
-        connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    }
-
-    QString name() const { return m_name->text(); }
-
-    QString description() const { return m_description->text(); }
-
-private:
-    QLineEdit *m_name;
-    QLineEdit *m_description;
-};
-
 void MacroManagerPrivate::showSaveDialog()
 {
-    SaveDialog dialog;
+    SaveDialog dialog(Core::ICore::dialogParent());
     if (dialog.exec()) {
         if (dialog.name().isEmpty())
             return;
@@ -302,7 +278,7 @@ void MacroManager::startMacro()
     Core::ActionManager::command(Constants::END_MACRO)->action()->setEnabled(true);
     Core::ActionManager::command(Constants::EXECUTE_LAST_MACRO)->action()->setEnabled(false);
     Core::ActionManager::command(Constants::SAVE_LAST_MACRO)->action()->setEnabled(false);
-    for (IMacroHandler *handler : std::as_const(d->handlers))
+    for (IMacroHandler *handler : qAsConst(d->handlers))
         handler->startRecording(d->currentMacro);
 
     const QString endShortcut = Core::ActionManager::command(Constants::END_MACRO)
@@ -312,10 +288,10 @@ void MacroManager::startMacro()
                                         ->keySequence()
                                         .toString(QKeySequence::NativeText);
     const QString help
-        = Tr::tr("Macro mode. Type \"%1\" to stop recording and \"%2\" to play the macro.")
+        = tr("Macro mode. Type \"%1\" to stop recording and \"%2\" to play the macro.")
               .arg(endShortcut, executeShortcut);
     Core::EditorManager::showEditorStatusBar(Constants::M_STATUS_BUFFER, help,
-                                             Tr::tr("Stop Recording Macro"),
+                                             tr("Stop Recording Macro"),
                                              this, [this] { endMacro(); });
 }
 
@@ -327,7 +303,7 @@ void MacroManager::endMacro()
     Core::ActionManager::command(Constants::END_MACRO)->action()->setEnabled(false);
     Core::ActionManager::command(Constants::EXECUTE_LAST_MACRO)->action()->setEnabled(true);
     Core::ActionManager::command(Constants::SAVE_LAST_MACRO)->action()->setEnabled(true);
-    for (IMacroHandler *handler : std::as_const(d->handlers))
+    for (IMacroHandler *handler : qAsConst(d->handlers))
         handler->endRecordingMacro(d->currentMacro);
 
     d->isRecording = false;
@@ -417,9 +393,10 @@ void MacroManager::saveLastMacro()
 QString MacroManager::macrosDirectory()
 {
     const QString path = Core::ICore::userResourcePath("macros").toString();
-    if (QFileInfo::exists(path) || QDir().mkpath(path))
+    if (QFile::exists(path) || QDir().mkpath(path))
         return path;
     return QString();
 }
 
-} // Macros::Internal
+} // Internal
+} // Macros

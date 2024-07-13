@@ -1,15 +1,34 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nimcompilercleanstep.h"
 #include "nimbuildconfiguration.h"
 
 #include "../nimconstants.h"
-#include "../nimtr.h"
 
 #include <projectexplorer/projectexplorerconstants.h>
-
-#include <solutions/tasking/tasktree.h>
 
 #include <utils/aspects.h>
 #include <utils/qtcassert.h>
@@ -18,66 +37,72 @@
 #include <QDateTime>
 
 using namespace ProjectExplorer;
-using namespace Tasking;
 using namespace Utils;
 
 namespace Nim {
 
 class NimCompilerCleanStep final : public BuildStep
 {
-public:
-    NimCompilerCleanStep(BuildStepList *parentList, Id id)
-        : BuildStep(parentList, id)
-    {
-        workingDir.setLabelText(Tr::tr("Working directory:"));
+    Q_DECLARE_TR_FUNCTIONS(Nim::NimCompilerCleanStep)
 
-        setSummaryUpdater([this] {
-            workingDir.setValue(buildDirectory());
-            return displayName();
-        });
-    }
+public:
+    NimCompilerCleanStep(BuildStepList *parentList, Utils::Id id);
 
 private:
     bool init() final;
-    GroupItem runRecipe() final;
+    void doRun() final;
+    void doCancel() final {}  // Can be left empty. The run() function hardly does anything.
 
     bool removeCacheDirectory();
     bool removeOutFilePath();
 
-    FilePath m_buildDir;
-    FilePathAspect workingDir{this};
+    Utils::FilePath m_buildDir;
 };
+
+NimCompilerCleanStep::NimCompilerCleanStep(BuildStepList *parentList, Utils::Id id)
+    : BuildStep(parentList, id)
+{
+    auto workingDirectory = addAspect<StringAspect>();
+    workingDirectory->setLabelText(tr("Working directory:"));
+    workingDirectory->setDisplayStyle(StringAspect::LineEditDisplay);
+
+    setSummaryUpdater([this, workingDirectory] {
+        workingDirectory->setFilePath(buildDirectory());
+        return displayName();
+    });
+}
 
 bool NimCompilerCleanStep::init()
 {
-    const FilePath buildDir = buildDirectory();
-    const bool exists = buildDir.exists();
-    if (exists)
+    FilePath buildDir = buildDirectory();
+    bool result = buildDir.exists();
+    if (result)
         m_buildDir = buildDir;
-    return exists;
+    return result;
 }
 
-GroupItem NimCompilerCleanStep::runRecipe()
+void NimCompilerCleanStep::doRun()
 {
-    const auto onSetup = [this] {
-        if (!m_buildDir.exists()) {
-            emit addOutput(Tr::tr("Build directory \"%1\" does not exist.")
-                               .arg(m_buildDir.toUserOutput()), OutputFormat::ErrorMessage);
-            return DoneResult::Error;
-        }
-        if (!removeCacheDirectory()) {
-            emit addOutput(Tr::tr("Failed to delete the cache directory."),
-                           OutputFormat::ErrorMessage);
-            return DoneResult::Error;
-        }
-        if (!removeOutFilePath()) {
-            emit addOutput(Tr::tr("Failed to delete the out file."), OutputFormat::ErrorMessage);
-            return DoneResult::Error;
-        }
-        emit addOutput(Tr::tr("Clean step completed successfully."), OutputFormat::NormalMessage);
-        return DoneResult::Success;
-    };
-    return Sync(onSetup);
+    if (!m_buildDir.exists()) {
+        emit addOutput(tr("Build directory \"%1\" does not exist.").arg(m_buildDir.toUserOutput()), OutputFormat::ErrorMessage);
+        emit finished(false);
+        return;
+    }
+
+    if (!removeCacheDirectory()) {
+        emit addOutput(tr("Failed to delete the cache directory."), OutputFormat::ErrorMessage);
+        emit finished(false);
+        return;
+    }
+
+    if (!removeOutFilePath()) {
+        emit addOutput(tr("Failed to delete the out file."), OutputFormat::ErrorMessage);
+        emit finished(false);
+        return;
+    }
+
+    emit addOutput(tr("Clean step completed successfully."), OutputFormat::NormalMessage);
+    emit finished(true);
 }
 
 bool NimCompilerCleanStep::removeCacheDirectory()
@@ -108,11 +133,11 @@ bool NimCompilerCleanStep::removeOutFilePath()
 NimCompilerCleanStepFactory::NimCompilerCleanStepFactory()
 {
     registerStep<NimCompilerCleanStep>(Constants::C_NIMCOMPILERCLEANSTEP_ID);
-    setFlags(BuildStep::Unclonable);
+    setFlags(BuildStepInfo::Unclonable);
     setSupportedStepList(ProjectExplorer::Constants::BUILDSTEPS_CLEAN);
     setSupportedConfiguration(Constants::C_NIMBUILDCONFIGURATION_ID);
     setRepeatable(false);
-    setDisplayName(Tr::tr("Nim Clean Step"));
+    setDisplayName(NimCompilerCleanStep::tr("Nim Clean Step"));
 }
 
 } // Nim

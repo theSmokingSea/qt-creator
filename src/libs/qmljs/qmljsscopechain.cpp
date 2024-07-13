@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmljsscopechain.h"
 #include "qmljsbind.h"
@@ -10,8 +32,6 @@
 #include <QRegularExpression>
 
 using namespace QmlJS;
-
-bool ScopeChain::s_setSkipmakeComponentChain = false;
 
 /*!
     \class QmlJS::ScopeChain
@@ -49,7 +69,7 @@ Document::Ptr QmlComponentChain::document() const
     return m_document;
 }
 
-const QList<const QmlComponentChain *> QmlComponentChain::instantiatingComponents() const
+QList<const QmlComponentChain *> QmlComponentChain::instantiatingComponents() const
 {
     return m_instantiatingComponents;
 }
@@ -155,7 +175,7 @@ void ScopeChain::setQmlComponentChain(const QSharedPointer<const QmlComponentCha
     m_qmlComponentScope = qmlComponentChain;
 }
 
-const QList<const ObjectValue *> ScopeChain::qmlScopeObjects() const
+QList<const ObjectValue *> ScopeChain::qmlScopeObjects() const
 {
     return m_qmlScopeObjects;
 }
@@ -212,14 +232,9 @@ QList<const ObjectValue *> ScopeChain::all() const
     return m_all;
 }
 
-void ScopeChain::setSkipmakeComponentChain(bool b)
-{
-    s_setSkipmakeComponentChain = b;
-}
-
 static void collectScopes(const QmlComponentChain *chain, QList<const ObjectValue *> *target)
 {
-    for (const QmlComponentChain *parent : chain->instantiatingComponents())
+    foreach (const QmlComponentChain *parent, chain->instantiatingComponents())
         collectScopes(parent, target);
 
     if (!chain->document())
@@ -244,7 +259,7 @@ void ScopeChain::update() const
     // the root scope in js files doesn't see instantiating components
     if (m_document->language() != Dialect::JavaScript || m_jsScopes.count() != 1) {
         if (m_qmlComponentScope) {
-            for (const QmlComponentChain *parent : m_qmlComponentScope->instantiatingComponents())
+            foreach (const QmlComponentChain *parent, m_qmlComponentScope->instantiatingComponents())
                 collectScopes(parent, &m_all);
         }
     }
@@ -272,11 +287,11 @@ void ScopeChain::update() const
 static void addInstantiatingComponents(ContextPtr context, QmlComponentChain *chain)
 {
     const QRegularExpression importCommentPattern(QLatin1String("@scope\\s+(.*)"));
-    for (const SourceLocation &commentLoc : chain->document()->engine()->comments()) {
+    foreach (const SourceLocation &commentLoc, chain->document()->engine()->comments()) {
         const QString &comment = chain->document()->source().mid(commentLoc.begin(), commentLoc.length);
 
         // find all @scope annotations
-        QList<Utils::FilePath> additionalScopes;
+        QStringList additionalScopes;
         int lastOffset = -1;
         QRegularExpressionMatch match;
         forever {
@@ -284,16 +299,13 @@ static void addInstantiatingComponents(ContextPtr context, QmlComponentChain *ch
             lastOffset = match.capturedStart();
             if (lastOffset == -1)
                 break;
-            additionalScopes << chain->document()
-                                    ->path()
-                                    .pathAppended(match.captured(1).trimmed())
-                                    .absoluteFilePath();
+            additionalScopes << QFileInfo(chain->document()->path() + QLatin1Char('/') + match.captured(1).trimmed()).absoluteFilePath();
         }
 
-        for (const QmlComponentChain *c : chain->instantiatingComponents())
+        foreach (const QmlComponentChain *c, chain->instantiatingComponents())
             additionalScopes.removeAll(c->document()->fileName());
 
-        for (const Utils::FilePath &scope : std::as_const(additionalScopes)) {
+        foreach (const QString &scope, additionalScopes) {
             Document::Ptr doc = context->snapshot().document(scope);
             if (doc) {
                 QmlComponentChain *ch = new QmlComponentChain(doc);
@@ -329,14 +341,12 @@ void ScopeChain::initializeRootScope()
         // add scope chains for all components that import this file
         // unless there's .pragma library
         if (!m_document->bind()->isJsLibrary()) {
-            for (Document::Ptr otherDoc : snapshot) {
-                for (const ImportInfo &import : otherDoc->bind()->imports()) {
-                    if ((import.type() == ImportType::File
-                         && m_document->fileName().toString() == import.path())
-                        || (import.type() == ImportType::QrcFile
-                            && ModelManagerInterface::instance()
-                                   ->filesAtQrcPath(import.path())
-                                   .contains(m_document->fileName().path()))) {
+            foreach (Document::Ptr otherDoc, snapshot) {
+                foreach (const ImportInfo &import, otherDoc->bind()->imports()) {
+                    if ((import.type() == ImportType::File && m_document->fileName() == import.path())
+                            || (import.type() == ImportType::QrcFile
+                                && ModelManagerInterface::instance()->filesAtQrcPath(import.path())
+                                .contains(m_document->fileName()))) {
                         QmlComponentChain *component = new QmlComponentChain(otherDoc);
                         componentScopes.insert(otherDoc.data(), component);
                         chain->addInstantiatingComponent(component);
@@ -358,9 +368,6 @@ void ScopeChain::makeComponentChain(
         const Snapshot &snapshot,
         QHash<const Document *, QmlComponentChain *> *components)
 {
-    if (s_setSkipmakeComponentChain)
-        return;
-
     Document::Ptr doc = target->document();
     if (!doc->qmlProgram())
         return;
@@ -368,7 +375,7 @@ void ScopeChain::makeComponentChain(
     const Bind *bind = doc->bind();
 
     // add scopes for all components instantiating this one
-    for (Document::Ptr otherDoc : snapshot) {
+    foreach (Document::Ptr otherDoc, snapshot) {
         if (otherDoc == doc)
             continue;
         if (otherDoc->bind()->usesQmlPrototype(bind->rootObjectValue(), m_context)) {

@@ -1,11 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sourcefileshandler.h"
 
 #include "debuggeractions.h"
+#include "debuggercore.h"
 #include "debuggerengine.h"
-#include "debuggertr.h"
 
 #include <utils/basetreeview.h>
 
@@ -16,7 +38,8 @@
 
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 SourceFilesHandler::SourceFilesHandler(DebuggerEngine *engine)
     : m_engine(engine)
@@ -43,8 +66,8 @@ QVariant SourceFilesHandler::headerData(int section,
 {
     if (orientation == Qt::Horizontal && role == Qt::DisplayRole) {
         static QString headers[] = {
-            Tr::tr("Internal Name") + "        ",
-            Tr::tr("Full Name") + "        ",
+            tr("Internal Name") + "        ",
+            tr("Full Name") + "        ",
         };
         return headers[section];
     }
@@ -55,8 +78,8 @@ Qt::ItemFlags SourceFilesHandler::flags(const QModelIndex &index) const
 {
     if (index.row() >= m_fullNames.size())
         return {};
-    FilePath filePath = m_fullNames.at(index.row());
-    return filePath.isReadableFile() ? QAbstractItemModel::flags(index) : Qt::ItemFlags({});
+    QFileInfo fi(m_fullNames.at(index.row()));
+    return fi.isReadable() ? QAbstractItemModel::flags(index) : Qt::ItemFlags({});
 }
 
 QVariant SourceFilesHandler::data(const QModelIndex &index, int role) const
@@ -75,7 +98,7 @@ QVariant SourceFilesHandler::data(const QModelIndex &index, int role) const
             break;
         case 1:
             if (role == Qt::DisplayRole)
-                return m_fullNames.at(row).toUserOutput();
+                return m_fullNames.at(row);
             //if (role == Qt::DecorationRole)
             //    return module.symbolsRead ? icon2 : icon;
             break;
@@ -105,16 +128,16 @@ bool SourceFilesHandler::setData(const QModelIndex &idx, const QVariant &data, i
                     return act;
                 };
 
-            addAction(Tr::tr("Reload Data"), m_engine->debuggerActionsEnabled(),
+            addAction(tr("Reload Data"), m_engine->debuggerActionsEnabled(),
                       [this] { m_engine->reloadSourceFiles(); });
 
             if (name.isEmpty())
-                addAction(Tr::tr("Open File"), false, {});
+                addAction(tr("Open File"), false, {});
             else
-                addAction(Tr::tr("Open File \"%1\"").arg(name), true,
+                addAction(tr("Open File \"%1\"").arg(name), true,
                           [this, name] { m_engine->gotoLocation(FilePath::fromString(name)); });
 
-            menu->addAction(settings().settingsDialog.action());
+            menu->addAction(debuggerSettings()->settingsDialog.action());
             menu->popup(ev.globalPos());
             return true;
         }
@@ -123,13 +146,13 @@ bool SourceFilesHandler::setData(const QModelIndex &idx, const QVariant &data, i
     return false;
 }
 
-void SourceFilesHandler::setSourceFiles(const QMap<QString, FilePath> &sourceFiles)
+void SourceFilesHandler::setSourceFiles(const QMap<QString, QString> &sourceFiles)
 {
     beginResetModel();
     m_shortNames.clear();
     m_fullNames.clear();
-    auto it = sourceFiles.begin();
-    const auto et = sourceFiles.end();
+    QMap<QString, QString>::ConstIterator it = sourceFiles.begin();
+    QMap<QString, QString>::ConstIterator et = sourceFiles.end();
     for (; it != et; ++it) {
         m_shortNames.append(it.key());
         m_fullNames.append(it.value());
@@ -139,8 +162,9 @@ void SourceFilesHandler::setSourceFiles(const QMap<QString, FilePath> &sourceFil
 
 void SourceFilesHandler::removeAll()
 {
-    setSourceFiles({});
+    setSourceFiles(QMap<QString, QString>());
     //header()->setSectionResizeMode(0, QHeaderView::ResizeToContents);
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

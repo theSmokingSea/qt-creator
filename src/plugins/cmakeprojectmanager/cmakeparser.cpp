@@ -1,11 +1,30 @@
-// Copyright (C) 2016 Axonian LLC.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Axonian LLC.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cmakeparser.h"
 
-#include "cmakeprojectmanagertr.h"
-
-#include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 
 #include <projectexplorer/projectexplorerconstants.h>
@@ -19,7 +38,6 @@ const char COMMON_ERROR_PATTERN[] = "^CMake Error at (.*?):([0-9]*?)( \\((.*?)\\
 const char NEXT_SUBERROR_PATTERN[] = "^CMake Error in (.*?):";
 const char COMMON_WARNING_PATTERN[] = "^CMake Warning (\\(dev\\) )?at (.*?):([0-9]*?)( \\((.*?)\\))?:";
 const char LOCATION_LINE_PATTERN[] = ":(\\d+?):(?:(\\d+?))?$";
-const char SOURCE_LINE_AND_FUNCTION_PATTERN[] = "  (.*?):([0-9]*?)( \\((.*?)\\))";
 
 CMakeParser::CMakeParser()
 {
@@ -34,24 +52,14 @@ CMakeParser::CMakeParser()
 
     m_locationLine.setPattern(QLatin1String(LOCATION_LINE_PATTERN));
     QTC_CHECK(m_locationLine.isValid());
-
-    m_sourceLineAndFunction.setPattern(QLatin1String(SOURCE_LINE_AND_FUNCTION_PATTERN));
-    QTC_CHECK(m_sourceLineAndFunction.isValid());
 }
 
-void CMakeParser::setSourceDirectory(const FilePath &sourceDir)
+void CMakeParser::setSourceDirectory(const QString &sourceDir)
 {
     if (m_sourceDirectory)
-        emit searchDirExpired(m_sourceDirectory.value());
-    m_sourceDirectory = sourceDir;
-    emit newSearchDirFound(sourceDir);
-}
-
-FilePath CMakeParser::resolvePath(const QString &path) const
-{
-    if (m_sourceDirectory)
-        return m_sourceDirectory->resolvePath(path);
-    return FilePath::fromUserInput(path);
+        emit searchDirExpired(FilePath::fromString(m_sourceDirectory.value().path()));
+    m_sourceDirectory = QDir(sourceDir);
+    emit newSearchDirFound(FilePath::fromString(sourceDir));
 }
 
 OutputLineParser::Result CMakeParser::handleLine(const QString &line, OutputFormat type)
@@ -69,7 +77,7 @@ OutputLineParser::Result CMakeParser::handleLine(const QString &line, OutputForm
     QRegularExpressionMatch match;
     QString trimmedLine = rightTrimmed(line);
     switch (m_expectTripleLineErrorData) {
-    case NONE: {
+    case NONE:
         if (trimmedLine.isEmpty() && !m_lastTask.isNull()) {
             if (m_skippedFirstEmptyLine) {
                 flush();
@@ -78,28 +86,22 @@ OutputLineParser::Result CMakeParser::handleLine(const QString &line, OutputForm
             m_skippedFirstEmptyLine = true;
             return Status::InProgress;
         }
-        QScopeGuard cleanup([this] {
-            if (m_skippedFirstEmptyLine)
-                m_skippedFirstEmptyLine = false;
-        });
+        if (m_skippedFirstEmptyLine)
+            m_skippedFirstEmptyLine = false;
 
         match = m_commonError.match(trimmedLine);
         if (match.hasMatch()) {
-            const FilePath path = resolvePath(match.captured(1));
-
+            QString path = m_sourceDirectory ? m_sourceDirectory->absoluteFilePath(
+                               QDir::fromNativeSeparators(match.captured(1)))
+                                             : QDir::fromNativeSeparators(match.captured(1));
             m_lastTask = BuildSystemTask(Task::Error,
                                          QString(),
-                                         absoluteFilePath(path),
+                                         absoluteFilePath(FilePath::fromUserInput(path)),
                                          match.captured(2).toInt());
             m_lines = 1;
             LinkSpecs linkSpecs;
-            addLinkSpecForAbsoluteFilePath(
-                linkSpecs, m_lastTask.file, m_lastTask.line, m_lastTask.column, match, 1);
-
-            m_errorOrWarningLine.file = m_lastTask.file;
-            m_errorOrWarningLine.line = m_lastTask.line;
-            m_errorOrWarningLine.function = match.captured(3);
-
+            addLinkSpecForAbsoluteFilePath(linkSpecs, m_lastTask.file, m_lastTask.line,
+                                           match, 1);
             return {Status::InProgress, linkSpecs};
         }
         match = m_nextSubError.match(trimmedLine);
@@ -107,44 +109,32 @@ OutputLineParser::Result CMakeParser::handleLine(const QString &line, OutputForm
             m_lastTask = BuildSystemTask(Task::Error, QString(),
                                          absoluteFilePath(FilePath::fromUserInput(match.captured(1))));
             LinkSpecs linkSpecs;
-            addLinkSpecForAbsoluteFilePath(
-                linkSpecs, m_lastTask.file, m_lastTask.line, m_lastTask.column, match, 1);
+            addLinkSpecForAbsoluteFilePath(linkSpecs, m_lastTask.file, m_lastTask.line,
+                                           match, 1);
             m_lines = 1;
             return {Status::InProgress, linkSpecs};
         }
         match = m_commonWarning.match(trimmedLine);
         if (match.hasMatch()) {
-            const FilePath path = resolvePath(match.captured(2));
+            QString path = m_sourceDirectory ? m_sourceDirectory->absoluteFilePath(
+                               QDir::fromNativeSeparators(match.captured(2)))
+                                             : QDir::fromNativeSeparators(match.captured(2));
             m_lastTask = BuildSystemTask(Task::Warning,
                                          QString(),
-                                         absoluteFilePath(path),
+                                         absoluteFilePath(FilePath::fromUserInput(path)),
                                          match.captured(3).toInt());
             m_lines = 1;
             LinkSpecs linkSpecs;
-            addLinkSpecForAbsoluteFilePath(
-                linkSpecs, m_lastTask.file, m_lastTask.line, m_lastTask.column, match, 1);
-
-            m_errorOrWarningLine.file = m_lastTask.file;
-            m_errorOrWarningLine.line = m_lastTask.line;
-            m_errorOrWarningLine.function = match.captured(4);
-
+            addLinkSpecForAbsoluteFilePath(linkSpecs, m_lastTask.file, m_lastTask.line,
+                                           match, 1);
             return {Status::InProgress, linkSpecs};
         }
-        else if (trimmedLine.startsWith(QLatin1String("  ")) && !m_lastTask.isNull() && !m_callStack) {
-            if (m_skippedFirstEmptyLine)
-                m_lastTask.details.append(QString());
-            m_lastTask.details.append(trimmedLine.mid(2));
+        else if (trimmedLine.startsWith(QLatin1String("  ")) && !m_lastTask.isNull()) {
+            if (!m_lastTask.summary.isEmpty())
+                m_lastTask.summary.append(' ');
+            m_lastTask.summary.append(trimmedLine.trimmed());
+            ++m_lines;
             return Status::InProgress;
-        } else if (trimmedLine.startsWith(QLatin1String("  ")) && !m_lastTask.isNull()) {
-            match = m_sourceLineAndFunction.match(trimmedLine);
-            if (match.hasMatch()) {
-                CallStackLine stackLine;
-                stackLine.file = absoluteFilePath(resolvePath(match.captured(1)));
-                stackLine.line = match.captured(2).toInt();
-                stackLine.function = match.captured(3);
-                m_callStack.value() << stackLine;
-            }
-            return {Status::InProgress};
         } else if (trimmedLine.endsWith(QLatin1String("in cmake code at"))) {
             m_expectTripleLineErrorData = LINE_LOCATION;
             flush();
@@ -159,12 +149,8 @@ OutputLineParser::Result CMakeParser::handleLine(const QString &line, OutputForm
         } else if (trimmedLine.startsWith("-- ") || trimmedLine.startsWith(" * ")) {
             // Do not pass on lines starting with "-- " or "* ". Those are typical CMake output
             return Status::InProgress;
-        } else if (trimmedLine.startsWith("Call Stack (most recent call first):")) {
-            m_callStack = QList<CallStackLine>();
-            return {Status::InProgress};
         }
         return Status::NotHandled;
-    }
     case LINE_LOCATION:
         {
             match = m_locationLine.match(trimmedLine);
@@ -174,13 +160,8 @@ OutputLineParser::Result CMakeParser::handleLine(const QString &line, OutputForm
             m_lastTask.line = match.captured(1).toInt();
             m_expectTripleLineErrorData = LINE_DESCRIPTION;
             LinkSpecs linkSpecs;
-            addLinkSpecForAbsoluteFilePath(
-                linkSpecs,
-                m_lastTask.file,
-                m_lastTask.line,
-                m_lastTask.column,
-                0,
-                match.capturedStart());
+            addLinkSpecForAbsoluteFilePath(linkSpecs, m_lastTask.file, m_lastTask.line, 0,
+                                           match.capturedStart());
             return {Status::InProgress, linkSpecs};
         }
     case LINE_DESCRIPTION:
@@ -206,70 +187,24 @@ void CMakeParser::flush()
 {
     if (m_lastTask.isNull())
         return;
-
     Task t = m_lastTask;
     m_lastTask.clear();
-
-    if (t.summary.isEmpty() && !t.details.isEmpty())
-        t.summary = t.details.takeFirst();
-    m_lines += t.details.count();
-
-    if (m_callStack.has_value() && !m_callStack.value().isEmpty()) {
-        t.file = m_callStack.value().last().file;
-        t.line = m_callStack.value().last().line;
-
-        LinkSpecs specs;
-        t.details << QString();
-        t.details << Tr::tr("Call stack:");
-        m_lines += 2;
-
-        m_callStack->push_front(m_errorOrWarningLine);
-
-        int offset = t.details.join('\n').size();
-        Utils::reverseForeach(m_callStack.value(), [&](const auto &line) {
-            const QString fileAndLine = QString("%1:%2").arg(line.file.path()).arg(line.line);
-            const QString completeLine = QString("  %1%2").arg(fileAndLine).arg(line.function);
-
-            // newline and "  "
-            offset += 3;
-            specs.append(LinkSpec{offset,
-                                  int(fileAndLine.length()),
-                                  createLinkTarget(line.file, line.line, -1)});
-
-            t.details << completeLine;
-            offset += completeLine.length() - 2;
-            ++m_lines;
-        });
-
-        setDetailsFormat(t, specs);
-    }
-
     scheduleTask(t, m_lines, 1);
     m_lines = 0;
-
-    m_callStack.reset();
 }
 
 } // CMakeProjectManager
 
 #ifdef WITH_TESTS
+#include "cmakeprojectplugin.h"
 
 #include <projectexplorer/outputparser_test.h>
 
 #include <QTest>
 
-namespace CMakeProjectManager::Internal {
+namespace CMakeProjectManager {
 
-class CMakeParserTest final : public QObject
-{
-    Q_OBJECT
-
-private slots:
-    void testCMakeParser_data();
-    void testCMakeParser();
-};
-
-void CMakeParserTest::testCMakeParser_data()
+void Internal::CMakeProjectPlugin::testCMakeParser_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<OutputParserTester::Channel>("inputChannel");
@@ -306,17 +241,12 @@ void CMakeParserTest::testCMakeParser_data()
             << QString() << QString()
             << (Tasks()
                 << BuildSystemTask(Task::Error,
-                                   "Cannot find source file:\n\n"
-                                   "  unknownFile.qml\n\n"
-                                   "Tried extensions .c .C .c++ .cc .cpp .cxx .m .M .mm .h .hh .h++ .hm .hpp\n"
-                                   ".hxx .in .txx",
+                                   "Cannot find source file: unknownFile.qml Tried extensions "
+                                   ".c .C .c++ .cc .cpp .cxx .m .M .mm .h .hh .h++ .hm .hpp .hxx .in .txx",
                                     FilePath::fromUserInput("src/1/app/CMakeLists.txt"), 70)
                 << BuildSystemTask(Task::Error,
-                                   "Cannot find source file:\n\n"
-                                   "  CMakeLists.txt2\n\n"
-                                   "Tried extensions "
-                                   ".c .C .c++ .cc .cpp .cxx .m .M .mm .h .hh .h++ .hm .hpp\n"
-                                   ".hxx .in .txx",
+                                   "Cannot find source file: CMakeLists.txt2 Tried extensions "
+                                   ".c .C .c++ .cc .cpp .cxx .m .M .mm .h .hh .h++ .hm .hpp .hxx .in .txx",
                                    FilePath::fromUserInput("src/1/app/CMakeLists.txt"), -1))
             << QString();
 
@@ -387,9 +317,7 @@ void CMakeParserTest::testCMakeParser_data()
             << QString() << QString()
             << (Tasks()
                 << BuildSystemTask(Task::Error,
-                                   "Parse error.  Expected \"(\", got newline with text \"\n"
-                                   "\n"
-                                   "\".",
+                                   "Parse error.  Expected \"(\", got newline with text \" \".",
                                    FilePath::fromUserInput("CMakeLists.txt"), 4))
             << QString();
 
@@ -431,51 +359,9 @@ void CMakeParserTest::testCMakeParser_data()
         << QString::fromLatin1("-- Qt5 install prefix: /usr/lib\n"
                                " * Plugin componentsplugin, with CONDITION TARGET QmlDesigner")
         << OutputParserTester::STDERR << QString() << QString() << (Tasks()) << QString();
-
-    QTest::newRow("cmake call-stack")
-        << QString::fromLatin1(
-               "CMake Error at /Qt/6.5.3/mingw_64/lib/cmake/Qt6Core/Qt6CoreMacros.cmake:588 "
-               "(add_executable):\n"
-               "\n"
-               "  Cannot find source file:\n"
-               "\n"
-               "    not-existing\n"
-               "\n"
-               "  Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm\n"
-               "  .ccm .cxxm .c++m .h .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90\n"
-               "  .f95 .f03 .hip .ispc\n"
-               "Call Stack (most recent call first):\n"
-               "  /Qt/6.5.3/mingw_64/lib/cmake/Qt6Core/Qt6CoreMacros.cmake:549 "
-               "(_qt_internal_create_executable)\n"
-               "  /Qt/6.5.3/mingw_64/lib/cmake/Qt6Core/Qt6CoreMacros.cmake:741 "
-               "(qt6_add_executable)\n"
-               "  /Projects/Test-Project/CMakeLists.txt:13 (qt_add_executable)\n")
-        << OutputParserTester::STDERR << QString() << QString()
-        << (Tasks() << BuildSystemTask(
-                Task::Error,
-                "\n"
-                "Cannot find source file:\n"
-                "\n"
-                "  not-existing\n"
-                "\n"
-                "Tried extensions .c .C .c++ .cc .cpp .cxx .cu .mpp .m .M .mm .ixx .cppm\n"
-                ".ccm .cxxm .c++m .h .hh .h++ .hm .hpp .hxx .in .txx .f .F .for .f77 .f90\n"
-                ".f95 .f03 .hip .ispc\n"
-                "\n"
-                "Call stack:\n"
-                "  /Projects/Test-Project/CMakeLists.txt:13 (qt_add_executable)\n"
-                "  /Qt/6.5.3/mingw_64/lib/cmake/Qt6Core/Qt6CoreMacros.cmake:741 "
-                "(qt6_add_executable)\n"
-                "  /Qt/6.5.3/mingw_64/lib/cmake/Qt6Core/Qt6CoreMacros.cmake:549 "
-                "(_qt_internal_create_executable)\n"
-                "  /Qt/6.5.3/mingw_64/lib/cmake/Qt6Core/Qt6CoreMacros.cmake:588 "
-                "(add_executable)",
-                FilePath::fromUserInput("/Projects/Test-Project/CMakeLists.txt"),
-                13))
-        << QString();
 }
 
-void CMakeParserTest::testCMakeParser()
+void Internal::CMakeProjectPlugin::testCMakeParser()
 {
     OutputParserTester testbench;
     testbench.addLineParser(new CMakeParser);
@@ -491,13 +377,6 @@ void CMakeParserTest::testCMakeParser()
                           outputLines);
 }
 
-QObject *createCMakeParserTest()
-{
-    return new CMakeParserTest;
-}
-
-} // CMakeProjectManager::Internal
+} // CMakeProjectManager
 
 #endif
-
-#include "cmakeparser.moc"

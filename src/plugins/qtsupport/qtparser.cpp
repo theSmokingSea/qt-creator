@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qtparser.h"
 
@@ -8,18 +30,23 @@
 
 #include <QFileInfo>
 
+#ifdef WITH_TESTS
+#include "qtsupportplugin.h"
+#include <projectexplorer/outputparser_test.h>
+#include <QTest>
+#endif
+
 using namespace ProjectExplorer;
 
 namespace QtSupport {
 
 // opt. drive letter + filename: (2 brackets)
-#define FILE_PATTERN R"((?<file>(?:[A-Za-z]:)?[^:\(]+\.[^:\(]+))"
+#define FILE_PATTERN R"(^(?<file>(?:[A-Za-z]:)?[^:\(]+\.[^:\(]+))"
 
 QtParser::QtParser() :
-    m_mocRegExp("^" FILE_PATTERN R"([:\(](?<line>\d+)?(?::(?<column>\d+))?\)?:\s(?<level>[Ww]arning|[Ee]rror|[Nn]ote):\s(?<description>.+?)$)"),
-    m_uicRegExp("^" FILE_PATTERN R"(: Warning:\s(?<msg>.+?)$)"),
-    m_translationRegExp(R"(^(?<level>[Ww]arning|[Ee]rror):\s+(?<description>.*?) in '(?<file>.*?)'$)"),
-    m_qmlToolsRegExp(R"(^(?<level>Warning|Error):\s*)" FILE_PATTERN R"([:\(](?<line>\d+)?(?::(?<column>\d+))?\)?:\s(?<description>.+?)$)")
+    m_mocRegExp(FILE_PATTERN R"([:\(](?<line>\d+)?(?::(?<column>\d+))?\)?:\s(?<level>[Ww]arning|[Ee]rror|[Nn]ote):\s(?<description>.+?)$)"),
+    m_uicRegExp(FILE_PATTERN R"(: Warning:\s(?<msg>.+?)$)"),
+    m_translationRegExp(R"(^(?<level>[Ww]arning|[Ee]rror):\s+(?<description>.*?) in '(?<file>.*?)'$)")
 {
     setObjectName(QLatin1String("QtParser"));
 }
@@ -45,7 +72,7 @@ Utils::OutputLineParser::Result QtParser::handleLine(const QString &line, Utils:
         LinkSpecs linkSpecs;
         const Utils::FilePath file
                 = absoluteFilePath(Utils::FilePath::fromUserInput(match.captured("file")));
-        addLinkSpecForAbsoluteFilePath(linkSpecs, file, lineno, -1, match, "file");
+        addLinkSpecForAbsoluteFilePath(linkSpecs, file, lineno, match, "file");
         CompileTask task(type, match.captured("description").trimmed(), file, lineno);
         task.column = match.captured("column").toInt();
         scheduleTask(task, 1);
@@ -62,7 +89,7 @@ Utils::OutputLineParser::Result QtParser::handleLine(const QString &line, Utils:
             message.prepend(": ").prepend(fileName);
         } else if (fileName.endsWith(".ui")) {
             filePath = absoluteFilePath(Utils::FilePath::fromUserInput(fileName));
-            addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, -1, -1, match, "file");
+            addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, -1, match, "file");
         } else {
             isUicMessage = false;
         }
@@ -79,53 +106,20 @@ Utils::OutputLineParser::Result QtParser::handleLine(const QString &line, Utils:
         LinkSpecs linkSpecs;
         const Utils::FilePath file
                 = absoluteFilePath(Utils::FilePath::fromUserInput(match.captured("file")));
-        addLinkSpecForAbsoluteFilePath(linkSpecs, file, -1, -1, match, "file");
+        addLinkSpecForAbsoluteFilePath(linkSpecs, file, 0, match, "file");
         CompileTask task(type, match.captured("description"), file);
         scheduleTask(task, 1);
         return {Status::Done, linkSpecs};
     }
-    match = m_qmlToolsRegExp.match(line);
-    if (match.hasMatch()) {
-        const Task::TaskType type = match.captured("level") == "Error" ? Task::Error
-                                                                       : Task::Warning;
-        const Utils::FilePath file
-            = absoluteFilePath(Utils::FilePath::fromUserInput(match.captured("file")));
-        bool ok;
-        int lineno = match.captured("line").toInt(&ok);
-        if (!ok)
-            lineno = -1;
-        LinkSpecs linkSpecs;
-        addLinkSpecForAbsoluteFilePath(linkSpecs, file, lineno, -1, match, "file");
-        CompileTask task(type, match.captured("description"), file, lineno,
-                         match.captured("column").toInt());
-        scheduleTask(task, 1);
-        return {Status::Done, linkSpecs};
-    }
-
     return Status::NotHandled;
 }
 
-} // namespace QtSupport
-
+// Unit tests:
 
 #ifdef WITH_TESTS
+namespace Internal {
 
-#include <projectexplorer/outputparser_test.h>
-
-#include <QTest>
-
-namespace QtSupport::Internal {
-
-class QtOutputParserTest final : public QObject
-{
-    Q_OBJECT
-
-public slots:
-    void testQtOutputParser_data();
-    void testQtOutputParser();
-};
-
-void QtOutputParserTest::testQtOutputParser_data()
+void QtSupportPlugin::testQtOutputParser_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<OutputParserTester::Channel>("inputChannel");
@@ -233,25 +227,9 @@ void QtOutputParserTest::testQtOutputParser_data()
                                                        QLatin1String("dropping duplicate messages"),
                                                        Utils::FilePath::fromUserInput(QLatin1String("/some/place/qtcreator_fr.qm")), -1))
             << QString();
-    QTest::newRow("qmlsc/qmllint warning") // QTCREATORBUG-28720
-            << QString::fromLatin1("Warning: Main.qml:4:1: Warnings occurred while importing module "
-                                   "\"QtQuick.Controls\": [import]\"")
-            << OutputParserTester::STDERR << QString() << QString()
-            << (Tasks() << CompileTask(Task::Warning,
-                                       "Warnings occurred while importing module \"QtQuick.Controls\": [import]\"",
-                                       Utils::FilePath::fromUserInput("Main.qml"), 4, 1))
-            << QString();
-    QTest::newRow("qmlsc/qmllint error") // QTCREATORBUG-28720
-            << QString::fromLatin1("Error: E:/foo/PerfProfilerFlameGraphView.qml:10:5: "
-                                   "Could not compile binding for model: Cannot resolve property type  for binding on model")
-            << OutputParserTester::STDERR << QString() << QString()
-            << (Tasks() << CompileTask(Task::Error,
-                                       "Could not compile binding for model: Cannot resolve property type  for binding on model",
-                                       Utils::FilePath::fromUserInput("E:/foo/PerfProfilerFlameGraphView.qml"), 10, 5))
-            << QString();
 }
 
-void QtOutputParserTest::testQtOutputParser()
+void QtSupportPlugin::testQtOutputParser()
 {
     OutputParserTester testbench;
     testbench.addLineParser(new QtParser);
@@ -265,13 +243,7 @@ void QtOutputParserTest::testQtOutputParser()
     testbench.testParsing(input, inputChannel, tasks, childStdOutLines, childStdErrLines, outputLines);
 }
 
-QObject *createQtOutputParserTest()
-{
-    return new QtOutputParserTest;
-}
+} // namespace Internal
+#endif
 
-} // QtSupport::Internal
-
-#include "qtparser.moc"
-
-#endif // WITH_TESTS
+} // namespace QtSupport

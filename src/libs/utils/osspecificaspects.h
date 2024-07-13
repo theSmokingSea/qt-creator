@@ -1,11 +1,30 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
-#include "expected.h"
-
-#include <QDebug>
 #include <QString>
 
 #include <algorithm>
@@ -17,56 +36,6 @@ namespace Utils {
 // Add more as needed.
 enum OsType { OsTypeWindows, OsTypeLinux, OsTypeMac, OsTypeOtherUnix, OsTypeOther };
 
-enum OsArch { OsArchUnknown, OsArchX86, OsArchAMD64, OsArchItanium, OsArchArm, OsArchArm64 };
-
-inline QString osTypeToString(OsType osType)
-{
-    switch (osType) {
-    case OsTypeWindows:
-        return "Windows";
-    case OsTypeLinux:
-        return "Linux";
-    case OsTypeMac:
-        return "Mac";
-    case OsTypeOtherUnix:
-        return "Other Unix";
-    case OsTypeOther:
-    default:
-        return "Other";
-    }
-}
-
-inline Utils::expected_str<OsType> osTypeFromString(const QString &string)
-{
-    if (string.compare("windows", Qt::CaseInsensitive) == 0)
-        return OsTypeWindows;
-    if (string.compare("linux", Qt::CaseInsensitive) == 0)
-        return OsTypeLinux;
-    if (string.compare("mac", Qt::CaseInsensitive) == 0
-        || string.compare("darwin", Qt::CaseInsensitive) == 0)
-        return OsTypeMac;
-    if (string.compare("other unix", Qt::CaseInsensitive) == 0)
-        return OsTypeOtherUnix;
-
-    return Utils::make_unexpected(QString::fromLatin1("Unknown os type: %1").arg(string));
-}
-
-inline Utils::expected_str<OsArch> osArchFromString(const QString &architecture)
-{
-    if (architecture == QLatin1String("x86_64") || architecture == QLatin1String("amd64"))
-        return OsArchAMD64;
-    if (architecture == QLatin1String("x86"))
-        return OsArchX86;
-    if (architecture == QLatin1String("ia64"))
-        return OsArchItanium;
-    if (architecture == QLatin1String("arm"))
-        return OsArchArm;
-    if (architecture == QLatin1String("arm64") || architecture == QLatin1String("aarch64"))
-        return OsArchArm64;
-
-    return Utils::make_unexpected(QString::fromLatin1("Unknown architecture: %1").arg(architecture));
-}
-
 namespace OsSpecificAspects {
 
 inline QString withExecutableSuffix(OsType osType, const QString &executable)
@@ -77,22 +46,22 @@ inline QString withExecutableSuffix(OsType osType, const QString &executable)
     return finalName;
 }
 
-constexpr Qt::CaseSensitivity fileNameCaseSensitivity(OsType osType)
+inline Qt::CaseSensitivity fileNameCaseSensitivity(OsType osType)
 {
     return osType == OsTypeWindows || osType == OsTypeMac ? Qt::CaseInsensitive : Qt::CaseSensitive;
 }
 
-constexpr Qt::CaseSensitivity envVarCaseSensitivity(OsType osType)
+inline Qt::CaseSensitivity envVarCaseSensitivity(OsType osType)
 {
     return fileNameCaseSensitivity(osType);
 }
 
-constexpr QChar pathListSeparator(OsType osType)
+inline QChar pathListSeparator(OsType osType)
 {
     return QLatin1Char(osType == OsTypeWindows ? ';' : ':');
 }
 
-constexpr Qt::KeyboardModifier controlModifier(OsType osType)
+inline Qt::KeyboardModifier controlModifier(OsType osType)
 {
     return osType == OsTypeMac ? Qt::MetaModifier : Qt::ControlModifier;
 }

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -9,10 +31,6 @@ QT_BEGIN_NAMESPACE
 class QCryptographicHash;
 QT_END_NAMESPACE
 
-#include <QStringView>
-
-#include <limits>
-
 namespace LanguageUtils {
 
 class LANGUAGEUTILS_EXPORT ComponentVersion
@@ -21,56 +39,25 @@ class LANGUAGEUTILS_EXPORT ComponentVersion
     int _minor;
 
 public:
-    static constexpr int NoVersion = -1;
-    static constexpr int MaxVersion = std::numeric_limits<int>::max();
+    static const int NoVersion;
+    static const int MaxVersion;
 
-    ComponentVersion()
-        : _major(NoVersion)
-        , _minor(NoVersion)
-    {}
-
-    ComponentVersion(int major, int minor)
-        : _major(major)
-        , _minor(minor)
-    {}
-
-    explicit ComponentVersion(QStringView versionString);
-    ~ComponentVersion() = default;
+    ComponentVersion();
+    ComponentVersion(int major, int minor);
+    explicit ComponentVersion(const QString &versionString);
+    ~ComponentVersion();
 
     int majorVersion() const { return _major; }
     int minorVersion() const { return _minor; }
 
-    friend bool operator<(const ComponentVersion &lhs, const ComponentVersion &rhs)
-    {
-        return std::tie(lhs._major, lhs._minor) < std::tie(rhs._major, rhs._minor);
-    }
+    friend bool LANGUAGEUTILS_EXPORT operator<(const ComponentVersion &lhs, const ComponentVersion &rhs);
+    friend bool LANGUAGEUTILS_EXPORT operator<=(const ComponentVersion &lhs, const ComponentVersion &rhs);
+    friend bool LANGUAGEUTILS_EXPORT operator>(const ComponentVersion &lhs, const ComponentVersion &rhs);
+    friend bool LANGUAGEUTILS_EXPORT operator>=(const ComponentVersion &lhs, const ComponentVersion &rhs);
+    friend bool LANGUAGEUTILS_EXPORT operator==(const ComponentVersion &lhs, const ComponentVersion &rhs);
+    friend bool LANGUAGEUTILS_EXPORT operator!=(const ComponentVersion &lhs, const ComponentVersion &rhs);
 
-    friend bool operator<=(const ComponentVersion &lhs, const ComponentVersion &rhs)
-    {
-        return std::tie(lhs._major, lhs._minor) <= std::tie(rhs._major, rhs._minor);
-    }
-
-    friend bool operator>(const ComponentVersion &lhs, const ComponentVersion &rhs)
-    {
-        return rhs < lhs;
-    }
-
-    friend bool operator>=(const ComponentVersion &lhs, const ComponentVersion &rhs)
-    {
-        return rhs <= lhs;
-    }
-
-    friend bool operator==(const ComponentVersion &lhs, const ComponentVersion &rhs)
-    {
-        return lhs.majorVersion() == rhs.majorVersion() && lhs.minorVersion() == rhs.minorVersion();
-    }
-
-    friend bool operator!=(const ComponentVersion &lhs, const ComponentVersion &rhs)
-    {
-        return !(lhs == rhs);
-    }
-
-    bool isValid() const { return _major >= 0 && _minor >= 0; }
+    bool isValid() const;
     QString toString() const;
     void addToHash(QCryptographicHash &hash) const;
 };

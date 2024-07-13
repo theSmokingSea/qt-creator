@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "progressbar.h"
 
@@ -166,8 +188,7 @@ QSize ProgressBar::sizeHint() const
     int width = 50;
     int height = PROGRESSBAR_HEIGHT + 5;
     if (m_titleVisible) {
-        const QFont font = StyleHelper::uiFont(StyleHelper::UiElementCaptionStrong);
-        const QFontMetrics fm(font);
+        const QFontMetrics fm(titleFont());
         width = qMax(width, fm.horizontalAdvance(m_title) + 16);
         height += fm.height() + 5;
         if (!m_subtitle.isEmpty()) {
@@ -182,21 +203,30 @@ QSize ProgressBar::sizeHint() const
 
 namespace { const int INDENT = 6; }
 
-void ProgressBar::mouseReleaseEvent(QMouseEvent *event)
+void ProgressBar::mousePressEvent(QMouseEvent *event)
 {
     if (m_cancelEnabled) {
         if (event->modifiers() == Qt::NoModifier
             && m_cancelRect.contains(event->pos())) {
+            event->accept();
             emit clicked();
+            return;
         }
     }
-    QWidget::mouseReleaseEvent(event);
+    QWidget::mousePressEvent(event);
 }
 
-void ProgressBar::mouseMoveEvent(QMouseEvent *ev)
+QFont ProgressBar::titleFont() const
+{
+    QFont boldFont(font());
+    boldFont.setPointSizeF(StyleHelper::sidebarFontSize());
+    boldFont.setBold(true);
+    return boldFont;
+}
+
+void ProgressBar::mouseMoveEvent(QMouseEvent *)
 {
     update();
-    QWidget::mouseMoveEvent(ev);
 }
 
 void ProgressBar::paintEvent(QPaintEvent *)
@@ -213,7 +243,7 @@ void ProgressBar::paintEvent(QPaintEvent *)
         percent = 1;
 
     QPainter p(this);
-    const QFont fnt = StyleHelper::uiFont(StyleHelper::UiElementCaptionStrong);
+    const QFont fnt(titleFont());
     const QFontMetrics fm(fnt);
 
     const int titleHeight = m_titleVisible ? fm.height() + 5 : 4;
@@ -222,7 +252,7 @@ void ProgressBar::paintEvent(QPaintEvent *)
     const int separatorHeight = m_separatorVisible ? SEPARATOR_HEIGHT : 0;
     if (m_separatorVisible) {
         QRectF innerRect = QRectF(this->rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-        p.setPen(StyleHelper::baseColor());
+        p.setPen(StyleHelper::sidebarShadow());
         p.drawLine(innerRect.topLeft(), innerRect.topRight());
 
         if (creatorTheme()->flag(Theme::DrawToolBarHighlights)) {
@@ -245,7 +275,7 @@ void ProgressBar::paintEvent(QPaintEvent *)
         textRect.setHeight(fm.height() + 4);
 
         p.setFont(fnt);
-        p.setPen(creatorColor(Theme::ProgressBarTitleColor));
+        p.setPen(creatorTheme()->color(Theme::ProgressBarTitleColor));
         p.drawText(textRect, alignment | Qt::AlignBottom, elidedtitle);
 
         if (!m_subtitle.isEmpty()) {
@@ -255,7 +285,7 @@ void ProgressBar::paintEvent(QPaintEvent *)
             subtextRect.moveTop(progressY + progressHeight);
 
             p.setFont(fnt);
-            p.setPen(creatorColor(Theme::ProgressBarTitleColor));
+            p.setPen(creatorTheme()->color(Theme::ProgressBarTitleColor));
             p.drawText(subtextRect, alignment | Qt::AlignBottom, elidedsubtitle);
         }
     }
@@ -274,11 +304,12 @@ void ProgressBar::paintEvent(QPaintEvent *)
         themeColor = Theme::ProgressBarColorError;
     else if (m_finished)
         themeColor = Theme::ProgressBarColorFinished;
-    const QColor c = creatorColor(themeColor);
+    const QColor c = creatorTheme()->color(themeColor);
 
     //draw the progress bar
     if (creatorTheme()->flag(Theme::FlatToolBars)) {
-        p.fillRect(rect.adjusted(2, 2, -2, -2), creatorColor(Theme::ProgressBarBackgroundColor));
+        p.fillRect(rect.adjusted(2, 2, -2, -2),
+                   creatorTheme()->color(Theme::ProgressBarBackgroundColor));
         p.fillRect(inner, c);
     } else {
         const static QImage bar(StyleHelper::dpiSpecificImageFile(

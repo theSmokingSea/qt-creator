@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "compileroptionsbuilder.h"
 
@@ -17,7 +39,6 @@
 
 #include <utils/algorithm.h>
 #include <utils/cpplanguage_details.h>
-#include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
@@ -62,13 +83,6 @@ static QString defineDirectiveToDefineOption(const Macro &macro)
 {
     const QByteArray option = toDefineOption(macro);
     return QString::fromUtf8(option);
-}
-
-static QStringList cpuBlacklist()
-{
-    QStringList blacklist = qtcEnvironmentVariable("QTC_CLANGD_CPU_BLACKLIST")
-                                .split(':', Qt::SkipEmptyParts);
-    return blacklist << "cortex-a72.cortex-a53"; // See QTCREATORBUG-29304
 }
 
 QStringList XclangArgs(const QStringList &args)
@@ -137,7 +151,6 @@ QStringList CompilerOptionsBuilder::build(ProjectFile::Kind fileKind,
     undefineCppLanguageFeatureMacrosForMsvc2015();
     addDefineFunctionMacrosMsvc();
     addDefineFunctionMacrosQnx();
-    addQtMacros();
 
     addHeaderPathOptions();
 
@@ -169,13 +182,10 @@ void CompilerOptionsBuilder::add(const QStringList &args, bool gccOnlyOptions)
 
 void CompilerOptionsBuilder::addSyntaxOnly()
 {
-    if (m_nativeMode)
-        return;
-
     isClStyle() ? add("/Zs") : add("-fsyntax-only");
 }
 
-QStringList createLanguageOptionGcc(Language language, ProjectFile::Kind fileKind, bool objcExt)
+QStringList createLanguageOptionGcc(ProjectFile::Kind fileKind, bool objcExt)
 {
     QStringList options;
 
@@ -184,22 +194,23 @@ QStringList createLanguageOptionGcc(Language language, ProjectFile::Kind fileKin
     case ProjectFile::Unsupported:
         break;
     case ProjectFile::CHeader:
-    case ProjectFile::AmbiguousHeader:
-        if (language == Language::C)
-            options += QLatin1String(objcExt ? "objective-c-header" : "c-header");
-        else if (language == Language::Cxx)
-            options += QLatin1String(objcExt ? "objective-c++-header" : "c++-header");
+        if (objcExt)
+            options += "objective-c-header";
+        else
+            options += "c-header";
         break;
     case ProjectFile::CXXHeader:
-        options += QLatin1String(objcExt ? "objective-c++-header" : "c++-header");
-        break;
+    default:
+        if (!objcExt) {
+            options += "c++-header";
+            break;
+        }
+        Q_FALLTHROUGH();
     case ProjectFile::ObjCHeader:
-        options += QLatin1String(language == Language::C ? "objective-c-header"
-                                                         : "objective-c++-header");
-        break;
     case ProjectFile::ObjCXXHeader:
         options += "objective-c++-header";
         break;
+
     case ProjectFile::CSource:
         if (!objcExt) {
             options += "c";
@@ -234,9 +245,7 @@ QStringList createLanguageOptionGcc(Language language, ProjectFile::Kind fileKin
 
 void CompilerOptionsBuilder::addWordWidth()
 {
-    if (m_projectPart.toolchainAbi.architecture() != Abi::X86Architecture)
-        return;
-    const QString argument = m_projectPart.toolchainAbi.wordWidth() == 64
+    const QString argument = m_projectPart.toolChainWordWidth == ProjectPart::WordWidth64Bit
                                  ? QLatin1String("-m64")
                                  : QLatin1String("-m32");
     add(argument);
@@ -244,13 +253,8 @@ void CompilerOptionsBuilder::addWordWidth()
 
 void CompilerOptionsBuilder::addTargetTriple()
 {
-    if (m_nativeMode && m_projectPart.toolchainType != Constants::CLANG_TOOLCHAIN_TYPEID
-            && m_projectPart.toolchainType != Constants::CLANG_CL_TOOLCHAIN_TYPEID) {
-        return;
-    }
-
     const QString target = m_explicitTarget.isEmpty() || m_projectPart.targetTripleIsAuthoritative
-            ? m_projectPart.toolchainTargetTriple : m_explicitTarget;
+            ? m_projectPart.toolChainTargetTriple : m_explicitTarget;
 
     // Only "--target=" style is accepted in both g++ and cl driver modes.
     if (!target.isEmpty())
@@ -259,9 +263,6 @@ void CompilerOptionsBuilder::addTargetTriple()
 
 void CompilerOptionsBuilder::addExtraCodeModelFlags()
 {
-    if (m_nativeMode)
-        return;
-
     // extraCodeModelFlags keep build architecture for cross-compilation.
     // In case of iOS build target triple has aarch64 archtecture set which makes
     // code model fail with CXError_Failure. To fix that we explicitly provide architecture.
@@ -277,14 +278,13 @@ void CompilerOptionsBuilder::addPicIfCompilerFlagsContainsIt()
 void CompilerOptionsBuilder::addCompilerFlags()
 {
     add(m_compilerFlags.flags);
-    removeUnsupportedCpuFlags();
 }
 
 void CompilerOptionsBuilder::addMsvcExceptions()
 {
     if (!m_clStyle)
         return;
-    if (Utils::anyOf(m_projectPart.toolchainMacros, [](const Macro &macro) {
+    if (Utils::anyOf(m_projectPart.toolChainMacros, [](const Macro &macro) {
         return macro.key == "_CPPUNWIND";
     })) {
         enableExceptions();
@@ -293,11 +293,6 @@ void CompilerOptionsBuilder::addMsvcExceptions()
 
 void CompilerOptionsBuilder::enableExceptions()
 {
-    if (m_nativeMode)
-        return;
-
-    // FIXME: Shouldn't this be dependent on the build system settings?
-
     // With "--driver-mode=cl" exceptions are disabled (clang 8).
     // This is most likely due to incomplete exception support of clang.
     // However, as we need exception support only in the frontend,
@@ -358,9 +353,9 @@ void CompilerOptionsBuilder::addHeaderPathOptions()
 
     filter.process();
 
-    for (const HeaderPath &headerPath : std::as_const(filter.userHeaderPaths))
+    for (const HeaderPath &headerPath : qAsConst(filter.userHeaderPaths))
         addIncludeDirOptionForPath(headerPath);
-    for (const HeaderPath &headerPath : std::as_const(filter.systemHeaderPaths))
+    for (const HeaderPath &headerPath : qAsConst(filter.systemHeaderPaths))
         addIncludeDirOptionForPath(headerPath);
 
     if (m_useTweakedHeaderPaths != UseTweakedHeaderPaths::No) {
@@ -369,28 +364,17 @@ void CompilerOptionsBuilder::addHeaderPathOptions()
         m_options.prepend("-nostdinc++");
         m_options.prepend("-nostdinc");
 
-        for (const HeaderPath &headerPath : std::as_const(filter.builtInHeaderPaths))
+        for (const HeaderPath &headerPath : qAsConst(filter.builtInHeaderPaths))
             addIncludeDirOptionForPath(headerPath);
     }
 }
 
 void CompilerOptionsBuilder::addIncludeFile(const QString &file)
 {
-    if (QFileInfo::exists(file)) {
+    if (QFile::exists(file)) {
         add({isClStyle() ? QLatin1String(includeFileOptionCl)
                          : QLatin1String(includeFileOptionGcc),
              QDir::toNativeSeparators(file)});
-    }
-}
-
-void CompilerOptionsBuilder::removeUnsupportedCpuFlags()
-{
-    const QStringList blacklist = cpuBlacklist();
-    for (auto it = m_options.begin(); it != m_options.end();) {
-        if (it->startsWith("-mcpu=") && blacklist.contains(it->mid(6)))
-            it = m_options.erase(it);
-        else
-            ++it;
     }
 }
 
@@ -416,12 +400,12 @@ void CompilerOptionsBuilder::addPrecompiledHeaderOptions(UsePrecompiledHeaders u
 
 void CompilerOptionsBuilder::addProjectMacros()
 {
-    const int useMacros = qtcEnvironmentVariableIntValue("QTC_CLANG_USE_TOOLCHAIN_MACROS");
+    static const int useMacros = qEnvironmentVariableIntValue("QTC_CLANG_USE_TOOLCHAIN_MACROS");
 
     if (m_projectPart.toolchainType == ProjectExplorer::Constants::CUSTOM_TOOLCHAIN_TYPEID
         // || m_projectPart.toolchainType == Qnx::Constants::QNX_TOOLCHAIN_ID
         || m_projectPart.toolchainType.name().contains("BareMetal") || useMacros) {
-        addMacros(m_projectPart.toolchainMacros);
+        addMacros(m_projectPart.toolChainMacros);
     }
 
     addMacros(m_projectPart.projectMacros);
@@ -446,7 +430,7 @@ void CompilerOptionsBuilder::addMacros(const Macros &macros)
 
 void CompilerOptionsBuilder::updateFileLanguage(ProjectFile::Kind fileKind)
 {
-    if (isClStyle() && !ProjectFile::isObjC(fileKind)) {
+    if (isClStyle()) {
         QString option;
         if (ProjectFile::isC(fileKind))
             option = "/TC";
@@ -466,7 +450,7 @@ void CompilerOptionsBuilder::updateFileLanguage(ProjectFile::Kind fileKind)
     }
 
     const bool objcExt = m_projectPart.languageExtensions & LanguageExtension::ObjectiveC;
-    const QStringList options = createLanguageOptionGcc(m_projectPart.language, fileKind, objcExt);
+    const QStringList options = createLanguageOptionGcc(fileKind, objcExt);
     if (options.isEmpty())
         return;
 
@@ -503,14 +487,9 @@ void CompilerOptionsBuilder::addLanguageVersionAndExtensions()
         }
 
         if (!option.isEmpty()) {
-            if (m_nativeMode)
-                option.replace("-clang:-std=", "/std:").replace("c++2b", "c++latest");
             add(option);
             return;
         }
-
-        if (m_nativeMode)
-            return;
 
         // Continue in case no cl-style option could be chosen.
     }
@@ -579,7 +558,7 @@ static QByteArray msCompatibilityVersionFromDefines(const Macros &macros)
 
 QByteArray CompilerOptionsBuilder::msvcVersion() const
 {
-    const QByteArray version = msCompatibilityVersionFromDefines(m_projectPart.toolchainMacros);
+    const QByteArray version = msCompatibilityVersionFromDefines(m_projectPart.toolChainMacros);
     return !version.isEmpty() ? version
                               : msCompatibilityVersionFromDefines(m_projectPart.projectMacros);
 }
@@ -658,9 +637,6 @@ static QStringList languageFeatureMacros()
 
 void CompilerOptionsBuilder::undefineCppLanguageFeatureMacrosForMsvc2015()
 {
-    if (m_nativeMode)
-        return;
-
     if (m_projectPart.toolchainType == ProjectExplorer::Constants::MSVC_TOOLCHAIN_TYPEID
             && m_projectPart.isMsvc2015Toolchain) {
         // Undefine the language feature macros that are pre-defined in clang-cl,
@@ -692,7 +668,8 @@ void CompilerOptionsBuilder::addIncludeDirOptionForPath(const HeaderPath &path)
     if (path.type == HeaderPathType::BuiltIn) {
         systemPath = true;
     } else if (path.type == HeaderPathType::System) {
-        systemPath = true;
+        if (m_useSystemHeader == UseSystemHeader::Yes)
+            systemPath = true;
     } else {
         // ProjectExplorer::HeaderPathType::User
         if (m_useSystemHeader == UseSystemHeader::Yes && m_projectPart.hasProject()
@@ -805,12 +782,6 @@ void CompilerOptionsBuilder::addDefineFunctionMacrosQnx()
     //     addMacros({{"_LIBCPP_HAS_NO_BUILTIN_OPERATOR_NEW_DELETE"}});
 }
 
-void CompilerOptionsBuilder::addQtMacros()
-{
-    if (m_projectPart.qtVersion != QtMajorVersion::None)
-        addMacros({{"QT_ANNOTATE_FUNCTION(x)", "__attribute__((annotate(#x)))"}});
-}
-
 void CompilerOptionsBuilder::reset()
 {
     m_options.clear();
@@ -823,7 +794,8 @@ void CompilerOptionsBuilder::reset()
 //  QMakeProject: -pipe -Whello -g -std=gnu++11 -Wall -W -D_REENTRANT -fPIC
 void CompilerOptionsBuilder::evaluateCompilerFlags()
 {
-    const QStringList userBlackList = qtcEnvironmentVariable("QTC_CLANG_CMD_OPTIONS_BLACKLIST")
+    static QStringList userBlackList = QString::fromLocal8Bit(
+                                           qgetenv("QTC_CLANG_CMD_OPTIONS_BLACKLIST"))
                                            .split(';', Qt::SkipEmptyParts);
 
     const Id toolChain = m_projectPart.toolchainType;
@@ -893,15 +865,10 @@ void CompilerOptionsBuilder::evaluateCompilerFlags()
             || option.startsWith("/M", Qt::CaseSensitive)
             || option.startsWith(includeUserPathOption)
             || option.startsWith(includeSystemPathOption)
-            || option.startsWith(includeUserPathOptionWindows)
-            || option.startsWith("-flto")) {
+            || option.startsWith(includeUserPathOptionWindows)) {
             // Optimization and run-time flags.
             continue;
         }
-
-        // GCC options that clang doesn't know.
-        if (option.contains("direct-extern-access") || option == "-fnothrow-opt")
-            continue;
 
         // These were already parsed into ProjectPart::includedFiles.
         if (option == includeFileOptionCl || option == includeFileOptionGcc) {
@@ -934,27 +901,25 @@ void CompilerOptionsBuilder::evaluateCompilerFlags()
             containsDriverMode = true;
         }
 
-        if (!m_nativeMode) {
-            // Transform the "/" starting commands into "-" commands, which if
-            // unknown will not cause clang to fail because it thinks
-            // it's a missing file.
-            if (theOption.startsWith("/") &&
-                    (toolChain == ProjectExplorer::Constants::MSVC_TOOLCHAIN_TYPEID ||
-                     toolChain == ProjectExplorer::Constants::CLANG_CL_TOOLCHAIN_TYPEID)) {
-                theOption[0] = '-';
-            }
+        // Transfrom the "/" starting commands into "-" commands, which if
+        // unknown will not cause clang to fail because it thinks
+        // it's a missing file.
+        if (theOption.startsWith("/") &&
+            (toolChain == ProjectExplorer::Constants::MSVC_TOOLCHAIN_TYPEID ||
+             toolChain == ProjectExplorer::Constants::CLANG_CL_TOOLCHAIN_TYPEID)) {
+            theOption[0] = '-';
+        }
 
-            if (toolChain == ProjectExplorer::Constants::MSVC_TOOLCHAIN_TYPEID ||
-                    toolChain == ProjectExplorer::Constants::CLANG_CL_TOOLCHAIN_TYPEID) {
-                theOption.replace("-std:c++latest", "-clang:-std=c++2b");
-                theOption.replace("-std:c++", "-clang:-std=c++");
-            }
+        if (toolChain == ProjectExplorer::Constants::MSVC_TOOLCHAIN_TYPEID ||
+            toolChain == ProjectExplorer::Constants::CLANG_CL_TOOLCHAIN_TYPEID) {
+            theOption.replace("-std:c++latest", "-clang:-std=c++2b");
+            theOption.replace("-std:c++", "-clang:-std=c++");
         }
 
         m_compilerFlags.flags.append(theOption);
     }
 
-    if (!m_nativeMode && !containsDriverMode
+    if (!containsDriverMode
         && (toolChain == ProjectExplorer::Constants::MSVC_TOOLCHAIN_TYPEID
             || toolChain == ProjectExplorer::Constants::CLANG_CL_TOOLCHAIN_TYPEID)) {
         m_clStyle = true;

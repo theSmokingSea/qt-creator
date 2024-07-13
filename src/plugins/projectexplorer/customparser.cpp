@@ -1,15 +1,35 @@
-// Copyright (C) 2016 Andre Hartmann.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Andre Hartmann.
+** Contact: aha_1980@gmx.de
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "customparser.h"
 
-#include "projectexplorer.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
+#include "projectexplorer.h"
 #include "task.h"
 
 #include <coreplugin/icore.h>
-
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 
@@ -22,7 +42,7 @@
 #ifdef WITH_TESTS
 #   include <QTest>
 
-#   include "projectexplorer_test.h"
+#   include "projectexplorer.h"
 #   include "outputparser_test.h"
 #endif
 
@@ -91,9 +111,9 @@ void CustomParserExpression::setMessageCap(int messageCap)
     m_messageCap = messageCap;
 }
 
-Store CustomParserExpression::toMap() const
+QVariantMap CustomParserExpression::toMap() const
 {
-    Store map;
+    QVariantMap map;
     map.insert(patternKey, pattern());
     map.insert(messageCapKey, messageCap());
     map.insert(fileNameCapKey, fileNameCap());
@@ -103,7 +123,7 @@ Store CustomParserExpression::toMap() const
     return map;
 }
 
-void CustomParserExpression::fromMap(const Store &map)
+void CustomParserExpression::fromMap(const QVariantMap &map)
 {
     setPattern(map.value(patternKey).toString());
     setMessageCap(map.value(messageCapKey).toInt());
@@ -139,22 +159,22 @@ bool CustomParserSettings::operator ==(const CustomParserSettings &other) const
             && error == other.error && warning == other.warning;
 }
 
-Store CustomParserSettings::toMap() const
+QVariantMap CustomParserSettings::toMap() const
 {
-    Store map;
+    QVariantMap map;
     map.insert(idKey, id.toSetting());
     map.insert(nameKey, displayName);
-    map.insert(errorKey, variantFromStore(error.toMap()));
-    map.insert(warningKey, variantFromStore(warning.toMap()));
+    map.insert(errorKey, error.toMap());
+    map.insert(warningKey, warning.toMap());
     return map;
 }
 
-void CustomParserSettings::fromMap(const Store &map)
+void CustomParserSettings::fromMap(const QVariantMap &map)
 {
-    id = Id::fromSetting(map.value(idKey));
+    id = Utils::Id::fromSetting(map.value(idKey));
     displayName = map.value(nameKey).toString();
-    error.fromMap(storeFromVariant(map.value(errorKey)));
-    warning.fromMap(storeFromVariant(map.value(warningKey)));
+    error.fromMap(map.value(errorKey).toMap());
+    warning.fromMap(map.value(warningKey).toMap());
 }
 
 CustomParsersAspect::CustomParsersAspect(Target *target)
@@ -162,7 +182,7 @@ CustomParsersAspect::CustomParsersAspect(Target *target)
     Q_UNUSED(target)
     setId("CustomOutputParsers");
     setSettingsKey("CustomOutputParsers");
-    setDisplayName(Tr::tr("Custom Output Parsers"));
+    setDisplayName(tr("Custom Output Parsers"));
     addDataExtractor(this, &CustomParsersAspect::parsers, &Data::parsers);
     setConfigWidgetCreator([this] {
         const auto widget = new Internal::CustomParsersSelectionWidget;
@@ -173,23 +193,14 @@ CustomParsersAspect::CustomParsersAspect(Target *target)
     });
 }
 
-OutputTaskParser *createCustomParserFromId(Utils::Id id)
+void CustomParsersAspect::fromMap(const QVariantMap &map)
 {
-    const CustomParserSettings parser = findOrDefault(ProjectExplorerPlugin::customParsers(),
-            [id](const CustomParserSettings &p) { return p.id == id; });
-    if (parser.id.isValid())
-        return new Internal::CustomParser(parser);
-    return nullptr;
+    m_parsers = transform(map.value(settingsKey()).toList(), &Utils::Id::fromSetting);
 }
 
-void CustomParsersAspect::fromMap(const Store &map)
+void CustomParsersAspect::toMap(QVariantMap &map) const
 {
-    m_parsers = transform(map.value(settingsKey()).toList(), &Id::fromSetting);
-}
-
-void CustomParsersAspect::toMap(Store &map) const
-{
-    map.insert(settingsKey(), transform(m_parsers, &Id::toSetting));
+    map.insert(settingsKey(), transform(m_parsers, &Utils::Id::toSetting));
 }
 
 namespace Internal {
@@ -205,6 +216,15 @@ void CustomParser::setSettings(const CustomParserSettings &settings)
 {
     m_error = settings.error;
     m_warning = settings.warning;
+}
+
+CustomParser *CustomParser::createFromId(Utils::Id id)
+{
+    const CustomParserSettings parser = findOrDefault(ProjectExplorerPlugin::customParsers(),
+            [id](const CustomParserSettings &p) { return p.id == id; });
+    if (parser.id.isValid())
+        return new CustomParser(parser);
+    return nullptr;
 }
 
 OutputLineParser::Result CustomParser::handleLine(const QString &line, OutputFormat type)
@@ -237,7 +257,7 @@ OutputLineParser::Result CustomParser::hasMatch(
     const int lineNumber = match.captured(expression.lineNumberCap()).toInt();
     const QString message = match.captured(expression.messageCap());
     LinkSpecs linkSpecs;
-    addLinkSpecForAbsoluteFilePath(linkSpecs, fileName, lineNumber, -1, match,
+    addLinkSpecForAbsoluteFilePath(linkSpecs, fileName, lineNumber, match,
                                    expression.fileNameCap());
     scheduleTask(CompileTask(taskType, message, fileName, lineNumber), 1);
     return {Status::Done, linkSpecs};
@@ -263,12 +283,11 @@ public:
     SelectionWidget(QWidget *parent = nullptr) : QWidget(parent)
     {
         const auto layout = new QVBoxLayout(this);
-        const auto explanatoryLabel = new QLabel(Tr::tr(
+        const auto explanatoryLabel = new QLabel(tr(
             "Custom output parsers scan command line output for user-provided error patterns<br>"
             "to create entries in Issues.<br>"
             "The parsers can be configured <a href=\"dummy\">here</a>."));
         layout->addWidget(explanatoryLabel);
-        layout->setContentsMargins(0, 0, 0, 0);
         connect(explanatoryLabel, &QLabel::linkActivated, [] {
             Core::ICore::showOptionsDialog(Constants::CUSTOM_PARSERS_SETTINGS_PAGE_ID);
         });
@@ -279,7 +298,7 @@ public:
 
     void setSelectedParsers(const QList<Utils::Id> &parsers)
     {
-        for (const auto &p : std::as_const(parserCheckBoxes))
+        for (const auto &p : qAsConst(parserCheckBoxes))
             p.first->setChecked(parsers.contains(p.second));
         emit selectionChanged();
     }
@@ -287,7 +306,7 @@ public:
     QList<Utils::Id> selectedParsers() const
     {
         QList<Utils::Id> parsers;
-        for (const auto &p : std::as_const(parserCheckBoxes)) {
+        for (const auto &p : qAsConst(parserCheckBoxes)) {
             if (p.first->isChecked())
                 parsers << p.second;
         }
@@ -303,13 +322,14 @@ private:
         const auto layout = qobject_cast<QVBoxLayout *>(this->layout());
         QTC_ASSERT(layout, return);
         const QList<Utils::Id> parsers = selectedParsers();
-        for (const auto &p : std::as_const(parserCheckBoxes))
+        for (const auto &p : qAsConst(parserCheckBoxes))
             delete p.first;
         parserCheckBoxes.clear();
         for (const CustomParserSettings &s : ProjectExplorerPlugin::customParsers()) {
             const auto checkBox = new QCheckBox(s.displayName, this);
-            connect(checkBox, &QCheckBox::stateChanged, this, &SelectionWidget::selectionChanged);
-            parserCheckBoxes.push_back({checkBox, s.id});
+            connect(checkBox, &QCheckBox::stateChanged,
+                    this, &SelectionWidget::selectionChanged);
+            parserCheckBoxes << qMakePair(checkBox, s.id);
             layout->addWidget(checkBox);
         }
         setSelectedParsers(parsers);
@@ -322,7 +342,7 @@ private:
 CustomParsersSelectionWidget::CustomParsersSelectionWidget(QWidget *parent) : DetailsWidget(parent)
 {
     const auto widget = new SelectionWidget(this);
-    connect(widget, &SelectionWidget::selectionChanged, this, [this] {
+    connect(widget, &SelectionWidget::selectionChanged, [this] {
         updateSummary();
         emit selectionChanged();
     });
@@ -345,9 +365,9 @@ void CustomParsersSelectionWidget::updateSummary()
     const QList<Utils::Id> parsers
             = qobject_cast<SelectionWidget *>(widget())->selectedParsers();
     if (parsers.isEmpty())
-        setSummaryText(Tr::tr("There are no custom parsers active"));
+        setSummaryText(tr("There are no custom parsers active"));
     else
-        setSummaryText(Tr::tr("There are %n custom parsers active", nullptr, parsers.count()));
+        setSummaryText(tr("There are %n custom parsers active", nullptr, parsers.count()));
 }
 
 } // namespace Internal
@@ -358,7 +378,7 @@ void CustomParsersSelectionWidget::updateSummary()
 
 using namespace Internal;
 
-void ProjectExplorerTest::testCustomOutputParsers_data()
+void ProjectExplorerPlugin::testCustomOutputParsers_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<QString>("workDir");
@@ -657,7 +677,7 @@ void ProjectExplorerTest::testCustomOutputParsers_data()
             << QString();
 }
 
-void ProjectExplorerTest::testCustomOutputParsers()
+void ProjectExplorerPlugin::testCustomOutputParsers()
 {
     QFETCH(QString, input);
     QFETCH(QString, workDir);

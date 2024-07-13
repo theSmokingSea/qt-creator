@@ -1,5 +1,27 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -43,7 +65,7 @@ public:
          * The trigger character (a single character) that has trigger code complete.
          * Is undefined if `triggerKind !== CompletionTriggerKind.TriggerCharacter`
          */
-        std::optional<QString> triggerCharacter() const
+        Utils::optional<QString> triggerCharacter() const
         { return optionalValue<QString>(triggerCharacterKey); }
         void setTriggerCharacter(const QString &triggerCharacter)
         { insert(triggerCharacterKey, triggerCharacter); }
@@ -56,14 +78,11 @@ public:
      * The completion context. This is only available it the client specifies
      * to send this using `ClientCapabilities.textDocument.completion.contextSupport === true`
      */
-    std::optional<CompletionContext> context() const
+    Utils::optional<CompletionContext> context() const
     { return optionalValue<CompletionContext>(contextKey); }
     void setContext(const CompletionContext &context)
     { insert(contextKey, context); }
     void clearContext() { remove(contextKey); }
-
-    // clangd extension
-    void setLimit(int limit) { insert(limitKey, limit); }
 };
 
 class LANGUAGESERVERPROTOCOL_EXPORT CompletionItem : public JsonObject
@@ -79,30 +98,30 @@ public:
     void setLabel(const QString &label) { insert(labelKey, label); }
 
     /// The kind of this completion item. Based of the kind an icon is chosen by the editor.
-    std::optional<int> kind() const { return optionalValue<int>(kindKey); }
+    Utils::optional<int> kind() const { return optionalValue<int>(kindKey); }
     void setKind(int kind) { insert(kindKey, kind); }
     void clearKind() { remove(kindKey); }
 
     /// A human-readable string with additional information about this item, like type information.
-    std::optional<QString> detail() const { return optionalValue<QString>(detailKey); }
+    Utils::optional<QString> detail() const { return optionalValue<QString>(detailKey); }
     void setDetail(const QString &detail) { insert(detailKey, detail); }
     void clearDetail() { remove(detailKey); }
 
     /// A human-readable string that represents a doc-comment.
-    std::optional<MarkupOrString> documentation() const;
+    Utils::optional<MarkupOrString> documentation() const;
     void setDocumentation(const MarkupOrString &documentation)
     { insert(documentationKey, documentation.toJson()); }
     void cleatDocumentation() { remove(documentationKey); }
 
     /// A string that should be used when comparing this item
     /// with other items. When `falsy` the label is used.
-    std::optional<QString> sortText() const { return optionalValue<QString>(sortTextKey); }
+    Utils::optional<QString> sortText() const { return optionalValue<QString>(sortTextKey); }
     void setSortText(const QString &sortText) { insert(sortTextKey, sortText); }
     void clearSortText() { remove(sortTextKey); }
 
     /// A string that should be used when filtering a set of
     /// completion items. When `falsy` the label is used.
-    std::optional<QString> filterText() const { return optionalValue<QString>(filterTextKey); }
+    Utils::optional<QString> filterText() const { return optionalValue<QString>(filterTextKey); }
     void setFilterText(const QString &filterText) { insert(filterTextKey, filterText); }
     void clearFilterText() { remove(filterTextKey); }
 
@@ -119,7 +138,7 @@ public:
      *
      * @deprecated Use textEdit instead.
      */
-    std::optional<QString> insertText() const { return optionalValue<QString>(insertTextKey); }
+    Utils::optional<QString> insertText() const { return optionalValue<QString>(insertTextKey); }
     void setInsertText(const QString &insertText) { insert(insertTextKey, insertText); }
     void clearInsertText() { remove(insertTextKey); }
 
@@ -140,7 +159,7 @@ public:
 
     /// The format of the insert text. The format applies to both the `insertText` property
     /// and the `newText` property of a provided `textEdit`.
-    std::optional<InsertTextFormat> insertTextFormat() const;
+    Utils::optional<InsertTextFormat> insertTextFormat() const;
     void setInsertTextFormat(const InsertTextFormat &insertTextFormat)
     { insert(insertTextFormatKey, insertTextFormat); }
     void clearInsertTextFormat() { remove(insertTextFormatKey); }
@@ -152,7 +171,7 @@ public:
      * *Note:* The range of the edit must be a single line range and it must contain the position at which completion
      * has been requested.
      */
-    std::optional<TextEdit> textEdit() const { return optionalValue<TextEdit>(textEditKey); }
+    Utils::optional<TextEdit> textEdit() const { return optionalValue<TextEdit>(textEditKey); }
     void setTextEdit(const TextEdit &textEdit) { insert(textEditKey, textEdit); }
     void clearTextEdit() { remove(textEditKey); }
 
@@ -161,7 +180,7 @@ public:
      * selecting this completion. Edits must not overlap with the main edit
      * nor with themselves.
      */
-    std::optional<QList<TextEdit>> additionalTextEdits() const
+    Utils::optional<QList<TextEdit>> additionalTextEdits() const
     { return optionalArray<TextEdit>(additionalTextEditsKey); }
     void setAdditionalTextEdits(const QList<TextEdit> &additionalTextEdits)
     { insertArray(additionalTextEditsKey, additionalTextEdits); }
@@ -172,7 +191,7 @@ public:
      * then type that character. *Note* that all commit characters should have `length=1` and that superfluous
      * characters will be ignored.
      */
-    std::optional<QList<QString>> commitCharacters() const
+    Utils::optional<QList<QString>> commitCharacters() const
     { return optionalArray<QString>(commitCharactersKey); }
     void setCommitCharacters(const QList<QString> &commitCharacters)
     { insertArray(commitCharactersKey, commitCharacters); }
@@ -183,7 +202,7 @@ public:
      * additional modifications to the current document should be described with the
      * additionalTextEdits-property.
      */
-    std::optional<Command> command() const { return optionalValue<Command>(commandKey); }
+    Utils::optional<Command> command() const { return optionalValue<Command>(commandKey); }
     void setCommand(const Command &command) { insert(commandKey, command); }
     void clearCommand() { remove(commandKey); }
 
@@ -191,7 +210,7 @@ public:
      * An data entry field that is preserved on a completion item between
      * a completion and a completion resolve request.
      */
-    std::optional<QJsonValue> data() const { return optionalValue<QJsonValue>(dataKey); }
+    Utils::optional<QJsonValue> data() const { return optionalValue<QJsonValue>(dataKey); }
     void setData(const QJsonValue &data) { insert(dataKey, data); }
     void clearData() { remove(dataKey); }
 
@@ -208,13 +227,13 @@ public:
      * Tags for this completion item.
      * @since 3.15.0
      */
-    std::optional<QList<CompletionItemTag>> tags() const;
+    Utils::optional<QList<CompletionItemTag>> tags() const;
 
     /**
       * Indicates if this item is deprecated.
       * @deprecated Use `tags` instead if supported.
       */
-    std::optional<bool> deprecated() const { return optionalValue<bool>(deprecatedKey); }
+    Utils::optional<bool> deprecated() const { return optionalValue<bool>(deprecatedKey); }
 
     bool isValid() const override { return contains(labelKey); }
 };
@@ -232,7 +251,7 @@ public:
     void setIsIncomplete(bool isIncomplete) { insert(isIncompleteKey, isIncomplete); }
 
     /// The completion items.
-    std::optional<QList<CompletionItem>> items() const { return array<CompletionItem>(itemsKey); }
+    Utils::optional<QList<CompletionItem>> items() const { return array<CompletionItem>(itemsKey); }
     void setItems(const QList<CompletionItem> &items) { insertArray(itemsKey, items); }
     void clearItems() { remove(itemsKey); }
 
@@ -241,7 +260,7 @@ public:
 
 /// The result of a completion is CompletionItem[] | CompletionList | null
 class LANGUAGESERVERPROTOCOL_EXPORT CompletionResult
-        : public std::variant<QList<CompletionItem>, CompletionList, std::nullptr_t>
+        : public Utils::variant<QList<CompletionItem>, CompletionList, std::nullptr_t>
 {
 public:
     using variant::variant;

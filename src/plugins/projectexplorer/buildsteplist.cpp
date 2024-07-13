@@ -1,30 +1,49 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "buildsteplist.h"
 
 #include "buildmanager.h"
 #include "buildstep.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
 #include "target.h"
 
 #include <utils/algorithm.h>
-#include <utils/qtcassert.h>
-
-#include <QDebug>
-
-using namespace Utils;
 
 namespace ProjectExplorer {
 
 const char STEPS_COUNT_KEY[] = "ProjectExplorer.BuildStepList.StepsCount";
 const char STEPS_PREFIX[] = "ProjectExplorer.BuildStepList.Step.";
 
-BuildStepList::BuildStepList(ProjectConfiguration *config, Utils::Id id)
-    : m_projectConfiguration(config), m_id(id)
+BuildStepList::BuildStepList(QObject *parent, Utils::Id id)
+    : QObject(parent), m_id(id)
 {
-    QTC_CHECK(config);
+    QTC_ASSERT(parent, return);
+    QTC_ASSERT(parent->parent(), return);
+    m_target = qobject_cast<Target *>(parent->parent());
+    QTC_ASSERT(m_target, return);
 }
 
 BuildStepList::~BuildStepList()
@@ -38,32 +57,24 @@ void BuildStepList::clear()
     m_steps.clear();
 }
 
-Target *BuildStepList::target() const
+QVariantMap BuildStepList::toMap() const
 {
-    return m_projectConfiguration->target();
-}
-
-Store BuildStepList::toMap() const
-{
-    Store map;
+    QVariantMap map;
 
     {
         // Only written for compatibility reasons within the 4.11 cycle
         const char CONFIGURATION_ID_KEY[] = "ProjectExplorer.ProjectConfiguration.Id";
         const char DISPLAY_NAME_KEY[] = "ProjectExplorer.ProjectConfiguration.DisplayName";
         const char DEFAULT_DISPLAY_NAME_KEY[] = "ProjectExplorer.ProjectConfiguration.DefaultDisplayName";
-        map.insert(CONFIGURATION_ID_KEY, m_id.toSetting());
-        map.insert(DISPLAY_NAME_KEY, displayName());
-        map.insert(DEFAULT_DISPLAY_NAME_KEY, displayName());
+        map.insert(QLatin1String(CONFIGURATION_ID_KEY), m_id.toSetting());
+        map.insert(QLatin1String(DISPLAY_NAME_KEY), displayName());
+        map.insert(QLatin1String(DEFAULT_DISPLAY_NAME_KEY), displayName());
     }
 
     // Save build steps
-    map.insert(STEPS_COUNT_KEY, m_steps.count());
-    for (int i = 0; i < m_steps.count(); ++i) {
-        Store data;
-        m_steps.at(i)->toMap(data);
-        map.insert(numberedKey(STEPS_PREFIX, i), variantFromStore(data));
-    }
+    map.insert(QString::fromLatin1(STEPS_COUNT_KEY), m_steps.count());
+    for (int i = 0; i < m_steps.count(); ++i)
+        map.insert(QString::fromLatin1(STEPS_PREFIX) + QString::number(i), m_steps.at(i)->toMap());
 
     return map;
 }
@@ -89,29 +100,29 @@ QString BuildStepList::displayName() const
 {
     if (m_id == Constants::BUILDSTEPS_BUILD) {
         //: Display name of the build build step list. Used as part of the labels in the project window.
-        return Tr::tr("Build");
+        return tr("Build");
     }
     if (m_id == Constants::BUILDSTEPS_CLEAN) {
         //: Display name of the clean build step list. Used as part of the labels in the project window.
-        return Tr::tr("Clean");
+        return tr("Clean");
     }
     if (m_id == Constants::BUILDSTEPS_DEPLOY) {
         //: Display name of the deploy build step list. Used as part of the labels in the project window.
-        return Tr::tr("Deploy");
+        return tr("Deploy");
     }
     QTC_CHECK(false);
     return {};
 }
 
-bool BuildStepList::fromMap(const Store &map)
+bool BuildStepList::fromMap(const QVariantMap &map)
 {
     clear();
 
     const QList<BuildStepFactory *> factories = BuildStepFactory::allBuildStepFactories();
 
-    int maxSteps = map.value(STEPS_COUNT_KEY, 0).toInt();
+    int maxSteps = map.value(QString::fromLatin1(STEPS_COUNT_KEY), 0).toInt();
     for (int i = 0; i < maxSteps; ++i) {
-        Store bsData = storeFromVariant(map.value(numberedKey(STEPS_PREFIX, i)));
+        QVariantMap bsData(map.value(QString::fromLatin1(STEPS_PREFIX) + QString::number(i)).toMap());
         if (bsData.isEmpty()) {
             qWarning() << "No step data found for" << i << "(continuing).";
             continue;

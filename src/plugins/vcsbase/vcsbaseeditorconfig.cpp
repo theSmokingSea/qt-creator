@@ -1,17 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "vcsbaseeditorconfig.h"
-
-#include "vcsbasetr.h"
 
 #include <utils/aspects.h>
 #include <utils/utilsicons.h>
 
-#include <QAction>
 #include <QComboBox>
-#include <QDebug>
+#include <QAction>
+#include <QHBoxLayout>
+
 #include <QStringList>
+#include <QDebug>
 
 using namespace Utils;
 
@@ -131,7 +153,7 @@ void VcsBaseEditorConfig::setBaseArguments(const QStringList &b)
 
 QAction *VcsBaseEditorConfig::addReloadButton()
 {
-    auto action = new QAction(Icons::RELOAD_TOOLBAR.icon(), Tr::tr("Reload"), d->m_toolBar);
+    auto action = new QAction(Utils::Icons::RELOAD_TOOLBAR.icon(), tr("Reload"), d->m_toolBar);
     connect(action, &QAction::triggered, this, &VcsBaseEditorConfig::argumentsChanged);
     addAction(action);
     return action;
@@ -174,7 +196,8 @@ QComboBox *VcsBaseEditorConfig::addChoices(const QString &title,
     cb->setToolTip(title);
     for (const ChoiceItem &item : items)
         cb->addItem(item.displayText, item.value);
-    connect(cb, &QComboBox::currentIndexChanged, this, &VcsBaseEditorConfig::argumentsChanged);
+    connect(cb, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &VcsBaseEditorConfig::argumentsChanged);
     d->m_toolBar->addWidget(cb);
     d->m_optionMappings.append(OptionMapping(options, cb));
     return cb;
@@ -265,6 +288,13 @@ void VcsBaseEditorConfig::handleArgumentsChanged()
 void VcsBaseEditorConfig::executeCommand()
 {
     emit commandExecutionRequested();
+}
+
+VcsBaseEditorConfig::OptionMapping::OptionMapping(const QString &option, QObject *obj) :
+    object(obj)
+{
+    if (!option.isEmpty())
+        options << option;
 }
 
 VcsBaseEditorConfig::OptionMapping::OptionMapping(const QStringList &optionList, QObject *obj) :

@@ -144,7 +144,7 @@
             "data":
                 [
                 {
-                    "source": "app_mcu.qmlproject.tpl",
+                    "source": "../app_mcu.qmlproject",
                     "target": "%{QmlProjectFileName}",
                     "openAsProject": true
                 },
@@ -161,8 +161,8 @@
                     "target": "%{ProjectDirectory}/imports/Constants/Constants.qml"
                 },
                 {
-                    "source": "constants_module.qmlproject.tpl",
-                    "target": "%{ProjectDirectory}/imports/Constants/constants_module.qmlproject"
+                    "source": "DirectoryFontLoader.qml.tpl",
+                    "target": "%{ProjectDirectory}/imports/Constants/DirectoryFontLoader.qml"
                 },
                 {
                     "source": "Screen01.ui.qml.tpl",
@@ -183,12 +183,12 @@
                 },
                 {
                     "source": "MCUDefaultStyle",
-                    "target": "%{ProjectDirectory}/imports/MCUDefaultStyle"
+                    "target": "%{ProjectDirectory}/MCUDefaultStyle"
                 },
                 {
                     "isBinary": true,
                     "source": "MCUDefaultStyle/images",
-                    "target": "%{ProjectDirectory}/imports/MCUDefaultStyle/images"
+                    "target": "%{ProjectDirectory}/MCUDefaultStyle/images"
                 }
             ]
         }

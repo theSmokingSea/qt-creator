@@ -1,12 +1,7 @@
 add_qtc_library(AdvancedDockingSystem
-  CONDITION TARGET Qt::QuickWidgets
-  DEPENDS Qt::Widgets Qt::Core Qt::Gui Qt::Xml Qt::QuickWidgets Utils
+  DEPENDS Qt5::Widgets Qt5::Core Qt5::Gui Utils
   SOURCES
     ads_globals.cpp ads_globals.h
-    advanceddockingsystemtr.h
-    autohidedockcontainer.cpp autohidedockcontainer.h
-    autohidesidebar.cpp autohidesidebar.h
-    autohidetab.cpp autohidetab.h
     dockareatabbar.cpp dockareatabbar.h
     dockareatitlebar.cpp dockareatitlebar.h
     dockareawidget.cpp dockareawidget.h
@@ -23,18 +18,14 @@ add_qtc_library(AdvancedDockingSystem
     floatingdockcontainer.cpp floatingdockcontainer.h
     floatingdragpreview.cpp floatingdragpreview.h
     iconprovider.cpp iconprovider.h
-    pushbutton.cpp pushbutton.h
-    resizehandle.cpp resizehandle.h
-    workspace.cpp workspace.h
     workspacedialog.cpp workspacedialog.h
-    workspaceinputdialog.cpp workspaceinputdialog.h
     workspacemodel.cpp workspacemodel.h
     workspaceview.cpp workspaceview.h
+    workspacedialog.ui
 )
 
 extend_qtc_library(AdvancedDockingSystem
   INCLUDES linux
-  CONDITION UNIX AND NOT APPLE
   SOURCES
     linux/floatingwidgettitlebar.cpp linux/floatingwidgettitlebar.h
 )

@@ -1,44 +1,59 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sidebysidediffeditorwidget.h"
-
+#include "selectabletexteditorwidget.h"
 #include "diffeditorconstants.h"
 #include "diffeditordocument.h"
-#include "diffeditortr.h"
-
-#include <coreplugin/find/highlightscrollbarcontroller.h>
-#include <coreplugin/icore.h>
-#include <coreplugin/minisplitter.h>
-#include <coreplugin/progressmanager/progressmanager.h>
-
-#include <texteditor/displaysettings.h>
-#include <texteditor/fontsettings.h>
-#include <texteditor/textdocument.h>
-#include <texteditor/textdocumentlayout.h>
-#include <texteditor/texteditorsettings.h>
-
-#include <utils/async.h>
-#include <utils/mathutils.h>
-#include <utils/tooltip/tooltip.h>
+#include "diffutils.h"
 
 #include <QMenu>
 #include <QPainter>
 #include <QScrollBar>
+#include <QTextBlock>
 #include <QVBoxLayout>
+
+#include <texteditor/textdocument.h>
+#include <texteditor/textdocumentlayout.h>
+#include <texteditor/texteditorsettings.h>
+#include <texteditor/fontsettings.h>
+#include <texteditor/displaysettings.h>
+
+#include <coreplugin/icore.h>
+#include <coreplugin/find/highlightscrollbarcontroller.h>
+#include <coreplugin/minisplitter.h>
+
+#include <utils/porting.h>
+#include <utils/tooltip/tooltip.h>
 
 using namespace Core;
 using namespace TextEditor;
 using namespace Utils;
 
-using namespace std::placeholders;
-
-namespace DiffEditor::Internal {
-
-static DiffSide oppositeSide(DiffSide side)
-{
-    return side == LeftSide ? RightSide : LeftSide;
-}
+namespace DiffEditor {
+namespace Internal {
 
 class SideDiffEditorWidget : public SelectableTextEditorWidget
 {
@@ -46,17 +61,39 @@ class SideDiffEditorWidget : public SelectableTextEditorWidget
 public:
     SideDiffEditorWidget(QWidget *parent = nullptr);
 
+    // block number, file info
+    QMap<int, DiffFileInfo> fileInfo() const { return m_fileInfo; }
+
+    void setLineNumber(int blockNumber, int lineNumber);
+    void setFileInfo(int blockNumber, const DiffFileInfo &fileInfo);
+    void setSkippedLines(int blockNumber, int skippedLines, const QString &contextInfo = QString()) {
+        m_skippedLines[blockNumber] = qMakePair(skippedLines, contextInfo);
+        setSeparator(blockNumber, true);
+    }
+    void setChunkIndex(int startBlockNumber, int blockCount, int chunkIndex);
+    void setSeparator(int blockNumber, bool separator) {
+        m_separators[blockNumber] = separator;
+    }
+    bool isFileLine(int blockNumber) const {
+        return m_fileInfo.contains(blockNumber);
+    }
+    int blockNumberForFileIndex(int fileIndex) const;
+    int fileIndexForBlockNumber(int blockNumber) const;
+    int chunkIndexForBlockNumber(int blockNumber) const;
+    int chunkRowForBlockNumber(int blockNumber) const;
+    int chunkRowsCountForBlockNumber(int blockNumber) const;
+    bool isChunkLine(int blockNumber) const {
+        return m_skippedLines.contains(blockNumber);
+    }
     void clearAll(const QString &message);
+    void clearAllData();
     void saveState();
     using TextEditor::TextEditorWidget::restoreState;
     void restoreState();
 
     void setFolded(int blockNumber, bool folded);
 
-    void setDisplaySettings(const DisplaySettings &displaySettings) override;
-
-    SideDiffData diffData() const { return m_data; }
-    void setDiffData(const SideDiffData &data) { m_data = data; }
+    void setDisplaySettings(const DisplaySettings &ds) override;
 
 signals:
     void jumpToOriginalFileRequested(int diffFileIndex,
@@ -66,6 +103,7 @@ signals:
                               int diffFileIndex,
                               int chunkIndex,
                               const ChunkSelection &selection);
+    void foldChanged(int blockNumber, bool folded);
     void gotDisplaySettings();
     void gotFocus();
 
@@ -101,8 +139,16 @@ private:
                         const QTextBlock &block, int top);
     void jumpToOriginalFile(const QTextCursor &cursor);
 
-    SideDiffData m_data;
-
+    // block number, visual line number.
+    QMap<int, int> m_lineNumbers;
+    // block number, fileInfo. Set for file lines only.
+    QMap<int, DiffFileInfo> m_fileInfo;
+    // block number, skipped lines and context info. Set for chunk lines only.
+    QMap<int, QPair<int, QString> > m_skippedLines;
+    // start block number, block count of a chunk, chunk index inside a file.
+    QMap<int, QPair<int, int> > m_chunkInfo;
+    // block number, separator. Set for file, chunk or span line.
+    QMap<int, bool> m_separators;
     QColor m_fileLineForeground;
     QColor m_chunkLineForeground;
     QColor m_textForeground;
@@ -111,20 +157,33 @@ private:
     QTextBlock m_drawCollapsedBlock;
     QPointF m_drawCollapsedOffset;
     QRect m_drawCollapsedClip;
+    int m_lineNumberDigits = 1;
 };
 
 SideDiffEditorWidget::SideDiffEditorWidget(QWidget *parent)
     : SelectableTextEditorWidget("DiffEditor.SideDiffEditor", parent)
 {
+    DisplaySettings settings = displaySettings();
+    settings.m_textWrapping = false;
+    settings.m_displayLineNumbers = true;
+    settings.m_markTextChanges = false;
+    settings.m_highlightBlocks = false;
+    SelectableTextEditorWidget::setDisplaySettings(settings);
+
     connect(this, &TextEditorWidget::tooltipRequested, this, [this](const QPoint &point, int position) {
         const int block = document()->findBlock(position).blockNumber();
-        const auto it = m_data.m_fileInfo.constFind(block);
-        if (it != m_data.m_fileInfo.constEnd())
+        const auto it = m_fileInfo.constFind(block);
+        if (it != m_fileInfo.constEnd())
             ToolTip::show(point, it.value().fileName, this);
         else
             ToolTip::hide();
     });
 
+    auto documentLayout = qobject_cast<TextDocumentLayout*>(document()->documentLayout());
+    if (documentLayout)
+        connect(documentLayout, &TextDocumentLayout::foldChanged,
+                this, &SideDiffEditorWidget::foldChanged);
+    setCodeFoldingSupported(true);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOn);
 }
 
@@ -161,9 +220,14 @@ void SideDiffEditorWidget::setFolded(int blockNumber, bool folded)
     documentLayout->emitDocumentSizeChanged();
 }
 
-void SideDiffEditorWidget::setDisplaySettings(const DisplaySettings &displaySettings)
+void SideDiffEditorWidget::setDisplaySettings(const DisplaySettings &ds)
 {
-    SelectableTextEditorWidget::setDisplaySettings(displaySettings);
+    DisplaySettings settings = displaySettings();
+    settings.m_visualizeWhitespace = ds.m_visualizeWhitespace;
+    settings.m_displayFoldingMarkers = ds.m_displayFoldingMarkers;
+    settings.m_scrollBarHighlights = ds.m_scrollBarHighlights;
+    settings.m_highlightCurrentLine = ds.m_highlightCurrentLine;
+    SelectableTextEditorWidget::setDisplaySettings(settings);
     emit gotDisplaySettings();
 }
 
@@ -179,25 +243,25 @@ void SideDiffEditorWidget::applyFontSettings()
 
 QString SideDiffEditorWidget::lineNumber(int blockNumber) const
 {
-    const auto it = m_data.m_lineNumbers.constFind(blockNumber);
-    if (it != m_data.m_lineNumbers.constEnd())
+    const auto it = m_lineNumbers.constFind(blockNumber);
+    if (it != m_lineNumbers.constEnd())
         return QString::number(it.value());
-    return {};
+    return QString();
 }
 
 int SideDiffEditorWidget::lineNumberDigits() const
 {
-    return m_data.m_lineNumberDigits;
+    return m_lineNumberDigits;
 }
 
 bool SideDiffEditorWidget::selectionVisible(int blockNumber) const
 {
-    return !m_data.m_separators.value(blockNumber, false);
+    return !m_separators.value(blockNumber, false);
 }
 
 bool SideDiffEditorWidget::replacementVisible(int blockNumber) const
 {
-    return m_data.isChunkLine(blockNumber) || (m_data.isFileLine(blockNumber)
+    return isChunkLine(blockNumber) || (isFileLine(blockNumber)
            && TextDocumentLayout::isFolded(document()->findBlockByNumber(blockNumber)));
 }
 
@@ -212,7 +276,7 @@ QString SideDiffEditorWidget::plainTextFromSelection(const QTextCursor &cursor) 
     const int startPosition = cursor.selectionStart();
     const int endPosition = cursor.selectionEnd();
     if (startPosition == endPosition)
-        return {}; // no selection
+        return QString(); // no selection
 
     const QTextBlock startBlock = document()->findBlock(startPosition);
     const QTextBlock endBlock = document()->findBlock(endPosition);
@@ -230,7 +294,7 @@ QString SideDiffEditorWidget::plainTextFromSelection(const QTextCursor &cursor) 
                 if (textInserted)
                     text += '\n';
                 if (block == endBlock)
-                    text += QStringView(block.text()).left(endPosition - block.position());
+                    text += make_stringview(block.text()).left(endPosition - block.position());
                 else
                     text += block.text();
             }
@@ -239,155 +303,28 @@ QString SideDiffEditorWidget::plainTextFromSelection(const QTextCursor &cursor) 
         block = block.next();
     }
 
-    return TextDocument::convertToPlainText(text);
+    return convertToPlainText(text);
 }
 
-static SideBySideDiffOutput diffOutput(QPromise<SideBySideShowResults> &promise, int progressMin,
-                                       int progressMax, const DiffEditorInput &input)
-{
-    SideBySideDiffOutput output;
-
-    const QChar separator = '\n';
-    int blockNumber = 0;
-    int i = 0;
-    const int count = input.m_contextFileData.size();
-    std::array<QString, SideCount> diffText{};
-
-    auto addFileLine = [&](DiffSide side, const FileData &fileData) {
-        output.side[side].selections[blockNumber].append({input.m_fileLineFormat});
-        output.side[side].diffData.setFileInfo(blockNumber, fileData.fileInfo[side]);
-        diffText[side] += separator;
-    };
-
-    auto addChunkLine = [&](DiffSide side, int skippedLines, const QString &contextInfo = {}) {
-        output.side[side].selections[blockNumber].append({input.m_chunkLineFormat});
-        output.side[side].diffData.setSkippedLines(blockNumber, skippedLines, contextInfo);
-        diffText[side] += separator;
-    };
-
-    auto addRowLine = [&](DiffSide side, const RowData &rowData,
-                          int *lineNumber, int *lastLineNumber = nullptr) {
-        if (rowData.line[side].textLineType == TextLineData::TextLine) {
-            diffText[side] += rowData.line[side].text;
-            if (lastLineNumber)
-                *lastLineNumber = *lineNumber;
-            ++(*lineNumber);
-            output.side[side].diffData.setLineNumber(blockNumber, *lineNumber);
-        } else if (rowData.line[side].textLineType == TextLineData::Separator) {
-            output.side[side].diffData.setSeparator(blockNumber, true);
-        }
-
-        if (!rowData.equal) {
-            if (rowData.line[side].textLineType == TextLineData::TextLine)
-                output.side[side].selections[blockNumber].append({input.m_lineFormat[side]});
-            else
-                output.side[side].selections[blockNumber].append({input.m_spanLineFormat});
-        }
-        for (auto it = rowData.line[side].changedPositions.cbegin(),
-                  end = rowData.line[side].changedPositions.cend(); it != end; ++it) {
-            output.side[side].selections[blockNumber].append(
-                        {input.m_charFormat[side], it.key(), it.value()});
-        }
-        diffText[side] += separator;
-    };
-
-    auto addSkippedLine = [&](DiffSide side, int skippedLines) {
-        output.side[side].selections[blockNumber].append({input.m_chunkLineFormat});
-        output.side[side].diffData.setSkippedLines(blockNumber, skippedLines);
-        diffText[side] += separator;
-    };
-
-    for (const FileData &contextFileData : input.m_contextFileData) {
-        diffText = {};
-        output.foldingIndent.insert(blockNumber, 1);
-
-        addFileLine(LeftSide, contextFileData);
-        addFileLine(RightSide, contextFileData);
-        blockNumber++;
-
-        int lastLeftLineNumber = -1;
-
-        if (contextFileData.binaryFiles) {
-            output.foldingIndent.insert(blockNumber, 2);
-            addChunkLine(LeftSide, -2);
-            addChunkLine(RightSide, -2);
-            blockNumber++;
-        } else {
-            for (int j = 0; j < contextFileData.chunks.size(); j++) {
-                const ChunkData &chunkData = contextFileData.chunks.at(j);
-
-                int leftLineNumber = chunkData.startingLineNumber[LeftSide];
-                int rightLineNumber = chunkData.startingLineNumber[RightSide];
-
-                if (!chunkData.contextChunk) {
-                    const int skippedLines = leftLineNumber - lastLeftLineNumber - 1;
-                    if (skippedLines > 0) {
-                        output.foldingIndent.insert(blockNumber, 2);
-                        addChunkLine(LeftSide, skippedLines, chunkData.contextInfo);
-                        addChunkLine(RightSide, skippedLines, chunkData.contextInfo);
-                        blockNumber++;
-                    }
-
-                    const int rows = chunkData.rows.size();
-                    output.side[LeftSide].diffData.m_chunkInfo.setChunkIndex(blockNumber, rows, j);
-                    output.side[RightSide].diffData.m_chunkInfo.setChunkIndex(blockNumber, rows, j);
-
-                    for (const RowData &rowData : chunkData.rows) {
-                        addRowLine(LeftSide, rowData, &leftLineNumber, &lastLeftLineNumber);
-                        addRowLine(RightSide, rowData, &rightLineNumber);
-                        blockNumber++;
-                    }
-                }
-
-                if (j == contextFileData.chunks.size() - 1) { // the last chunk
-                    int skippedLines = -2;
-                    if (chunkData.contextChunk) {
-                        // if it's context chunk
-                        skippedLines = chunkData.rows.size();
-                    } else if (!contextFileData.lastChunkAtTheEndOfFile
-                               && !contextFileData.contextChunksIncluded) {
-                        // if not a context chunk and not a chunk at the end of file
-                        // and context lines not included
-                        skippedLines = -1; // unknown count skipped by the end of file
-                    }
-
-                    if (skippedLines >= -1) {
-                        addSkippedLine(LeftSide, skippedLines);
-                        addSkippedLine(RightSide, skippedLines);
-                        blockNumber++;
-                    } // otherwise nothing skipped
-                }
-            }
-        }
-        diffText[LeftSide].replace('\r', ' ');
-        diffText[RightSide].replace('\r', ' ');
-        output.side[LeftSide].diffText += diffText[LeftSide];
-        output.side[RightSide].diffText += diffText[RightSide];
-        promise.setProgressValue(MathUtils::interpolateLinear(++i, 0, count, progressMin, progressMax));
-        if (promise.isCanceled())
-            return {};
-    }
-    output.side[LeftSide].selections = SelectableTextEditorWidget::polishedSelections(
-                output.side[LeftSide].selections);
-    output.side[RightSide].selections = SelectableTextEditorWidget::polishedSelections(
-                output.side[RightSide].selections);
-    return output;
-}
-
-void SideDiffData::setLineNumber(int blockNumber, int lineNumber)
+void SideDiffEditorWidget::setLineNumber(int blockNumber, int lineNumber)
 {
     const QString lineNumberString = QString::number(lineNumber);
     m_lineNumbers.insert(blockNumber, lineNumber);
-    m_lineNumberDigits = qMax(m_lineNumberDigits, lineNumberString.size());
+    m_lineNumberDigits = qMax(m_lineNumberDigits, lineNumberString.count());
 }
 
-void SideDiffData::setFileInfo(int blockNumber, const DiffFileInfo &fileInfo)
+void SideDiffEditorWidget::setFileInfo(int blockNumber, const DiffFileInfo &fileInfo)
 {
     m_fileInfo[blockNumber] = fileInfo;
     setSeparator(blockNumber, true);
 }
 
-int SideDiffData::blockNumberForFileIndex(int fileIndex) const
+void SideDiffEditorWidget::setChunkIndex(int startBlockNumber, int blockCount, int chunkIndex)
+{
+    m_chunkInfo.insert(startBlockNumber, qMakePair(blockCount, chunkIndex));
+}
+
+int SideDiffEditorWidget::blockNumberForFileIndex(int fileIndex) const
 {
     if (fileIndex < 0 || fileIndex >= m_fileInfo.count())
         return -1;
@@ -395,7 +332,7 @@ int SideDiffData::blockNumberForFileIndex(int fileIndex) const
     return std::next(m_fileInfo.constBegin(), fileIndex).key();
 }
 
-int SideDiffData::fileIndexForBlockNumber(int blockNumber) const
+int SideDiffEditorWidget::fileIndexForBlockNumber(int blockNumber) const
 {
     int i = -1;
     for (auto it = m_fileInfo.cbegin(), end = m_fileInfo.cend(); it != end; ++it, ++i) {
@@ -406,13 +343,75 @@ int SideDiffData::fileIndexForBlockNumber(int blockNumber) const
     return i;
 }
 
+int SideDiffEditorWidget::chunkIndexForBlockNumber(int blockNumber) const
+{
+    if (m_chunkInfo.isEmpty())
+        return -1;
+
+    auto it = m_chunkInfo.upperBound(blockNumber);
+    if (it == m_chunkInfo.constBegin())
+        return -1;
+
+    --it;
+
+    if (blockNumber < it.key() + it.value().first)
+        return it.value().second;
+
+    return -1;
+}
+
+int SideDiffEditorWidget::chunkRowForBlockNumber(int blockNumber) const
+{
+    if (m_chunkInfo.isEmpty())
+        return -1;
+
+    auto it = m_chunkInfo.upperBound(blockNumber);
+    if (it == m_chunkInfo.constBegin())
+        return -1;
+
+    --it;
+
+    if (blockNumber < it.key() + it.value().first)
+        return blockNumber - it.key();
+
+    return -1;
+}
+
+int SideDiffEditorWidget::chunkRowsCountForBlockNumber(int blockNumber) const
+{
+    if (m_chunkInfo.isEmpty())
+        return -1;
+
+    auto it = m_chunkInfo.upperBound(blockNumber);
+    if (it == m_chunkInfo.constBegin())
+        return -1;
+
+    --it;
+
+    if (blockNumber < it.key() + it.value().first)
+        return it.value().first;
+
+    return -1;
+}
+
 void SideDiffEditorWidget::clearAll(const QString &message)
 {
     clear();
-    m_data = {};
-    setSelections({});
-    setExtraSelections(TextEditorWidget::OtherSelection, {});
+    clearAllData();
+    setExtraSelections(TextEditorWidget::OtherSelection,
+                       QList<QTextEdit::ExtraSelection>());
     setPlainText(message);
+}
+
+void SideDiffEditorWidget::clearAllData()
+{
+    m_lineNumberDigits = 1;
+    m_lineNumbers.clear();
+    m_fileInfo.clear();
+    m_skippedLines.clear();
+    m_chunkInfo.clear();
+    m_separators.clear();
+    setSelections(QMap<int, QList<DiffSelection> >());
 }
 
 void SideDiffEditorWidget::scrollContentsBy(int dx, int dy)
@@ -483,8 +482,7 @@ void SideDiffEditorWidget::keyPressEvent(QKeyEvent *e)
 
 void SideDiffEditorWidget::contextMenuEvent(QContextMenuEvent *e)
 {
-    QMenu *menu = createStandardContextMenu();
-    menu->setAttribute(Qt::WA_DeleteOnClose);
+    QPointer<QMenu> menu = createStandardContextMenu();
 
     const QTextCursor tc = textCursor();
     QTextCursor start = tc;
@@ -497,23 +495,23 @@ void SideDiffEditorWidget::contextMenuEvent(QContextMenuEvent *e)
     QTextCursor cursor = cursorForPosition(e->pos());
     const int blockNumber = cursor.blockNumber();
 
-    const int fileIndex = m_data.fileIndexForBlockNumber(blockNumber);
-    const int chunkIndex = m_data.m_chunkInfo.chunkIndexForBlockNumber(blockNumber);
+    const int fileIndex = fileIndexForBlockNumber(blockNumber);
+    const int chunkIndex = chunkIndexForBlockNumber(blockNumber);
 
-    const int selectionStartFileIndex = m_data.fileIndexForBlockNumber(startBlockNumber);
-    const int selectionStartChunkIndex = m_data.m_chunkInfo.chunkIndexForBlockNumber(startBlockNumber);
-    const int selectionEndFileIndex = m_data.fileIndexForBlockNumber(endBlockNumber);
-    const int selectionEndChunkIndex = m_data.m_chunkInfo.chunkIndexForBlockNumber(endBlockNumber);
+    const int selectionStartFileIndex = fileIndexForBlockNumber(startBlockNumber);
+    const int selectionStartChunkIndex = chunkIndexForBlockNumber(startBlockNumber);
+    const int selectionEndFileIndex = fileIndexForBlockNumber(endBlockNumber);
+    const int selectionEndChunkIndex = chunkIndexForBlockNumber(endBlockNumber);
 
     const int selectionStart = selectionStartFileIndex == fileIndex
             && selectionStartChunkIndex == chunkIndex
-            ? m_data.m_chunkInfo.chunkRowForBlockNumber(startBlockNumber)
+            ? chunkRowForBlockNumber(startBlockNumber)
             : 0;
 
     const int selectionEnd = selectionEndFileIndex == fileIndex
             && selectionEndChunkIndex == chunkIndex
-            ? m_data.m_chunkInfo.chunkRowForBlockNumber(endBlockNumber)
-            : m_data.m_chunkInfo.chunkRowsCountForBlockNumber(blockNumber);
+            ? chunkRowForBlockNumber(endBlockNumber)
+            : chunkRowsCountForBlockNumber(blockNumber);
 
     QList<int> rows;
     for (int i = selectionStart; i <= selectionEnd; ++i)
@@ -521,36 +519,38 @@ void SideDiffEditorWidget::contextMenuEvent(QContextMenuEvent *e)
 
     const ChunkSelection selection(rows, rows);
 
-    emit contextMenuRequested(menu, m_data.fileIndexForBlockNumber(blockNumber),
-                              m_data.m_chunkInfo.chunkIndexForBlockNumber(blockNumber),
+    emit contextMenuRequested(menu, fileIndexForBlockNumber(blockNumber),
+                              chunkIndexForBlockNumber(blockNumber),
                               selection);
 
+    connect(this, &SideDiffEditorWidget::destroyed, menu.data(), &QMenu::deleteLater);
     menu->exec(e->globalPos());
+    delete menu;
 }
 
 void SideDiffEditorWidget::jumpToOriginalFile(const QTextCursor &cursor)
 {
-    if (m_data.m_fileInfo.isEmpty())
+    if (m_fileInfo.isEmpty())
         return;
 
     const int blockNumber = cursor.blockNumber();
-    if (!m_data.m_lineNumbers.contains(blockNumber))
+    if (!m_lineNumbers.contains(blockNumber))
         return;
 
-    const int lineNumber = m_data.m_lineNumbers.value(blockNumber);
+    const int lineNumber = m_lineNumbers.value(blockNumber);
     const int columnNumber = cursor.positionInBlock();
 
-    emit jumpToOriginalFileRequested(m_data.fileIndexForBlockNumber(blockNumber),
+    emit jumpToOriginalFileRequested(fileIndexForBlockNumber(blockNumber),
                                      lineNumber, columnNumber);
 }
 
 static QString skippedText(int skippedNumber)
 {
     if (skippedNumber > 0)
-        return Tr::tr("Skipped %n lines...", nullptr, skippedNumber);
+        return SideBySideDiffEditorWidget::tr("Skipped %n lines...", nullptr, skippedNumber);
     if (skippedNumber == -2)
-        return Tr::tr("Binary files differ");
-    return Tr::tr("Skipped unknown number of lines...");
+        return SideBySideDiffEditorWidget::tr("Binary files differ");
+    return SideBySideDiffEditorWidget::tr("Skipped unknown number of lines...");
 }
 
 void SideDiffEditorWidget::paintEvent(QPaintEvent *e)
@@ -558,7 +558,7 @@ void SideDiffEditorWidget::paintEvent(QPaintEvent *e)
     SelectableTextEditorWidget::paintEvent(e);
 
     QPainter painter(viewport());
-    const QPointF offset = contentOffset();
+    QPointF offset = contentOffset();
     QTextBlock currentBlock = firstVisibleBlock();
 
     while (currentBlock.isValid()) {
@@ -572,8 +572,8 @@ void SideDiffEditorWidget::paintEvent(QPaintEvent *e)
             if (bottom >= e->rect().top()) {
                 const int blockNumber = currentBlock.blockNumber();
 
-                auto it = m_data.m_skippedLines.constFind(blockNumber);
-                if (it != m_data.m_skippedLines.constEnd()) {
+                auto it = m_skippedLines.constFind(blockNumber);
+                if (it != m_skippedLines.constEnd()) {
                     QString skippedRowsText = '[' + skippedText(it->first) + ']';
                     if (!it->second.isEmpty())
                         skippedRowsText += ' ' + it->second;
@@ -581,11 +581,12 @@ void SideDiffEditorWidget::paintEvent(QPaintEvent *e)
                                    skippedRowsText, currentBlock, top);
                 }
 
-                const DiffFileInfo fileInfo = m_data.m_fileInfo.value(blockNumber);
+                const DiffFileInfo fileInfo = m_fileInfo.value(blockNumber);
                 if (!fileInfo.fileName.isEmpty()) {
                     const QString fileNameText = fileInfo.typeInfo.isEmpty()
                             ? fileInfo.fileName
-                            : Tr::tr("[%1] %2").arg(fileInfo.typeInfo, fileInfo.fileName);
+                            : tr("[%1] %2").arg(fileInfo.typeInfo)
+                              .arg(fileInfo.fileName);
                     paintSeparator(painter, m_fileLineForeground,
                                    fileNameText, currentBlock, top);
                 }
@@ -601,7 +602,7 @@ void SideDiffEditorWidget::paintEvent(QPaintEvent *e)
                                       m_drawCollapsedOffset,
                                       m_drawCollapsedClip);
         // reset the data for the drawing
-        m_drawCollapsedBlock = {};
+        m_drawCollapsedBlock = QTextBlock();
     }
 }
 
@@ -617,13 +618,13 @@ void SideDiffEditorWidget::customDrawCollapsedBlockPopup(QPainter &painter,
 
     while (!b.isVisible()) {
         const int blockNumber = b.blockNumber();
-        if (!m_data.m_skippedLines.contains(blockNumber) && !m_data.m_separators.contains(blockNumber)) {
+        if (!m_skippedLines.contains(blockNumber) && !m_separators.contains(blockNumber)) {
             b.setVisible(true); // make sure block bounding rect works
             QRectF r = blockBoundingRect(b).translated(offset);
 
             QTextLayout *layout = b.layout();
-            for (int i = layout->lineCount() - 1; i >= 0; --i)
-                maxWidth = qMax(maxWidth, layout->lineAt(i).naturalTextWidth() + 2 * margin);
+            for (int i = layout->lineCount()-1; i >= 0; --i)
+                maxWidth = qMax(maxWidth, layout->lineAt(i).naturalTextWidth() + 2*margin);
 
             blockHeight += r.height();
 
@@ -642,19 +643,21 @@ void SideDiffEditorWidget::customDrawCollapsedBlockPopup(QPainter &painter,
     if (ifdefedOutFormat.hasProperty(QTextFormat::BackgroundBrush))
         brush = ifdefedOutFormat.background();
     painter.setBrush(brush);
-    painter.drawRoundedRect(QRectF(offset.x(), offset.y(), maxWidth, blockHeight)
-                            .adjusted(0, 0, 0, 0), 3, 3);
+    painter.drawRoundedRect(QRectF(offset.x(),
+                                   offset.y(),
+                                   maxWidth, blockHeight).adjusted(0, 0, 0, 0), 3, 3);
     painter.restore();
 
     QTextBlock end = b;
     b = block;
     while (b != end) {
         const int blockNumber = b.blockNumber();
-        if (!m_data.m_skippedLines.contains(blockNumber) && !m_data.m_separators.contains(blockNumber)) {
+        if (!m_skippedLines.contains(blockNumber) && !m_separators.contains(blockNumber)) {
             b.setVisible(true); // make sure block bounding rect works
-            const QRectF r = blockBoundingRect(b).translated(offset);
+            QRectF r = blockBoundingRect(b).translated(offset);
             QTextLayout *layout = b.layout();
-            layout->draw(&painter, offset, {}, clip);
+            QVector<QTextLayout::FormatRange> selections;
+            layout->draw(&painter, offset, selections, clip);
 
             b.setVisible(false); // restore previous state
             b.setLineCount(0); // restore 0 line count for invisible block
@@ -690,72 +693,61 @@ SideBySideDiffEditorWidget::SideBySideDiffEditorWidget(QWidget *parent)
     : QWidget(parent)
     , m_controller(this)
 {
-    auto setupEditor = [this](DiffSide side) {
-        m_editor[side] = new SideDiffEditorWidget(this);
+    m_leftEditor = new SideDiffEditorWidget(this);
+    m_leftEditor->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    m_leftEditor->setReadOnly(true);
+    m_leftEditor->setCodeStyle(TextEditorSettings::codeStyle());
+    connect(m_leftEditor, &SideDiffEditorWidget::jumpToOriginalFileRequested,
+            this, &SideBySideDiffEditorWidget::slotLeftJumpToOriginalFileRequested);
+    connect(m_leftEditor, &SideDiffEditorWidget::contextMenuRequested,
+            this, &SideBySideDiffEditorWidget::slotLeftContextMenuRequested,
+            Qt::DirectConnection);
 
-        connect(m_editor[side], &SideDiffEditorWidget::jumpToOriginalFileRequested,
-                this, std::bind(&SideBySideDiffEditorWidget::jumpToOriginalFileRequested, this,
-                                side, _1, _2, _3));
-        connect(m_editor[side], &SideDiffEditorWidget::contextMenuRequested,
-                this, std::bind(&SideBySideDiffEditorWidget::contextMenuRequested, this,
-                                side, _1, _2, _3, _4));
+    m_rightEditor = new SideDiffEditorWidget(this);
+    m_rightEditor->setReadOnly(true);
+    m_rightEditor->setCodeStyle(TextEditorSettings::codeStyle());
+    connect(m_rightEditor, &SideDiffEditorWidget::jumpToOriginalFileRequested,
+            this, &SideBySideDiffEditorWidget::slotRightJumpToOriginalFileRequested);
+    connect(m_rightEditor, &SideDiffEditorWidget::contextMenuRequested,
+            this, &SideBySideDiffEditorWidget::slotRightContextMenuRequested,
+            Qt::DirectConnection);
 
-        connect(m_editor[side]->verticalScrollBar(), &QAbstractSlider::valueChanged,
-                this, std::bind(&SideBySideDiffEditorWidget::verticalSliderChanged, this, side));
-        connect(m_editor[side]->verticalScrollBar(), &QAbstractSlider::actionTriggered,
-                this, std::bind(&SideBySideDiffEditorWidget::verticalSliderChanged, this, side));
-
-        connect(m_editor[side]->horizontalScrollBar(), &QAbstractSlider::valueChanged,
-                this, std::bind(&SideBySideDiffEditorWidget::horizontalSliderChanged, this, side));
-        connect(m_editor[side]->horizontalScrollBar(), &QAbstractSlider::actionTriggered,
-                this, std::bind(&SideBySideDiffEditorWidget::horizontalSliderChanged, this, side));
-
-        connect(m_editor[side], &QPlainTextEdit::cursorPositionChanged,
-                this, std::bind(&SideBySideDiffEditorWidget::cursorPositionChanged, this, side));
-
-        connect(m_editor[side]->horizontalScrollBar(), &QAbstractSlider::rangeChanged,
-                this, &SideBySideDiffEditorWidget::syncHorizontalScrollBarPolicy);
-
-        IContext::attach(m_editor[side],
-                         Context(Id(Constants::SIDE_BY_SIDE_VIEW_ID).withSuffix(side + 1)));
+    auto setupHighlightController = [this]() {
+        HighlightScrollBarController *highlightController = m_leftEditor->highlightScrollBarController();
+        if (highlightController)
+            highlightController->setScrollArea(m_rightEditor);
     };
-    setupEditor(LeftSide);
-    setupEditor(RightSide);
-    m_editor[LeftSide]->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
-    auto setupHighlight = [this] {
-        HighlightScrollBarController *ctrl = m_editor[LeftSide]->highlightScrollBarController();
-        if (ctrl)
-            ctrl->setScrollArea(m_editor[RightSide]);
-    };
-    setupHighlight();
-    connect(m_editor[LeftSide], &SideDiffEditorWidget::gotDisplaySettings, this, setupHighlight);
+    setupHighlightController();
+    connect(m_leftEditor, &SideDiffEditorWidget::gotDisplaySettings, this, setupHighlightController);
 
-    m_editor[RightSide]->verticalScrollBar()->setFocusProxy(m_editor[LeftSide]);
-    connect(m_editor[LeftSide], &SideDiffEditorWidget::gotFocus, this, [this] {
-        if (m_editor[RightSide]->verticalScrollBar()->focusProxy() == m_editor[LeftSide])
+    m_rightEditor->verticalScrollBar()->setFocusProxy(m_leftEditor);
+    connect(m_leftEditor, &SideDiffEditorWidget::gotFocus, this, [this]() {
+        if (m_rightEditor->verticalScrollBar()->focusProxy() == m_leftEditor)
             return; // We already did it before.
 
-        // Hack #1. If the left editor got a focus last time we don't want to focus right editor
-        // when clicking the right scrollbar.
-        m_editor[RightSide]->verticalScrollBar()->setFocusProxy(m_editor[LeftSide]);
+        // Hack #1. If the left editor got a focus last time
+        // we don't want to focus right editor when clicking the right
+        // scrollbar.
+        m_rightEditor->verticalScrollBar()->setFocusProxy(m_leftEditor);
 
-        // Hack #2. If the focus is currently not on the scrollbar's proxy and we click on
-        // the scrollbar, the focus will go to the parent of the scrollbar. In order to give
-        // the focus to the proxy we need to set a click focus policy on the scrollbar.
+        // Hack #2. If the focus is currently not on the scrollbar's proxy
+        // and we click on the scrollbar, the focus will go to the parent
+        // of the scrollbar. In order to give the focus to the proxy
+        // we need to set a click focus policy on the scrollbar.
         // See QApplicationPrivate::giveFocusAccordingToFocusPolicy().
-        m_editor[RightSide]->verticalScrollBar()->setFocusPolicy(Qt::ClickFocus);
+        m_rightEditor->verticalScrollBar()->setFocusPolicy(Qt::ClickFocus);
 
-        // Hack #3. Setting the focus policy is not orthogonal to setting the focus proxy and
-        // unfortuantely it changes the policy of the proxy too. We bring back the original policy
-        // to keep tab focus working.
-        m_editor[LeftSide]->setFocusPolicy(Qt::StrongFocus);
+        // Hack #3. Setting the focus policy is not orthogonal to setting
+        // the focus proxy and unfortuantely it changes the policy of the proxy
+        // too. We bring back the original policy to keep tab focus working.
+        m_leftEditor->setFocusPolicy(Qt::StrongFocus);
     });
-    connect(m_editor[RightSide], &SideDiffEditorWidget::gotFocus, this, [this] {
+    connect(m_rightEditor, &SideDiffEditorWidget::gotFocus, this, [this]() {
         // Unhack #1.
-        m_editor[RightSide]->verticalScrollBar()->setFocusProxy(nullptr);
+        m_rightEditor->verticalScrollBar()->setFocusProxy(nullptr);
         // Unhack #2.
-        m_editor[RightSide]->verticalScrollBar()->setFocusPolicy(Qt::NoFocus);
+        m_rightEditor->verticalScrollBar()->setFocusPolicy(Qt::NoFocus);
     });
 
     connect(TextEditorSettings::instance(),
@@ -763,22 +755,71 @@ SideBySideDiffEditorWidget::SideBySideDiffEditorWidget(QWidget *parent)
             this, &SideBySideDiffEditorWidget::setFontSettings);
     setFontSettings(TextEditorSettings::fontSettings());
 
+    connect(m_leftEditor->verticalScrollBar(), &QAbstractSlider::valueChanged,
+            this, &SideBySideDiffEditorWidget::leftVSliderChanged);
+    connect(m_leftEditor->verticalScrollBar(), &QAbstractSlider::actionTriggered,
+            this, &SideBySideDiffEditorWidget::leftVSliderChanged);
+
+    connect(m_leftEditor->horizontalScrollBar(), &QAbstractSlider::valueChanged,
+            this, &SideBySideDiffEditorWidget::leftHSliderChanged);
+    connect(m_leftEditor->horizontalScrollBar(), &QAbstractSlider::actionTriggered,
+            this, &SideBySideDiffEditorWidget::leftHSliderChanged);
+
+    connect(m_leftEditor, &QPlainTextEdit::cursorPositionChanged,
+            this, &SideBySideDiffEditorWidget::leftCursorPositionChanged);
+
+    connect(m_rightEditor->verticalScrollBar(), &QAbstractSlider::valueChanged,
+            this, &SideBySideDiffEditorWidget::rightVSliderChanged);
+    connect(m_rightEditor->verticalScrollBar(), &QAbstractSlider::actionTriggered,
+            this, &SideBySideDiffEditorWidget::rightVSliderChanged);
+
+    connect(m_rightEditor->horizontalScrollBar(), &QAbstractSlider::valueChanged,
+            this, &SideBySideDiffEditorWidget::rightHSliderChanged);
+    connect(m_rightEditor->horizontalScrollBar(), &QAbstractSlider::actionTriggered,
+            this, &SideBySideDiffEditorWidget::rightHSliderChanged);
+
+    connect(m_rightEditor, &QPlainTextEdit::cursorPositionChanged,
+            this, &SideBySideDiffEditorWidget::rightCursorPositionChanged);
+
+    connect(m_leftEditor, &SideDiffEditorWidget::foldChanged,
+            m_rightEditor, &SideDiffEditorWidget::setFolded);
+    connect(m_rightEditor, &SideDiffEditorWidget::foldChanged,
+            m_leftEditor, &SideDiffEditorWidget::setFolded);
+
+    connect(m_leftEditor->horizontalScrollBar(), &QAbstractSlider::rangeChanged,
+            this, &SideBySideDiffEditorWidget::syncHorizontalScrollBarPolicy);
+
+    connect(m_rightEditor->horizontalScrollBar(), &QAbstractSlider::rangeChanged,
+            this, &SideBySideDiffEditorWidget::syncHorizontalScrollBarPolicy);
+
     syncHorizontalScrollBarPolicy();
 
     m_splitter = new MiniSplitter(this);
-    m_splitter->addWidget(m_editor[LeftSide]);
-    m_splitter->addWidget(m_editor[RightSide]);
+    m_splitter->addWidget(m_leftEditor);
+    m_splitter->addWidget(m_rightEditor);
     QVBoxLayout *l = new QVBoxLayout(this);
     l->setContentsMargins(0, 0, 0, 0);
     l->addWidget(m_splitter);
-    setFocusProxy(m_editor[LeftSide]);
+    setFocusProxy(m_leftEditor);
+
+    auto leftContext = new IContext(this);
+    leftContext->setWidget(m_leftEditor);
+    leftContext->setContext(Core::Context(Utils::Id(Constants::SIDE_BY_SIDE_VIEW_ID).withSuffix(1)));
+    Core::ICore::addContextObject(leftContext);
+    auto rightContext = new IContext(this);
+    rightContext->setWidget(m_rightEditor);
+    rightContext->setContext(Core::Context(Utils::Id(Constants::SIDE_BY_SIDE_VIEW_ID).withSuffix(2)));
+    Core::ICore::addContextObject(rightContext);
 }
 
-SideBySideDiffEditorWidget::~SideBySideDiffEditorWidget() = default;
-
-TextEditorWidget *SideBySideDiffEditorWidget::sideEditorWidget(DiffSide side) const
+TextEditorWidget *SideBySideDiffEditorWidget::leftEditorWidget() const
 {
-    return m_editor[side];
+    return m_leftEditor;
+}
+
+TextEditorWidget *SideBySideDiffEditorWidget::rightEditorWidget() const
+{
+    return m_rightEditor;
 }
 
 void SideBySideDiffEditorWidget::setDocument(DiffEditorDocument *document)
@@ -798,286 +839,392 @@ DiffEditorDocument *SideBySideDiffEditorWidget::diffDocument() const
 
 void SideBySideDiffEditorWidget::clear(const QString &message)
 {
-    const GuardLocker locker(m_controller.m_ignoreChanges);
-    setDiff({});
-    for (SideDiffEditorWidget *editor : m_editor)
-        editor->clearAll(message);
-    if (m_asyncTask) {
-        m_asyncTask.reset();
-        m_controller.setBusyShowing(false);
-    }
+    const bool oldIgnore = m_controller.m_ignoreCurrentIndexChange;
+    m_controller.m_ignoreCurrentIndexChange = true;
+    setDiff(QList<FileData>());
+    m_leftEditor->clearAll(message);
+    m_rightEditor->clearAll(message);
+    m_controller.m_ignoreCurrentIndexChange = oldIgnore;
 }
 
 void SideBySideDiffEditorWidget::setDiff(const QList<FileData> &diffFileList)
 {
-    const GuardLocker locker(m_controller.m_ignoreChanges);
-    for (SideDiffEditorWidget *editor : m_editor)
-        editor->clearAll(Tr::tr("Waiting for data..."));
+    const bool oldIgnore = m_controller.m_ignoreCurrentIndexChange;
+    m_controller.m_ignoreCurrentIndexChange = true;
+    m_leftEditor->clear();
+    m_rightEditor->clear();
 
     m_controller.m_contextFileData = diffFileList;
     if (m_controller.m_contextFileData.isEmpty()) {
-        const QString msg = Tr::tr("No difference.");
-        for (SideDiffEditorWidget *editor : m_editor)
-            editor->setPlainText(msg);
+        const QString msg = tr("No difference.");
+        m_leftEditor->setPlainText(msg);
+        m_rightEditor->setPlainText(msg);
     } else {
         showDiff();
     }
+    m_controller.m_ignoreCurrentIndexChange = oldIgnore;
 }
 
 void SideBySideDiffEditorWidget::setCurrentDiffFileIndex(int diffFileIndex)
 {
-    if (m_controller.m_ignoreChanges.isLocked())
+    if (m_controller.m_ignoreCurrentIndexChange)
         return;
 
-    const int blockNumber = m_editor[LeftSide]->diffData().blockNumberForFileIndex(diffFileIndex);
+    const int blockNumber = m_leftEditor->blockNumberForFileIndex(diffFileIndex);
 
-    const GuardLocker locker(m_controller.m_ignoreChanges);
-    m_controller.setCurrentDiffFileIndex(diffFileIndex);
+    const bool oldIgnore = m_controller.m_ignoreCurrentIndexChange;
+    m_controller.m_ignoreCurrentIndexChange = true;
+    QTextBlock leftBlock = m_leftEditor->document()->findBlockByNumber(blockNumber);
+    QTextCursor leftCursor = m_leftEditor->textCursor();
+    leftCursor.setPosition(leftBlock.position());
+    m_leftEditor->setTextCursor(leftCursor);
+    m_leftEditor->verticalScrollBar()->setValue(blockNumber);
 
-    for (SideDiffEditorWidget *editor : m_editor) {
-        QTextBlock block = editor->document()->findBlockByNumber(blockNumber);
-        QTextCursor cursor = editor->textCursor();
-        cursor.setPosition(block.position());
-        editor->setTextCursor(cursor);
-        editor->verticalScrollBar()->setValue(blockNumber);
-    }
+    QTextBlock rightBlock = m_rightEditor->document()->findBlockByNumber(blockNumber);
+    QTextCursor rightCursor = m_rightEditor->textCursor();
+    rightCursor.setPosition(rightBlock.position());
+    m_rightEditor->setTextCursor(rightCursor);
+    m_rightEditor->verticalScrollBar()->setValue(blockNumber);
+
+    m_controller.m_ignoreCurrentIndexChange = oldIgnore;
 }
 
 void SideBySideDiffEditorWidget::setHorizontalSync(bool sync)
 {
     m_horizontalSync = sync;
-    horizontalSliderChanged(RightSide);
+    rightHSliderChanged();
 }
 
 void SideBySideDiffEditorWidget::saveState()
 {
-    for (SideDiffEditorWidget *editor : m_editor)
-        editor->saveState();
+    m_leftEditor->saveState();
+    m_rightEditor->saveState();
 }
 
 void SideBySideDiffEditorWidget::restoreState()
 {
-    for (SideDiffEditorWidget *editor : m_editor)
-        editor->restoreState();
+    m_leftEditor->restoreState();
+    m_rightEditor->restoreState();
 }
 
 void SideBySideDiffEditorWidget::showDiff()
 {
-    m_asyncTask.reset(new Async<SideBySideShowResults>());
-    m_controller.setBusyShowing(true);
+    QMap<int, QList<DiffSelection> > leftFormats;
+    QMap<int, QList<DiffSelection> > rightFormats;
 
-    connect(m_asyncTask.get(), &AsyncBase::done, this, [this] {
-        if (m_asyncTask->isCanceled() || !m_asyncTask->isResultAvailable()) {
-            for (SideDiffEditorWidget *editor : m_editor)
-                editor->clearAll(Tr::tr("Retrieving data failed."));
+    QString leftTexts, rightTexts;
+    int blockNumber = 0;
+    QChar separator = '\n';
+    QHash<int, int> foldingIndent;
+    for (const FileData &contextFileData : qAsConst(m_controller.m_contextFileData)) {
+        QString leftText, rightText;
+
+        foldingIndent.insert(blockNumber, 1);
+        leftFormats[blockNumber].append(DiffSelection(&m_controller.m_fileLineFormat));
+        rightFormats[blockNumber].append(DiffSelection(&m_controller.m_fileLineFormat));
+        m_leftEditor->setFileInfo(blockNumber, contextFileData.leftFileInfo);
+        m_rightEditor->setFileInfo(blockNumber, contextFileData.rightFileInfo);
+        leftText = separator;
+        rightText = separator;
+        blockNumber++;
+
+        int lastLeftLineNumber = -1;
+
+        if (contextFileData.binaryFiles) {
+            foldingIndent.insert(blockNumber, 2);
+            leftFormats[blockNumber].append(DiffSelection(&m_controller.m_chunkLineFormat));
+            rightFormats[blockNumber].append(DiffSelection(&m_controller.m_chunkLineFormat));
+            m_leftEditor->setSkippedLines(blockNumber, -2);
+            m_rightEditor->setSkippedLines(blockNumber, -2);
+            leftText += separator;
+            rightText += separator;
+            blockNumber++;
         } else {
-            const SideBySideShowResults results = m_asyncTask->result();
-            m_editor[LeftSide]->setDiffData(results[LeftSide].diffData);
-            m_editor[RightSide]->setDiffData(results[RightSide].diffData);
-            TextDocumentPtr leftDoc(results[LeftSide].textDocument);
-            TextDocumentPtr rightDoc(results[RightSide].textDocument);
-            {
-                const GuardLocker locker(m_controller.m_ignoreChanges);
-                // TextDocument was living in no thread, so it's safe to pull it
-                leftDoc->moveToThread(thread());
-                rightDoc->moveToThread(thread());
-                m_editor[LeftSide]->setTextDocument(leftDoc);
-                m_editor[RightSide]->setTextDocument(rightDoc);
+            for (int j = 0; j < contextFileData.chunks.count(); j++) {
+                const ChunkData &chunkData = contextFileData.chunks.at(j);
 
-                m_editor[LeftSide]->setReadOnly(true);
-                m_editor[RightSide]->setReadOnly(true);
+                int leftLineNumber = chunkData.leftStartingLineNumber;
+                int rightLineNumber = chunkData.rightStartingLineNumber;
+
+                if (!chunkData.contextChunk) {
+                    const int skippedLines = leftLineNumber - lastLeftLineNumber - 1;
+                    if (skippedLines > 0) {
+                        foldingIndent.insert(blockNumber, 2);
+                        leftFormats[blockNumber].append(DiffSelection(&m_controller.m_chunkLineFormat));
+                        rightFormats[blockNumber].append(DiffSelection(&m_controller.m_chunkLineFormat));
+                        m_leftEditor->setSkippedLines(blockNumber, skippedLines, chunkData.contextInfo);
+                        m_rightEditor->setSkippedLines(blockNumber, skippedLines, chunkData.contextInfo);
+                        leftText += separator;
+                        rightText += separator;
+                        blockNumber++;
+                    }
+
+                    m_leftEditor->setChunkIndex(blockNumber, chunkData.rows.count(), j);
+                    m_rightEditor->setChunkIndex(blockNumber, chunkData.rows.count(), j);
+
+                    for (const RowData &rowData : chunkData.rows) {
+                        TextLineData leftLineData = rowData.leftLine;
+                        TextLineData rightLineData = rowData.rightLine;
+                        if (leftLineData.textLineType == TextLineData::TextLine) {
+                            leftText += leftLineData.text;
+                            lastLeftLineNumber = leftLineNumber;
+                            leftLineNumber++;
+                            m_leftEditor->setLineNumber(blockNumber, leftLineNumber);
+                        } else if (leftLineData.textLineType == TextLineData::Separator) {
+                            m_leftEditor->setSeparator(blockNumber, true);
+                        }
+
+                        if (rightLineData.textLineType == TextLineData::TextLine) {
+                            rightText += rightLineData.text;
+                            rightLineNumber++;
+                            m_rightEditor->setLineNumber(blockNumber, rightLineNumber);
+                        } else if (rightLineData.textLineType == TextLineData::Separator) {
+                            m_rightEditor->setSeparator(blockNumber, true);
+                        }
+
+                        if (!rowData.equal) {
+                            if (rowData.leftLine.textLineType == TextLineData::TextLine)
+                                leftFormats[blockNumber].append(DiffSelection(&m_controller.m_leftLineFormat));
+                            else
+                                leftFormats[blockNumber].append(DiffSelection(&m_spanLineFormat));
+                            if (rowData.rightLine.textLineType == TextLineData::TextLine)
+                                rightFormats[blockNumber].append(DiffSelection(&m_controller.m_rightLineFormat));
+                            else
+                                rightFormats[blockNumber].append(DiffSelection(&m_spanLineFormat));
+                        }
+
+                        for (auto it = leftLineData.changedPositions.cbegin(),
+                                  end = leftLineData.changedPositions.cend(); it != end; ++it) {
+                            leftFormats[blockNumber].append(
+                                        DiffSelection(it.key(), it.value(),
+                                                      &m_controller.m_leftCharFormat));
+                        }
+
+                        for (auto it = rightLineData.changedPositions.cbegin(),
+                                  end = rightLineData.changedPositions.cend(); it != end; ++it) {
+                            rightFormats[blockNumber].append(
+                                        DiffSelection(it.key(), it.value(),
+                                                      &m_controller.m_rightCharFormat));
+                        }
+
+                        leftText += separator;
+                        rightText += separator;
+                        blockNumber++;
+                    }
+                }
+
+                if (j == contextFileData.chunks.count() - 1) { // the last chunk
+                    int skippedLines = -2;
+                    if (chunkData.contextChunk) {
+                        // if it's context chunk
+                        skippedLines = chunkData.rows.count();
+                    } else if (!contextFileData.lastChunkAtTheEndOfFile
+                               && !contextFileData.contextChunksIncluded) {
+                        // if not a context chunk and not a chunk at the end of file
+                        // and context lines not included
+                        skippedLines = -1; // unknown count skipped by the end of file
+                    }
+
+                    if (skippedLines >= -1) {
+                        leftFormats[blockNumber].append(DiffSelection(&m_controller.m_chunkLineFormat));
+                        rightFormats[blockNumber].append(DiffSelection(&m_controller.m_chunkLineFormat));
+                        m_leftEditor->setSkippedLines(blockNumber, skippedLines);
+                        m_rightEditor->setSkippedLines(blockNumber, skippedLines);
+                        leftText += separator;
+                        rightText += separator;
+                        blockNumber++;
+                    } // otherwise nothing skipped
+                }
             }
-            auto leftDocumentLayout = qobject_cast<TextDocumentLayout*>(
-                        m_editor[LeftSide]->document()->documentLayout());
-            auto rightDocumentLayout = qobject_cast<TextDocumentLayout*>(
-                        m_editor[RightSide]->document()->documentLayout());
-            if (leftDocumentLayout && rightDocumentLayout) {
-                connect(leftDocumentLayout, &TextDocumentLayout::foldChanged,
-                        m_editor[RightSide], &SideDiffEditorWidget::setFolded);
-                connect(rightDocumentLayout, &TextDocumentLayout::foldChanged,
-                        m_editor[LeftSide], &SideDiffEditorWidget::setFolded);
-            }
-            m_editor[LeftSide]->setSelections(results[LeftSide].selections);
-            m_editor[RightSide]->setSelections(results[RightSide].selections);
-            setCurrentDiffFileIndex(m_controller.currentDiffFileIndex());
         }
-        m_asyncTask.release()->deleteLater();
-        m_controller.setBusyShowing(false);
-    });
+        leftText.replace('\r', ' ');
+        rightText.replace('\r', ' ');
+        leftTexts += leftText;
+        rightTexts += rightText;
+    }
 
-    const DiffEditorInput input(&m_controller);
+    if (leftTexts.isEmpty() && rightTexts.isEmpty())
+        return;
 
-    auto getDocument = [input](QPromise<SideBySideShowResults> &promise) {
-        const int firstPartMax = 20; // diffOutput is about 4 times quicker than filling document
-        const int leftPartMax = 60;
-        const int rightPartMax = 100;
-        promise.setProgressRange(0, rightPartMax);
-        promise.setProgressValue(0);
-        const SideBySideDiffOutput output = diffOutput(promise, 0, firstPartMax, input);
-        if (promise.isCanceled())
-            return;
+    const bool oldIgnore = m_controller.m_ignoreCurrentIndexChange;
+    m_controller.m_ignoreCurrentIndexChange = true;
+    m_leftEditor->clear();
+    m_leftEditor->setPlainText(leftTexts);
+    m_rightEditor->clear();
+    m_rightEditor->setPlainText(rightTexts);
+    m_controller.m_ignoreCurrentIndexChange = oldIgnore;
 
-        const SideBySideShowResult leftResult{TextDocumentPtr(new TextDocument("DiffEditor.SideDiffEditor")),
-                    output.side[LeftSide].diffData, output.side[LeftSide].selections};
-        const SideBySideShowResult rightResult{TextDocumentPtr(new TextDocument("DiffEditor.SideDiffEditor")),
-                    output.side[RightSide].diffData, output.side[RightSide].selections};
-        const SideBySideShowResults result{leftResult, rightResult};
+    QTextBlock block = m_leftEditor->document()->firstBlock();
+    for (int b = 0; block.isValid(); block = block.next(), ++b)
+        SelectableTextEditorWidget::setFoldingIndent(block, foldingIndent.value(b, 3));
+    block = m_rightEditor->document()->firstBlock();
+    for (int b = 0; block.isValid(); block = block.next(), ++b)
+        SelectableTextEditorWidget::setFoldingIndent(block, foldingIndent.value(b, 3));
 
-        auto propagateDocument = [&output, &promise](DiffSide side, const SideBySideShowResult &result,
-                                                int progressMin, int progressMax) {
-            // No need to store the change history
-            result.textDocument->document()->setUndoRedoEnabled(false);
-
-            // We could do just:
-            //   result.textDocument->setPlainText(output.diffText);
-            // but this would freeze the thread for couple of seconds without progress reporting
-            // and without checking for canceled.
-            const int diffSize = output.side[side].diffText.size();
-            const int packageSize = 10000;
-            int currentPos = 0;
-            QTextCursor cursor(result.textDocument->document());
-            while (currentPos < diffSize) {
-                const QString package = output.side[side].diffText.mid(currentPos, packageSize);
-                cursor.insertText(package);
-                currentPos += package.size();
-                promise.setProgressValue(MathUtils::interpolateLinear(currentPos, 0, diffSize,
-                                                                      progressMin, progressMax));
-                if (promise.isCanceled())
-                    return;
-            }
-
-            QTextBlock block = result.textDocument->document()->firstBlock();
-            for (int b = 0; block.isValid(); block = block.next(), ++b)
-                SelectableTextEditorWidget::setFoldingIndent(block, output.foldingIndent.value(b, 3));
-
-            // If future was canceled, the destructor runs in this thread, so we can't move it
-            // to caller's thread. We push it to no thread (make object to have no thread affinity),
-            // and later, in the caller's thread, we pull it back to the caller's thread.
-            result.textDocument->moveToThread(nullptr);
-        };
-
-        propagateDocument(LeftSide, leftResult, firstPartMax, leftPartMax);
-        if (promise.isCanceled())
-            return;
-        propagateDocument(RightSide, rightResult, leftPartMax, rightPartMax);
-        if (promise.isCanceled())
-            return;
-
-        promise.addResult(result);
-    };
-
-    m_asyncTask->setConcurrentCallData(getDocument);
-    m_asyncTask->start();
-    ProgressManager::addTask(m_asyncTask->future(), Tr::tr("Rendering diff"), "DiffEditor");
+    m_leftEditor->setSelections(leftFormats);
+    m_rightEditor->setSelections(rightFormats);
 }
 
-void SideBySideDiffEditorWidget::setFontSettings(const FontSettings &fontSettings)
+void SideBySideDiffEditorWidget::setFontSettings(
+        const FontSettings &fontSettings)
 {
+    m_spanLineFormat  = fontSettings.toTextCharFormat(C_LINE_NUMBER);
     m_controller.setFontSettings(fontSettings);
 }
 
-void SideBySideDiffEditorWidget::jumpToOriginalFileRequested(DiffSide side, int diffFileIndex,
-                                                             int lineNumber, int columnNumber)
+void SideBySideDiffEditorWidget::slotLeftJumpToOriginalFileRequested(
+        int diffFileIndex,
+        int lineNumber,
+        int columnNumber)
 {
-    if (diffFileIndex < 0 || diffFileIndex >= m_controller.m_contextFileData.size())
+    if (diffFileIndex < 0 || diffFileIndex >= m_controller.m_contextFileData.count())
         return;
 
     const FileData fileData = m_controller.m_contextFileData.at(diffFileIndex);
-    const QString fileName = fileData.fileInfo[side].fileName;
-    const DiffSide otherSide = oppositeSide(side);
-    const QString otherFileName = fileData.fileInfo[otherSide].fileName;
-    if (side == RightSide || fileName != otherFileName) {
-        // different file (e.g. in Tools | Diff...)
-        m_controller.jumpToOriginalFile(fileName, lineNumber, columnNumber);
-        return;
-    }
+    const QString leftFileName = fileData.leftFileInfo.fileName;
+    const QString rightFileName = fileData.rightFileInfo.fileName;
+    if (leftFileName == rightFileName) {
+        // The same file (e.g. in git diff), jump to the line number taken from the right editor.
+        // Warning: git show SHA^ vs SHA or git diff HEAD vs Index
+        // (when Working tree has changed in meantime) will not work properly.
+        for (const ChunkData &chunkData : fileData.chunks) {
 
-    // The same file (e.g. in git diff), jump to the line number taken from the right editor.
-    // Warning: git show SHA^ vs SHA or git diff HEAD vs Index
-    // (when Working tree has changed in meantime) will not work properly.
-    for (const ChunkData &chunkData : fileData.chunks) {
+            int leftLineNumber = chunkData.leftStartingLineNumber;
+            int rightLineNumber = chunkData.rightStartingLineNumber;
 
-        int thisLineNumber = chunkData.startingLineNumber[side];
-        int otherLineNumber = chunkData.startingLineNumber[otherSide];
-
-        for (int j = 0; j < chunkData.rows.size(); j++) {
-            const RowData rowData = chunkData.rows.at(j);
-            if (rowData.line[side].textLineType == TextLineData::TextLine)
-                thisLineNumber++;
-            if (rowData.line[otherSide].textLineType == TextLineData::TextLine)
-                otherLineNumber++;
-            if (thisLineNumber == lineNumber) {
-                int colNr = rowData.equal ? columnNumber : 0;
-                m_controller.jumpToOriginalFile(fileName, otherLineNumber, colNr);
-                return;
+            for (int j = 0; j < chunkData.rows.count(); j++) {
+                const RowData rowData = chunkData.rows.at(j);
+                if (rowData.leftLine.textLineType == TextLineData::TextLine)
+                    leftLineNumber++;
+                if (rowData.rightLine.textLineType == TextLineData::TextLine)
+                    rightLineNumber++;
+                if (leftLineNumber == lineNumber) {
+                    int colNr = rowData.equal ? columnNumber : 0;
+                    m_controller.jumpToOriginalFile(leftFileName, rightLineNumber, colNr);
+                    return;
+                }
             }
         }
+    } else {
+        // different file (e.g. in Tools | Diff...)
+        m_controller.jumpToOriginalFile(leftFileName, lineNumber, columnNumber);
     }
 }
 
-void SideBySideDiffEditorWidget::contextMenuRequested(DiffSide side, QMenu *menu, int fileIndex,
-                                 int chunkIndex, const ChunkSelection &selection)
+void SideBySideDiffEditorWidget::slotRightJumpToOriginalFileRequested(
+        int diffFileIndex,
+        int lineNumber,
+        int columnNumber)
+{
+    if (diffFileIndex < 0 || diffFileIndex >= m_controller.m_contextFileData.count())
+        return;
+
+    const FileData fileData = m_controller.m_contextFileData.at(diffFileIndex);
+    const QString fileName = fileData.rightFileInfo.fileName;
+    m_controller.jumpToOriginalFile(fileName, lineNumber, columnNumber);
+}
+
+void SideBySideDiffEditorWidget::slotLeftContextMenuRequested(QMenu *menu,
+                                                              int fileIndex,
+                                                              int chunkIndex,
+                                                              const ChunkSelection &selection)
 {
     menu->addSeparator();
 
-    const PatchAction patchAction = side == LeftSide ? PatchAction::Apply : PatchAction::Revert;
     m_controller.addCodePasterAction(menu, fileIndex, chunkIndex);
-    m_controller.addPatchAction(menu, fileIndex, chunkIndex, patchAction);
+    m_controller.addApplyAction(menu, fileIndex, chunkIndex);
     m_controller.addExtraActions(menu, fileIndex, chunkIndex, selection);
 }
 
-void SideBySideDiffEditorWidget::verticalSliderChanged(DiffSide side)
+void SideBySideDiffEditorWidget::slotRightContextMenuRequested(QMenu *menu,
+                                                               int fileIndex,
+                                                               int chunkIndex,
+                                                               const ChunkSelection &selection)
 {
-    if (m_controller.m_ignoreChanges.isLocked())
-        return;
+    menu->addSeparator();
 
-    m_editor[oppositeSide(side)]->verticalScrollBar()->setValue(
-                  m_editor[side]->verticalScrollBar()->value());
+    m_controller.addCodePasterAction(menu, fileIndex, chunkIndex);
+    m_controller.addRevertAction(menu, fileIndex, chunkIndex);
+    m_controller.addExtraActions(menu, fileIndex, chunkIndex, selection);
 }
 
-void SideBySideDiffEditorWidget::horizontalSliderChanged(DiffSide side)
+void SideBySideDiffEditorWidget::leftVSliderChanged()
 {
-    if (m_controller.m_ignoreChanges.isLocked() || !m_horizontalSync)
+    if (m_controller.m_ignoreCurrentIndexChange)
         return;
 
-    m_editor[oppositeSide(side)]->horizontalScrollBar()->setValue(
-                  m_editor[side]->horizontalScrollBar()->value());
+    m_rightEditor->verticalScrollBar()->setValue(m_leftEditor->verticalScrollBar()->value());
 }
 
-void SideBySideDiffEditorWidget::cursorPositionChanged(DiffSide side)
+void SideBySideDiffEditorWidget::rightVSliderChanged()
 {
-    if (m_controller.m_ignoreChanges.isLocked())
+    if (m_controller.m_ignoreCurrentIndexChange)
         return;
 
-    handlePositionChange(m_editor[side], m_editor[oppositeSide(side)]);
-    verticalSliderChanged(side);
-    horizontalSliderChanged(side);
+    m_leftEditor->verticalScrollBar()->setValue(m_rightEditor->verticalScrollBar()->value());
+}
+
+void SideBySideDiffEditorWidget::leftHSliderChanged()
+{
+    if (m_controller.m_ignoreCurrentIndexChange)
+        return;
+
+    if (m_horizontalSync)
+        m_rightEditor->horizontalScrollBar()->setValue(m_leftEditor->horizontalScrollBar()->value());
+}
+
+void SideBySideDiffEditorWidget::rightHSliderChanged()
+{
+    if (m_controller.m_ignoreCurrentIndexChange)
+        return;
+
+    if (m_horizontalSync)
+        m_leftEditor->horizontalScrollBar()->setValue(m_rightEditor->horizontalScrollBar()->value());
+}
+
+void SideBySideDiffEditorWidget::leftCursorPositionChanged()
+{
+    if (m_controller.m_ignoreCurrentIndexChange)
+        return;
+
+    handlePositionChange(m_leftEditor, m_rightEditor);
+    leftVSliderChanged();
+    leftHSliderChanged();
+}
+
+void SideBySideDiffEditorWidget::rightCursorPositionChanged()
+{
+    if (m_controller.m_ignoreCurrentIndexChange)
+        return;
+
+    handlePositionChange(m_rightEditor, m_leftEditor);
+    rightVSliderChanged();
+    rightHSliderChanged();
 }
 
 void SideBySideDiffEditorWidget::syncHorizontalScrollBarPolicy()
 {
-    const bool alwaysOn = m_editor[LeftSide]->horizontalScrollBar()->maximum()
-            || m_editor[RightSide]->horizontalScrollBar()->maximum();
-    const Qt::ScrollBarPolicy newPolicy = alwaysOn ? Qt::ScrollBarAlwaysOn : Qt::ScrollBarAsNeeded;
-    for (SideDiffEditorWidget *editor : m_editor) {
-        if (editor->horizontalScrollBarPolicy() != newPolicy)
-            editor->setHorizontalScrollBarPolicy(newPolicy);
-    }
+    const bool alwaysOn = m_leftEditor->horizontalScrollBar()->maximum()
+            || m_rightEditor->horizontalScrollBar()->maximum();
+    const Qt::ScrollBarPolicy newPolicy = alwaysOn
+            ? Qt::ScrollBarAlwaysOn : Qt::ScrollBarAsNeeded;
+    if (m_leftEditor->horizontalScrollBarPolicy() != newPolicy)
+        m_leftEditor->setHorizontalScrollBarPolicy(newPolicy);
+    if (m_rightEditor->horizontalScrollBarPolicy() != newPolicy)
+        m_rightEditor->setHorizontalScrollBarPolicy(newPolicy);
 }
 
 void SideBySideDiffEditorWidget::handlePositionChange(SideDiffEditorWidget *source, SideDiffEditorWidget *dest)
 {
-    if (m_controller.m_ignoreChanges.isLocked())
+    if (m_controller.m_ignoreCurrentIndexChange)
         return;
 
-    const int fileIndex = source->diffData().fileIndexForBlockNumber(source->textCursor().blockNumber());
-    if (fileIndex < 0)
-        return;
-
-    const GuardLocker locker(m_controller.m_ignoreChanges);
+    const bool oldIgnore = m_controller.m_ignoreCurrentIndexChange;
+    m_controller.m_ignoreCurrentIndexChange = true;
     syncCursor(source, dest);
-    m_controller.setCurrentDiffFileIndex(fileIndex);
-    emit currentDiffFileIndexChanged(fileIndex);
+    emit currentDiffFileIndexChanged(
+                source->fileIndexForBlockNumber(source->textCursor().blockNumber()));
+    m_controller.m_ignoreCurrentIndexChange = oldIgnore;
 }
 
 void SideBySideDiffEditorWidget::syncCursor(SideDiffEditorWidget *source, SideDiffEditorWidget *dest)
@@ -1097,6 +1244,7 @@ void SideBySideDiffEditorWidget::syncCursor(SideDiffEditorWidget *source, SideDi
     dest->horizontalScrollBar()->setValue(oldHSliderPos);
 }
 
-} // namespace DiffEditor::Internal
+} // namespace Internal
+} // namespace DiffEditor
 
 #include "sidebysidediffeditorwidget.moc"

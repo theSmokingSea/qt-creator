@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -9,11 +31,8 @@
 #include <QRegularExpression>
 
 #include "task.h"
-#include "taskhub.h"
 
 namespace ProjectExplorer {
-class TaskCategory;
-
 namespace Internal {
 
 class TaskModel : public QAbstractItemModel
@@ -32,8 +51,9 @@ public:
     Task task(const QModelIndex &index) const;
     Tasks tasks(const QModelIndexList &indexes) const;
 
-    QList<TaskCategory> categories() const;
-    void addCategory(const TaskCategory &category);
+    QList<Utils::Id> categoryIds() const;
+    QString categoryDisplayName(Utils::Id categoryId) const;
+    void addCategory(Utils::Id categoryId, const QString &categoryName, int priority);
 
     Tasks tasks(Utils::Id categoryId = Utils::Id()) const;
     void addTask(const Task &t);
@@ -46,7 +66,7 @@ public:
     int sizeOfLineNumber(const QFont &font);
     void setFileNotFound(const QModelIndex &index, bool b);
 
-    enum Roles { Description = Qt::UserRole, Type};
+    enum Roles { File = Qt::UserRole, Line, MovedLine, Description, FileNotFound, Type, Category, Icon, Task_t };
 
     int taskCount(Utils::Id categoryId);
     int errorTaskCount(Utils::Id categoryId);
@@ -86,7 +106,8 @@ private:
             errors = 0;
         }
 
-        TaskCategory category;
+        QString displayName;
+        int priority = 0;
         int count = 0;
         int warnings = 0;
         int errors = 0;
@@ -118,12 +139,8 @@ public:
     bool filterIncludesErrors() const { return m_includeErrors; }
     void setFilterIncludesErrors(bool b) { m_includeErrors = b; invalidateFilter(); }
 
-    QSet<Utils::Id> filteredCategories() const { return m_categoryIds; }
-    void setFilteredCategories(const QSet<Utils::Id> &categoryIds)
-    {
-        m_categoryIds = categoryIds;
-        invalidateFilter();
-    }
+    QList<Utils::Id> filteredCategories() const { return m_categoryIds; }
+    void setFilteredCategories(const QList<Utils::Id> &categoryIds) { m_categoryIds = categoryIds; invalidateFilter(); }
 
     Task task(const QModelIndex &index) const { return taskModel()->task(mapToSource(index)); }
     Tasks tasks(const QModelIndexList &indexes) const;
@@ -149,7 +166,7 @@ private:
     bool m_filterStringIsRegexp = false;
     bool m_filterIsInverted = false;
     Qt::CaseSensitivity m_filterCaseSensitivity = Qt::CaseInsensitive;
-    QSet<Utils::Id> m_categoryIds;
+    QList<Utils::Id> m_categoryIds;
     QString m_filterText;
     QRegularExpression m_filterRegexp;
 };

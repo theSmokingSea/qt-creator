@@ -1,13 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtCreator.Tracing
+import QtQuick 2.1
+import QtCreator.Tracing 1.0
 
 Item {
     id: timeMarks
     visible: model && (mockup || (!model.hidden && !model.empty))
-    property TimelineModel model
+    property QtObject model
     property bool startOdd
     property bool mockup
 
@@ -18,7 +40,7 @@ Item {
 
     property int rowCount: model ? model.rowCount : 0
 
-    function roundTo3Digits(number: real) : real  {
+    function roundTo3Digits(number) {
         var factor;
 
         if (number < 10)
@@ -31,7 +53,7 @@ Item {
         return Math.round(number * factor) / factor;
     }
 
-    function prettyPrintScale(amount: real) : string {
+    function prettyPrintScale(amount) {
         var sign;
         if (amount < 0) {
             sign = "-";
@@ -47,9 +69,9 @@ Item {
     }
 
     Connections {
-        target: timeMarks.model
-        function onExpandedRowHeightChanged(row: real, height: real) {
-            if (timeMarks.model && timeMarks.model.expanded && row >= 0)
+        target: model
+        function onExpandedRowHeightChanged(row, height) {
+            if (model && model.expanded && row >= 0)
                 rowRepeater.itemAt(row).height = height;
         }
     }
@@ -64,25 +86,22 @@ Item {
             model: timeMarks.rowCount
             Rectangle {
                 id: scaleItem
-                required property int index
-                property TimeMarks scope: timeMarks
-
-                color: ((index + (scope.startOdd ? 1 : 0)) % 2)
+                color: ((index + (startOdd ? 1 : 0)) % 2)
                        ? Theme.color(Theme.Timeline_BackgroundColor1)
                        : Theme.color(Theme.Timeline_BackgroundColor2)
                 anchors.left: scaleArea.left
                 anchors.right: scaleArea.right
-                height: scope.model ? scope.model.rowHeight(index) : 0
+                height: timeMarks.model ? timeMarks.model.rowHeight(index) : 0
 
-                property double minVal: scope.model ? scope.model.rowMinValue(index) : 0
-                property double maxVal: scope.model ? scope.model.rowMaxValue(index) : 0
+                property double minVal: timeMarks.model ? timeMarks.model.rowMinValue(index) : 0
+                property double maxVal: timeMarks.model ? timeMarks.model.rowMaxValue(index) : 0
                 property double valDiff: maxVal - minVal
-                property bool scaleVisible: scope.model && scope.model.expanded &&
-                                            height > timeMarks.scaleMinHeight && valDiff > 0
+                property bool scaleVisible: timeMarks.model && timeMarks.model.expanded &&
+                                            height > scaleMinHeight && valDiff > 0
 
                 property double stepVal: {
                     var ret = 1;
-                    var ugly = Math.ceil(valDiff / Math.floor(height / timeMarks.scaleStepping));
+                    var ugly = Math.ceil(valDiff / Math.floor(height / scaleStepping));
                     while (isFinite(ugly) && ugly > 1) {
                         ugly /= 2;
                         ret *= 2;
@@ -122,8 +141,7 @@ Item {
                                     anchors.bottomMargin: 2
                                     anchors.leftMargin: 2
                                     anchors.left: parent.left
-                                    text: prettyPrintScale(scaleItem.minVal
-                                                           + index * scaleItem.stepVal)
+                                    text: prettyPrintScale(scaleItem.minVal + index * scaleItem.stepVal)
                                 }
 
                                 Rectangle {

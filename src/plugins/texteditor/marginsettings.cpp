@@ -1,64 +1,86 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "marginsettings.h"
 
-#include <utils/qtcsettings.h>
+#include <QSettings>
+#include <QString>
+#include <QVariantMap>
 
-using namespace Utils;
+static const char showWrapColumnKey[] = "ShowMargin";
+static const char wrapColumnKey[] = "MarginColumn";
+static const char groupPostfix[] = "MarginSettings";
+static const char useIndenterColumnKey[] = "UseIndenter";
 
-namespace TextEditor {
-
-const char showWrapColumnKey[] = "ShowMargin";
-const char wrapColumnKey[] = "MarginColumn";
-const char groupPostfix[] = "textMarginSettings";
-const char useIndenterColumnKey[] = "UseIndenter";
-const char tintMarginAreaColumnKey[] = "tintMarginArea";
+using namespace TextEditor;
 
 MarginSettings::MarginSettings()
     : m_showMargin(false)
-    , m_tintMarginArea(true)
     , m_useIndenter(false)
     , m_marginColumn(80)
 {
 }
 
-void MarginSettings::toSettings(QtcSettings *s) const
+void MarginSettings::toSettings(const QString &category, QSettings *s) const
 {
-    s->beginGroup(groupPostfix);
-    s->setValue(showWrapColumnKey, m_showMargin);
-    s->setValue(tintMarginAreaColumnKey, m_tintMarginArea);
-    s->setValue(useIndenterColumnKey, m_useIndenter);
-    s->setValue(wrapColumnKey, m_marginColumn);
+    QString group = QLatin1String(groupPostfix);
+    if (!category.isEmpty())
+        group.insert(0, category);
+    s->beginGroup(group);
+    s->setValue(QLatin1String(showWrapColumnKey), m_showMargin);
+    s->setValue(QLatin1String(useIndenterColumnKey), m_useIndenter);
+    s->setValue(QLatin1String(wrapColumnKey), m_marginColumn);
     s->endGroup();
 }
 
-void MarginSettings::fromSettings(QtcSettings *s)
+void MarginSettings::fromSettings(const QString &category, const QSettings *s)
 {
-    s->beginGroup(groupPostfix);
+    QString group = QLatin1String(groupPostfix);
+    if (!category.isEmpty())
+        group.insert(0, category);
+    group += QLatin1Char('/');
+
     *this = MarginSettings(); // Assign defaults
 
-    m_showMargin = s->value(showWrapColumnKey, m_showMargin).toBool();
-    m_tintMarginArea = s->value(tintMarginAreaColumnKey, m_tintMarginArea).toBool();
-    m_useIndenter = s->value(useIndenterColumnKey, m_useIndenter).toBool();
-    m_marginColumn = s->value(wrapColumnKey, m_marginColumn).toInt();
-    s->endGroup();
+    m_showMargin = s->value(group + QLatin1String(showWrapColumnKey), m_showMargin).toBool();
+    m_useIndenter = s->value(group + QLatin1String(useIndenterColumnKey), m_useIndenter).toBool();
+    m_marginColumn = s->value(group + QLatin1String(wrapColumnKey), m_marginColumn).toInt();
 }
 
-Store MarginSettings::toMap() const
+QVariantMap MarginSettings::toMap() const
 {
     return {
-        {tintMarginAreaColumnKey, m_tintMarginArea},
         {showWrapColumnKey, m_showMargin},
         {useIndenterColumnKey, m_useIndenter},
         {wrapColumnKey, m_marginColumn}
     };
 }
 
-void MarginSettings::fromMap(const Store &map)
+void MarginSettings::fromMap(const QVariantMap &map)
 {
     m_showMargin = map.value(showWrapColumnKey, m_showMargin).toBool();
-    m_tintMarginArea = map.value(tintMarginAreaColumnKey, m_tintMarginArea).toBool();
     m_useIndenter = map.value(useIndenterColumnKey, m_useIndenter).toBool();
     m_marginColumn = map.value(wrapColumnKey, m_marginColumn).toInt();
 }
@@ -66,10 +88,7 @@ void MarginSettings::fromMap(const Store &map)
 bool MarginSettings::equals(const MarginSettings &other) const
 {
     return m_showMargin == other.m_showMargin
-        && m_tintMarginArea == other.m_tintMarginArea
         && m_useIndenter == other.m_useIndenter
         && m_marginColumn == other.m_marginColumn
         ;
 }
-
-} // TextEditor

@@ -26,10 +26,11 @@
 #include <QCborMap>
 #include <QCoreApplication>
 #include <QFile>
+#include <QHash>
+#include <QStringList>
 #include <QXmlStreamReader>
 
 #include <algorithm>
-#include <atomic>
 
 using namespace KSyntaxHighlighting;
 
@@ -41,8 +42,13 @@ DefinitionData::DefinitionData()
 
 DefinitionData::~DefinitionData() = default;
 
+DefinitionData *DefinitionData::get(const Definition &def)
+{
+    return def.d.get();
+}
+
 Definition::Definition()
-    : d(std::make_shared<DefinitionData>())
+    : d(new DefinitionData)
 {
     d->q = *this;
 }
@@ -56,9 +62,6 @@ Definition &Definition::operator=(const Definition &) = default;
 Definition::Definition(std::shared_ptr<DefinitionData> &&dd)
     : d(std::move(dd))
 {
-    if (!d) {
-        Definition().d.swap(d);
-    }
 }
 
 bool Definition::operator==(const Definition &other) const
@@ -88,10 +91,7 @@ QString Definition::name() const
 
 QString Definition::translatedName() const
 {
-    if (d->translatedName.isEmpty()) {
-        d->translatedName = QCoreApplication::instance()->translate("Language", d->nameUtf8.isEmpty() ? d->name.toUtf8().constData() : d->nameUtf8.constData());
-    }
-    return d->translatedName;
+    return QCoreApplication::instance()->translate("Language", d->name.toUtf8().constData());
 }
 
 QString Definition::section() const
@@ -101,19 +101,15 @@ QString Definition::section() const
 
 QString Definition::translatedSection() const
 {
-    if (d->translatedSection.isEmpty()) {
-        d->translatedSection = QCoreApplication::instance()->translate("Language Section",
-                                                                       d->sectionUtf8.isEmpty() ? d->section.toUtf8().constData() : d->sectionUtf8.constData());
-    }
-    return d->translatedSection;
+    return QCoreApplication::instance()->translate("Language Section", d->section.toUtf8().constData());
 }
 
-QList<QString> Definition::mimeTypes() const
+QVector<QString> Definition::mimeTypes() const
 {
     return d->mimetypes;
 }
 
-QList<QString> Definition::extensions() const
+QVector<QString> Definition::extensions() const
 {
     return d->extensions;
 }
@@ -221,12 +217,12 @@ bool Definition::setKeywordList(const QString &name, const QStringList &content)
     }
 }
 
-QList<Format> Definition::formats() const
+QVector<Format> Definition::formats() const
 {
     d->load();
 
     // sort formats so that the order matches the order of the itemDatas in the xml files.
-    auto formatList = d->formats.values();
+    auto formatList = QVector<Format>::fromList(d->formats.values());
     std::sort(formatList.begin(), formatList.end(), [](const KSyntaxHighlighting::Format &lhs, const KSyntaxHighlighting::Format &rhs) {
         return lhs.id() < rhs.id();
     });
@@ -234,17 +230,17 @@ QList<Format> Definition::formats() const
     return formatList;
 }
 
-QList<Definition> Definition::includedDefinitions() const
+QVector<Definition> Definition::includedDefinitions() const
 {
     d->load();
 
     // init worklist and result used as guard with this definition
-    QList<const DefinitionData *> queue{d.get()};
-    QList<Definition> definitions{*this};
+    QVector<const DefinitionData *> queue{d.get()};
+    QVector<Definition> definitions{*this};
     while (!queue.empty()) {
         const auto *def = queue.back();
         queue.pop_back();
-        for (const auto &defRef : std::as_const(def->immediateIncludedDefinitions)) {
+        for (const auto &defRef : def->immediateIncludedDefinitions) {
             const auto definition = defRef.definition();
             if (!definitions.contains(definition)) {
                 definitions.push_back(definition);
@@ -278,7 +274,7 @@ QPair<QString, QString> Definition::multiLineCommentMarker() const
     return {d->multiLineCommentStartMarker, d->multiLineCommentEndMarker};
 }
 
-QList<QPair<QChar, QString>> Definition::characterEncodings() const
+QVector<QPair<QChar, QString>> Definition::characterEncodings() const
 {
     d->load();
     return d->characterEncodings;
@@ -290,7 +286,7 @@ Context *DefinitionData::initialContext()
     return &contexts.front();
 }
 
-Context *DefinitionData::contextByName(QStringView wantedName)
+Context *DefinitionData::contextByName(const QString &wantedName)
 {
     for (auto &context : contexts) {
         if (context.name() == wantedName) {
@@ -319,11 +315,6 @@ Format DefinitionData::formatByName(const QString &wantedName) const
 bool DefinitionData::isLoaded() const
 {
     return !contexts.empty();
-}
-
-namespace
-{
-std::atomic<uint64_t> definitionId{1};
 }
 
 bool DefinitionData::load(OnlyKeywords onlyKeywords)
@@ -370,15 +361,12 @@ bool DefinitionData::load(OnlyKeywords onlyKeywords)
 
     resolveContexts();
 
-    id = definitionId.fetch_add(1, std::memory_order_relaxed);
-
     return true;
 }
 
 void DefinitionData::clear()
 {
     // keep only name and repo, so we can re-lookup to make references persist over repo reloads
-    id = 0;
     keywordLists.clear();
     contexts.clear();
     formats.clear();
@@ -397,11 +385,7 @@ void DefinitionData::clear()
     characterEncodings.clear();
 
     fileName.clear();
-    nameUtf8.clear();
-    translatedName.clear();
     section.clear();
-    sectionUtf8.clear();
-    translatedSection.clear();
     style.clear();
     indenter.clear();
     author.clear();
@@ -412,9 +396,6 @@ void DefinitionData::clear()
     version = 0.0f;
     priority = 0;
     hidden = false;
-
-    // purge our cache that is used to unify states
-    unify.clear();
 }
 
 bool DefinitionData::loadMetaData(const QString &definitionFileName)
@@ -443,9 +424,7 @@ bool DefinitionData::loadMetaData(const QString &definitionFileName)
 bool DefinitionData::loadMetaData(const QString &file, const QCborMap &obj)
 {
     name = obj.value(QLatin1String("name")).toString();
-    nameUtf8 = obj.value(QLatin1String("name")).toByteArray();
     section = obj.value(QLatin1String("section")).toString();
-    sectionUtf8 = obj.value(QLatin1String("section")).toByteArray();
     version = obj.value(QLatin1String("version")).toInteger();
     priority = obj.value(QLatin1String("priority")).toInteger();
     style = obj.value(QLatin1String("style")).toString();
@@ -456,10 +435,13 @@ bool DefinitionData::loadMetaData(const QString &file, const QCborMap &obj)
     fileName = file;
 
     const auto exts = obj.value(QLatin1String("extensions")).toString();
-    extensions = exts.split(QLatin1Char(';'), Qt::SkipEmptyParts);
-
+    for (const auto &ext : exts.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+        extensions.push_back(ext);
+    }
     const auto mts = obj.value(QLatin1String("mimetype")).toString();
-    mimetypes = mts.split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    for (const auto &mt : mts.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
+        mimetypes.push_back(mt);
+    }
 
     return true;
 }
@@ -483,13 +465,13 @@ bool DefinitionData::loadLanguage(QXmlStreamReader &reader)
     indenter = reader.attributes().value(QLatin1String("indenter")).toString();
     author = reader.attributes().value(QLatin1String("author")).toString();
     license = reader.attributes().value(QLatin1String("license")).toString();
-    const auto exts = reader.attributes().value(QLatin1String("extensions"));
+    const auto exts = reader.attributes().value(QLatin1String("extensions")).toString();
     for (const auto &ext : exts.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
-        extensions.push_back(ext.toString());
+        extensions.push_back(ext);
     }
-    const auto mts = reader.attributes().value(QLatin1String("mimetype"));
+    const auto mts = reader.attributes().value(QLatin1String("mimetype")).toString();
     for (const auto &mt : mts.split(QLatin1Char(';'), Qt::SkipEmptyParts)) {
-        mimetypes.push_back(mt.toString());
+        mimetypes.push_back(mt);
     }
     if (reader.attributes().hasAttribute(QLatin1String("casesensitive"))) {
         caseSensitive = Xml::attrToBool(reader.attributes().value(QLatin1String("casesensitive"))) ? Qt::CaseSensitive : Qt::CaseInsensitive;
@@ -610,6 +592,15 @@ void DefinitionData::resolveContexts()
     for (auto &context : contexts) {
         context.resolveIncludes(*this);
     }
+
+    /**
+     * Post-processing on rules.
+     */
+    for (const auto &context : contexts) {
+        for (auto &rule : context.rules()) {
+            rule->resolvePostProcessing();
+        }
+    }
 }
 
 void DefinitionData::loadItemData(QXmlStreamReader &reader)
@@ -623,7 +614,7 @@ void DefinitionData::loadItemData(QXmlStreamReader &reader)
             if (reader.name() == QLatin1String("itemData")) {
                 Format f;
                 auto formatData = FormatPrivate::detachAndGet(f);
-                formatData->definitionName = name;
+                formatData->definition = q;
                 formatData->load(reader);
                 formatData->id = RepositoryPrivate::get(repo)->nextFormatId();
                 formats.insert(f.name(), f);
@@ -716,7 +707,7 @@ void DefinitionData::loadComments(QXmlStreamReader &reader)
                 const bool isSingleLine = reader.attributes().value(QLatin1String("name")) == QLatin1String("singleLine");
                 if (isSingleLine) {
                     singleLineCommentMarker = reader.attributes().value(QLatin1String("start")).toString();
-                    const bool afterWhiteSpace = reader.attributes().value(QLatin1String("position")) == QLatin1String("afterwhitespace");
+                    const bool afterWhiteSpace = reader.attributes().value(QLatin1String("position")).toString() == QLatin1String("afterwhitespace");
                     singleLineCommentPosition = afterWhiteSpace ? CommentPosition::AfterWhitespace : CommentPosition::StartOfLine;
                 } else {
                     multiLineCommentStartMarker = reader.attributes().value(QLatin1String("start")).toString();
@@ -787,8 +778,8 @@ void DefinitionData::loadSpellchecking(QXmlStreamReader &reader)
             if (reader.name() == QLatin1String("encoding")) {
                 const auto charRef = reader.attributes().value(QLatin1String("char"));
                 if (!charRef.isEmpty()) {
-                    const auto str = reader.attributes().value(QLatin1String("string"));
-                    characterEncodings.push_back({charRef[0], str.toString()});
+                    const auto str = reader.attributes().value(QLatin1String("string")).toString();
+                    characterEncodings.push_back({charRef[0], str});
                 }
             }
             reader.readNext();
@@ -814,10 +805,10 @@ bool DefinitionData::checkKateVersion(QStringView verStr)
         qCWarning(Log) << "Skipping" << fileName << "due to having no valid kateversion attribute:" << verStr;
         return false;
     }
-    const auto major = verStr.left(idx).toInt();
-    const auto minor = verStr.mid(idx + 1).toInt();
+    const auto major = verStr.left(idx).toString().toInt();
+    const auto minor = verStr.mid(idx + 1).toString().toInt();
 
-    if (major > KSYNTAXHIGHLIGHTING_VERSION_MAJOR || (major == KSYNTAXHIGHLIGHTING_VERSION_MAJOR && minor > KSYNTAXHIGHLIGHTING_VERSION_MINOR)) {
+    if (major > SyntaxHighlighting_VERSION_MAJOR || (major == SyntaxHighlighting_VERSION_MAJOR && minor > SyntaxHighlighting_VERSION_MINOR)) {
         qCWarning(Log) << "Skipping" << fileName << "due to being too new, version:" << verStr;
         return false;
     }
@@ -843,30 +834,37 @@ void DefinitionData::addImmediateIncludedDefinition(const Definition &def)
 
 DefinitionRef::DefinitionRef() = default;
 
-DefinitionRef::DefinitionRef(const Definition &def) noexcept
+DefinitionRef::DefinitionRef(const Definition &def)
     : d(def.d)
 {
 }
 
-DefinitionRef &DefinitionRef::operator=(const Definition &def) noexcept
+DefinitionRef::DefinitionRef(Definition &&def)
+    : d(std::move(def.d))
+{
+}
+
+DefinitionRef &DefinitionRef::operator=(const Definition &def)
 {
     d = def.d;
     return *this;
 }
 
+DefinitionRef &DefinitionRef::operator=(Definition &&def)
+{
+    d = std::move(def.d);
+    return *this;
+}
+
 Definition DefinitionRef::definition() const
 {
-    return Definition(d.lock());
+    if (!d.expired()) {
+        return Definition(d.lock());
+    }
+    return Definition();
 }
 
 bool DefinitionRef::operator==(const DefinitionRef &other) const
 {
     return !d.owner_before(other.d) && !other.d.owner_before(d);
 }
-
-bool DefinitionRef::operator==(const Definition &other) const
-{
-    return !d.owner_before(other.d) && !other.d.owner_before(d);
-}
-
-#include "moc_definition.cpp"

@@ -1,17 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "resourceview.h"
 
-#include "../resourceeditortr.h"
 #include "undocommands_p.h"
 
 #include <coreplugin/fileutils.h>
 #include <coreplugin/icore.h>
 
+#include <QDebug>
+
 #include <QAction>
 #include <QApplication>
-#include <QDebug>
 #include <QFileDialog>
 #include <QHeaderView>
 #include <QInputDialog>
@@ -19,7 +41,8 @@
 #include <QMouseEvent>
 #include <QUndoStack>
 
-namespace ResourceEditor::Internal {
+namespace ResourceEditor {
+namespace Internal {
 
 ResourceView::ResourceView(RelativeResourceModel *model, QUndoStack *history, QWidget *parent) :
     Utils::TreeView(parent),
@@ -182,9 +205,9 @@ void ResourceView::refresh()
 
 QStringList ResourceView::fileNamesToAdd()
 {
-    return QFileDialog::getOpenFileNames(this, Tr::tr("Open File"),
+    return QFileDialog::getOpenFileNames(this, tr("Open File"),
             m_qrcModel->absolutePath(QString()),
-            Tr::tr("All files (*)"));
+            tr("All files (*)"));
 }
 
 QString ResourceView::currentAlias() const
@@ -336,4 +359,5 @@ bool ResourceView::resourceDragEnabled() const
     return m_qrcModel->resourceDragEnabled();
 }
 
-} // ResourceEditor::Internal
+} // Internal
+} // ResourceEditor

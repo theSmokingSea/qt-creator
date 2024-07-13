@@ -1,14 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "projecttree.h"
 
 #include "project.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
-#include "projectmanager.h"
 #include "projectnodes.h"
 #include "projecttreewidget.h"
+#include "session.h"
 #include "target.h"
 
 #include <coreplugin/actionmanager/actioncontainer.h>
@@ -53,11 +74,11 @@ ProjectTree::ProjectTree(QObject *parent) : QObject(parent)
     connect(qApp, &QApplication::focusChanged,
             this, &ProjectTree::update);
 
-    connect(ProjectManager::instance(), &ProjectManager::projectAdded,
+    connect(SessionManager::instance(), &SessionManager::projectAdded,
             this, &ProjectTree::sessionAndTreeChanged);
-    connect(ProjectManager::instance(), &ProjectManager::projectRemoved,
+    connect(SessionManager::instance(), &SessionManager::projectRemoved,
             this, &ProjectTree::sessionAndTreeChanged);
-    connect(ProjectManager::instance(), &ProjectManager::startupProjectChanged,
+    connect(SessionManager::instance(), &SessionManager::startupProjectChanged,
             this, &ProjectTree::sessionChanged);
     connect(this, &ProjectTree::subtreeChanged, this, &ProjectTree::treeChanged);
 }
@@ -170,10 +191,10 @@ void ProjectTree::updateFromNode(Node *node)
     if (node)
         project = projectForNode(node);
     else
-        project = ProjectManager::startupProject();
+        project = SessionManager::startupProject();
 
     setCurrent(node, project);
-    for (ProjectTreeWidget *widget : std::as_const(m_projectTreeWidgets))
+    for (ProjectTreeWidget *widget : qAsConst(m_projectTreeWidgets))
         widget->sync(node);
 }
 
@@ -195,15 +216,19 @@ void ProjectTree::setCurrent(Node *node, Project *project)
     }
 
     if (Core::IDocument *document = Core::EditorManager::currentDocument()) {
-        disconnect(document, &Core::IDocument::changed, this, nullptr);
-        if (!node || node->isGenerated()) {
-            const QString message = node
-                    ? Tr::tr("<b>Warning:</b> This file is generated.")
-                    : Tr::tr("<b>Warning:</b> This file is outside the project directory.");
-            connect(document, &Core::IDocument::changed, this, [this, document, message] {
-                updateFileWarning(document, message);
-            });
+        if (!node) {
+            connect(document, &Core::IDocument::changed,
+                    this, &ProjectTree::updateExternalFileWarning,
+                    Qt::UniqueConnection);
+        } else if (node->isGenerated()) {
+            connect(document, &Core::IDocument::changed,
+                    this, &ProjectTree::updateGeneratedFileWarning,
+                    Qt::UniqueConnection);
         } else {
+            disconnect(document, &Core::IDocument::changed,
+                       this, &ProjectTree::updateExternalFileWarning);
+            disconnect(document, &Core::IDocument::changed,
+                       this, &ProjectTree::updateGeneratedFileWarning);
             document->infoBar()->removeInfo(EXTERNAL_OR_GENERATED_FILE_WARNING);
         }
     }
@@ -224,7 +249,7 @@ void ProjectTree::sessionChanged()
 {
     if (m_currentProject) {
         Core::DocumentManager::setDefaultLocationForNewFiles(m_currentProject->projectDirectory());
-    } else if (Project *project = ProjectManager::startupProject()) {
+    } else if (Project *project = SessionManager::startupProject()) {
         Core::DocumentManager::setDefaultLocationForNewFiles(project->projectDirectory());
         updateFromNode(nullptr); // Make startup project current if there is no other current
     } else {
@@ -287,9 +312,10 @@ void ProjectTree::changeProjectRootDirectory()
         m_currentProject->changeRootProjectDirectory();
 }
 
-void ProjectTree::updateFileWarning(Core::IDocument *document, const QString &text)
+void ProjectTree::updateFileWarning(const QString &text)
 {
-    if (document->filePath().isEmpty())
+    auto document = qobject_cast<Core::IDocument *>(sender());
+    if (!document || document->filePath().isEmpty())
         return;
     Utils::InfoBar *infoBar = document->infoBar();
     Utils::Id infoId(EXTERNAL_OR_GENERATED_FILE_WARNING);
@@ -299,22 +325,20 @@ void ProjectTree::updateFileWarning(Core::IDocument *document, const QString &te
     }
     if (!infoBar->canInfoBeAdded(infoId))
         return;
-    const FilePath filePath = document->filePath();
-    const QList<Project *> projects = ProjectManager::projects();
+    const FilePath fileName = document->filePath();
+    const QList<Project *> projects = SessionManager::projects();
     if (projects.isEmpty())
         return;
     for (Project *project : projects) {
         FilePath projectDir = project->projectDirectory();
         if (projectDir.isEmpty())
             continue;
-        if (filePath.isChildOf(projectDir))
-            return;
-        if (filePath.canonicalPath().isChildOf(projectDir.canonicalPath()))
+        if (fileName.isChildOf(projectDir))
             return;
         // External file. Test if it under the same VCS
-        FilePath topLevel;
+        QString topLevel;
         if (Core::VcsManager::findVersionControlForDirectory(projectDir, &topLevel)
-                && filePath.isChildOf(topLevel)) {
+                && fileName.isChildOf(FilePath::fromString(topLevel))) {
             return;
         }
     }
@@ -322,10 +346,21 @@ void ProjectTree::updateFileWarning(Core::IDocument *document, const QString &te
         Utils::InfoBarEntry(infoId, text, Utils::InfoBarEntry::GlobalSuppression::Enabled));
 }
 
+void ProjectTree::updateExternalFileWarning()
+{
+    updateFileWarning(tr("<b>Warning:</b> This file is outside the project directory."));
+}
+
+void ProjectTree::updateGeneratedFileWarning()
+{
+    updateFileWarning(tr("<b>Warning:</b> This file is generated."));
+}
+
 bool ProjectTree::hasFocus(ProjectTreeWidget *widget)
 {
-    return widget && ((widget->focusWidget() && widget->focusWidget()->hasFocus())
-                      || s_instance->m_focusForContextMenu == widget);
+    return widget
+            && ((widget->focusWidget() && widget->focusWidget()->hasFocus())
+                || s_instance->m_focusForContextMenu == widget);
 }
 
 ProjectTreeWidget *ProjectTree::currentWidget() const
@@ -394,7 +429,7 @@ void ProjectTree::applyTreeManager(FolderNode *folder, ConstructionPhase phase)
 
 bool ProjectTree::hasNode(const Node *node)
 {
-    return Utils::contains(ProjectManager::projects(), [node](const Project *p) {
+    return Utils::contains(SessionManager::projects(), [node](const Project *p) {
         if (!p)
             return false;
         if (p->containerNode() == node)
@@ -409,7 +444,7 @@ bool ProjectTree::hasNode(const Node *node)
 
 void ProjectTree::forEachNode(const std::function<void(Node *)> &task)
 {
-    const QList<Project *> projects = ProjectManager::projects();
+    const QList<Project *> projects = SessionManager::projects();
     for (Project *project : projects) {
         if (ProjectNode *projectNode = project->rootProjectNode()) {
             task(projectNode);
@@ -430,7 +465,7 @@ Project *ProjectTree::projectForNode(const Node *node)
     while (folder && folder->parentFolderNode())
         folder = folder->parentFolderNode();
 
-    return Utils::findOrDefault(ProjectManager::projects(), [folder](const Project *pro) {
+    return Utils::findOrDefault(SessionManager::projects(), [folder](const Project *pro) {
         return pro->containerNode() == folder;
     });
 }
@@ -438,7 +473,7 @@ Project *ProjectTree::projectForNode(const Node *node)
 Node *ProjectTree::nodeForFile(const FilePath &fileName)
 {
     Node *node = nullptr;
-    for (const Project *project : ProjectManager::projects()) {
+    for (const Project *project : SessionManager::projects()) {
         project->nodeForFilePath(fileName, [&](const Node *n) {
             if (!node || (!node->asFileNode() && n->asFileNode()))
                 node = const_cast<Node *>(n);

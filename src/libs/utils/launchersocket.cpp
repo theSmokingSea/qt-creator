@@ -1,13 +1,35 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
-
-#include "launchersocket.h"
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "algorithm.h"
+#include "launchersocket.h"
 #include "launcherinterface.h"
-#include "qtcassert.h"
-#include "utilstr.h"
 
+#include "qtcassert.h"
+
+#include <QCoreApplication>
 #include <QLocalSocket>
 #include <QMutexLocker>
 
@@ -79,7 +101,7 @@ bool CallerHandle::flushFor(SignalType signalType)
     {
         QMutexLocker locker(&m_mutex);
         const QList<SignalType> storedSignals =
-                Utils::transform(std::as_const(m_signals), [](const LauncherSignal *launcherSignal) {
+                Utils::transform(qAsConst(m_signals), [](const LauncherSignal *launcherSignal) {
                                    return launcherSignal->signalType();
         });
 
@@ -102,7 +124,7 @@ bool CallerHandle::flushFor(SignalType signalType)
         }
     }
     bool signalMatched = false;
-    for (const LauncherSignal *storedSignal : std::as_const(oldSignals)) {
+    for (const LauncherSignal *storedSignal : qAsConst(oldSignals)) {
         const SignalType storedSignalType = storedSignal->signalType();
         if (storedSignalType == signalType)
             signalMatched = true;
@@ -171,7 +193,7 @@ QProcess::ProcessState CallerHandle::state() const
     return m_processState;
 }
 
-void CallerHandle::sendControlPacket(ControlProcessPacket::SignalType signalType)
+void CallerHandle::sendStopPacket(StopProcessPacket::SignalType signalType)
 {
     if (m_processState == QProcess::NotRunning)
         return;
@@ -180,7 +202,7 @@ void CallerHandle::sendControlPacket(ControlProcessPacket::SignalType signalType
     // we might want to remove posted start packet and finish the process immediately.
     // In addition, we may always try to check if correspodning start packet for the m_token
     // is still awaiting and do the same (remove the packet from the stack and finish immediately).
-    ControlProcessPacket packet(m_token);
+    StopProcessPacket packet(m_token);
     packet.signalType = signalType;
     sendPacket(packet);
 }
@@ -188,25 +210,19 @@ void CallerHandle::sendControlPacket(ControlProcessPacket::SignalType signalType
 void CallerHandle::terminate()
 {
     QTC_ASSERT(isCalledFromCallersThread(), return);
-    sendControlPacket(ControlProcessPacket::SignalType::Terminate);
+    sendStopPacket(StopProcessPacket::SignalType::Terminate);
 }
 
 void CallerHandle::kill()
 {
     QTC_ASSERT(isCalledFromCallersThread(), return);
-    sendControlPacket(ControlProcessPacket::SignalType::Kill);
+    sendStopPacket(StopProcessPacket::SignalType::Kill);
 }
 
 void CallerHandle::close()
 {
     QTC_ASSERT(isCalledFromCallersThread(), return);
-    sendControlPacket(ControlProcessPacket::SignalType::Close);
-}
-
-void CallerHandle::closeWriteChannel()
-{
-    QTC_ASSERT(isCalledFromCallersThread(), return);
-    sendControlPacket(ControlProcessPacket::SignalType::CloseWriteChannel);
+    sendStopPacket(StopProcessPacket::SignalType::Close);
 }
 
 qint64 CallerHandle::processId() const
@@ -219,7 +235,8 @@ void CallerHandle::start(const QString &program, const QStringList &arguments)
 {
     QTC_ASSERT(isCalledFromCallersThread(), return);
     if (!m_launcherHandle || m_launcherHandle->isSocketError()) {
-        const QString errorString = Tr::tr("Process launcher socket error.");
+        const QString errorString = QCoreApplication::translate("Utils::LauncherHandle",
+                                    "Process launcher socket error.");
         const ProcessResultData result = { 0, QProcess::NormalExit, QProcess::FailedToStart,
                                            errorString };
         emit done(result);
@@ -228,7 +245,7 @@ void CallerHandle::start(const QString &program, const QStringList &arguments)
 
     auto startWhenRunning = [&program, &oldProgram = m_command] {
         qWarning() << "Trying to start" << program << "while" << oldProgram
-                   << "is still running for the same Process instance."
+                   << "is still running for the same QtcProcess instance."
                    << "The current call will be ignored.";
     };
     QTC_ASSERT(m_processState == QProcess::NotRunning, startWhenRunning(); return);
@@ -246,8 +263,6 @@ void CallerHandle::start(const QString &program, const QStringList &arguments)
     p.command = m_command;
     p.arguments = m_arguments;
     p.env = m_setup->m_environment.toStringList();
-    if (p.env.isEmpty())
-        p.env = Environment::systemEnvironment().toStringList();
     p.workingDir = m_setup->m_workingDirectory.path();
     p.processMode = m_setup->m_processMode;
     p.writeData = m_setup->m_writeData;
@@ -258,9 +273,7 @@ void CallerHandle::start(const QString &program, const QStringList &arguments)
     p.lowPriority = m_setup->m_lowPriority;
     p.unixTerminalDisabled = m_setup->m_unixTerminalDisabled;
     p.useCtrlCStub = m_setup->m_useCtrlCStub;
-    p.reaperTimeout = m_setup->m_reaperTimeout.count();
-    p.createConsoleOnWindows = m_setup->m_createConsoleOnWindows;
-    p.forceDefaultErrorMode = m_setup->m_forceDefaultErrorMode;
+    p.reaperTimeout = m_setup->m_reaperTimeout;
     sendPacket(p);
 }
 
@@ -301,11 +314,11 @@ void CallerHandle::setProcessSetupData(ProcessSetupData *setup)
     m_setup = setup;
 }
 
-bool CallerHandle::waitForSignal(SignalType signalType, QDeadlineTimer timeout)
+bool CallerHandle::waitForSignal(SignalType signalType, int msecs)
 {
     QTC_ASSERT(isCalledFromCallersThread(), return false);
     QTC_ASSERT(m_launcherHandle, return false);
-    return m_launcherHandle->waitForSignal(signalType, timeout);
+    return m_launcherHandle->waitForSignal(signalType, msecs);
 }
 
 // Called from caller's or launcher's thread.
@@ -323,13 +336,14 @@ bool CallerHandle::isCalledFromLaunchersThread() const
 }
 
 // Called from caller's thread exclusively.
-bool LauncherHandle::waitForSignal(CallerHandle::SignalType newSignal, QDeadlineTimer timeout)
+bool LauncherHandle::waitForSignal(CallerHandle::SignalType newSignal, int msecs)
 {
     QTC_ASSERT(!isCalledFromLaunchersThread(), return false);
+    QDeadlineTimer deadline(msecs);
     while (true) {
-        if (timeout.hasExpired())
+        if (deadline.hasExpired())
             break;
-        if (!doWaitForSignal(timeout))
+        if (!doWaitForSignal(deadline))
             break;
         // Matching (or Done) signal was flushed
         if (m_callerHandle->flushFor(newSignal))
@@ -458,7 +472,8 @@ void LauncherHandle::handleSocketError(const QString &message)
         return;
 
     // TODO: FailedToStart may be wrong in case process has already started
-    const QString errorString = Tr::tr("Internal socket error: %1").arg(message);
+    const QString errorString = QCoreApplication::translate("Utils::QtcProcess",
+                                "Internal socket error: %1").arg(message);
     const ProcessResultData result = { 0, QProcess::NormalExit, QProcess::FailedToStart,
                                        errorString };
     m_callerHandle->appendSignal(new LauncherDoneSignal(result));
@@ -541,8 +556,8 @@ void LauncherSocket::unregisterHandle(quintptr token)
 {
     QTC_ASSERT(!isCalledFromLaunchersThread(), return);
     QMutexLocker locker(&m_mutex);
-    auto it = m_handles.constFind(token);
-    if (it == m_handles.constEnd())
+    auto it = m_handles.find(token);
+    if (it == m_handles.end())
         return; // TODO: issue a warning
 
     LauncherHandle *launcherHandle = it.value();
@@ -593,7 +608,8 @@ void LauncherSocket::handleSocketError()
     QTC_ASSERT(isCalledFromLaunchersThread(), return);
     auto socket = m_socket.load();
     if (socket->error() != QLocalSocket::PeerClosedError)
-        handleError(Tr::tr("Socket error: %1").arg(socket->errorString()));
+        handleError(QCoreApplication::translate("Utils::LauncherSocket",
+                    "Socket error: %1").arg(socket->errorString()));
 }
 
 void LauncherSocket::handleSocketDataAvailable()
@@ -603,7 +619,8 @@ void LauncherSocket::handleSocketDataAvailable()
         if (!m_packetParser.parse())
             return;
     } catch (const PacketParser::InvalidPacketSizeException &e) {
-        handleError(Tr::tr("Internal protocol error: invalid packet size %1.").arg(e.size));
+        handleError(QCoreApplication::translate("Utils::LauncherSocket",
+                    "Internal protocol error: invalid packet size %1.").arg(e.size));
         return;
     }
     LauncherHandle *handle = handleForToken(m_packetParser.token());
@@ -616,13 +633,14 @@ void LauncherSocket::handleSocketDataAvailable()
             handle->handlePacket(m_packetParser.type(), m_packetParser.packetData());
             break;
         default:
-            handleError(Tr::tr("Internal protocol error: invalid packet type %1.")
+            handleError(QCoreApplication::translate("Utils::LauncherSocket",
+                                                    "Internal protocol error: invalid packet type %1.")
                         .arg(static_cast<int>(m_packetParser.type())));
             return;
         }
     } else {
 //        qDebug() << "No handler for token" << m_packetParser.token() << m_handles;
-        // in this case the Process was canceled and deleted
+        // in this case the QtcProcess was canceled and deleted
     }
     handleSocketDataAvailable();
 }
@@ -630,7 +648,8 @@ void LauncherSocket::handleSocketDataAvailable()
 void LauncherSocket::handleSocketDisconnected()
 {
     QTC_ASSERT(isCalledFromLaunchersThread(), return);
-    handleError(Tr::tr("Launcher socket closed unexpectedly."));
+    handleError(QCoreApplication::translate("Utils::LauncherSocket",
+                "Launcher socket closed unexpectedly."));
 }
 
 void LauncherSocket::handleError(const QString &error)
@@ -656,7 +675,7 @@ void LauncherSocket::handleRequests()
         m_requests.clear();
     }
 
-    for (const QByteArray &request : std::as_const(requests))
+    for (const QByteArray &request : qAsConst(requests))
         socket->write(request);
 }
 

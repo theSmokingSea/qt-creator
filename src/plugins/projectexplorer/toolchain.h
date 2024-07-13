@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -12,12 +34,15 @@
 #include "task.h"
 #include "toolchaincache.h"
 
-#include <utils/aspects.h>
 #include <utils/cpplanguage_details.h>
 #include <utils/environment.h>
-#include <utils/store.h>
+#include <utils/fileutils.h>
+#include <utils/id.h>
 
 #include <QDateTime>
+#include <QObject>
+#include <QStringList>
+#include <QVariantMap>
 
 #include <functional>
 #include <memory>
@@ -26,7 +51,7 @@ namespace Utils { class OutputLineParser; }
 
 namespace ProjectExplorer {
 
-namespace Internal { class ToolchainPrivate; }
+namespace Internal { class ToolChainPrivate; }
 
 namespace Deprecated {
 // Deprecated in 4.3:
@@ -40,13 +65,13 @@ QString languageId(Language l);
 } // namespace Toolchain
 } // namespace Deprecated
 
-class GccToolchain;
-class ToolchainConfigWidget;
+class ToolChainConfigWidget;
+class ToolChainFactory;
 class Kit;
 
-namespace Internal { class ToolchainSettingsAccessor; }
+namespace Internal { class ToolChainSettingsAccessor; }
 
-class PROJECTEXPLORER_EXPORT ToolchainDescription
+class PROJECTEXPLORER_EXPORT ToolChainDescription
 {
 public:
     Utils::FilePath compilerPath;
@@ -54,10 +79,10 @@ public:
 };
 
 // --------------------------------------------------------------------------
-// Toolchain (documentation inside)
+// ToolChain (documentation inside)
 // --------------------------------------------------------------------------
 
-class PROJECTEXPLORER_EXPORT Toolchain : public Utils::AspectContainer
+class PROJECTEXPLORER_EXPORT ToolChain
 {
 public:
     enum Detection {
@@ -67,9 +92,9 @@ public:
         UninitializedDetection,
     };
 
-    using Predicate = std::function<bool(const Toolchain *)>;
+    using Predicate = std::function<bool(const ToolChain *)>;
 
-    virtual ~Toolchain();
+    virtual ~ToolChain();
 
     QString displayName() const;
     void setDisplayName(const QString &name);
@@ -90,16 +115,16 @@ public:
     void setTargetAbi(const Abi &abi);
 
     virtual ProjectExplorer::Abis supportedAbis() const;
-    virtual QString originalTargetTriple() const { return {}; }
-    virtual QStringList extraCodeModelFlags() const { return {}; }
-    virtual Utils::FilePath installDir() const { return {}; }
+    virtual QString originalTargetTriple() const { return QString(); }
+    virtual QStringList extraCodeModelFlags() const { return QStringList(); }
+    virtual Utils::FilePath installDir() const { return Utils::FilePath(); }
     virtual bool hostPrefersToolchain() const { return true; }
 
     virtual bool isValid() const;
 
     virtual Utils::LanguageExtensions languageExtensions(const QStringList &cxxflags) const = 0;
     virtual Utils::WarningFlags warningFlags(const QStringList &cflags) const = 0;
-    virtual Utils::FilePaths includedFiles(const QStringList &flags, const Utils::FilePath &directory) const;
+    virtual QStringList includedFiles(const QStringList &flags, const QString &directory) const;
     virtual QString sysRoot() const;
 
     QString explicitCodeModelTargetTriple() const;
@@ -113,7 +138,7 @@ public:
         Utils::LanguageVersion languageVersion;
     };
 
-    using MacrosCache = std::shared_ptr<Cache<QStringList, Toolchain::MacroInspectionReport, 64>>;
+    using MacrosCache = std::shared_ptr<Cache<QStringList, ToolChain::MacroInspectionReport, 64>>;
     using HeaderPathsCache = std::shared_ptr<Cache<QPair<Utils::Environment, QStringList>, HeaderPaths>>;
 
     // A MacroInspectionRunner is created in the ui thread and runs in another thread.
@@ -131,18 +156,20 @@ public:
 
     virtual Utils::FilePath compilerCommand() const; // FIXME: De-virtualize.
     void setCompilerCommand(const Utils::FilePath &command);
-    virtual bool matchesCompilerCommand(const Utils::FilePath &command) const;
+    virtual bool matchesCompilerCommand(
+        const Utils::FilePath &command,
+        const Utils::Environment &env = Utils::Environment::systemEnvironment()) const;
 
     virtual QList<Utils::OutputLineParser *> createOutputParsers() const = 0;
 
-    virtual bool operator ==(const Toolchain &) const;
+    virtual bool operator ==(const ToolChain &) const;
 
-    virtual std::unique_ptr<ToolchainConfigWidget> createConfigurationWidget() = 0;
-    Toolchain *clone() const;
+    virtual std::unique_ptr<ToolChainConfigWidget> createConfigurationWidget() = 0;
+    ToolChain *clone() const;
 
     // Used by the toolchainmanager to save user-generated tool chains.
     // Make sure to call this function when deriving!
-    void toMap(Utils::Store &map) const override;
+    virtual QVariantMap toMap() const;
     virtual Tasks validateKit(const Kit *k) const;
 
     virtual bool isJobCountSupported() const { return true; }
@@ -161,17 +188,16 @@ public:
     };
 
     virtual int priority() const { return PriorityNormal; }
-    virtual GccToolchain *asGccToolchain() { return nullptr; }
 
 protected:
-    explicit Toolchain(Utils::Id typeId);
+    explicit ToolChain(Utils::Id typeId);
 
     void setTypeDisplayName(const QString &typeName);
 
     void setTargetAbiNoSignal(const Abi &abi);
-    void setTargetAbiKey(const Utils::Key &abiKey);
+    void setTargetAbiKey(const QString &abiKey);
 
-    void setCompilerCommandKey(const Utils::Key &commandKey);
+    void setCompilerCommandKey(const QString &commandKey);
 
     const MacrosCache &predefinedMacrosCache() const;
     const HeaderPathsCache &headerPathsCache() const;
@@ -179,28 +205,23 @@ protected:
     void toolChainUpdated();
 
     // Make sure to call this function when deriving!
-    void fromMap(const Utils::Store &data) override;
+    virtual bool fromMap(const QVariantMap &data);
 
-    void reportError();
-    bool hasError() const;
-
-    enum class PossiblyConcatenatedFlag { No, Yes };
-    static Utils::FilePaths includedFiles(const QString &option,
-                                          const QStringList &flags,
-                                          const Utils::FilePath &directoryPath,
-                                          PossiblyConcatenatedFlag possiblyConcatenated);
+    static QStringList includedFiles(const QString &option,
+                                     const QStringList &flags,
+                                     const QString &directoryPath);
 
 private:
-    Toolchain(const Toolchain &) = delete;
-    Toolchain &operator=(const Toolchain &) = delete;
+    ToolChain(const ToolChain &) = delete;
+    ToolChain &operator=(const ToolChain &) = delete;
 
-    const std::unique_ptr<Internal::ToolchainPrivate> d;
+    const std::unique_ptr<Internal::ToolChainPrivate> d;
 
-    friend class Internal::ToolchainSettingsAccessor;
-    friend class ToolchainFactory;
+    friend class Internal::ToolChainSettingsAccessor;
+    friend class ToolChainFactory;
 };
 
-using Toolchains = QList<Toolchain *>;
+using Toolchains = QList<ToolChain *>;
 
 class PROJECTEXPLORER_EXPORT BadToolchain
 {
@@ -209,8 +230,8 @@ public:
     BadToolchain(const Utils::FilePath &filePath, const Utils::FilePath &symlinkTarget,
                  const QDateTime &timestamp);
 
-    Utils::Store toMap() const;
-    static BadToolchain fromMap(const Utils::Store &map);
+    QVariantMap toMap() const;
+    static BadToolchain fromMap(const QVariantMap &map);
 
     Utils::FilePath filePath;
     Utils::FilePath symlinkTarget;
@@ -236,55 +257,41 @@ public:
                       const IDeviceConstPtr &device,
                       const Utils::FilePaths &searchPaths);
 
+    bool isBadToolchain(const Utils::FilePath &toolchain) const;
+    void addBadToolchain(const Utils::FilePath &toolchain) const;
+
     const Toolchains alreadyKnown;
     const IDeviceConstPtr device;
     const Utils::FilePaths searchPaths; // If empty use device path and/or magic.
 };
 
-class PROJECTEXPLORER_EXPORT AsyncToolchainDetector
+class PROJECTEXPLORER_EXPORT ToolChainFactory
 {
-public:
-    AsyncToolchainDetector(
-        const ToolchainDetector &detector,
-        const std::function<Toolchains(const ToolchainDetector &)> &func,
-        const std::function<bool(const Toolchain *, const Toolchains &)> &alreadyRegistered);
-    void run();
-private:
-    ToolchainDetector m_detector;
-    std::function<Toolchains(const ToolchainDetector &)> m_func;
-    std::function<bool(Toolchain *, const Toolchains &)> m_alreadyRegistered;
-};
-
-class PROJECTEXPLORER_EXPORT ToolchainFactory
-{
-    ToolchainFactory(const ToolchainFactory &) = delete;
-    ToolchainFactory &operator=(const ToolchainFactory &) = delete;
+    ToolChainFactory(const ToolChainFactory &) = delete;
+    ToolChainFactory &operator=(const ToolChainFactory &) = delete;
 
 public:
-    ToolchainFactory();
-    virtual ~ToolchainFactory();
+    ToolChainFactory();
+    virtual ~ToolChainFactory();
 
-    static const QList<ToolchainFactory *> allToolchainFactories();
-    static ToolchainFactory *factoryForType(Utils::Id typeId);
+    static const QList<ToolChainFactory *> allToolChainFactories();
 
     QString displayName() const { return m_displayName; }
-    Utils::Id supportedToolchainType() const;
+    Utils::Id supportedToolChainType() const;
 
-    virtual std::optional<AsyncToolchainDetector> asyncAutoDetector(
-        const ToolchainDetector &detector) const;
     virtual Toolchains autoDetect(const ToolchainDetector &detector) const;
-    virtual Toolchains detectForImport(const ToolchainDescription &tcd) const;
+    virtual Toolchains detectForImport(const ToolChainDescription &tcd) const;
 
     virtual bool canCreate() const;
-    Toolchain *create() const;
+    virtual ToolChain *create() const;
 
-    Toolchain *restore(const Utils::Store &data);
+    ToolChain *restore(const QVariantMap &data);
 
-    static QByteArray idFromMap(const Utils::Store &data);
-    static Utils::Id typeIdFromMap(const Utils::Store &data);
-    static void autoDetectionToMap(Utils::Store &data, bool detected);
+    static QByteArray idFromMap(const QVariantMap &data);
+    static Utils::Id typeIdFromMap(const QVariantMap &data);
+    static void autoDetectionToMap(QVariantMap &data, bool detected);
 
-    static Toolchain *createToolchain(Utils::Id toolchainType);
+    static ToolChain *createToolChain(Utils::Id toolChainType);
 
     QList<Utils::Id> supportedLanguages() const;
 
@@ -292,19 +299,17 @@ public:
 
 protected:
     void setDisplayName(const QString &name) { m_displayName = name; }
-    void setSupportedToolchainType(const Utils::Id &supportedToolchainType);
+    void setSupportedToolChainType(const Utils::Id &supportedToolChainType);
     void setSupportedLanguages(const QList<Utils::Id> &supportedLanguages);
     void setSupportsAllLanguages(bool supportsAllLanguages);
-    using ToolchainConstructor = std::function<Toolchain *()>;
-    void setToolchainConstructor(const ToolchainConstructor &constructor);
-    ToolchainConstructor toolchainConstructor() const;
+    void setToolchainConstructor(const std::function<ToolChain *()> &constructor);
 
     class Candidate {
     public:
         Utils::FilePath compilerPath;
         QString compilerVersion;
 
-        bool operator==(const ToolchainFactory::Candidate &other) const {
+        bool operator==(const ToolChainFactory::Candidate &other) const {
             return compilerPath == other.compilerPath
                     && compilerVersion == other.compilerVersion;
         }
@@ -314,11 +319,11 @@ protected:
 
 private:
     QString m_displayName;
-    Utils::Id m_supportedToolchainType;
+    Utils::Id m_supportedToolChainType;
     QList<Utils::Id> m_supportedLanguages;
     bool m_supportsAllLanguages = false;
     bool m_userCreatable = false;
-    ToolchainConstructor m_toolchainConstructor;
+    std::function<ToolChain *()> m_toolchainConstructor;
 };
 
 } // namespace ProjectExplorer

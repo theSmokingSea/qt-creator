@@ -1,26 +1,52 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "debuggeritem.h"
-
+#include "debuggeritemmanager.h"
+#include "debuggerkitinformation.h"
 #include "debuggerprotocol.h"
-#include "debuggertr.h"
-
-#include <coreplugin/icore.h>
 
 #include <projectexplorer/abi.h>
 
 #include <utils/algorithm.h>
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
 #include <utils/macroexpander.h>
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 #include <utils/stringutils.h>
 #include <utils/utilsicons.h>
 #include <utils/winutils.h>
 
+#include <QFileInfo>
 #include <QUuid>
+
+#ifdef WITH_TESTS
+#    include <QTest>
+#    include "debuggerplugin.h"
+#endif
 
 using namespace Debugger::Internal;
 using namespace ProjectExplorer;
@@ -45,7 +71,7 @@ const char DEBUGGER_INFORMATION_WORKINGDIRECTORY[] = "WorkingDirectory";
 static QString getGdbConfiguration(const FilePath &command, const Environment &sysEnv)
 {
     // run gdb with the --configuration opion
-    Process proc;
+    QtcProcess proc;
     proc.setEnvironment(sysEnv);
     proc.setCommand({command, {"--configuration"}});
     proc.runBlocking();
@@ -80,11 +106,11 @@ DebuggerItem::DebuggerItem(const QVariant &id)
     m_id = id;
 }
 
-DebuggerItem::DebuggerItem(const Store &data)
+DebuggerItem::DebuggerItem(const QVariantMap &data)
 {
     m_id = data.value(DEBUGGER_INFORMATION_ID).toString();
-    m_command = FilePath::fromSettings(data.value(DEBUGGER_INFORMATION_COMMAND));
-    m_workingDirectory = FilePath::fromSettings(data.value(DEBUGGER_INFORMATION_WORKINGDIRECTORY));
+    m_command = FilePath::fromVariant(data.value(DEBUGGER_INFORMATION_COMMAND));
+    m_workingDirectory = FilePath::fromVariant(data.value(DEBUGGER_INFORMATION_WORKINGDIRECTORY));
     m_unexpandedDisplayName = data.value(DEBUGGER_INFORMATION_DISPLAYNAME).toString();
     m_isAutoDetected = data.value(DEBUGGER_INFORMATION_AUTODETECTED, false).toBool();
     m_detectionSource = data.value(DEBUGGER_INFORMATION_DETECTION_SOURCE).toString();
@@ -106,10 +132,7 @@ DebuggerItem::DebuggerItem(const Store &data)
             && m_abis[0].osFlavor() == Abi::UnknownFlavor
             && m_abis[0].binaryFormat() == Abi::UnknownFormat;
 
-    bool needsReinitialization = m_version.isEmpty() && m_abis.isEmpty()
-                                 && m_engineType == NoEngineType;
-
-    if (needsReinitialization || mightBeAPreQnxSeparateOSQnxDebugger)
+    if (m_version.isEmpty() || mightBeAPreQnxSeparateOSQnxDebugger)
         reinitializeFromFile();
 }
 
@@ -119,11 +142,8 @@ void DebuggerItem::createId()
     m_id = QUuid::createUuid().toString();
 }
 
-void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *customEnv)
+void DebuggerItem::reinitializeFromFile(const Environment &sysEnv, QString *error)
 {
-    if (isGeneric())
-        return;
-
     // CDB only understands the single-dash -version, whereas GDB and LLDB are
     // happy with both -version and --version. So use the "working" -version
     // except for the experimental LLDB-MI which insists on --version.
@@ -145,7 +165,20 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
         return;
     }
 
-    Environment env = customEnv ? *customEnv : m_command.deviceEnvironment();
+    Environment env = sysEnv.isValid() ? sysEnv : Environment::systemEnvironment();
+    // Prevent calling lldb on Windows because the lldb from the llvm package is linked against
+    // python but does not contain a python dll.
+    const bool isAndroidNdkLldb = DebuggerItem::addAndroidLldbPythonEnv(m_command, env);
+    if (HostOsInfo::isWindowsHost() && m_command.fileName().startsWith("lldb")
+            && !isAndroidNdkLldb) {
+        QString errorMessage;
+        m_version = winGetDLLVersion(WinDLLFileVersion,
+                                     m_command.absoluteFilePath().path(),
+                                     &errorMessage);
+        m_engineType = LldbEngineType;
+        m_abis = Abi::abisOfBinary(m_command);
+        return;
+    }
 
     // QNX gdb unconditionally checks whether the QNX_TARGET env variable is
     // set and bails otherwise, even when it is not used by the specific
@@ -153,11 +186,7 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
     // hack below tricks it into giving us the information we want.
     env.set("QNX_TARGET", QString());
 
-    // On Windows, we need to prevent the Windows Error Reporting dialog from
-    // popping up when a candidate is missing required DLLs.
-    WindowsCrashDialogBlocker blocker;
-
-    Process proc;
+    QtcProcess proc;
     proc.setEnvironment(env);
     proc.setCommand({m_command, {version}});
     proc.runBlocking();
@@ -169,7 +198,6 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
         return;
     }
     m_abis.clear();
-
     if (output.contains("gdb")) {
         m_engineType = GdbEngineType;
 
@@ -186,8 +214,18 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
         const bool unableToFindAVersion = (0 == version);
         const bool gdbSupportsConfigurationFlag = (version >= 70700);
         if (gdbSupportsConfigurationFlag || unableToFindAVersion) {
-            const QString gdbTargetAbiString = extractGdbTargetAbiStringFromGdbOutput(
-                getGdbConfiguration(m_command, env));
+
+            auto gdbConfiguration = [this, &output, &sysEnv]() {
+                if (!output.contains("qnx"))
+                    return getGdbConfiguration(m_command, sysEnv);
+
+                Environment env = sysEnv;
+                env.set("QNX_TARGET", QString());
+                return getGdbConfiguration(m_command, env);
+            };
+
+            const QString gdbTargetAbiString =
+                    extractGdbTargetAbiStringFromGdbOutput(gdbConfiguration());
             if (!gdbTargetAbiString.isEmpty()) {
                 m_abis.append(Abi::abiFromTargetTriplet(gdbTargetAbiString));
                 return;
@@ -196,9 +234,11 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
 
         // ABI: legacy: the target was removed from the output of --version with
         // https://sourceware.org/git/gitweb.cgi?p=binutils-gdb.git;a=commit;h=c61b06a19a34baab66e3809c7b41b0c31009ed9f
-        QString legacyGdbTargetAbiString = extractGdbTargetAbiStringFromGdbOutput(output);
+        auto legacyGdbTargetAbiString = extractGdbTargetAbiStringFromGdbOutput(output);
         if (!legacyGdbTargetAbiString.isEmpty()) {
-            legacyGdbTargetAbiString.chop(1); // remove trailing "
+            // remove trailing "
+            legacyGdbTargetAbiString =
+                    legacyGdbTargetAbiString.left(legacyGdbTargetAbiString.length() - 1);
             m_abis.append(Abi::abiFromTargetTriplet(legacyGdbTargetAbiString));
             return;
         }
@@ -207,7 +247,6 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
         //! \note If unable to determine the GDB ABI, no ABI is appended to m_abis here.
         return;
     }
-
     if (output.contains("lldb") || output.startsWith("LLDB")) {
         m_engineType = LldbEngineType;
         m_abis = Abi::abisOfBinary(m_command);
@@ -230,6 +269,10 @@ void DebuggerItem::reinitializeFromFile(QString *error, Utils::Environment *cust
         m_engineType = CdbEngineType;
         m_abis = Abi::abisOfBinary(m_command);
         m_version = output.section(' ', 2);
+        return;
+    }
+    if (output.startsWith("Python")) {
+        m_engineType = PdbEngineType;
         return;
     }
     if (error)
@@ -264,32 +307,18 @@ QString DebuggerItem::engineTypeName() const
 {
     switch (m_engineType) {
     case NoEngineType:
-        return Tr::tr("Not recognized");
+        return DebuggerItemManager::tr("Not recognized");
     case GdbEngineType:
         return QLatin1String("GDB");
     case CdbEngineType:
         return QLatin1String("CDB");
     case LldbEngineType:
         return QLatin1String("LLDB");
-    case GdbDapEngineType:
-        return QLatin1String("GDB DAP");
-    case LldbDapEngineType:
-        return QLatin1String("LLDB DAP");
     case UvscEngineType:
         return QLatin1String("UVSC");
     default:
         return QString();
     }
-}
-
-void DebuggerItem::setGeneric(bool on)
-{
-    m_detectionSource = on ? QLatin1String("Generic") : QLatin1String();
-}
-
-bool DebuggerItem::isGeneric() const
-{
-    return m_detectionSource == "Generic";
 }
 
 QStringList DebuggerItem::abiNames() const
@@ -307,21 +336,19 @@ QDateTime DebuggerItem::lastModified() const
 
 QIcon DebuggerItem::decoration() const
 {
-    if (isGeneric())
-        return {};
     if (m_engineType == NoEngineType)
         return Icons::CRITICAL.icon();
     if (!m_command.isExecutableFile())
         return Icons::WARNING.icon();
     if (!m_workingDirectory.isEmpty() && !m_workingDirectory.isDir())
         return Icons::WARNING.icon();
-    return {};
+    return QIcon();
 }
 
 QString DebuggerItem::validityMessage() const
 {
     if (m_engineType == NoEngineType)
-        return Tr::tr("Could not determine debugger type");
+        return DebuggerItemManager::tr("Could not determine debugger type");
     return QString();
 }
 
@@ -335,13 +362,13 @@ bool DebuggerItem::operator==(const DebuggerItem &other) const
             && m_workingDirectory == other.m_workingDirectory;
 }
 
-Store DebuggerItem::toMap() const
+QVariantMap DebuggerItem::toMap() const
 {
-    Store data;
+    QVariantMap data;
     data.insert(DEBUGGER_INFORMATION_DISPLAYNAME, m_unexpandedDisplayName);
     data.insert(DEBUGGER_INFORMATION_ID, m_id);
-    data.insert(DEBUGGER_INFORMATION_COMMAND, m_command.toSettings());
-    data.insert(DEBUGGER_INFORMATION_WORKINGDIRECTORY, m_workingDirectory.toSettings());
+    data.insert(DEBUGGER_INFORMATION_COMMAND, m_command.toVariant());
+    data.insert(DEBUGGER_INFORMATION_WORKINGDIRECTORY, m_workingDirectory.toVariant());
     data.insert(DEBUGGER_INFORMATION_ENGINETYPE, int(m_engineType));
     data.insert(DEBUGGER_INFORMATION_AUTODETECTED, m_isAutoDetected);
     data.insert(DEBUGGER_INFORMATION_DETECTION_SOURCE, m_detectionSource);
@@ -357,12 +384,14 @@ QString DebuggerItem::displayName() const
         return m_unexpandedDisplayName;
 
     MacroExpander expander;
-    expander.registerVariable("Debugger:Type", Tr::tr("Type of Debugger Backend"),
+    expander.registerVariable("Debugger:Type", DebuggerKitAspect::tr("Type of Debugger Backend"),
         [this] { return engineTypeName(); });
-    expander.registerVariable("Debugger:Version", Tr::tr("Debugger"),
-        [this] { return !m_version.isEmpty() ? m_version : Tr::tr("Unknown debugger version"); });
-    expander.registerVariable("Debugger:Abi", Tr::tr("Debugger"),
-        [this] { return !m_abis.isEmpty() ? abiNames().join(' ') : Tr::tr("Unknown debugger ABI"); });
+    expander.registerVariable("Debugger:Version", DebuggerKitAspect::tr("Debugger"),
+        [this] { return !m_version.isEmpty() ? m_version :
+                                               DebuggerKitAspect::tr("Unknown debugger version"); });
+    expander.registerVariable("Debugger:Abi", DebuggerKitAspect::tr("Debugger"),
+        [this] { return !m_abis.isEmpty() ? abiNames().join(' ') :
+                                            DebuggerKitAspect::tr("Unknown debugger ABI"); });
     return expander.expand(m_unexpandedDisplayName);
 }
 
@@ -409,37 +438,29 @@ void DebuggerItem::setAbi(const Abi &abi)
 
 static DebuggerItem::MatchLevel matchSingle(const Abi &debuggerAbi, const Abi &targetAbi, DebuggerEngineType engineType)
 {
-    DebuggerItem::MatchLevel matchOnMultiarch = DebuggerItem::DoesNotMatch;
-    const bool isMsvcTarget = targetAbi.osFlavor() >= Abi::WindowsMsvc2005Flavor &&
-            targetAbi.osFlavor() <= Abi::WindowsLastMsvcFlavor;
-    if (!isMsvcTarget && (engineType == GdbEngineType || engineType == LldbEngineType))
-        matchOnMultiarch = DebuggerItem::MatchesSomewhat;
     if (debuggerAbi.architecture() != Abi::UnknownArchitecture
             && debuggerAbi.architecture() != targetAbi.architecture())
-        return matchOnMultiarch;
+        return DebuggerItem::DoesNotMatch;
 
     if (debuggerAbi.os() != Abi::UnknownOS
             && debuggerAbi.os() != targetAbi.os())
-        return matchOnMultiarch;
+        return DebuggerItem::DoesNotMatch;
 
     if (debuggerAbi.binaryFormat() != Abi::UnknownFormat
             && debuggerAbi.binaryFormat() != targetAbi.binaryFormat())
-        return matchOnMultiarch;
+        return DebuggerItem::DoesNotMatch;
 
     if (debuggerAbi.os() == Abi::WindowsOS) {
         if (debuggerAbi.osFlavor() == Abi::WindowsMSysFlavor && targetAbi.osFlavor() != Abi::WindowsMSysFlavor)
-            return matchOnMultiarch;
+            return DebuggerItem::DoesNotMatch;
         if (debuggerAbi.osFlavor() != Abi::WindowsMSysFlavor && targetAbi.osFlavor() == Abi::WindowsMSysFlavor)
-            return matchOnMultiarch;
+            return DebuggerItem::DoesNotMatch;
     }
 
-    if (debuggerAbi.wordWidth() == 64 && targetAbi.wordWidth() == 32) {
-        return HostOsInfo::isWindowsHost() && engineType == CdbEngineType
-                   ? DebuggerItem::MatchesPerfectly
-                   : DebuggerItem::MatchesSomewhat;
-    }
+    if (debuggerAbi.wordWidth() == 64 && targetAbi.wordWidth() == 32)
+        return DebuggerItem::MatchesSomewhat;
     if (debuggerAbi.wordWidth() != 0 && debuggerAbi.wordWidth() != targetAbi.wordWidth())
-        return matchOnMultiarch;
+        return DebuggerItem::DoesNotMatch;
 
     // We have at least 'Matches well' now. Mark the combinations we really like.
     if (HostOsInfo::isWindowsHost() && engineType == CdbEngineType
@@ -473,4 +494,4 @@ bool DebuggerItem::isValid() const
     return !m_id.isNull();
 }
 
-} // namespace Debugger
+} // namespace Debugger;

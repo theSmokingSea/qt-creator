@@ -1,5 +1,5 @@
-%{JS: Cpp.licenseTemplate()}\
-@if '%{JS: Cpp.usePragmaOnce()}' === 'true'
+%{Cpp:LicenseTemplate}\
+@if '%{Cpp:PragmaOnce}'
 #pragma once
 @else
 #ifndef %{JS: Cpp.headerGuard('%{FileName}')}

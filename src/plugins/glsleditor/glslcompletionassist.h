@@ -1,14 +1,40 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "glsleditor.h"
 
-#include <texteditor/codeassist/assistinterface.h>
-#include <texteditor/codeassist/asyncprocessor.h>
+#include <texteditor/codeassist/completionassistprovider.h>
 #include <texteditor/codeassist/iassistprocessor.h>
+#include <texteditor/codeassist/assistinterface.h>
 #include <texteditor/codeassist/ifunctionhintproposalmodel.h>
+
+
+#include <QScopedPointer>
+#include <QSharedPointer>
 
 namespace GLSL {
 class Engine;
@@ -17,7 +43,7 @@ class TranslationUnitAST;
 class Scope;
 } // namespace GLSL
 
-namespace TextEditor { class CompletionAssistProvider; }
+namespace TextEditor { class AssistProposalItem; }
 
 namespace GlslEditor {
 namespace Internal {
@@ -25,7 +51,7 @@ namespace Internal {
 class Document
 {
 public:
-    using Ptr = std::shared_ptr<Document>;
+    using Ptr = QSharedPointer<Document>;
 
     ~Document();
 
@@ -50,6 +76,34 @@ private:
     friend class GlslEditorWidget;
 };
 
+class GlslCompletionAssistInterface;
+
+class GlslCompletionAssistProvider : public TextEditor::CompletionAssistProvider
+{
+    Q_OBJECT
+
+public:
+    TextEditor::IAssistProcessor *createProcessor(const TextEditor::AssistInterface *) const override;
+
+    int activationCharSequenceLength() const override;
+    bool isActivationCharSequence(const QString &sequence) const override;
+};
+
+class GlslCompletionAssistProcessor : public TextEditor::IAssistProcessor
+{
+public:
+    ~GlslCompletionAssistProcessor() override;
+
+    TextEditor::IAssistProposal *perform(const TextEditor::AssistInterface *interface) override;
+
+private:
+    TextEditor::IAssistProposal *createHintProposal(const QVector<GLSL::Function *> &symbols);
+    bool acceptsIdleEditor() const;
+
+    int m_startPosition = 0;
+    QScopedPointer<const GlslCompletionAssistInterface> m_interface;
+};
+
 class GlslCompletionAssistInterface : public TextEditor::AssistInterface
 {
 public:
@@ -66,8 +120,6 @@ private:
     QString m_mimeType;
     Document::Ptr m_glslDoc;
 };
-
-TextEditor::CompletionAssistProvider *createGlslCompletionAssistProvider();
 
 } // namespace Internal
 } // namespace GlslEditor

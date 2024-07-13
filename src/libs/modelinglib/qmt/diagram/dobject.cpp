@@ -1,16 +1,38 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "dobject.h"
 
 #include "dvisitor.h"
 #include "dconstvisitor.h"
 
-using Utils::FilePath;
-
 namespace qmt {
 
-DObject::DObject() {}
+DObject::DObject()
+{
+}
 
 DObject::DObject(const DObject &rhs)
     : DElement(rhs),
@@ -25,10 +47,7 @@ DObject::DObject(const DObject &rhs)
       m_visualSecondaryRole(rhs.m_visualSecondaryRole),
       m_stereotypeDisplay(rhs.m_stereotypeDisplay),
       m_isAutoSized(rhs.m_isAutoSized),
-      m_isVisualEmphasized(rhs.m_isVisualEmphasized),
-      m_hasLinkedFile(rhs.m_hasLinkedFile),
-      m_imagePath(rhs.m_imagePath),
-      m_image(rhs.m_image)
+      m_isVisualEmphasized(rhs.m_isVisualEmphasized)
 {
 }
 
@@ -52,9 +71,6 @@ DObject &DObject::operator =(const DObject &rhs)
         m_stereotypeDisplay = rhs.m_stereotypeDisplay;
         m_isAutoSized = rhs.m_isAutoSized;
         m_isVisualEmphasized = rhs.m_isVisualEmphasized;
-        m_hasLinkedFile = rhs.m_hasLinkedFile;
-        m_imagePath = rhs.m_imagePath;
-        m_image = rhs.m_image;
     }
     return *this;
 }
@@ -117,26 +133,6 @@ void DObject::setAutoSized(bool autoSized)
 void DObject::setVisualEmphasized(bool visualEmphasized)
 {
     m_isVisualEmphasized = visualEmphasized;
-}
-
-void DObject::setLinkedFile(bool linkedFile)
-{
-    m_hasLinkedFile = linkedFile;
-}
-
-bool DObject::hasImage() const
-{
-    return !m_image.isNull();
-}
-
-void DObject::setImagePath(const FilePath &path)
-{
-    m_imagePath = path;
-}
-
-void DObject::setImage(const QImage &image)
-{
-    m_image = image;
 }
 
 void DObject::accept(DVisitor *visitor)

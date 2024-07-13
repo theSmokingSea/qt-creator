@@ -1,9 +1,30 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "submitfieldwidget.h"
 
-#include <utils/algorithm.h>
 #include <utils/utilsicons.h>
 
 #include <QComboBox>
@@ -90,7 +111,7 @@ void FieldEntry::deleteGuiLater()
 struct SubmitFieldWidgetPrivate {
     SubmitFieldWidgetPrivate();
 
-    int indexOf(const QWidget *w) const;
+    int findSender(const QObject *o) const;
     int findField(const QString &f, int excluded = -1) const;
     inline QString fieldText(int) const;
     inline QString fieldValue(int) const;
@@ -112,11 +133,15 @@ SubmitFieldWidgetPrivate::SubmitFieldWidgetPrivate() :
 {
 }
 
-int SubmitFieldWidgetPrivate::indexOf(const QWidget *w) const
+int SubmitFieldWidgetPrivate::findSender(const QObject *o) const
 {
-    return Utils::indexOf(fieldEntries, [w](const FieldEntry &fe) {
-        return fe.combo == w || fe.browseButton == w || fe.clearButton == w || fe.lineEdit == w;
-    });
+    const int count = fieldEntries.size();
+    for (int i = 0; i < count; i++) {
+        const FieldEntry &fe = fieldEntries.at(i);
+        if (fe.combo == o || fe.browseButton == o || fe.clearButton == o || fe.lineEdit == o)
+            return i;
+    }
+    return -1;
 }
 
 int SubmitFieldWidgetPrivate::findField(const QString &ft, int excluded) const
@@ -185,7 +210,7 @@ void SubmitFieldWidget::setHasBrowseButton(bool on)
     if (d->hasBrowseButton == on)
         return;
     d->hasBrowseButton = on;
-    for (const FieldEntry &fe : std::as_const(d->fieldEntries))
+    for (const FieldEntry &fe : qAsConst(d->fieldEntries))
         fe.browseButton->setVisible(on);
 }
 
@@ -209,7 +234,7 @@ void SubmitFieldWidget::setCompleter(QCompleter *c)
     if (c == d->completer)
         return;
     d->completer = c;
-    for (const FieldEntry &fe : std::as_const(d->fieldEntries))
+    for (const FieldEntry &fe : qAsConst(d->fieldEntries))
         fe.lineEdit->setCompleter(c);
 }
 
@@ -229,7 +254,7 @@ QString SubmitFieldWidget::fieldValues() const
     const QChar newLine = QLatin1Char('\n');
     // Format as "RevBy: value\nSigned-Off: value\n"
     QString rc;
-    for (const FieldEntry &fe : std::as_const(d->fieldEntries)) {
+    for (const FieldEntry &fe : qAsConst(d->fieldEntries)) {
         const QString value = fe.lineEdit->text().trimmed();
         if (!value.isEmpty()) {
             rc += fe.combo->currentText();
@@ -254,34 +279,35 @@ void SubmitFieldWidget::createField(const QString &f)
         }
     }
 
-    connect(fe.browseButton, &QAbstractButton::clicked, this, [this, button = fe.browseButton] {
-        const int pos = d->indexOf(button);
-        emit browseButtonClicked(pos, d->fieldText(pos));
-    });
+    connect(fe.browseButton, &QAbstractButton::clicked, this, &SubmitFieldWidget::slotBrowseButtonClicked);
     if (!d->hasBrowseButton)
         fe.browseButton->setVisible(false);
 
     if (d->completer)
         fe.lineEdit->setCompleter(d->completer);
 
-    connect(fe.combo, &QComboBox::currentIndexChanged, this, [this, combo = fe.combo](int index) {
-        slotComboIndexChanged(d->indexOf(combo), index);
-    });
-    connect(fe.clearButton, &QAbstractButton::clicked, this, [this, button = fe.clearButton] {
-        slotRemove(d->indexOf(button));
-    });
+    connect(fe.combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &SubmitFieldWidget::slotComboIndexChanged);
+    connect(fe.clearButton, &QAbstractButton::clicked,
+            this, &SubmitFieldWidget::slotRemove);
     d->layout->addLayout(fe.layout);
     d->fieldEntries.push_back(fe);
 }
 
-void SubmitFieldWidget::slotRemove(int pos)
+void SubmitFieldWidget::slotRemove()
 {
-    if (pos < 0)
-        return;
-    if (pos == 0)
+    // Never remove first entry
+    const int index = d->findSender(sender());
+    switch (index) {
+    case -1:
+        break;
+    case 0:
         d->fieldEntries.front().lineEdit->clear();
-    else
-        removeField(pos);
+        break;
+    default:
+        removeField(index);
+        break;
+    }
 }
 
 void SubmitFieldWidget::removeField(int index)
@@ -292,11 +318,12 @@ void SubmitFieldWidget::removeField(int index)
     delete item;
 }
 
-void SubmitFieldWidget::slotComboIndexChanged(int pos, int comboIndex)
+void SubmitFieldWidget::slotComboIndexChanged(int comboIndex)
 {
+    const int pos = d->findSender(sender());
     if (debug)
         qDebug() << '>' << Q_FUNC_INFO << pos;
-    if (pos < 0)
+    if (pos == -1)
         return;
     // Accept new index or reset combo to previous value?
     int &previousIndex = d->fieldEntries[pos].comboIndex;
@@ -327,6 +354,12 @@ bool SubmitFieldWidget::comboIndexChange(int pos, int index)
     // Non-empty: Create a new field and reset the triggering combo
     createField(newField);
     return false;
+}
+
+void SubmitFieldWidget::slotBrowseButtonClicked()
+{
+    const int pos = d->findSender(sender());
+    emit browseButtonClicked(pos, d->fieldText(pos));
 }
 
 }

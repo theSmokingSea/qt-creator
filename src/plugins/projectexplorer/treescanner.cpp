@@ -1,19 +1,42 @@
-// Copyright (C) 2016 Alexander Drozdov.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Alexander Drozdov.
+** Contact: Alexander Drozdov (adrozdoff@gmail.com)
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "treescanner.h"
 
+#include "projectexplorerconstants.h"
+#include "projectnodeshelper.h"
 #include "projecttree.h"
 
 #include <coreplugin/iversioncontrol.h>
 #include <coreplugin/vcsmanager.h>
 
-#include <solutions/tasking/tasktreerunner.h>
+#include <cppeditor/cppeditorconstants.h>
 
-#include <utils/algorithm.h>
-#include <utils/async.h>
-#include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
+#include <utils/algorithm.h>
+#include <utils/runextensions.h>
 
 #include <memory>
 
@@ -44,11 +67,9 @@ bool TreeScanner::asyncScanForFiles(const Utils::FilePath &directory)
     if (!m_futureWatcher.isFinished())
         return false;
 
-    m_scanFuture = Utils::asyncRun(
-        [directory, filter = m_filter, dirFilter = m_dirFilter, factory = m_factory](
-            Promise &promise) {
-            TreeScanner::scanForFiles(promise, directory, filter, dirFilter, factory);
-        });
+    m_scanFuture = Utils::runAsync([this, directory](FutureInterface &fi) {
+        TreeScanner::scanForFiles(fi, directory, m_filter, m_factory);
+    });
     m_futureWatcher.setFuture(m_scanFuture);
 
     return true;
@@ -58,12 +79,6 @@ void TreeScanner::setFilter(TreeScanner::FileFilter filter)
 {
     if (isFinished())
         m_filter = filter;
-}
-
-void TreeScanner::setDirFilter(QDir::Filters dirFilter)
-{
-    if (isFinished())
-        m_dirFilter = dirFilter;
 }
 
 void TreeScanner::setTypeFactory(TreeScanner::FileTypeFactory factory)
@@ -86,7 +101,7 @@ TreeScanner::Result TreeScanner::result() const
 {
     if (isFinished())
         return m_scanFuture.result();
-    return {};
+    return Result();
 }
 
 TreeScanner::Result TreeScanner::release()
@@ -97,7 +112,7 @@ TreeScanner::Result TreeScanner::release()
         return result;
     }
     m_scanFuture = Future();
-    return {};
+    return Result();
 }
 
 void TreeScanner::reset()
@@ -148,134 +163,31 @@ static std::unique_ptr<FolderNode> createFolderNode(const Utils::FilePath &direc
     return fileSystemNode;
 }
 
-struct DirectoryScanResult
+void TreeScanner::scanForFiles(FutureInterface &fi, const Utils::FilePath& directory,
+                               const FileFilter &filter, const FileTypeFactory &factory)
 {
-    QList<FileNode *> nodes;
-    Utils::FilePaths subDirectories;
-};
+    QList<FileNode *> nodes = ProjectExplorer::scanForFiles(fi, directory,
+                           [&filter, &factory](const Utils::FilePath &fn) -> FileNode * {
+        const Utils::MimeType mimeType = Utils::mimeTypeForFile(fn);
 
-static DirectoryScanResult scanForFilesImpl(
-    const QFuture<void> &future,
-    const Utils::FilePath &directory,
-    QDir::Filters filter,
-    const std::function<FileNode *(const Utils::FilePath &)> &factory,
-    const QList<Core::IVersionControl *> &versionControls)
-{
-    DirectoryScanResult result;
+        // Skip some files during scan.
+        if (filter && filter(mimeType, fn))
+            return nullptr;
 
-    const Utils::FilePaths entries = directory.dirEntries(filter);
-    for (const Utils::FilePath &entry : entries) {
-        if (future.isCanceled())
-            return result;
+        // Type detection
+        FileType type = FileType::Unknown;
+        if (factory)
+            type = factory(mimeType, fn);
 
-        if (Utils::anyOf(versionControls, [entry](const Core::IVersionControl *vc) {
-                return vc->isVcsFileOrDirectory(entry);
-            })) {
-            continue;
-        }
-
-        if (entry.isDir())
-            result.subDirectories.append(entry);
-        else if (FileNode *node = factory(entry))
-            result.nodes.append(node);
-    }
-    return result;
-}
-
-static QList<FileNode *> scanForFilesHelper(
-    TreeScanner::Promise &promise,
-    const Utils::FilePath &directory,
-    QDir::Filters filter,
-    const std::function<FileNode *(const Utils::FilePath &)> &factory)
-{
-    const QFuture<void> future(promise.future());
-
-    const int progressRange = 1000000;
-    const QList<Core::IVersionControl *> &versionControls = Core::VcsManager::versionControls();
-    promise.setProgressRange(0, progressRange);
-
-    QSet<Utils::FilePath> visited;
-    const DirectoryScanResult result = scanForFilesImpl(future, directory, filter, factory, versionControls);
-    QList<FileNode *> fileNodes = result.nodes;
-    const int progressIncrement = int(
-        progressRange / static_cast<double>(fileNodes.count() + result.subDirectories.count()));
-    promise.setProgressValue(int(fileNodes.count() * progressIncrement));
-    QList<QPair<Utils::FilePath, int>> subDirectories;
-    auto addSubDirectories = [&](const Utils::FilePaths &subdirs, int progressIncrement) {
-        for (const Utils::FilePath &subdir : subdirs) {
-            if (Utils::insert(visited, subdir.canonicalPath()))
-                subDirectories.append(qMakePair(subdir, progressIncrement));
-            else
-                promise.setProgressValue(future.progressValue() + progressIncrement);
-        }
-    };
-    addSubDirectories(result.subDirectories, progressIncrement);
-
-    while (!subDirectories.isEmpty()) {
-        using namespace Tasking;
-        const LoopList iterator(subDirectories);
-        subDirectories.clear();
-
-        auto onSetup = [&, iterator](Utils::Async<DirectoryScanResult> &task) {
-            task.setConcurrentCallData(
-                scanForFilesImpl, future, iterator->first, filter, factory, versionControls);
-        };
-
-        auto onDone = [&, iterator](const Utils::Async<DirectoryScanResult> &task) {
-            const int progressRange = iterator->second;
-            const DirectoryScanResult result = task.result();
-            fileNodes.append(result.nodes);
-            const qsizetype subDirCount = result.subDirectories.count();
-            if (subDirCount == 0) {
-                promise.setProgressValue(future.progressValue() + progressRange);
-            } else {
-                const qsizetype fileCount = result.nodes.count();
-                const int increment = int(
-                    progressRange / static_cast<double>(fileCount + subDirCount));
-                promise.setProgressValue(future.progressValue() + increment * fileCount);
-                addSubDirectories(result.subDirectories, increment);
-            }
-        };
-
-        const For recipe {
-            iterator,
-            Utils::HostOsInfo::isLinuxHost() ? parallelLimit(2) : parallelIdealThreadCountLimit,
-            Utils::AsyncTask<DirectoryScanResult>(onSetup, onDone)
-        };
-        TaskTree::runBlocking(recipe);
-    }
-    return fileNodes;
-}
-
-void TreeScanner::scanForFiles(
-    Promise &promise,
-    const Utils::FilePath &directory,
-    const FileFilter &filter,
-    QDir::Filters dirFilter,
-    const FileTypeFactory &factory)
-{
-    QList<FileNode *> nodes = scanForFilesHelper(
-        promise, directory, dirFilter, [&filter, &factory](const Utils::FilePath &fn) -> FileNode * {
-            const Utils::MimeType mimeType = Utils::mimeTypesForFileName(fn.path()).value(0);
-
-            // Skip some files during scan.
-            if (filter && filter(mimeType, fn))
-                return nullptr;
-
-            // Type detection
-            FileType type = FileType::Unknown;
-            if (factory)
-                type = factory(mimeType, fn);
-
-            return new FileNode(fn, type);
-        });
+        return new FileNode(fn, type);
+    });
 
     Utils::sort(nodes, ProjectExplorer::Node::sortByPath);
 
-    promise.setProgressValue(promise.future().progressMaximum());
+    fi.setProgressValue(fi.progressMaximum());
     Result result{createFolderNode(directory, nodes), nodes};
 
-    promise.addResult(result);
+    fi.reportResult(result);
 }
 
 } // namespace ProjectExplorer

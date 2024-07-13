@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "doxygengenerator.h"
 
@@ -24,10 +46,42 @@ namespace CppEditor::Internal {
 
 DoxygenGenerator::DoxygenGenerator() = default;
 
+void DoxygenGenerator::setStyle(DocumentationStyle style)
+{
+    m_style = style;
+}
+
+void DoxygenGenerator::setStartComment(bool start)
+{
+    m_startComment = start;
+}
+
+void DoxygenGenerator::setGenerateBrief(bool get)
+{
+    m_generateBrief = get;
+}
+
+void DoxygenGenerator::setAddLeadingAsterisks(bool add)
+{
+    m_addLeadingAsterisks = add;
+}
+
+static int lineBeforeCursor(const QTextCursor &cursor)
+{
+    int line, column;
+    const bool converted = Utils::Text::convertPosition(cursor.document(), cursor.position(), &line,
+                                                        &column);
+    QTC_ASSERT(converted, return std::numeric_limits<int>::max());
+
+    return line - 1;
+}
+
 QString DoxygenGenerator::generate(QTextCursor cursor,
                                    const CPlusPlus::Snapshot &snapshot,
                                    const Utils::FilePath &documentFilePath)
 {
+    const QTextCursor initialCursor = cursor;
+
     const QChar &c = cursor.document()->characterAt(cursor.position());
     if (!c.isLetter() && c != QLatin1Char('_') && c != QLatin1Char('['))
         return QString();
@@ -39,7 +93,7 @@ QString DoxygenGenerator::generate(QTextCursor cursor,
         const QString &text = block.text();
         const Tokens &tks = lexer(text);
         for (const Token &tk : tks) {
-            if (tk.is(T_SEMICOLON)) {
+            if (tk.is(T_SEMICOLON) || tk.is(T_LBRACE)) {
                 // No need to continue beyond this, we might already have something meaningful.
                 cursor.setPosition(block.position() + tk.utf16charsEnd(), QTextCursor::KeepAnchor);
                 break;
@@ -51,11 +105,6 @@ QString DoxygenGenerator::generate(QTextCursor cursor,
 
         block = block.next();
     }
-
-    // For the edge case of no semicolons at all, which can e.g. happen if the file
-    // consists only of empty function definitions.
-    if (!cursor.hasSelection())
-        cursor.setPosition(cursor.document()->characterCount() - 1, QTextCursor::KeepAnchor);
 
     if (!cursor.hasSelection())
         return QString();
@@ -77,7 +126,7 @@ QString DoxygenGenerator::generate(QTextCursor cursor,
 
     Document::Ptr doc = snapshot.preprocessedDocument(declCandidate.toUtf8(),
                                                       documentFilePath,
-                                                      cursor.blockNumber());
+                                                      lineBeforeCursor(initialCursor));
     doc->parse(Document::ParseDeclaration);
     doc->check(Document::FastCheck);
 
@@ -114,6 +163,8 @@ QString DoxygenGenerator::generate(QTextCursor cursor, DeclarationAST *decl)
     assignCommentOffset(cursor);
 
     QString comment;
+    if (m_startComment)
+        writeStart(&comment);
     writeNewLine(&comment);
     writeContinuation(&comment);
 
@@ -122,7 +173,7 @@ QString DoxygenGenerator::generate(QTextCursor cursor, DeclarationAST *decl)
             && decltr->core_declarator->asDeclaratorId()
             && decltr->core_declarator->asDeclaratorId()->name) {
         CoreDeclaratorAST *coreDecl = decltr->core_declarator;
-        if (m_settings.generateBrief)
+        if (m_generateBrief)
             writeBrief(&comment, m_printer.prettyName(coreDecl->asDeclaratorId()->name->name));
         else
             writeNewLine(&comment);
@@ -154,13 +205,13 @@ QString DoxygenGenerator::generate(QTextCursor cursor, DeclarationAST *decl)
             }
             if (funcDecltr->symbol
                     && funcDecltr->symbol->returnType().type()
-                    && !funcDecltr->symbol->returnType()->asVoidType()
+                    && !funcDecltr->symbol->returnType()->isVoidType()
                     && !funcDecltr->symbol->returnType()->isUndefinedType()) {
                 writeContinuation(&comment);
                 writeCommand(&comment, ReturnCommand);
             }
         }
-    } else if (spec && m_settings.generateBrief) {
+    } else if (spec && m_generateBrief) {
         bool briefWritten = false;
         if (ClassSpecifierAST *classSpec = spec->asClassSpecifier()) {
             if (classSpec->name) {
@@ -197,14 +248,15 @@ QString DoxygenGenerator::generate(QTextCursor cursor, DeclarationAST *decl)
     return comment;
 }
 
+QChar DoxygenGenerator::startMark() const
+{
+    if (m_style == QtStyle)
+        return QLatin1Char('!');
+    return QLatin1Char('*');
+}
+
 QChar DoxygenGenerator::styleMark() const
 {
-    switch (m_settings.commandPrefix) {
-    case TextEditor::CommentsSettings::CommandPrefix::At: return '@';
-    case TextEditor::CommentsSettings::CommandPrefix::Backslash: return '\\';
-    case TextEditor::CommentsSettings::CommandPrefix::Auto: break;
-    }
-
     if (m_style == QtStyle || m_style == CppStyleA || m_style == CppStyleB)
         return QLatin1Char('\\');
     return QLatin1Char('@');
@@ -219,6 +271,16 @@ QString DoxygenGenerator::commandSpelling(Command command)
 
     QTC_ASSERT(command == BriefCommand, return QString());
     return QLatin1String("brief ");
+}
+
+void DoxygenGenerator::writeStart(QString *comment) const
+{
+    if (m_style == CppStyleA)
+        comment->append(QLatin1String("///"));
+    if (m_style == CppStyleB)
+        comment->append(QLatin1String("//!"));
+    else
+        comment->append(offsetString() + "/*" + startMark());
 }
 
 void DoxygenGenerator::writeEnd(QString *comment) const
@@ -237,7 +299,7 @@ void DoxygenGenerator::writeContinuation(QString *comment) const
         comment->append(offsetString() + "///");
     else if (m_style == CppStyleB)
         comment->append(offsetString() + "//!");
-    else if (m_settings.leadingAsterisks)
+    else if (m_addLeadingAsterisks)
         comment->append(offsetString() + " *");
     else
         comment->append(offsetString() + "  ");

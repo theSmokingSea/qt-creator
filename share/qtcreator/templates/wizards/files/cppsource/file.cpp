@@ -1,1 +1,1 @@
-%{JS: Cpp.licenseTemplate()}\
+%{Cpp:LicenseTemplate}\

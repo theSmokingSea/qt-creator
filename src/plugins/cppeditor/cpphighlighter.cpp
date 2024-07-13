@@ -1,37 +1,46 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cpphighlighter.h"
 
 #include "cppdoxygen.h"
-#include "cppeditorlogging.h"
+#include "cppmodelmanager.h"
 #include "cpptoolsreuse.h"
 
-#include <extensionsystem/iplugin.h>
 #include <texteditor/textdocumentlayout.h>
-#include <utils/algorithm.h>
-#include <utils/textutils.h>
 
 #include <cplusplus/SimpleLexer.h>
 #include <cplusplus/Lexer.h>
 
-#include <QFile>
-#include <QTextCharFormat>
+#include <utils/porting.h>
+
 #include <QTextDocument>
-#include <QTextLayout>
 
-#ifdef WITH_TESTS
-#include "cppeditorwidget.h"
-#include "cpptoolstestcase.h"
-#include <QtTest>
-#include <utility>
-#endif
-
+using namespace CppEditor;
 using namespace TextEditor;
 using namespace CPlusPlus;
-
-namespace CppEditor {
-using namespace Internal;
 
 CppHighlighter::CppHighlighter(QTextDocument *document) :
     SyntaxHighlighter(document)
@@ -41,17 +50,11 @@ CppHighlighter::CppHighlighter(QTextDocument *document) :
 
 void CppHighlighter::highlightBlock(const QString &text)
 {
-    qCDebug(highlighterLog) << "highlighting line" << (currentBlock().blockNumber() + 1);
-
     const int previousBlockState_ = previousBlockState();
     int lexerState = 0, initialBraceDepth = 0;
     if (previousBlockState_ != -1) {
         lexerState = previousBlockState_ & 0xff;
         initialBraceDepth = previousBlockState_ >> 8;
-        qCDebug(highlighterLog) << "initial brace depth carried over from previous block"
-                                << initialBraceDepth;
-    } else {
-        qCDebug(highlighterLog) << "initial brace depth 0";
     }
 
     int braceDepth = initialBraceDepth;
@@ -59,22 +62,16 @@ void CppHighlighter::highlightBlock(const QString &text)
     SimpleLexer tokenize;
     tokenize.setLanguageFeatures(m_languageFeatures);
     const QTextBlock prevBlock = currentBlock().previous();
-    QByteArray inheritedRawStringSuffix;
-    if (prevBlock.isValid()) {
-        inheritedRawStringSuffix = TextDocumentLayout::expectedRawStringSuffix(prevBlock);
-        tokenize.setExpectedRawStringSuffix(inheritedRawStringSuffix);
-    }
+    if (prevBlock.isValid())
+        tokenize.setExpectedRawStringSuffix(TextDocumentLayout::expectedRawStringSuffix(prevBlock));
 
     int initialLexerState = lexerState;
     const Tokens tokens = tokenize(text, initialLexerState);
     lexerState = tokenize.state(); // refresh lexer state
 
-    static const auto lexerStateWithoutNewLineExpectedBit = [](int state) { return state & ~0x80; };
-    initialLexerState = lexerStateWithoutNewLineExpectedBit(initialLexerState);
+    initialLexerState &= ~0x80; // discard newline expected bit
     int foldingIndent = initialBraceDepth;
-    qCDebug(highlighterLog) << "folding indent initialized to brace depth" << foldingIndent;
     if (TextBlockUserData *userData = TextDocumentLayout::textUserData(currentBlock())) {
-        qCDebug(highlighterLog) << "resetting stored folding data for current block";
         userData->setFoldingIndent(0);
         userData->setFoldingStartIncluded(false);
         userData->setFoldingEndIncluded(false);
@@ -92,20 +89,14 @@ void CppHighlighter::highlightBlock(const QString &text)
                 setFormat(0, text.length(), formatForCategory(C_VISUAL_WHITESPACE));
         }
         TextDocumentLayout::setFoldingIndent(currentBlock(), foldingIndent);
-        TextDocumentLayout::setExpectedRawStringSuffix(currentBlock(), inheritedRawStringSuffix);
-        qCDebug(highlighterLog) << "no tokens, storing brace depth" << braceDepth << "and foldingIndent"
-                     << foldingIndent;
         return;
     }
 
-    // Keep "semantic parentheses".
-    Parentheses parentheses;
-    if (TextBlockUserData *userData = TextDocumentLayout::textUserData(currentBlock())) {
-        parentheses = Utils::filtered(userData->parentheses(), [](const Parenthesis &p) {
-            return p.source.isValid();
-        });
-    }
+    const int firstNonSpace = tokens.first().utf16charsBegin();
 
+    // Keep "semantic parentheses".
+    Parentheses parentheses = Utils::filtered(TextDocumentLayout::parentheses(currentBlock()),
+            [](const Parenthesis &p) { return p.source.isValid(); });
     const auto insertParen = [&parentheses](const Parenthesis &p) { insertSorted(parentheses, p); };
     parentheses.reserve(5);
 
@@ -113,13 +104,10 @@ void CppHighlighter::highlightBlock(const QString &text)
     bool onlyHighlightComments = false;
 
     for (int i = 0; i < tokens.size(); ++i) {
-        const bool isLastToken = i == tokens.size() - 1;
         const Token &tk = tokens.at(i);
 
         int previousTokenEnd = 0;
         if (i != 0) {
-            inheritedRawStringSuffix.clear();
-
             // mark the whitespaces
             previousTokenEnd = tokens.at(i - 1).utf16charsBegin() +
                                tokens.at(i - 1).utf16chars();
@@ -136,23 +124,12 @@ void CppHighlighter::highlightBlock(const QString &text)
             insertParen({Parenthesis::Opened, c, tk.utf16charsBegin()});
             if (tk.is(T_LBRACE)) {
                 ++braceDepth;
-                qCDebug(highlighterLog) << "encountered opening brace, increasing brace depth to" << braceDepth;
 
-                // if a folding block opens at the beginning of a line, treat the line before
-                // as if it were inside the folding block except if it is a comment or the line does
-                // end with ;
-                const int firstNonSpace = tokens.first().utf16charsBegin();
-                const QString prevBlockText = currentBlock().previous().isValid()
-                                                  ? currentBlock().previous().text().trimmed()
-                                                  : QString();
-                if (!prevBlockText.isEmpty() && !prevBlockText.startsWith("//")
-                    && !prevBlockText.endsWith("*/") && !prevBlockText.endsWith(";")
-                    && tk.utf16charsBegin() == firstNonSpace) {
+                // if a folding block opens at the beginning of a line, treat the entire line
+                // as if it were inside the folding block
+                if (tk.utf16charsBegin() == firstNonSpace) {
                     ++foldingIndent;
                     TextDocumentLayout::userData(currentBlock())->setFoldingStartIncluded(true);
-                    qCDebug(highlighterLog)
-                        << "folding character is first on one line, increase folding indent to"
-                        << foldingIndent << "and set foldingStartIncluded in stored data";
                 }
             }
         } else if (tk.is(T_RPAREN) || tk.is(T_RBRACE) || tk.is(T_RBRACKET)) {
@@ -160,19 +137,12 @@ void CppHighlighter::highlightBlock(const QString &text)
             insertParen({Parenthesis::Closed, c, tk.utf16charsBegin()});
             if (tk.is(T_RBRACE)) {
                 --braceDepth;
-                qCDebug(highlighterLog) << "encountered closing brace, decreasing brace depth to" << braceDepth;
                 if (braceDepth < foldingIndent) {
                     // unless we are at the end of the block, we reduce the folding indent
-                    if (isLastToken || tokens.at(i + 1).is(T_SEMICOLON)) {
-                        qCDebug(highlighterLog) << "token is last token in statement or line, setting "
-                                        "foldingEndIncluded in stored data";
+                    if (i == tokens.size()-1 || tokens.at(i+1).is(T_SEMICOLON))
                         TextDocumentLayout::userData(currentBlock())->setFoldingEndIncluded(true);
-                    } else {
+                    else
                         foldingIndent = qMin(braceDepth, foldingIndent);
-                        qCDebug(highlighterLog) << "setting folding indent to minimum of current value and "
-                                        "brace depth, which is"
-                                     << foldingIndent;
-                    }
                 }
             }
         }
@@ -190,9 +160,9 @@ void CppHighlighter::highlightBlock(const QString &text)
                           formatForCategory(C_PREPROCESSOR));
             expectPreprocessorKeyword = true;
         } else if (highlightCurrentWordAsPreprocessor && (tk.isKeyword() || tk.is(T_IDENTIFIER))
-                   && isPPKeyword(QStringView(text).mid(tk.utf16charsBegin(), tk.utf16chars()))) {
+                   && isPPKeyword(Utils::midView(text, tk.utf16charsBegin(), tk.utf16chars()))) {
             setFormat(tk.utf16charsBegin(), tk.utf16chars(), formatForCategory(C_PREPROCESSOR));
-            const QStringView ppKeyword = QStringView(text).mid(tk.utf16charsBegin(), tk.utf16chars());
+            const QStringView ppKeyword = Utils::midView(text, tk.utf16charsBegin(), tk.utf16chars());
             if (ppKeyword == QLatin1String("error")
                     || ppKeyword == QLatin1String("warning")
                     || ppKeyword == QLatin1String("pragma")) {
@@ -202,8 +172,10 @@ void CppHighlighter::highlightBlock(const QString &text)
         } else if (tk.is(T_NUMERIC_LITERAL)) {
             setFormat(tk.utf16charsBegin(), tk.utf16chars(), formatForCategory(C_NUMBER));
         } else if (tk.isStringLiteral() || tk.isCharLiteral()) {
-            if (!highlightRawStringLiteral(text, tk, QString::fromUtf8(inheritedRawStringSuffix)))
-                highlightStringLiteral(text, tk);
+            if (!highlightRawStringLiteral(text, tk)) {
+                setFormatWithSpaces(text, tk.utf16charsBegin(), tk.utf16chars(),
+                                    formatForCategory(C_STRING));
+            }
         } else if (tk.isComment()) {
             const int startPosition = initialLexerState ? previousTokenEnd : tk.utf16charsBegin();
             if (tk.is(T_COMMENT) || tk.is(T_CPP_COMMENT)) {
@@ -221,20 +193,11 @@ void CppHighlighter::highlightBlock(const QString &text)
             if (initialLexerState && i == 0 && (tk.is(T_COMMENT) || tk.is(T_DOXY_COMMENT))
                 && (tokens.size() > 1 || !lexerState)) {
                 --braceDepth;
-                qCDebug(highlighterLog)
-                    << "encountered some comment-related condition, decreasing brace depth to"
-                    << braceDepth;
                 // unless we are at the end of the block, we reduce the folding indent
-                if (isLastToken) {
-                    qCDebug(highlighterLog) << "token is last token on line, setting "
-                                    "foldingEndIncluded in stored data";
+                if (i == tokens.size()-1)
                     TextDocumentLayout::userData(currentBlock())->setFoldingEndIncluded(true);
-                } else {
+                else
                     foldingIndent = qMin(braceDepth, foldingIndent);
-                    qCDebug(highlighterLog) << "setting folding indent to minimum of current value and "
-                                    "brace depth, which is"
-                                 << foldingIndent;
-                }
                 const int tokenEnd = tk.utf16charsBegin() + tk.utf16chars() - 1;
                 insertParen({Parenthesis::Closed, QLatin1Char('-'), tokenEnd});
 
@@ -258,7 +221,7 @@ void CppHighlighter::highlightBlock(const QString &text)
         } else if (i == 0 && tokens.size() > 1 && tk.is(T_IDENTIFIER) && tokens.at(1).is(T_COLON)) {
             setFormat(tk.utf16charsBegin(), tk.utf16chars(), formatForCategory(C_LABEL));
         } else if (tk.is(T_IDENTIFIER)) {
-            highlightWord(QStringView(text).mid(tk.utf16charsBegin(), tk.utf16chars()),
+            highlightWord(Utils::midView(text, tk.utf16charsBegin(), tk.utf16chars()),
                           tk.utf16charsBegin(),
                           tk.utf16chars());
         }
@@ -269,32 +232,56 @@ void CppHighlighter::highlightBlock(const QString &text)
     if (text.length() > lastTokenEnd)
         formatSpaces(text, lastTokenEnd, text.length() - lastTokenEnd);
 
-    if (!initialLexerState && lexerStateWithoutNewLineExpectedBit(lexerState)
-        && !tokens.isEmpty()) {
+    if (!initialLexerState && lexerState && !tokens.isEmpty()) {
         const Token &lastToken = tokens.last();
         if (lastToken.is(T_COMMENT) || lastToken.is(T_DOXY_COMMENT)) {
             insertParen({Parenthesis::Opened, QLatin1Char('+'), lastToken.utf16charsBegin()});
             ++braceDepth;
-            qCDebug(highlighterLog)
-                << "encountered some comment-related condition, increasing brace depth to"
-                << braceDepth;
         }
     }
 
     TextDocumentLayout::setParentheses(currentBlock(), parentheses);
 
-    TextDocumentLayout::setFoldingIndent(currentBlock(), foldingIndent);
-    setCurrentBlockState((braceDepth << 8) | tokenize.state());
-    qCDebug(highlighterLog) << "storing brace depth" << braceDepth << "and folding indent" << foldingIndent;
+    // if the block is ifdefed out, we only store the parentheses, but
 
+    // do not adjust the brace depth.
+    if (TextDocumentLayout::ifdefedOut(currentBlock())) {
+        braceDepth = initialBraceDepth;
+        foldingIndent = initialBraceDepth;
+    }
+
+    TextDocumentLayout::setFoldingIndent(currentBlock(), foldingIndent);
+
+    // optimization: if only the brace depth changes, we adjust subsequent blocks
+    // to have QSyntaxHighlighter stop the rehighlighting
+    int currentState = currentBlockState();
+    if (currentState != -1) {
+        int oldState = currentState & 0xff;
+        int oldBraceDepth = currentState >> 8;
+        if (oldState == tokenize.state() && oldBraceDepth != braceDepth) {
+            TextDocumentLayout::FoldValidator foldValidor;
+            foldValidor.setup(qobject_cast<TextDocumentLayout *>(document()->documentLayout()));
+            int delta = braceDepth - oldBraceDepth;
+            QTextBlock block = currentBlock().next();
+            while (block.isValid() && block.userState() != -1) {
+                TextDocumentLayout::changeBraceDepth(block, delta);
+                TextDocumentLayout::changeFoldingIndent(block, delta);
+                foldValidor.process(block);
+                block = block.next();
+            }
+            foldValidor.finalize();
+        }
+    }
+
+    setCurrentBlockState((braceDepth << 8) | tokenize.state());
     TextDocumentLayout::setExpectedRawStringSuffix(currentBlock(),
                                                    tokenize.expectedRawStringSuffix());
 }
 
-void CppHighlighter::setLanguageFeaturesFlags(unsigned int flags)
+void CppHighlighter::setLanguageFeatures(const LanguageFeatures &languageFeatures)
 {
-    if (flags != m_languageFeatures.flags) {
-        m_languageFeatures.flags = flags;
+    if (languageFeatures != m_languageFeatures) {
+        m_languageFeatures = languageFeatures;
         rehighlight();
     }
 }
@@ -391,8 +378,7 @@ void CppHighlighter::highlightWord(QStringView word, int position, int length)
     }
 }
 
-bool CppHighlighter::highlightRawStringLiteral(QStringView text, const Token &tk,
-                                               const QString &inheritedSuffix)
+bool CppHighlighter::highlightRawStringLiteral(QStringView _text, const Token &tk)
 {
     // Step one: Does the lexer think this is a raw string literal?
     switch (tk.kind()) {
@@ -406,100 +392,38 @@ bool CppHighlighter::highlightRawStringLiteral(QStringView text, const Token &tk
         return false;
     }
 
-    // Step two: Try to find all the components (prefix/string/suffix). We might be in the middle
-    //           of a multi-line literal, though, so prefix and/or suffix might be missing.
-    int delimiterOffset = -1;
-    int stringOffset = 0;
-    int stringLength = tk.utf16chars();
-    int endDelimiterOffset = -1;
-    QString expectedSuffix = inheritedSuffix;
-    [&] {
-        // If the "inherited" suffix is not empty, then this token is a string continuation and
-        // can therefore not start a new raw string literal.
-        // FIXME: The lexer starts the token at the first non-whitespace character, so
-        //        we have to correct for that here.
-        if (!inheritedSuffix.isEmpty()) {
-            stringLength += tk.utf16charOffset;
-            return;
-        }
+    // TODO: Remove on upgrade to Qt >= 5.14.
+    const QString text = _text.toString();
 
-        // Conversely, since we are in a raw string literal that is not a continuation,
-        // the start sequence must be in here.
-        const int rOffset = text.indexOf(QLatin1String("R\""), tk.utf16charsBegin());
-        QTC_ASSERT(rOffset != -1, return);
-        const int tentativeDelimiterOffset = rOffset + 2;
-        const int openParenOffset = text.indexOf('(', tentativeDelimiterOffset);
-        QTC_ASSERT(openParenOffset != -1, return);
-        const QStringView delimiter = text.mid(tentativeDelimiterOffset,
-                                               openParenOffset - tentativeDelimiterOffset);
-        expectedSuffix = ')' + delimiter + '"';
-        delimiterOffset = tentativeDelimiterOffset;
-        stringOffset = delimiterOffset + delimiter.length() + 1;
-        stringLength -= delimiter.length() + 1;
-    }();
-    int operatorOffset = tk.utf16charsBegin() + tk.utf16chars();
-    int operatorLength = 0;
-    if (tk.f.userDefinedLiteral) {
-        const int closingQuoteOffset = text.lastIndexOf('"', operatorOffset);
-        QTC_ASSERT(closingQuoteOffset >= tk.utf16charsBegin(), return false);
-        operatorOffset = closingQuoteOffset + 1;
-        operatorLength = tk.utf16charsBegin() + tk.utf16chars() - operatorOffset;
-        stringLength -= operatorLength;
-    }
-    if (text.mid(tk.utf16charsBegin(), operatorOffset - tk.utf16charsBegin())
-            .endsWith(expectedSuffix)) {
-        endDelimiterOffset = operatorOffset - expectedSuffix.size();
-        stringLength -= expectedSuffix.size();
-    }
+    // Step two: Find all the components. Bail out if we don't have a complete,
+    //           well-formed raw string literal.
+    const int rOffset = text.indexOf(QLatin1String("R\""), tk.utf16charsBegin());
+    if (rOffset == -1)
+        return false;
+    const int delimiterOffset = rOffset + 2;
+    const int openParenOffset = text.indexOf('(', delimiterOffset);
+    if (openParenOffset == -1)
+        return false;
+    const QStringView delimiter = text.mid(delimiterOffset, openParenOffset - delimiterOffset);
+    if (text.at(tk.utf16charsEnd() - 1) != '"')
+        return false;
+    const int endDelimiterOffset = tk.utf16charsEnd() - 1 - delimiter.length();
+    if (endDelimiterOffset <= delimiterOffset)
+        return false;
+    if (text.mid(endDelimiterOffset, delimiter.length()) != delimiter)
+        return false;
+    if (text.at(endDelimiterOffset - 1) != ')')
+        return false;
 
     // Step three: Do the actual formatting. For clarity, we display only the actual content as
     //             a string, and the rest (including the delimiter) as a keyword.
     const QTextCharFormat delimiterFormat = formatForCategory(C_KEYWORD);
-    if (delimiterOffset != -1)
-        setFormat(tk.utf16charsBegin(), stringOffset - tk.utf16charsBegin(), delimiterFormat);
-    setFormatWithSpaces(text.toString(), stringOffset, stringLength, formatForCategory(C_STRING));
-    if (endDelimiterOffset != -1)
-        setFormat(endDelimiterOffset, expectedSuffix.size(), delimiterFormat);
-    if (operatorLength > 0)
-        setFormat(operatorOffset, operatorLength, formatForCategory(C_OPERATOR));
-    return true;
-}
-
-void CppHighlighter::highlightStringLiteral(QStringView text, const CPlusPlus::Token &tk)
-{
-    switch (tk.kind()) {
-    case T_WIDE_STRING_LITERAL:
-    case T_UTF8_STRING_LITERAL:
-    case T_UTF16_STRING_LITERAL:
-    case T_UTF32_STRING_LITERAL:
-        break;
-    default:
-        if (!tk.userDefinedLiteral()) { // Simple case: No prefix, no suffix.
-            setFormatWithSpaces(text.toString(), tk.utf16charsBegin(), tk.utf16chars(),
-                                formatForCategory(C_STRING));
-            return;
-        }
-    }
-
-    int stringOffset = 0;
-    if (!tk.f.joined) {
-        stringOffset = text.indexOf('"', tk.utf16charsBegin());
-        QTC_ASSERT(stringOffset > 0, return);
-        setFormat(tk.utf16charsBegin(), stringOffset - tk.utf16charsBegin(),
-                  formatForCategory(C_KEYWORD));
-    }
-    int operatorOffset = tk.utf16charsBegin() + tk.utf16chars();
-    if (tk.userDefinedLiteral()) {
-        const int closingQuoteOffset = text.lastIndexOf('"', operatorOffset);
-        QTC_ASSERT(closingQuoteOffset >= tk.utf16charsBegin(), return);
-        operatorOffset = closingQuoteOffset + 1;
-    }
-    setFormatWithSpaces(text.toString(), stringOffset, operatorOffset - tk.utf16charsBegin(),
+    const int stringOffset = delimiterOffset + delimiter.length() + 1;
+    setFormat(tk.utf16charsBegin(), stringOffset, delimiterFormat);
+    setFormatWithSpaces(text, stringOffset, endDelimiterOffset - stringOffset - 1,
                         formatForCategory(C_STRING));
-    if (const int operatorLength = tk.utf16charsBegin() + tk.utf16chars() - operatorOffset;
-        operatorLength > 0) {
-        setFormat(operatorOffset, operatorLength, formatForCategory(C_OPERATOR));
-    }
+    setFormat(endDelimiterOffset - 1, delimiter.length() + 2, delimiterFormat);
+    return true;
 }
 
 void CppHighlighter::highlightDoxygenComment(const QString &text, int position, int)
@@ -534,304 +458,3 @@ void CppHighlighter::highlightDoxygenComment(const QString &text, int position, 
     setFormatWithSpaces(text, initial, it - uc - initial, format);
 }
 
-namespace Internal {
-#ifdef WITH_TESTS
-using namespace CppEditor::Tests;
-using namespace Tests;
-class CppHighlighterTest : public CppHighlighter
-{
-    Q_OBJECT
-
-public:
-    CppHighlighterTest()
-    {
-        QFile source(":/cppeditor/testcases/highlightingtestcase.cpp");
-        QVERIFY(source.open(QIODevice::ReadOnly));
-
-        m_doc.setPlainText(QString::fromUtf8(source.readAll()));
-        setDocument(&m_doc);
-        rehighlight();
-    }
-
-private slots:
-    void test_data()
-    {
-        QTest::addColumn<int>("line");
-        QTest::addColumn<int>("column");
-        QTest::addColumn<int>("lastLine");
-        QTest::addColumn<int>("lastColumn");
-        QTest::addColumn<TextStyle>("style");
-
-        QTest::newRow("auto return type") << 1 << 1 << 1 << 4 << C_KEYWORD;
-        QTest::newRow("opening brace") << 2 << 1 << 2 << 1 << C_PUNCTUATION;
-        QTest::newRow("return") << 3 << 5 << 3 << 10 << C_KEYWORD;
-        QTest::newRow("raw string prefix") << 3 << 12 << 3 << 14 << C_KEYWORD;
-        QTest::newRow("raw string content (multi-line)") << 3 << 15 << 6 << 13 << C_STRING;
-        QTest::newRow("raw string suffix") << 6 << 14 << 6 << 15 << C_KEYWORD;
-        QTest::newRow("raw string prefix 2") << 6 << 17 << 6 << 19 << C_KEYWORD;
-        QTest::newRow("raw string content 2") << 6 << 20 << 6 << 25 << C_STRING;
-        QTest::newRow("raw string suffix 2") << 6 << 26 << 6 << 27 << C_KEYWORD;
-        QTest::newRow("comment") << 6 << 29 << 6 << 41 << C_COMMENT;
-        QTest::newRow("raw string prefix 3") << 6 << 53 << 6 << 45 << C_KEYWORD;
-        QTest::newRow("raw string content 3") << 6 << 46 << 6 << 50 << C_STRING;
-        QTest::newRow("raw string suffix 3") << 6 << 51 << 6 << 52 << C_KEYWORD;
-        QTest::newRow("semicolon") << 6 << 53 << 6 << 53 << C_PUNCTUATION;
-        QTest::newRow("closing brace") << 7 << 1 << 7 << 1 << C_PUNCTUATION;
-        QTest::newRow("void") << 9 << 1 << 9 << 4 << C_PRIMITIVE_TYPE;
-        QTest::newRow("bool") << 11 << 5 << 11 << 8 << C_PRIMITIVE_TYPE;
-        QTest::newRow("true") << 11 << 15 << 11 << 18 << C_KEYWORD;
-        QTest::newRow("false") << 12 << 15 << 12 << 19 << C_KEYWORD;
-        QTest::newRow("nullptr") << 13 << 15 << 13 << 21 << C_KEYWORD;
-        QTest::newRow("auto var type") << 18 << 15 << 18 << 8 << C_KEYWORD;
-        QTest::newRow("integer literal") << 18 << 28 << 18 << 28 << C_NUMBER;
-        QTest::newRow("floating-point literal 1") << 19 << 28 << 19 << 31 << C_NUMBER;
-        QTest::newRow("floating-point literal 2") << 20 << 28 << 20 << 30 << C_NUMBER;
-        QTest::newRow("template keyword") << 23 << 1 << 23 << 8 << C_KEYWORD;
-        QTest::newRow("type in template type parameter") << 23 << 10 << 23 << 12 << C_PRIMITIVE_TYPE;
-        QTest::newRow("integer literal as non-type template parameter default value")
-            << 23 << 18 << 23 << 18 << C_NUMBER;
-        QTest::newRow("class keyword") << 23 << 21 << 23 << 25 << C_KEYWORD;
-        QTest::newRow("struct keyword") << 25 << 1 << 25 << 6 << C_KEYWORD;
-        QTest::newRow("operator keyword") << 26 << 5 << 26 << 12 << C_KEYWORD;
-        QTest::newRow("type in conversion operator") << 26 << 14 << 26 << 16 << C_PRIMITIVE_TYPE;
-        QTest::newRow("concept keyword") << 29 << 22 << 29 << 28 << C_KEYWORD;
-        QTest::newRow("user-defined UTF-16 string literal (prefix)")
-            << 32 << 16 << 32 << 16 << C_KEYWORD;
-        QTest::newRow("user-defined UTF-16 string literal (content)")
-            << 32 << 17 << 32 << 21 << C_STRING;
-        QTest::newRow("user-defined UTF-16 string literal (suffix)")
-            << 32 << 22 << 32 << 23 << C_OPERATOR;
-        QTest::newRow("wide string literal (prefix)") << 33 << 17 << 33 << 17 << C_KEYWORD;
-        QTest::newRow("wide string literal (content)") << 33 << 18 << 33 << 24 << C_STRING;
-        QTest::newRow("UTF-8 string literal (prefix)") << 34 << 17 << 34 << 18 << C_KEYWORD;
-        QTest::newRow("UTF-8 string literal (content)") << 34 << 19 << 34 << 24 << C_STRING;
-        QTest::newRow("UTF-32 string literal (prefix)") << 35 << 17 << 35 << 17 << C_KEYWORD;
-        QTest::newRow("UTF-8 string literal (content)") << 35 << 18 << 35 << 23 << C_STRING;
-        QTest::newRow("user-defined UTF-16 raw string literal (prefix)")
-            << 36 << 17 << 36 << 20 << C_KEYWORD;
-        QTest::newRow("user-defined UTF-16 raw string literal (content)")
-            << 36 << 38 << 37 << 8 << C_STRING;
-        QTest::newRow("user-defined UTF-16 raw string literal (suffix 1)")
-            << 37 << 9 << 37 << 10 << C_KEYWORD;
-        QTest::newRow("user-defined UTF-16 raw string literal (suffix 2)")
-            << 37 << 11 << 37 << 12 << C_OPERATOR;
-        QTest::newRow("multi-line user-defined UTF-16 string literal (prefix)")
-            << 38 << 17 << 38 << 17 << C_KEYWORD;
-        QTest::newRow("multi-line user-defined UTF-16 string literal (content)")
-            << 38 << 18 << 39 << 3 << C_STRING;
-        QTest::newRow("multi-line user-defined UTF-16 string literal (suffix)")
-            << 39 << 4 << 39 << 5 << C_OPERATOR;
-        QTest::newRow("multi-line raw string literal with consecutive closing parens (prefix)")
-            << 48 << 18 << 48 << 20 << C_KEYWORD;
-        QTest::newRow("multi-line raw string literal with consecutive closing parens (content)")
-            << 49 << 1 << 49 << 1 << C_STRING;
-        QTest::newRow("multi-line raw string literal with consecutive closing parens (suffix)")
-            << 49 << 2 << 49 << 3 << C_KEYWORD;
-    }
-
-    void test()
-    {
-        QFETCH(int, line);
-        QFETCH(int, column);
-        QFETCH(int, lastLine);
-        QFETCH(int, lastColumn);
-        QFETCH(TextStyle, style);
-
-        const int startPos = Utils::Text::positionInText(&m_doc, line, column);
-        const int lastPos = Utils::Text::positionInText(&m_doc, lastLine, lastColumn);
-        const auto getActualFormat = [&](int pos) -> QTextCharFormat {
-            const QTextBlock block = m_doc.findBlock(pos);
-            if (!block.isValid())
-                return {};
-            const QList<QTextLayout::FormatRange> &ranges = block.layout()->formats();
-            for (const QTextLayout::FormatRange &range : ranges) {
-                const int offset = block.position() + range.start;
-                if (offset > pos)
-                    return {};
-                if (offset + range.length <= pos)
-                    continue;
-                return range.format;
-            }
-            return {};
-        };
-
-        const QTextCharFormat formatForStyle = formatForCategory(style);
-        for (int pos = startPos; pos <= lastPos; ++pos) {
-            const QChar c = m_doc.characterAt(pos);
-            if (c == QChar::ParagraphSeparator)
-                continue;
-            const QTextCharFormat expectedFormat = asSyntaxHighlight(
-                c.isSpace() ? whitespacified(formatForStyle) : formatForStyle);
-
-            const QTextCharFormat actualFormat = getActualFormat(pos);
-            if (actualFormat != expectedFormat) {
-                int posLine;
-                int posCol;
-                Utils::Text::convertPosition(&m_doc, pos, &posLine, &posCol);
-                qDebug() << posLine << posCol << c
-                         << actualFormat.foreground() << expectedFormat.foreground()
-                         << actualFormat.background() << expectedFormat.background();
-            }
-            QCOMPARE(actualFormat, expectedFormat);
-        }
-    }
-
-    void testParentheses_data()
-    {
-        QTest::addColumn<int>("line");
-        QTest::addColumn<int>("expectedParenCount");
-
-        QTest::newRow("function head") << 41 << 2;
-        QTest::newRow("function opening brace") << 42 << 1;
-        QTest::newRow("loop head") << 43 << 1;
-        QTest::newRow("comment") << 44 << 0;
-        QTest::newRow("loop end") << 45 << 3;
-        QTest::newRow("function closing brace") << 46 << 1;
-    }
-
-    void testParentheses()
-    {
-        QFETCH(int, line);
-        QFETCH(int, expectedParenCount);
-
-        QTextBlock block = m_doc.findBlockByNumber(line - 1);
-        QVERIFY(block.isValid());
-        QCOMPARE(TextDocumentLayout::parentheses(block).count(), expectedParenCount);
-    }
-
-    void testFoldingIndent_data()
-    {
-        QTest::addColumn<int>("line");
-        QTest::addColumn<int>("expectedFoldingIndent");
-        QTest::addColumn<int>("expectedFoldingIndentNextLine");
-
-        QTest::newRow("braces after one line comment") << 52 << 0 << 1;
-        QTest::newRow("braces after multiline comment") << 59 << 0 << 1;
-        QTest::newRow("braces after completed line") << 67 << 1 << 2;
-    }
-
-    void testFoldingIndent()
-    {
-        QFETCH(int, line);
-        QFETCH(int, expectedFoldingIndent);
-        QFETCH(int, expectedFoldingIndentNextLine);
-
-        QTextBlock block = m_doc.findBlockByNumber(line - 1);
-        QVERIFY(block.isValid());
-        QCOMPARE(TextDocumentLayout::foldingIndent(block), expectedFoldingIndent);
-
-        QTextBlock nextBlock = m_doc.findBlockByNumber(line);
-        QVERIFY(nextBlock.isValid());
-        QCOMPARE(TextDocumentLayout::foldingIndent(nextBlock), expectedFoldingIndentNextLine);
-    }
-
-private:
-    QTextDocument m_doc;
-};
-
-class CodeFoldingTest : public QObject
-{
-    Q_OBJECT
-
-private slots:
-    void test()
-    {
-        const QByteArray content = R"(cpp // 0,0
-int main() {                              // 1,0
-#if 0                                     // 1,1
-    if (true) {                           // 1,1
-        //...                             // 1,1
-    }                                     // 1,1
-    else {                                // 1,1
-        //...                             // 1,1
-    }                                     // 1,1
-#else                                     // 1,1
-    if (true) {                           // 2,1
-        //...                             // 2,2
-    }                                     // 1,1
-#endif                                    // 1,1
-}                                         // 0,0
-                                          // 0,0
-cpp)";
-        TemporaryDir temporaryDir;
-        QVERIFY(temporaryDir.isValid());
-        CppTestDocument testDocument("file.cpp", content);
-        testDocument.setBaseDirectory(temporaryDir.path());
-        QVERIFY(testDocument.writeToDisk());
-
-        QVERIFY(TestCase::openCppEditor(testDocument.filePath(), &testDocument.m_editor,
-                                        &testDocument.m_editorWidget));
-
-        QEventLoop loop;
-        QTimer t;
-        t.setSingleShot(true);
-        connect(&t, &QTimer::timeout, &loop, [&] {loop.exit(1); });
-        const auto check = [&] {
-            const struct LoopHandler {
-                LoopHandler(QEventLoop &loop) : loop(loop) {}
-                ~LoopHandler() { loop.quit(); }
-
-            private:
-                QEventLoop &loop;
-            } loopHandler(loop);
-
-            const auto getExpectedBraceDepthAndFoldingIndent = [](const QTextBlock &block) {
-                const QString &text = block.text();
-                if (text.size() < 3)
-                    return std::make_pair(-1, -1);
-                bool ok;
-                const int braceDepth = text.mid(text.size() - 3, 1).toInt(&ok);
-                if (!ok)
-                    return std::make_pair(-1, -1);
-                const int foldingIndent = text.last(1).toInt(&ok);
-                if (!ok)
-                    return std::make_pair(-1, -1);
-                return std::make_pair(braceDepth, foldingIndent);
-            };
-            const auto getActualBraceDepthAndFoldingIndent = [](const QTextBlock &block) {
-                const int braceDepth = block.userState() >> 8;
-                const int foldingIndent = TextDocumentLayout::foldingIndent(block);
-                return std::make_pair(braceDepth, foldingIndent);
-            };
-            TextDocument * const doc = testDocument.m_editorWidget->textDocument();
-            const QTextBlock lastBlock = doc->document()->lastBlock();
-            for (QTextBlock b = doc->document()->firstBlock(); b.isValid() && b != lastBlock;
-                 b = b.next()) {
-                const auto actual = getActualBraceDepthAndFoldingIndent(b);
-                const auto expected = getExpectedBraceDepthAndFoldingIndent(b);
-                if (actual != expected)
-                    qDebug() << "In line" << (b.blockNumber() + 1);
-                QCOMPARE(actual, expected);
-            }
-        };
-        connect(testDocument.m_editorWidget, &CppEditorWidget::ifdefedOutBlocksChanged,
-                this, check);
-        t.start(5000);
-        QCOMPARE(loop.exec(), 0);
-    }
-
-    void cleanup()
-    {
-        QVERIFY(Core::EditorManager::closeAllEditors(false));
-        QVERIFY(TestCase::garbageCollectGlobalSnapshot());
-    }
-};
-
-#endif // WITH_TESTS
-
-void registerHighlighterTests(ExtensionSystem::IPlugin &plugin)
-{
-#ifdef WITH_TESTS
-    plugin.addTest<CppHighlighterTest>();
-    plugin.addTest<CodeFoldingTest>();
-#else
-    Q_UNUSED(plugin)
-#endif
-}
-
-} // namespace Internal
-} // namespace CppEditor
-
-#ifdef WITH_TESTS
-#include <cpphighlighter.moc>
-#endif

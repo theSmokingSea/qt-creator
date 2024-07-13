@@ -1,12 +1,33 @@
-// Copyright (C) 2017 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmldebugconnection.h"
-
 #include "qmldebugclient.h"
-#include "qmldebugtr.h"
 #include "qpacketprotocol.h"
 
+#include <utils/porting.h>
 #include <utils/temporaryfile.h>
 
 #include <QLocalServer>
@@ -46,14 +67,14 @@ static QString socketStateToString(QAbstractSocket::SocketState state)
 {
     QString stateString;
     QDebug(&stateString) << state;
-    return Tr::tr("Socket state changed to %1").arg(stateString);
+    return QmlDebugConnection::tr("Socket state changed to %1").arg(stateString);
 }
 
 static QString socketErrorToString(QAbstractSocket::SocketError error)
 {
     QString errorString;
     QDebug(&errorString) << error;
-    return Tr::tr("Error: %1").arg(errorString);
+    return QmlDebugConnection::tr("Error: %1").arg(errorString);
 }
 
 void QmlDebugConnectionPrivate::advertisePlugins()

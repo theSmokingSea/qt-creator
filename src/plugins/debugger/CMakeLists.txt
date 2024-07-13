@@ -3,8 +3,6 @@ add_qtc_plugin(Debugger
   PLUGIN_DEPENDS Core CppEditor ProjectExplorer QtSupport TextEditor
   PLUGIN_RECOMMENDS QmakeProjectManager
   PLUGIN_TEST_DEPENDS QmakeProjectManager
-  DEFINES
-    CLANG_BINDIR="${LLVM_TOOLS_BINARY_DIR}"
   SOURCES
     analyzer/analyzerbase.qrc
     analyzer/analyzerconstants.h
@@ -29,12 +27,6 @@ add_qtc_plugin(Debugger
     console/consoleitemmodel.cpp console/consoleitemmodel.h
     console/consoleproxymodel.cpp console/consoleproxymodel.h
     console/consoleview.cpp console/consoleview.h
-    dap/cmakedapengine.cpp dap/cmakedapengine.h
-    dap/dapclient.cpp dap/dapclient.h
-    dap/dapengine.cpp dap/dapengine.h
-    dap/gdbdapengine.cpp dap/gdbdapengine.h
-    dap/lldbdapengine.cpp dap/lldbdapengine.h
-    dap/pydapengine.cpp dap/pydapengine.h
     debugger.qrc
     debugger_global.h
     debuggeractions.cpp debuggeractions.h
@@ -46,20 +38,18 @@ add_qtc_plugin(Debugger
     debuggerinternalconstants.h
     debuggeritem.cpp debuggeritem.h
     debuggeritemmanager.cpp debuggeritemmanager.h
-    debuggerkitaspect.cpp debuggerkitaspect.h
+    debuggerkitinformation.cpp debuggerkitinformation.h
     debuggermainwindow.cpp debuggermainwindow.h
-    debuggerplugin.cpp
+    debuggerplugin.cpp debuggerplugin.h
     debuggerprotocol.cpp debuggerprotocol.h
     debuggerrunconfigurationaspect.cpp debuggerrunconfigurationaspect.h
     debuggerruncontrol.cpp debuggerruncontrol.h
     debuggersourcepathmappingwidget.cpp debuggersourcepathmappingwidget.h
-    debuggertest.cpp debuggertest.h
     debuggertooltipmanager.cpp debuggertooltipmanager.h
-    debuggertr.h
     disassembleragent.cpp disassembleragent.h
     disassemblerlines.cpp disassemblerlines.h
     gdb/gdbengine.cpp gdb/gdbengine.h
-    gdb/gdbsettings.cpp gdb/gdbsettings.h
+    gdb/gdboptionspage.cpp
     imageviewer.cpp imageviewer.h
     enginemanager.cpp enginemanager.h
     lldb/lldbengine.cpp lldb/lldbengine.h
@@ -82,7 +72,7 @@ add_qtc_plugin(Debugger
     shared/cdbsymbolpathlisteditor.cpp shared/cdbsymbolpathlisteditor.h
     shared/hostutils.cpp shared/hostutils.h
     shared/peutils.cpp shared/peutils.h
-    shared/symbolpathsdialog.cpp shared/symbolpathsdialog.h
+    shared/symbolpathsdialog.cpp shared/symbolpathsdialog.h shared/symbolpathsdialog.ui
     simplifytype.cpp simplifytype.h
     sourceagent.cpp sourceagent.h
     sourcefileshandler.cpp sourcefileshandler.h

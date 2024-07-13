@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "codestylepool.h"
 #include "icodestylepreferencesfactory.h"
@@ -8,17 +30,19 @@
 
 #include <coreplugin/icore.h>
 
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/persistentsettings.h>
 
 #include <QMap>
+#include <QDir>
 #include <QDebug>
+#include <QFileInfo>
 
-using namespace Utils;
+using namespace TextEditor;
 
-const char codeStyleDataKey[] = "CodeStyleData";
-const char displayNameKey[] = "DisplayName";
-const char codeStyleDocKey[] = "QtCreatorCodeStyle";
+static const char codeStyleDataKey[] = "CodeStyleData";
+static const char displayNameKey[] = "DisplayName";
+static const char codeStyleDocKey[] = "QtCreatorCodeStyle";
 
 namespace TextEditor {
 namespace Internal {
@@ -65,9 +89,10 @@ QByteArray CodeStylePoolPrivate::generateUniqueId(const QByteArray &id) const
     return newName;
 }
 
-} // Internal
+}
+}
 
-static FilePath customCodeStylesPath()
+static Utils::FilePath customCodeStylesPath()
 {
     return Core::ICore::userResourcePath("codestyles");
 }
@@ -84,15 +109,15 @@ CodeStylePool::~CodeStylePool()
     delete d;
 }
 
-FilePath CodeStylePool::settingsDir() const
+QString CodeStylePool::settingsDir() const
 {
     const QString suffix = d->m_factory ? d->m_factory->languageId().toString() : QLatin1String("default");
-    return customCodeStylesPath().pathAppended(suffix);
+    return customCodeStylesPath().pathAppended(suffix).toString();
 }
 
-FilePath CodeStylePool::settingsPath(const QByteArray &id) const
+Utils::FilePath CodeStylePool::settingsPath(const QByteArray &id) const
 {
-    return settingsDir().pathAppended(QString::fromUtf8(id + ".xml"));
+    return Utils::FilePath::fromString(settingsDir()).pathAppended(QString::fromUtf8(id + ".xml"));
 }
 
 QList<ICodeStylePreferences *> CodeStylePool::codeStyles() const
@@ -149,10 +174,12 @@ void CodeStylePool::addCodeStyle(ICodeStylePreferences *codeStyle)
     // take ownership
     codeStyle->setParent(this);
 
-    auto doSaveStyle = [this, codeStyle] { saveCodeStyle(codeStyle); };
-    connect(codeStyle, &ICodeStylePreferences::valueChanged, this, doSaveStyle);
-    connect(codeStyle, &ICodeStylePreferences::tabSettingsChanged, this, doSaveStyle);
-    connect(codeStyle, &ICodeStylePreferences::displayNameChanged, this, doSaveStyle);
+    connect(codeStyle, &ICodeStylePreferences::valueChanged,
+            this, &CodeStylePool::slotSaveCodeStyle);
+    connect(codeStyle, &ICodeStylePreferences::tabSettingsChanged,
+            this, &CodeStylePool::slotSaveCodeStyle);
+    connect(codeStyle, &ICodeStylePreferences::displayNameChanged,
+            this, &CodeStylePool::slotSaveCodeStyle);
     emit codeStyleAdded(codeStyle);
 }
 
@@ -170,7 +197,8 @@ void CodeStylePool::removeCodeStyle(ICodeStylePreferences *codeStyle)
     d->m_pool.removeOne(codeStyle);
     d->m_idToCodeStyle.remove(codeStyle->id());
 
-    settingsPath(codeStyle->id()).removeFile();
+    QDir dir(settingsDir());
+    dir.remove(settingsPath(codeStyle->id()).fileName());
 
     delete codeStyle;
 }
@@ -182,16 +210,17 @@ ICodeStylePreferences *CodeStylePool::codeStyle(const QByteArray &id) const
 
 void CodeStylePool::loadCustomCodeStyles()
 {
-    FilePath dir = settingsDir();
-    const FilePaths codeStyleFiles = dir.dirEntries({QStringList(QLatin1String("*.xml")), QDir::Files});
-    for (const FilePath &codeStyleFile : codeStyleFiles) {
+    QDir dir(settingsDir());
+    const QStringList codeStyleFiles = dir.entryList(QStringList() << QLatin1String("*.xml"), QDir::Files);
+    for (int i = 0; i < codeStyleFiles.count(); i++) {
+        const QString codeStyleFile = codeStyleFiles.at(i);
         // filter out styles which id is the same as one of built-in styles
-        if (!d->m_idToCodeStyle.contains(codeStyleFile.completeBaseName().toUtf8()))
-            loadCodeStyle(codeStyleFile);
+        if (!d->m_idToCodeStyle.contains(QFileInfo(codeStyleFile).completeBaseName().toUtf8()))
+            loadCodeStyle(Utils::FilePath::fromString(dir.absoluteFilePath(codeStyleFile)));
     }
 }
 
-ICodeStylePreferences *CodeStylePool::importCodeStyle(const FilePath &fileName)
+ICodeStylePreferences *CodeStylePool::importCodeStyle(const Utils::FilePath &fileName)
 {
     ICodeStylePreferences *codeStyle = loadCodeStyle(fileName);
     if (codeStyle)
@@ -199,16 +228,16 @@ ICodeStylePreferences *CodeStylePool::importCodeStyle(const FilePath &fileName)
     return codeStyle;
 }
 
-ICodeStylePreferences *CodeStylePool::loadCodeStyle(const FilePath &fileName)
+ICodeStylePreferences *CodeStylePool::loadCodeStyle(const Utils::FilePath &fileName)
 {
     ICodeStylePreferences *codeStyle = nullptr;
-    PersistentSettingsReader reader;
+    Utils::PersistentSettingsReader reader;
     reader.load(fileName);
-    Store m = reader.restoreValues();
-    if (m.contains(codeStyleDataKey)) {
+    QVariantMap m = reader.restoreValues();
+    if (m.contains(QLatin1String(codeStyleDataKey))) {
         const QByteArray id = fileName.completeBaseName().toUtf8();
-        const QString displayName = reader.restoreValue(displayNameKey).toString();
-        const Store map = storeFromVariant(reader.restoreValue(codeStyleDataKey));
+        const QString displayName = reader.restoreValue(QLatin1String(displayNameKey)).toString();
+        const QVariantMap map = reader.restoreValue(QLatin1String(codeStyleDataKey)).toMap();
         if (d->m_factory) {
             codeStyle = d->m_factory->createCodeStyle();
             codeStyle->setId(id);
@@ -221,18 +250,27 @@ ICodeStylePreferences *CodeStylePool::loadCodeStyle(const FilePath &fileName)
     return codeStyle;
 }
 
+void CodeStylePool::slotSaveCodeStyle()
+{
+    auto codeStyle = qobject_cast<ICodeStylePreferences *>(sender());
+    if (!codeStyle)
+        return;
+
+    saveCodeStyle(codeStyle);
+}
+
 void CodeStylePool::saveCodeStyle(ICodeStylePreferences *codeStyle) const
 {
-    const FilePath codeStylesPath = customCodeStylesPath();
+    const QString codeStylesPath = customCodeStylesPath().toString();
 
     // Create the base directory when it doesn't exist
-    if (!codeStylesPath.exists() && !codeStylesPath.createDir()) {
+    if (!QFile::exists(codeStylesPath) && !QDir().mkpath(codeStylesPath)) {
         qWarning() << "Failed to create code style directory:" << codeStylesPath;
         return;
     }
-    const FilePath languageCodeStylesPath = settingsDir();
+    const QString languageCodeStylesPath = settingsDir();
     // Create the base directory for the language when it doesn't exist
-    if (!languageCodeStylesPath.exists() && !languageCodeStylesPath.createDir()) {
+    if (!QFile::exists(languageCodeStylesPath) && !QDir().mkpath(languageCodeStylesPath)) {
         qWarning() << "Failed to create language code style directory:" << languageCodeStylesPath;
         return;
     }
@@ -240,15 +278,14 @@ void CodeStylePool::saveCodeStyle(ICodeStylePreferences *codeStyle) const
     exportCodeStyle(settingsPath(codeStyle->id()), codeStyle);
 }
 
-void CodeStylePool::exportCodeStyle(const FilePath &fileName, ICodeStylePreferences *codeStyle) const
+void CodeStylePool::exportCodeStyle(const Utils::FilePath &fileName, ICodeStylePreferences *codeStyle) const
 {
-    const Store map = codeStyle->toMap();
-    const Store tmp = {
+    const QVariantMap map = codeStyle->toMap();
+    const QVariantMap tmp = {
         {displayNameKey, codeStyle->displayName()},
-        {codeStyleDataKey, variantFromStore(map)}
+        {codeStyleDataKey, map}
     };
-    PersistentSettingsWriter writer(fileName, QLatin1String(codeStyleDocKey));
+    Utils::PersistentSettingsWriter writer(fileName, QLatin1String(codeStyleDocKey));
     writer.save(tmp, Core::ICore::dialogParent());
 }
 
-} // TextEditor

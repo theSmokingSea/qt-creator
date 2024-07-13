@@ -1,5 +1,27 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nimtexteditorwidget.h"
 #include "nimconstants.h"
@@ -15,11 +37,12 @@
 #include <QTemporaryFile>
 #include <QTextDocument>
 
-using namespace Nim::Suggest;
+using namespace Nim;
+using namespace Suggest;
 
-namespace Nim {
+namespace {
 
-static std::unique_ptr<QTemporaryFile> writeDirtyFile(const TextEditor::TextDocument *doc)
+std::unique_ptr<QTemporaryFile> writeDirtyFile(const TextEditor::TextDocument *doc)
 {
     auto result = std::make_unique<QTemporaryFile>("qtcnim.XXXXXX.nim");
     QTC_ASSERT(result->open(), return nullptr);
@@ -27,6 +50,8 @@ static std::unique_ptr<QTemporaryFile> writeDirtyFile(const TextEditor::TextDocu
     stream << doc->plainText();
     result->close();
     return result;
+}
+
 }
 
 NimTextEditorWidget::NimTextEditorWidget(QWidget *parent)
@@ -39,7 +64,7 @@ void NimTextEditorWidget::findLinkAt(const QTextCursor &c, const Utils::LinkHand
 {
     const Utils::FilePath &path = textDocument()->filePath();
 
-    NimSuggest *suggest = Nim::Suggest::getFromCache(path);
+    NimSuggest *suggest = NimSuggestCache::instance().get(path);
     if (!suggest)
         return processLinkCallback(Utils::Link());
 
@@ -50,7 +75,7 @@ void NimTextEditorWidget::findLinkAt(const QTextCursor &c, const Utils::LinkHand
 
     std::shared_ptr<NimSuggestClientRequest> request = suggest->def(path.toString(),
                                                                              line,
-                                                                             column,
+                                                                             column - 1,
                                                                              dirtyFile->fileName());
 
     if (!request)
@@ -68,14 +93,12 @@ void NimTextEditorWidget::findLinkAt(const QTextCursor &c, const Utils::LinkHand
     m_callback = processLinkCallback;
     m_request = std::move(request);
 
-    Suggest::NimSuggestClientRequest *req = m_request.get();
-    connect(req, &NimSuggestClientRequest::finished,
-            this, [this, req] { onFindLinkFinished(req); });
+    QObject::connect(m_request.get(), &NimSuggestClientRequest::finished, this, &NimTextEditorWidget::onFindLinkFinished);
 }
 
-void NimTextEditorWidget::onFindLinkFinished(Suggest::NimSuggestClientRequest *request)
+void NimTextEditorWidget::onFindLinkFinished()
 {
-    QTC_ASSERT(m_request.get() == request, return);
+    QTC_ASSERT(m_request.get() == this->sender(), return);
     if (m_request->lines().empty()) {
         m_callback(Utils::Link());
         return;
@@ -84,5 +107,3 @@ void NimTextEditorWidget::onFindLinkFinished(Suggest::NimSuggestClientRequest *r
     const Line &line = m_request->lines().front();
     m_callback(Utils::Link{Utils::FilePath::fromString(line.abs_path), line.row, line.column});
 }
-
-} // Nim

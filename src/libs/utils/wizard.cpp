@@ -1,14 +1,34 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "wizard.h"
 
 #include "algorithm.h"
 #include "hostosinfo.h"
-#include "icon.h"
 #include "qtcassert.h"
 #include "theme/theme.h"
-#include "utilstr.h"
 #include "wizardpage.h"
 
 #include <QDebug>
@@ -24,9 +44,7 @@
 #include <QVBoxLayout>
 
 
-/*!
-  \class Utils::Wizard
-  \inmodule QtCreator
+/*! \class Utils::Wizard
 
   \brief The Wizard class implements a wizard with a progress bar on the left.
 
@@ -45,9 +63,7 @@ public:
         m_indicatorPixmap(indicatorPixmap)
     {
         m_indicatorLabel = new QLabel(this);
-        const QSizeF indicatorSize = m_indicatorPixmap.deviceIndependentSize();
-        m_indicatorLabel->setFixedSize(
-            {qCeil(indicatorSize.width()), qCeil(indicatorSize.height())});
+        m_indicatorLabel->setFixedSize(m_indicatorPixmap.size());
         m_titleLabel = new QLabel(title, this);
         auto l = new QHBoxLayout(this);
         l->setContentsMargins(0, 0, 0, 0);
@@ -99,7 +115,8 @@ private:
     QVBoxLayout *m_mainLayout;
     QVBoxLayout *m_itemWidgetLayout;
     WizardProgress *m_wizardProgress;
-    QHash<WizardProgressItem *, ProgressItemWidget *> m_itemToItemWidget;
+    QMap<WizardProgressItem *, ProgressItemWidget *> m_itemToItemWidget;
+    QMap<ProgressItemWidget *, WizardProgressItem *> m_itemWidgetToItem;
     QList<WizardProgressItem *> m_visibleItems;
     ProgressItemWidget *m_dotsItemWidget;
     int m_disableUpdatesCount;
@@ -112,7 +129,7 @@ LinearProgressWidget::LinearProgressWidget(WizardProgress *progress, QWidget *pa
     m_dotsItemWidget(nullptr),
     m_disableUpdatesCount(0)
 {
-    m_indicatorPixmap = Icon::fromTheme("go-next").pixmap(16);
+    m_indicatorPixmap = QIcon::fromTheme(QLatin1String("go-next"), QIcon(QLatin1String(":/utils/images/arrow.png"))).pixmap(16);
     m_wizardProgress = progress;
     m_mainLayout = new QVBoxLayout(this);
     m_itemWidgetLayout = new QVBoxLayout();
@@ -120,7 +137,7 @@ LinearProgressWidget::LinearProgressWidget(WizardProgress *progress, QWidget *pa
     m_mainLayout->addLayout(m_itemWidgetLayout);
     m_mainLayout->addSpacerItem(spacer);
 
-    m_dotsItemWidget = new ProgressItemWidget(m_indicatorPixmap, Tr::tr("..."), this);
+    m_dotsItemWidget = new ProgressItemWidget(m_indicatorPixmap, tr("..."), this);
     m_dotsItemWidget->setVisible(false);
     m_dotsItemWidget->setEnabled(false);
 
@@ -139,9 +156,9 @@ LinearProgressWidget::LinearProgressWidget(WizardProgress *progress, QWidget *pa
     connect(m_wizardProgress, &WizardProgress::currentItemChanged,
             this, &LinearProgressWidget::slotCurrentItemChanged);
 
-    const QSet<WizardProgressItem *> items = m_wizardProgress->items();
-    for (WizardProgressItem *item : items)
-        slotItemAdded(item);
+    QList<WizardProgressItem *> items = m_wizardProgress->items();
+    for (int i = 0; i < items.count(); i++)
+        slotItemAdded(items.at(i));
     recreateLayout();
 
     setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
@@ -153,17 +170,21 @@ void LinearProgressWidget::slotItemAdded(WizardProgressItem *item)
     itemWidget->setVisible(false);
     itemWidget->setWordWrap(item->titleWordWrap());
     m_itemToItemWidget.insert(item, itemWidget);
+    m_itemWidgetToItem.insert(itemWidget, item);
 }
 
 void LinearProgressWidget::slotItemRemoved(WizardProgressItem *item)
 {
-    const auto it = m_itemToItemWidget.constFind(item);
-    if (it == m_itemToItemWidget.constEnd())
+    ProgressItemWidget *itemWidget = m_itemToItemWidget.value(item);
+    if (!itemWidget)
         return;
 
-    delete *it;
-    m_itemToItemWidget.erase(it);
+    m_itemWidgetToItem.remove(itemWidget);
+    m_itemToItemWidget.remove(item);
+
     recreateLayout();
+
+    delete itemWidget;
 }
 
 void LinearProgressWidget::slotItemChanged(WizardProgressItem *item)
@@ -209,9 +230,12 @@ void LinearProgressWidget::recreateLayout()
 {
     disableUpdates();
 
-    for (ProgressItemWidget *itemWidget : std::as_const(m_itemToItemWidget))
-        itemWidget->setVisible(false);
-
+    QMap<WizardProgressItem *, ProgressItemWidget *>::ConstIterator it = m_itemToItemWidget.constBegin();
+    QMap<WizardProgressItem *, ProgressItemWidget *>::ConstIterator itEnd = m_itemToItemWidget.constEnd();
+    while (it != itEnd) {
+        it.value()->setVisible(false);
+        ++it;
+    }
     m_dotsItemWidget->setVisible(false);
 
     for (int i = m_itemWidgetLayout->count() - 1; i >= 0; --i) {
@@ -220,8 +244,8 @@ void LinearProgressWidget::recreateLayout()
     }
 
     m_visibleItems = m_wizardProgress->directlyReachableItems();
-    for (WizardProgressItem *progressItem : std::as_const(m_visibleItems)) {
-        ProgressItemWidget *itemWidget = m_itemToItemWidget.value(progressItem);
+    for (int i = 0; i < m_visibleItems.count(); i++) {
+        ProgressItemWidget *itemWidget = m_itemToItemWidget.value(m_visibleItems.at(i));
         m_itemWidgetLayout->addWidget(itemWidget);
         itemWidget->setVisible(true);
     }
@@ -241,11 +265,14 @@ void LinearProgressWidget::updateProgress()
 
     QList<WizardProgressItem *> visitedItems = m_wizardProgress->visitedItems();
 
-    for (auto it = m_itemToItemWidget.cbegin(); it != m_itemToItemWidget.cend(); ++it) {
+    QMap<WizardProgressItem *, ProgressItemWidget *>::ConstIterator it = m_itemToItemWidget.constBegin();
+    QMap<WizardProgressItem *, ProgressItemWidget *>::ConstIterator itEnd = m_itemToItemWidget.constEnd();
+    while (it != itEnd) {
         WizardProgressItem *item = it.key();
         ProgressItemWidget *itemWidget = it.value();
         itemWidget->setEnabled(visitedItems.contains(item));
         itemWidget->setIndicatorVisible(false);
+        ++it;
     }
 
     WizardProgressItem *currentItem = m_wizardProgress->currentItem();
@@ -278,7 +305,6 @@ public:
     bool m_automaticProgressCreation = true;
     WizardProgress *m_wizardProgress = nullptr;
     QSet<QString> m_fieldNames;
-    bool m_skipForSubproject = false;
 };
 
 Wizard::Wizard(QWidget *parent, Qt::WindowFlags flags) :
@@ -368,8 +394,8 @@ QHash<QString, QVariant> Wizard::variables() const
 QString typeOf(const QVariant &v)
 {
     QString result;
-    switch (v.typeId()) {
-    case QMetaType::QVariantMap:
+    switch (v.type()) {
+    case QVariant::Map:
         result = QLatin1String("Object");
         break;
     default:
@@ -382,8 +408,9 @@ void Wizard::showVariables()
 {
     QString result = QLatin1String("<table>\n  <tr><td>Key</td><td>Type</td><td>Value</td><td>Eval</td></tr>\n");
     QHash<QString, QVariant> vars = variables();
-    const QList<QString> keys = sorted(vars.keys());
-    for (const QString &key : keys) {
+    QList<QString> keys = vars.keys();
+    sort(keys);
+    for (const QString &key : qAsConst(keys)) {
         const QVariant &v = vars.value(key);
         result += QLatin1String("  <tr><td>")
                 + key + QLatin1String("</td><td>")
@@ -528,30 +555,8 @@ void Wizard::_q_pageRemoved(int pageId)
     d->m_wizardProgress->removeItem(item);
 }
 
-void Wizard::setSkipForSubprojects(bool skip)
-{
-    Q_D(Wizard);
-    d->m_skipForSubproject = skip;
-}
 
-int Wizard::nextId() const
-{
-    Q_D(const Wizard);
-    if (!d->m_skipForSubproject)
-        return QWizard::nextId();
 
-    const QList<int> allIds = pageIds();
-    int index = allIds.indexOf(currentId());
-    QTC_ASSERT(index > -1, return QWizard::nextId());
-
-    while (++index < allIds.size()) {
-        if (auto wp = qobject_cast<WizardPage *>(page(index))) {
-            if (!wp->skipForSubprojects())
-                return index;
-        }
-    }
-    return QWizard::nextId();
-}
 
 class WizardProgressPrivate
 {
@@ -567,7 +572,9 @@ public:
     void updateReachableItems();
 
     QMap<int, WizardProgressItem *> m_pageToItem;
-    QSet<WizardProgressItem *> m_items;
+    QMap<WizardProgressItem *, WizardProgressItem *> m_itemToItem;
+
+    QList<WizardProgressItem *> m_items;
 
     QList<WizardProgressItem *> m_visitedItems;
     QList<WizardProgressItem *> m_reachableItems;
@@ -643,7 +650,7 @@ QList<WizardProgressItem *> WizardProgressPrivate::singlePathBetween(WizardProgr
     if (!item)
         item = m_startItem;
     if (!item)
-        return {};
+        return QList<WizardProgressItem *>();
 
     // Optimization. It is workaround for case A->B, B->C, A->C where "from" is A and "to" is C.
     // When we had X->A in addition and "from" was X and "to" was C, this would not work
@@ -651,12 +658,12 @@ QList<WizardProgressItem *> WizardProgressPrivate::singlePathBetween(WizardProgr
     if (item->nextItems().contains(toItem))
         return {toItem};
 
-    QHash<WizardProgressItem *, QHash<WizardProgressItem *, bool>> visitedItemsToParents;
-    QList<QPair<WizardProgressItem *, WizardProgressItem *>> workingItems; // next to prev item
+    QHash<WizardProgressItem *, QHash<WizardProgressItem *, bool> > visitedItemsToParents;
+    QList<QPair<WizardProgressItem *, WizardProgressItem *> > workingItems; // next to prev item
 
-    const QList<WizardProgressItem *> items = item->nextItems();
-    for (WizardProgressItem *i : items)
-        workingItems.push_back({i, item});
+    QList<WizardProgressItem *> items = item->nextItems();
+    for (int i = 0; i < items.count(); i++)
+        workingItems.append(qMakePair(items.at(i), item));
 
     while (!workingItems.isEmpty()) {
         QPair<WizardProgressItem *, WizardProgressItem *> workingItem = workingItems.takeFirst();
@@ -666,20 +673,20 @@ QList<WizardProgressItem *> WizardProgressPrivate::singlePathBetween(WizardProgr
         if (parents.count() > 1)
             continue;
 
-        const QList<WizardProgressItem *> items = workingItem.first->nextItems();
-        for (WizardProgressItem *i : items)
-            workingItems.push_back({i, workingItem.first});
+        QList<WizardProgressItem *> items = workingItem.first->nextItems();
+        for (int i = 0; i < items.count(); i++)
+            workingItems.append(qMakePair(items.at(i), workingItem.first));
     }
 
     QList<WizardProgressItem *> path;
 
     WizardProgressItem *it = toItem;
-    auto itItem = visitedItemsToParents.constFind(it);
-    const auto itEnd = visitedItemsToParents.constEnd();
+    QHash<WizardProgressItem *, QHash<WizardProgressItem *, bool> >::ConstIterator itItem = visitedItemsToParents.constFind(it);
+    QHash<WizardProgressItem *, QHash<WizardProgressItem *, bool> >::ConstIterator itEnd = visitedItemsToParents.constEnd();
     while (itItem != itEnd) {
         path.prepend(itItem.key());
         if (itItem.value().count() != 1)
-            return {};
+            return QList<WizardProgressItem *>();
         it = itItem.value().constBegin().key();
         if (it == item)
             return path;
@@ -717,8 +724,12 @@ WizardProgress::~WizardProgress()
 {
     Q_D(WizardProgress);
 
-    for (WizardProgressItem *item : std::as_const(d->m_items))
-        delete item;
+    QMap<WizardProgressItem *, WizardProgressItem *>::ConstIterator it = d->m_itemToItem.constBegin();
+    QMap<WizardProgressItem *, WizardProgressItem *>::ConstIterator itEnd = d->m_itemToItem.constEnd();
+    while (it != itEnd) {
+        delete it.key();
+        ++it;
+    }
     delete d_ptr;
 }
 
@@ -727,7 +738,7 @@ WizardProgressItem *WizardProgress::addItem(const QString &title)
     Q_D(WizardProgress);
 
     auto item = new WizardProgressItem(this, title);
-    d->m_items.insert(item);
+    d->m_itemToItem.insert(item, item);
     emit itemAdded(item);
     return item;
 }
@@ -736,8 +747,8 @@ void WizardProgress::removeItem(WizardProgressItem *item)
 {
     Q_D(WizardProgress);
 
-    const auto it = d->m_items.constFind(item);
-    if (it == d->m_items.constEnd()) {
+    QMap<WizardProgressItem *, WizardProgressItem *>::iterator it = d->m_itemToItem.find(item);
+    if (it == d->m_itemToItem.end()) {
         qWarning("WizardProgress::removePage: Item is not a part of the wizard");
         return;
     }
@@ -769,7 +780,7 @@ void WizardProgress::removeItem(WizardProgressItem *item)
     QList<int> pages = item->pages();
     for (int i = 0; i < pages.count(); i++)
         d->m_pageToItem.remove(pages.at(i));
-    d->m_items.erase(it);
+    d->m_itemToItem.erase(it);
     delete item;
 }
 
@@ -777,8 +788,8 @@ void WizardProgress::removePage(int pageId)
 {
     Q_D(WizardProgress);
 
-    const auto it = d->m_pageToItem.constFind(pageId);
-    if (it == d->m_pageToItem.constEnd()) {
+    QMap<int, WizardProgressItem *>::iterator it = d->m_pageToItem.find(pageId);
+    if (it == d->m_pageToItem.end()) {
         qWarning("WizardProgress::removePage: page is not a part of the wizard");
         return;
     }
@@ -806,11 +817,11 @@ WizardProgressItem *WizardProgress::currentItem() const
     return d->m_currentItem;
 }
 
-QSet<WizardProgressItem *> WizardProgress::items() const
+QList<WizardProgressItem *> WizardProgress::items() const
 {
     Q_D(const WizardProgress);
 
-    return d->m_items;
+    return d->m_itemToItem.keys();
 }
 
 WizardProgressItem *WizardProgress::startItem() const

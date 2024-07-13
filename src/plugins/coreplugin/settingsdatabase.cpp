@@ -1,9 +1,29 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "settingsdatabase.h"
-
-#include <extensionsystem/pluginmanager.h>
 
 #include <QDir>
 #include <QMap>
@@ -15,14 +35,13 @@
 #include <QSqlError>
 #include <QSqlQuery>
 #include <QDebug>
-#include <QCoreApplication>
 
 /*!
-    \namespace Core::SettingsDatabase
+    \class Core::SettingsDatabase
     \inheaderfile coreplugin/settingsdatabase.h
     \inmodule QtCreator
 
-    \brief The SettingsDatabase namespace offers an alternative to the
+    \brief The SettingsDatabase class offers an alternative to the
     application-wide QSettings that is more
     suitable for storing large amounts of data.
 
@@ -31,20 +50,19 @@
     rewriting the whole file each time one of the settings change.
 
     The SettingsDatabase API mimics that of QSettings.
-
-    \sa settings()
 */
 
 using namespace Core;
-using namespace ExtensionSystem;
+using namespace Core::Internal;
 
 enum { debug_settings = 0 };
 
-namespace Core::SettingsDatabase {
+namespace Core {
+namespace Internal {
 
 using SettingsMap = QMap<QString, QVariant>;
 
-class SettingsDatabaseImpl
+class SettingsDatabasePrivate
 {
 public:
     QString effectiveGroup() const
@@ -69,17 +87,15 @@ public:
     QSqlDatabase m_db;
 };
 
-static SettingsDatabaseImpl *d;
+} // namespace Internal
+} // namespace Core
 
-void ensureImpl()
+SettingsDatabase::SettingsDatabase(const QString &path,
+                                   const QString &application,
+                                   QObject *parent)
+    : QObject(parent)
+    , d(new SettingsDatabasePrivate)
 {
-    if (d)
-        return;
-
-    d = new SettingsDatabaseImpl;
-
-    const QString path = QFileInfo(PluginManager::settings()->fileName()).path();
-    const QString application =  QCoreApplication::applicationName();
     const QLatin1Char slash('/');
 
     // TODO: Don't rely on a path, but determine automatically
@@ -120,21 +136,16 @@ void ensureImpl()
     }
 }
 
-void destroy()
+SettingsDatabase::~SettingsDatabase()
 {
-    if (!d)
-        return;
-
-    // TODO: Delay writing of dirty keys and save them here
+    sync();
 
     delete d;
-    d = nullptr;
     QSqlDatabase::removeDatabase(QLatin1String("settings"));
 }
 
-void setValue(const QString &key, const QVariant &value)
+void SettingsDatabase::setValue(const QString &key, const QVariant &value)
 {
-    ensureImpl();
     const QString effectiveKey = d->effectiveKey(key);
 
     // Add to cache
@@ -154,9 +165,8 @@ void setValue(const QString &key, const QVariant &value)
         qDebug() << "Stored:" << effectiveKey << "=" << value;
 }
 
-QVariant value(const QString &key, const QVariant &defaultValue)
+QVariant SettingsDatabase::value(const QString &key, const QVariant &defaultValue) const
 {
-    ensureImpl();
     const QString effectiveKey = d->effectiveKey(key);
     QVariant value = defaultValue;
 
@@ -183,9 +193,8 @@ QVariant value(const QString &key, const QVariant &defaultValue)
     return value;
 }
 
-bool contains(const QString &key)
+bool SettingsDatabase::contains(const QString &key) const
 {
-    ensureImpl();
     // check exact key
     // this already caches the value
     if (value(key).isValid())
@@ -203,21 +212,19 @@ bool contains(const QString &key)
     return false;
 }
 
-void remove(const QString &key)
+void SettingsDatabase::remove(const QString &key)
 {
-    ensureImpl();
     const QString effectiveKey = d->effectiveKey(key);
 
     // Remove keys from the cache
-    for (auto it = d->m_settings.cbegin(); it != d->m_settings.cend(); ) {
+    const QStringList keys = d->m_settings.keys();
+    for (const QString &k : keys) {
         // Either it's an exact match, or it matches up to a /
-        const QString k = it.key();
         if (k.startsWith(effectiveKey)
             && (k.length() == effectiveKey.length()
-                || k.at(effectiveKey.length()) == QLatin1Char('/'))) {
-            it = d->m_settings.erase(it);
-        } else {
-            ++it;
+                || k.at(effectiveKey.length()) == QLatin1Char('/')))
+        {
+            d->m_settings.remove(k);
         }
     }
 
@@ -232,27 +239,23 @@ void remove(const QString &key)
     query.exec();
 }
 
-void beginGroup(const QString &prefix)
+void SettingsDatabase::beginGroup(const QString &prefix)
 {
-    ensureImpl();
     d->m_groups.append(prefix);
 }
 
-void endGroup()
+void SettingsDatabase::endGroup()
 {
-    ensureImpl();
     d->m_groups.removeLast();
 }
 
-QString group()
+QString SettingsDatabase::group() const
 {
-    ensureImpl();
     return d->effectiveGroup();
 }
 
-QStringList childKeys()
+QStringList SettingsDatabase::childKeys() const
 {
-    ensureImpl();
     QStringList children;
 
     const QString g = group();
@@ -265,20 +268,21 @@ QStringList childKeys()
     return children;
 }
 
-void beginTransaction()
+void SettingsDatabase::beginTransaction()
 {
-    ensureImpl();
     if (!d->m_db.isOpen())
         return;
     d->m_db.transaction();
 }
 
-void endTransaction()
+void SettingsDatabase::endTransaction()
 {
-    ensureImpl();
     if (!d->m_db.isOpen())
         return;
     d->m_db.commit();
 }
 
-} // Core::SettingsDatabase
+void SettingsDatabase::sync()
+{
+    // TODO: Delay writing of dirty keys and save them here
+}

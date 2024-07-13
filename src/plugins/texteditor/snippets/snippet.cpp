@@ -1,9 +1,29 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "snippet.h"
-
-#include "../texteditortr.h"
 
 #include <utils/algorithm.h>
 #include <utils/macroexpander.h>
@@ -12,7 +32,7 @@
 
 #include <QTextDocument>
 
-namespace TextEditor {
+using namespace TextEditor;
 
 const char UCMANGLER_ID[] = "TextEditor::UppercaseMangler";
 const char LCMANGLER_ID[] = "TextEditor::LowercaseMangler";
@@ -162,10 +182,10 @@ QString Snippet::generateTip() const
 {
     SnippetParseResult result = Snippet::parse(m_content);
 
-    if (std::holds_alternative<SnippetParseError>(result))
-        return std::get<SnippetParseError>(result).htmlMessage();
-    QTC_ASSERT(std::holds_alternative<ParsedSnippet>(result), return {});
-    const ParsedSnippet parsedSnippet = std::get<ParsedSnippet>(result);
+    if (Utils::holds_alternative<SnippetParseError>(result))
+        return Utils::get<SnippetParseError>(result).htmlMessage();
+    QTC_ASSERT(Utils::holds_alternative<ParsedSnippet>(result), return {});
+    const ParsedSnippet parsedSnippet = Utils::get<ParsedSnippet>(result);
 
     QString tip("<nobr>");
     for (const ParsedSnippet::Part &part : parsedSnippet.parts)
@@ -189,7 +209,7 @@ SnippetParseResult Snippet::parse(const QString &snippet)
     if (!errorMessage.isEmpty())
         return {SnippetParseError{errorMessage, {}, -1}};
 
-    const int count = preprocessedSnippet.size();
+    const int count = preprocessedSnippet.count();
     NameMangler *mangler = nullptr;
 
     QMap<QString, int> variableIndexes;
@@ -223,7 +243,7 @@ SnippetParseResult Snippet::parse(const QString &snippet)
         }
 
         if (mangler) {
-            return SnippetParseResult{SnippetParseError{Tr::tr("Expected delimiter after mangler ID."),
+            return SnippetParseResult{SnippetParseError{tr("Expected delimiter after mangler ID."),
                                                         preprocessedSnippet,
                                                         i}};
         }
@@ -238,7 +258,7 @@ SnippetParseResult Snippet::parse(const QString &snippet)
                 mangler = &tcMangler;
             } else {
                 return SnippetParseResult{
-                    SnippetParseError{Tr::tr("Expected mangler ID \"l\" (lowercase), \"u\" (uppercase), "
+                    SnippetParseError{tr("Expected mangler ID \"l\" (lowercase), \"u\" (uppercase), "
                                          "or \"c\" (titlecase) after colon."),
                                       preprocessedSnippet,
                                       i}};
@@ -261,7 +281,7 @@ SnippetParseResult Snippet::parse(const QString &snippet)
 
     if (inVar) {
         return SnippetParseResult{
-            SnippetParseError{Tr::tr("Missing closing variable delimiter for:"), currentPart.text, 0}};
+            SnippetParseError{tr("Missing closing variable delimiter for:"), currentPart.text, 0}};
     }
 
     if (!currentPart.text.isEmpty())
@@ -270,11 +290,10 @@ SnippetParseResult Snippet::parse(const QString &snippet)
     return SnippetParseResult(result);
 }
 
-} // Texteditor
-
-
 #ifdef WITH_TESTS
 #   include <QTest>
+
+#   include "../texteditorplugin.h"
 
 const char NOMANGLER_ID[] = "TextEditor::NoMangler";
 
@@ -294,20 +313,9 @@ struct SnippetPart
 };
 Q_DECLARE_METATYPE(SnippetPart);
 
-namespace TextEditor::Internal {
-
 using Parts = QList<SnippetPart>;
 
-class SnippetParserTest final : public QObject
-{
-    Q_OBJECT
-
-public slots:
-    void testSnippetParsing_data();
-    void testSnippetParsing();
-};
-
-void SnippetParserTest::testSnippetParsing_data()
+void Internal::TextEditorPlugin::testSnippetParsing_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<bool>("success");
@@ -338,7 +346,7 @@ void SnippetParserTest::testSnippetParsing_data()
         << QString::fromLatin1("\\\\$test\\\\\\\\$\\\\") << false << Parts();
 
     QTest::newRow("Q_PROPERTY") << QString(
-        "Q_PROPERTY($type$ $name$ READ $name$ WRITE set$name:c$ NOTIFY $name$Changed FINAL)")
+        "Q_PROPERTY($type$ $name$ READ $name$ WRITE set$name:c$ NOTIFY $name$Changed)")
                                 << true
                                 << Parts{SnippetPart("Q_PROPERTY("),
                                          SnippetPart("type", 0),
@@ -350,7 +358,7 @@ void SnippetParserTest::testSnippetParsing_data()
                                          SnippetPart("name", 1, TCMANGLER_ID),
                                          SnippetPart(" NOTIFY "),
                                          SnippetPart("name", 1),
-                                         SnippetPart("Changed FINAL)")};
+                                         SnippetPart("Changed)")};
 
     QTest::newRow("open identifier") << QString("$test") << false << Parts();
     QTest::newRow("wrong mangler") << QString("$test:X$") << false << Parts();
@@ -392,18 +400,18 @@ void SnippetParserTest::testSnippetParsing_data()
                                          };
 }
 
-void SnippetParserTest::testSnippetParsing()
+void Internal::TextEditorPlugin::testSnippetParsing()
 {
     QFETCH(QString, input);
     QFETCH(bool, success);
     QFETCH(Parts, parts);
 
     SnippetParseResult result = Snippet::parse(input);
-    QCOMPARE(std::holds_alternative<ParsedSnippet>(result), success);
+    QCOMPARE(Utils::holds_alternative<ParsedSnippet>(result), success);
     if (!success)
         return;
 
-    ParsedSnippet snippet = std::get<ParsedSnippet>(result);
+    ParsedSnippet snippet = Utils::get<ParsedSnippet>(result);
 
     auto rangesCompare = [&](const ParsedSnippet::Part &actual, const SnippetPart &expected) {
         QCOMPARE(actual.text, expected.text);
@@ -412,17 +420,7 @@ void SnippetParserTest::testSnippetParsing()
         QCOMPARE(manglerId, expected.manglerId);
     };
 
-    for (int i = 0; i < parts.size(); ++i)
+    for (int i = 0; i < parts.count(); ++i)
         rangesCompare(snippet.parts.at(i), parts.at(i));
 }
-
-QObject *createSnippetParserTest()
-{
-    return new SnippetParserTest;
-}
-
-} // TextEditor::Internal
-
-#include "snippet.moc"
-
-#endif // WITH_TESTS
+#endif

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -17,15 +39,21 @@
 
 #include <functional>
 
+QT_BEGIN_NAMESPACE
+class QLabel;
+QT_END_NAMESPACE
+
 namespace Utils {
 class Environment;
 class FilePath;
+class LayoutBuilder;
 class MacroExpander;
 class OutputLineParser;
 } // namespace Utils
 
 namespace ProjectExplorer {
-class KitAspect;
+class Task;
+class KitAspectWidget;
 class KitManager;
 
 namespace Internal {
@@ -33,15 +61,16 @@ class KitManagerConfigWidget;
 } // namespace Internal
 
 /**
- * @brief The KitAspectFactory class
+ * @brief The KitAspect class
  *
- * A KitAspectFactory can create instances of one type of KitAspect.
- * A KitAspect handles a specific piece of information stored in the kit.
+ * One piece of information stored in the kit.
  *
  * They auto-register with the \a KitManager for their life time
  */
-class PROJECTEXPLORER_EXPORT KitAspectFactory : public QObject
+class PROJECTEXPLORER_EXPORT KitAspect : public QObject
 {
+    Q_OBJECT
+
 public:
     using Item = QPair<QString, QString>;
     using ItemList = QList<Item>;
@@ -65,7 +94,7 @@ public:
 
     virtual ItemList toUserOutput(const Kit *) const = 0;
 
-    virtual KitAspect *createKitAspect(Kit *) const = 0;
+    virtual KitAspectWidget *createConfigWidget(Kit *) const = 0;
 
     virtual void addToBuildEnvironment(const Kit *k, Utils::Environment &env) const;
     virtual void addToRunEnvironment(const Kit *k, Utils::Environment &env) const;
@@ -79,11 +108,11 @@ public:
 
     virtual void addToMacroExpander(ProjectExplorer::Kit *kit, Utils::MacroExpander *expander) const;
 
-    virtual void onKitsLoaded() {}
+    virtual bool isApplicableToKit(const Kit *) const { return true; }
 
 protected:
-    KitAspectFactory();
-    ~KitAspectFactory();
+    KitAspect();
+    ~KitAspect();
 
     void setId(Utils::Id id) { m_id = id; }
     void setDisplayName(const QString &name) { m_displayName = name; }
@@ -100,66 +129,59 @@ private:
     bool m_essential = false;
 };
 
-class PROJECTEXPLORER_EXPORT KitAspect : public Utils::BaseAspect
+class PROJECTEXPLORER_EXPORT KitAspectWidget : public Utils::BaseAspect
 {
     Q_OBJECT
 
 public:
-    KitAspect(Kit *kit, const KitAspectFactory *factory);
-    ~KitAspect();
+    KitAspectWidget(Kit *kit, const KitAspect *ki);
+    ~KitAspectWidget();
 
+    virtual void makeReadOnly() = 0;
     virtual void refresh() = 0;
 
-    void addToLayoutImpl(Layouting::Layout &layout) override;
+    void addToLayoutWithLabel(QWidget *parent);
+
     static QString msgManage();
 
     Kit *kit() const { return m_kit; }
-    const KitAspectFactory *factory() const { return m_factory; }
+    const KitAspect *kitInformation() const { return m_kitInformation; }
     QAction *mutableAction() const { return m_mutableAction; }
     void addMutableAction(QWidget *child);
-    void setManagingPage(Utils::Id pageId) { m_managingPageId = pageId; }
-
-    void makeStickySubWidgetsReadOnly();
+    QWidget *createManageButton(Utils::Id pageId);
 
 protected:
-    virtual void makeReadOnly() {}
-    virtual void addToInnerLayout(Layouting::Layout &parentItem) = 0;
-    virtual Utils::Id settingsPageItemToPreselect() const { return {}; }
-
     Kit *m_kit;
-    const KitAspectFactory *m_factory;
+    const KitAspect *m_kitInformation;
     QAction *m_mutableAction = nullptr;
-    Utils::Id m_managingPageId;
-    QPushButton *m_manageButton = nullptr;
 };
 
-class PROJECTEXPLORER_EXPORT KitManager final : public QObject
+class PROJECTEXPLORER_EXPORT KitManager : public QObject
 {
     Q_OBJECT
 
 public:
     static KitManager *instance();
+    ~KitManager() override;
 
     static const QList<Kit *> kits();
-    static const QList<Kit *> sortedKits(); // Avoid sorting whenever possible!
     static Kit *kit(const Kit::Predicate &predicate);
     static Kit *kit(Utils::Id id);
     static Kit *defaultKit();
 
-    static const QList<KitAspectFactory *> kitAspectFactories();
+    static const QList<KitAspect *> kitAspects();
     static const QSet<Utils::Id> irrelevantAspects();
     static void setIrrelevantAspects(const QSet<Utils::Id> &aspects);
 
     static Kit *registerKit(const std::function<void(Kit *)> &init, Utils::Id id = {});
     static void deregisterKit(Kit *k);
-    static void deregisterKits(const QList<Kit *> kits);
     static void setDefaultKit(Kit *k);
+
+    static QList<Kit *> sortKits(const QList<Kit *> &kits); // Avoid sorting whenever possible!
 
     static void saveKits();
 
     static bool isLoaded();
-    static bool waitForLoaded(const int timeout = 60 * 1000); // timeout in ms
-    static void showLoadingProgress();
 
 signals:
     void kitAdded(ProjectExplorer::Kit *);
@@ -177,9 +199,11 @@ signals:
 
 private:
     KitManager();
-    ~KitManager() override;
 
     static void destroy();
+
+    static void registerKitAspect(KitAspect *ki);
+    static void deregisterKitAspect(KitAspect *ki);
 
     static void setBinaryForKit(const Utils::FilePath &binary);
 
@@ -193,6 +217,7 @@ private:
     friend class ProjectExplorerPlugin; // for constructor
     friend class Kit;
     friend class Internal::KitManagerConfigWidget;
+    friend class KitAspect; // for notifyAboutUpdate and self-registration
 };
 
 } // namespace ProjectExplorer

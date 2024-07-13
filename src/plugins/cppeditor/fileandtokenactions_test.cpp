@@ -1,28 +1,51 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "fileandtokenactions_test.h"
 
+#include "cppeditorplugin.h"
 #include "cppeditorwidget.h"
+#include "cppquickfix.h"
+#include "cppquickfixassistant.h"
+#include "cppquickfixes.h"
+#include "cppinsertvirtualmethods.h"
 #include "cppmodelmanager.h"
+#include "cpptoolsreuse.h"
 #include "cpptoolstestcase.h"
 #include "cppworkingcopy.h"
 #include "projectinfo.h"
-#include "quickfixes/cppquickfix.h"
-#include "quickfixes/cppquickfixassistant.h"
-#include "quickfixes/cppinsertvirtualmethods.h"
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditor.h>
-#include <texteditor/typehierarchy.h>
 
 #include <cplusplus/CppDocument.h>
 #include <cplusplus/TranslationUnit.h>
 #include <utils/algorithm.h>
-#include <utils/environment.h>
 
 #include <QApplication>
 #include <QDebug>
@@ -49,7 +72,6 @@
 using namespace Core;
 using namespace CPlusPlus;
 using namespace TextEditor;
-using namespace Utils;
 
 namespace CppEditor::Internal::Tests {
 
@@ -108,7 +130,7 @@ static bool waitUntilAProjectIsLoaded(int timeOutInMs = 30000)
     timer.start();
 
     while (timer.elapsed() < timeOutInMs) {
-        if (!CppModelManager::projectInfos().isEmpty())
+        if (!CppModelManager::instance()->projectInfos().isEmpty())
             return true;
 
         QCoreApplication::processEvents();
@@ -123,29 +145,29 @@ TestActionsTestCase::TestActionsTestCase(const Actions &tokenActions, const Acti
 {
     QVERIFY(succeededSoFar());
 
-    if (Utils::qtcEnvironmentVariable("QTC_TEST_WAIT_FOR_LOADED_PROJECT") != "1")
+    if (qgetenv("QTC_TEST_WAIT_FOR_LOADED_PROJECT") != "1")
         QSKIP("Environment variable QTC_TEST_WAIT_FOR_LOADED_PROJECT=1 not set.");
     QVERIFY(waitUntilAProjectIsLoaded());
 
     // Collect files to process
-    FilePaths filesToOpen;
+    QStringList filesToOpen;
     QList<QPointer<ProjectExplorer::Project> > projects;
-    const QList<ProjectInfo::ConstPtr> projectInfos = CppModelManager::projectInfos();
+    const QList<ProjectInfo::ConstPtr> projectInfos = m_modelManager->projectInfos();
 
    for (const ProjectInfo::ConstPtr &info : projectInfos) {
         qDebug() << "Project" << info->projectFilePath().toUserOutput() << "- files to process:"
                  << info->sourceFiles().size();
-       const QSet<FilePath> sourceFiles = info->sourceFiles();
-       for (const FilePath &sourceFile : sourceFiles)
+       const QSet<QString> sourceFiles = info->sourceFiles();
+       for (const QString &sourceFile : sourceFiles)
             filesToOpen << sourceFile;
     }
 
     Utils::sort(filesToOpen);
 
     // Process all files from the projects
-    for (const FilePath &filePath : std::as_const(filesToOpen)) {
+    for (const QString &filePath : qAsConst(filesToOpen)) {
         // Skip e.g. "<configuration>"
-        if (!filePath.exists())
+        if (!QFileInfo::exists(filePath))
             continue;
 
         qDebug() << " --" << filePath;
@@ -160,11 +182,11 @@ TestActionsTestCase::TestActionsTestCase(const Actions &tokenActions, const Acti
         QVERIFY(openCppEditor(filePath, &editor, &editorWidget));
 
         QCOMPARE(DocumentModel::openedDocuments().size(), 1);
-        QVERIFY(CppModelManager::isCppEditor(editor));
-        QVERIFY(CppModelManager::workingCopy().get(filePath));
+        QVERIFY(m_modelManager->isCppEditor(editor));
+        QVERIFY(m_modelManager->workingCopy().contains(filePath));
 
         // Rehighlight
-        QVERIFY(waitForRehighlightedSemanticDocument(editorWidget));
+        waitForRehighlightedSemanticDocument(editorWidget);
 
         // Run all file actions
         executeActionsOnEditorWidget(editorWidget, fileActions);
@@ -174,7 +196,7 @@ TestActionsTestCase::TestActionsTestCase(const Actions &tokenActions, const Acti
 
         const Snapshot snapshot = globalSnapshot();
         Document::Ptr document = snapshot.preprocessedDocument(
-            editorWidget->document()->toPlainText().toUtf8(), filePath);
+            editorWidget->document()->toPlainText().toUtf8(), Utils::FilePath::fromString(filePath));
         QVERIFY(document);
         document->parse();
         TranslationUnit *translationUnit = document->translationUnit();
@@ -249,7 +271,7 @@ void TestActionsTestCase::undoChangesInAllEditorWidgets()
 void TestActionsTestCase::executeActionsOnEditorWidget(CppEditorWidget *editorWidget,
                                                        TestActionsTestCase::Actions actions)
 {
-    for (const ActionPointer &action : std::as_const(actions))
+    for (const ActionPointer &action : qAsConst(actions))
         action->run(editorWidget);
     QApplication::processEvents();
 }
@@ -290,7 +312,7 @@ class NoOpTokenAction : public TestActionsTestCase::AbstractAction
 {
 public:
     /// Do nothing on each token
-    void run(CppEditorWidget *) override {}
+    void run(CppEditorWidget *) {}
 };
 
 class FollowSymbolUnderCursorTokenAction : public TestActionsTestCase::AbstractAction
@@ -298,7 +320,7 @@ class FollowSymbolUnderCursorTokenAction : public TestActionsTestCase::AbstractA
 public:
     /// Follow symbol under cursor
     /// Warning: May block if file does not exist (e.g. a not generated ui_* file).
-    void run(CppEditorWidget *editorWidget) override;
+    void run(CppEditorWidget *editorWidget);
 };
 
 void FollowSymbolUnderCursorTokenAction::run(CppEditorWidget *editorWidget)
@@ -324,17 +346,16 @@ class SwitchDeclarationDefinitionTokenAction : public TestActionsTestCase::Abstr
 {
 public:
     /// Switch Declaration/Definition on each token
-    void run(CppEditorWidget *) override;
+    void run(CppEditorWidget *);
 };
 
-void SwitchDeclarationDefinitionTokenAction::run(CppEditorWidget *editorWidget)
+void SwitchDeclarationDefinitionTokenAction::run(CppEditorWidget *)
 {
     // Switch Declaration/Definition
     IEditor *editorBefore = EditorManager::currentEditor();
     const int originalLine = editorBefore->currentLine();
     const int originalColumn = editorBefore->currentColumn();
-    if (editorWidget)
-        editorWidget->switchDeclarationDefinition(/*inNextSplit*/ false);
+    CppEditorPlugin::instance()->switchDeclarationDefinition();
     QApplication::processEvents();
 
     // Go back
@@ -350,7 +371,7 @@ class FindUsagesTokenAction : public TestActionsTestCase::AbstractAction
 {
 public:
     /// Find Usages on each token
-    void run(CppEditorWidget *editor) override;
+    void run(CppEditorWidget *editor);
 };
 
 void FindUsagesTokenAction::run(CppEditorWidget *editor)
@@ -363,14 +384,12 @@ class RenameSymbolUnderCursorTokenAction : public TestActionsTestCase::AbstractA
 {
 public:
     /// Rename Symbol Under Cursor on each token (Renaming is not applied)
-    void run(CppEditorWidget *) override;
+    void run(CppEditorWidget *);
 };
 
-void RenameSymbolUnderCursorTokenAction::run(CppEditorWidget *editorWidget)
+void RenameSymbolUnderCursorTokenAction::run(CppEditorWidget *)
 {
-    if (editorWidget)
-        editorWidget->renameSymbolUnderCursor();
-
+    CppEditorPlugin::instance()->renameSymbolUnderCursor();
     QApplication::processEvents();
 }
 
@@ -378,12 +397,12 @@ class OpenTypeHierarchyTokenAction : public TestActionsTestCase::AbstractAction
 {
 public:
     /// Open Type Hierarchy on each token
-    void run(CppEditorWidget *) override;
+    void run(CppEditorWidget *);
 };
 
 void OpenTypeHierarchyTokenAction::run(CppEditorWidget *)
 {
-    TextEditor::openTypeHierarchy();
+    CppEditorPlugin::instance()->openTypeHierarchy();
     QApplication::processEvents();
 }
 
@@ -392,7 +411,7 @@ class InvokeCompletionTokenAction : public TestActionsTestCase::AbstractAction
 public:
     /// Invoke completion menu on each token.
     /// Warning: May create tool tip artefacts if focus is lost.
-    void run(CppEditorWidget *editorWidget) override;
+    void run(CppEditorWidget *editorWidget);
 };
 
 void InvokeCompletionTokenAction::run(CppEditorWidget *editorWidget)
@@ -418,7 +437,7 @@ class RunAllQuickFixesTokenAction : public TestActionsTestCase::AbstractAction
 {
 public:
     /// Trigger all Quick Fixes and apply the matching ones
-    void run(CppEditorWidget *editorWidget) override;
+    void run(CppEditorWidget *editorWidget);
 };
 
 // TODO: Some QuickFixes operate on selections.
@@ -444,7 +463,7 @@ void RunAllQuickFixesTokenAction::run(CppEditorWidget *editorWidget)
             cppQuickFixFactory->match(qfi, operations);
         }
 
-        for (QuickFixOperation::Ptr operation : std::as_const(operations)) {
+        for (QuickFixOperation::Ptr operation : qAsConst(operations)) {
             qDebug() << "    -- Performing Quick Fix" << operation->description();
             operation->perform();
             TestActionsTestCase::escape();
@@ -457,7 +476,7 @@ void RunAllQuickFixesTokenAction::run(CppEditorWidget *editorWidget)
 class SwitchHeaderSourceFileAction : public TestActionsTestCase::AbstractAction
 {
 public:
-    void run(CppEditorWidget *) override;
+    void run(CppEditorWidget *);
 };
 
 void SwitchHeaderSourceFileAction::run(CppEditorWidget *)

@@ -1,12 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "addtoolchainoperation.h"
 
 #include "addkeysoperation.h"
+#include "findkeyoperation.h"
 #include "findvalueoperation.h"
 #include "getoperation.h"
 #include "rmkeysoperation.h"
+
+#include "settings.h"
 
 #include <iostream>
 
@@ -280,7 +305,7 @@ QVariantMap AddToolChainData::addToolChain(const QVariantMap &map) const
     data << KeyValuePair({tc, LANGUAGE_KEY_V2}, QVariant(newLang));
     data << KeyValuePair({tc, DISPLAYNAME}, QVariant(m_displayName));
     data << KeyValuePair({tc, AUTODETECTED}, QVariant(true));
-    data << KeyValuePair({tc, PATH}, QVariant(m_path));
+    data << KeyValuePair({tc, PATH}, Utils::FilePath::fromUserInput(m_path).toVariant());
     data << KeyValuePair({tc, TARGET_ABI}, QVariant(m_targetAbi));
     QVariantList abis;
     const QStringList abiStrings = m_supportedAbis.split(',');
@@ -288,7 +313,7 @@ QVariantMap AddToolChainData::addToolChain(const QVariantMap &map) const
         abis << QVariant(s);
     data << KeyValuePair({tc, SUPPORTED_ABIS}, QVariant(abis));
     KeyValuePairList tcExtraList;
-    for (const KeyValuePair &pair : std::as_const(m_extra))
+    for (const KeyValuePair &pair : qAsConst(m_extra))
         tcExtraList << KeyValuePair(QStringList({tc}) << pair.key, pair.value);
     data.append(tcExtraList);
     data << KeyValuePair(COUNT, QVariant(count + 1));
@@ -310,7 +335,7 @@ bool AddToolChainData::exists(const QVariantMap &map, const QString &id)
     // support old settings using QByteArray for id's
     valueKeys.append(FindValueOperation::findValue(map, id.toUtf8()));
 
-    for (const QString &k : std::as_const(valueKeys)) {
+    for (const QString &k : qAsConst(valueKeys)) {
         if (k.endsWith(QString('/') + ID)) {
             return true;
         }

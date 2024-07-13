@@ -1,32 +1,54 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "circularclipboardassist.h"
 #include "codeassist/assistinterface.h"
 #include "codeassist/iassistprocessor.h"
 #include "codeassist/iassistproposal.h"
 #include "codeassist/assistproposalitem.h"
+#include "codeassist/genericproposalmodel.h"
 #include "codeassist/genericproposal.h"
 #include "texteditor.h"
 #include "circularclipboard.h"
 
 #include <coreplugin/coreconstants.h>
 
-#include <utils/icon.h>
+#include <utils/utilsicons.h>
 
 #include <QApplication>
 #include <QClipboard>
 
-using namespace Utils;
+namespace TextEditor {
+namespace Internal {
 
-namespace TextEditor::Internal {
-
-class ClipboardProposalItem final : public AssistProposalItem
+class ClipboardProposalItem: public AssistProposalItem
 {
 public:
     enum { maxLen = 80 };
 
-    ClipboardProposalItem(std::shared_ptr<const QMimeData> mimeData)
+    ClipboardProposalItem(QSharedPointer<const QMimeData> mimeData)
         : m_mimeData(mimeData)
     {
         QString text = mimeData->text().simplified();
@@ -37,9 +59,10 @@ public:
         setText(text);
     }
 
-    void apply(TextEditorWidget *editorWidget, int /*basePosition*/) const final
+    ~ClipboardProposalItem() noexcept override = default;
+
+    void apply(TextDocumentManipulatorInterface &manipulator, int /*basePosition*/) const override
     {
-        QTC_ASSERT(editorWidget, return);
 
         //Move to last in circular clipboard
         if (CircularClipboard * clipboard = CircularClipboard::instance()) {
@@ -49,27 +72,31 @@ public:
 
         //Copy the selected item
         QApplication::clipboard()->setMimeData(
-                    TextEditorWidget::duplicateMimeData(m_mimeData.get()));
+                    TextEditorWidget::duplicateMimeData(m_mimeData.data()));
 
         //Paste
-        editorWidget->paste();
+        manipulator.paste();
     }
 
 private:
-    std::shared_ptr<const QMimeData> m_mimeData;
+    QSharedPointer<const QMimeData> m_mimeData;
 };
 
-class ClipboardAssistProcessor final : public IAssistProcessor
+class ClipboardAssistProcessor: public IAssistProcessor
 {
 public:
-    IAssistProposal *perform() final
+    IAssistProposal *perform(const AssistInterface *interface) override
     {
-        QIcon icon = Icon::fromTheme("edit-paste");
+        if (!interface)
+            return nullptr;
+        const QScopedPointer<const AssistInterface> AssistInterface(interface);
+
+        QIcon icon = QIcon::fromTheme(QLatin1String("edit-paste"), Utils::Icons::PASTE.icon()).pixmap(16);
         CircularClipboard * clipboard = CircularClipboard::instance();
         QList<AssistProposalItemInterface *> items;
         items.reserve(clipboard->size());
         for (int i = 0; i < clipboard->size(); ++i) {
-            std::shared_ptr<const QMimeData> data = clipboard->next();
+            QSharedPointer<const QMimeData> data = clipboard->next();
 
             AssistProposalItem *item = new ClipboardProposalItem(data);
             item->setIcon(icon);
@@ -77,23 +104,19 @@ public:
             items.append(item);
         }
 
-        return new GenericProposal(interface()->position(), items);
+        return new GenericProposal(interface->position(), items);
     }
 };
 
-class ClipboardAssistProvider final : public IAssistProvider
+IAssistProvider::RunType ClipboardAssistProvider::runType() const
 {
-public:
-    IAssistProcessor *createProcessor(const AssistInterface *) const final
-    {
-        return new ClipboardAssistProcessor;
-    }
-};
-
-IAssistProvider &clipboardAssistProvider()
-{
-    static ClipboardAssistProvider theClipboardAssistProvider;
-    return theClipboardAssistProvider;
+    return Synchronous;
 }
 
-} // TextEditor::Internal
+IAssistProcessor *ClipboardAssistProvider::createProcessor(const AssistInterface *) const
+{
+    return new ClipboardAssistProcessor;
+}
+
+} // namespace Internal
+} // namespace TextEditor

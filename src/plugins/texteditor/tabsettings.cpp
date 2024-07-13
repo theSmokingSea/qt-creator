@@ -1,12 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "tabsettings.h"
+#include "texteditorplugin.h"
 
-#include "icodestylepreferences.h"
-#include "texteditorsettings.h"
+#include <utils/settingsutils.h>
 
 #include <QDebug>
+#include <QSettings>
+#include <QString>
 #include <QTextCursor>
 #include <QTextDocument>
 
@@ -14,9 +38,8 @@ static const char spacesForTabsKey[] = "SpacesForTabs";
 static const char autoSpacesForTabsKey[] = "AutoSpacesForTabs";
 static const char tabSizeKey[] = "TabSize";
 static const char indentSizeKey[] = "IndentSize";
+static const char groupPostfix[] = "TabSettings";
 static const char paddingModeKey[] = "PaddingMode";
-
-using namespace Utils;
 
 namespace TextEditor {
 
@@ -29,9 +52,21 @@ TabSettings::TabSettings(TabSettings::TabPolicy tabPolicy,
     , m_indentSize(indentSize)
     , m_continuationAlignBehavior(continuationAlignBehavior)
 {
+
 }
 
-Store TabSettings::toMap() const
+void TabSettings::toSettings(const QString &category, QSettings *s) const
+{
+    Utils::toSettings(QLatin1String(groupPostfix), category, s, this);
+}
+
+void TabSettings::fromSettings(const QString &category, QSettings *s)
+{
+    *this = TabSettings(); // Assign defaults
+    Utils::fromSettings(QLatin1String(groupPostfix), category, s, this);
+}
+
+QVariantMap TabSettings::toMap() const
 {
     return {
         {spacesForTabsKey, m_tabPolicy != TabsOnlyTabPolicy},
@@ -42,7 +77,7 @@ Store TabSettings::toMap() const
     };
 }
 
-void TabSettings::fromMap(const Store &map)
+void TabSettings::fromMap(const QVariantMap &map)
 {
     const bool spacesForTabs = map.value(spacesForTabsKey, true).toBool();
     const bool autoSpacesForTabs = map.value(autoSpacesForTabsKey, false).toBool();
@@ -238,7 +273,7 @@ bool TabSettings::guessSpacesForTabs(const QTextBlock &_block) const
             if (currentBlocks.at(1).isValid())
                 currentBlocks[1] = currentBlocks.at(1).next();
             bool done = true;
-            for (const QTextBlock &block : std::as_const(currentBlocks)) {
+            for (const QTextBlock &block : qAsConst(currentBlocks)) {
                 if (block.isValid())
                     done = false;
                 if (!block.isValid() || block.length() == 0)
@@ -348,17 +383,6 @@ bool TabSettings::equals(const TabSettings &ts) const
         && m_tabSize == ts.m_tabSize
         && m_indentSize == ts.m_indentSize
         && m_continuationAlignBehavior == ts.m_continuationAlignBehavior;
-}
-
-static TabSettings::Retriever g_retriever = [](const FilePath &) {
-    return TextEditorSettings::codeStyle()->tabSettings();
-};
-
-void TabSettings::setRetriever(const Retriever &retriever) { g_retriever = retriever; }
-
-TabSettings TabSettings::settingsForFile(const Utils::FilePath &filePath)
-{
-    return g_retriever(filePath);
 }
 
 } // namespace TextEditor

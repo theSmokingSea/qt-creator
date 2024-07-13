@@ -1,13 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "basehoverhandler.h"
 #include "texteditor.h"
 
+#include <utils/executeondestruction.h>
 #include <utils/qtcassert.h>
 #include <utils/tooltip/tooltip.h>
 
-#include <QScopeGuard>
 #include <QVBoxLayout>
 
 namespace TextEditor {
@@ -17,11 +39,6 @@ BaseHoverHandler::~BaseHoverHandler() = default;
 void BaseHoverHandler::showToolTip(TextEditorWidget *widget, const QPoint &point)
 {
     operateTooltip(widget, point);
-}
-
-bool BaseHoverHandler::lastHelpItemAppliesTo(const TextEditorWidget *widget) const
-{
-    return m_lastWidget == widget;
 }
 
 void BaseHoverHandler::checkPriority(TextEditorWidget *widget,
@@ -111,17 +128,13 @@ void BaseHoverHandler::process(TextEditorWidget *widget, int pos, ReportPriority
     m_toolTip.clear();
     m_priority = -1;
     m_lastHelpItemIdentified = Core::HelpItem();
-    m_lastWidget = nullptr;
 
-    identifyMatch(widget, pos, [this, widget, report](int priority) {
-        m_lastWidget = widget;
-        report(priority);
-    });
+    identifyMatch(widget, pos, report);
 }
 
 void BaseHoverHandler::identifyMatch(TextEditorWidget *editorWidget, int pos, ReportPriority report)
 {
-    const QScopeGuard cleanup([this, report] { report(priority()); });
+    Utils::ExecuteOnDestruction reportPriority([this, report](){ report(priority()); });
 
     QString tooltip = editorWidget->extraSelectionTooltip(pos);
     if (!tooltip.isEmpty())

@@ -2,10 +2,9 @@ add_qtc_plugin(BinEditor
   PLUGIN_DEPENDS Core TextEditor
   SOURCES
     bineditor_global.h
-    bineditortr.h
     bineditorconstants.h
-    bineditorplugin.cpp
+    bineditorplugin.cpp bineditorplugin.h
     bineditorservice.h
-    markup.cpp
-    markup.h
+    bineditorwidget.cpp bineditorwidget.h
+    markup.cpp markup.h
 )

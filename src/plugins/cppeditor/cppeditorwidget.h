@@ -1,20 +1,38 @@
-// Copyright (C) 2017 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "cppeditor_global.h"
 
-#include <texteditor/blockrange.h>
 #include <texteditor/codeassist/assistenums.h>
 #include <texteditor/texteditor.h>
 
 #include <QScopedPointer>
 
-#include <functional>
-
 namespace TextEditor {
-class BlockRange;
 class IAssistProposal;
 class IAssistProvider;
 }
@@ -38,18 +56,17 @@ public:
     CppEditorWidget();
     ~CppEditorWidget() override;
 
-    static CppEditorWidget *fromTextDocument(TextEditor::TextDocument *doc);
-
     Internal::CppEditorDocument *cppEditorDocument() const;
+    Internal::CppEditorOutline *outline() const;
 
     bool isSemanticInfoValidExceptLocalUses() const;
     bool isSemanticInfoValid() const;
     bool isRenaming() const;
 
-    std::shared_ptr<Internal::FunctionDeclDefLink> declDefLink() const;
+    QSharedPointer<Internal::FunctionDeclDefLink> declDefLink() const;
     void applyDeclDefLinkChanges(bool jumpToMatch);
 
-    std::unique_ptr<TextEditor::AssistInterface> createAssistInterface(
+    TextEditor::AssistInterface *createAssistInterface(
             TextEditor::AssistKind kind,
             TextEditor::AssistReason reason) const override;
 
@@ -66,10 +83,6 @@ public:
     void findUsages(QTextCursor cursor);
     void renameUsages(const QString &replacement = QString(),
                       QTextCursor cursor = QTextCursor());
-    void renameUsages(const Utils::FilePath &filePath,
-                      const QString &replacement = QString(),
-                      QTextCursor cursor = QTextCursor(),
-                      const std::function<void()> &callback = {});
     void renameSymbolUnderCursor() override;
 
     bool selectBlockUp() override;
@@ -86,8 +99,6 @@ public:
     static const QList<QTextEdit::ExtraSelection>
     unselectLeadingWhitespace(const QList<QTextEdit::ExtraSelection> &selections);
 
-    void setIfdefedOutBlocks(const QList<TextEditor::BlockRange> &blocks);
-
     bool isInTestMode() const;
     void setProposals(const TextEditor::IAssistProposal *immediateProposal,
                       const TextEditor::IAssistProposal *finalProposal);
@@ -96,7 +107,6 @@ public:
 signals:
     void proposalsReady(const TextEditor::IAssistProposal *immediateProposal,
                         const TextEditor::IAssistProposal *finalProposal);
-    void ifdefedOutBlocksChanged(const QList<TextEditor::BlockRange> &blocks);
 #endif
 
 protected:
@@ -110,18 +120,15 @@ protected:
                     bool resolveTarget = true,
                     bool inNextSplit = false) override;
 
-    void findTypeAt(const QTextCursor &cursor,
-                    const Utils::LinkHandler &processLinkCallback,
-                    bool resolveTarget = true,
-                    bool inNextSplit = false) override;
-
     void slotCodeStyleSettingsChanged(const QVariant &) override;
 
 private:
     void updateFunctionDeclDefLink();
     void updateFunctionDeclDefLinkNow();
     void abortDeclDefLink();
-    void onFunctionDeclDefLinkFound(std::shared_ptr<Internal::FunctionDeclDefLink> link);
+    void onFunctionDeclDefLinkFound(QSharedPointer<Internal::FunctionDeclDefLink> link);
+
+    void onCppDocumentUpdated();
 
     void onCodeWarningsUpdated(unsigned revision,
                                const QList<QTextEdit::ExtraSelection> selections,
@@ -140,15 +147,10 @@ private:
 
     unsigned documentRevision() const;
     bool isOldStyleSignalOrSlot() const;
-    bool followUrl(const QTextCursor &cursor, const Utils::LinkHandler &processLinkCallback);
 
     QMenu *createRefactorMenu(QWidget *parent) const;
 
     const ProjectPart *projectPart() const;
-
-    void handleOutlineChanged(const QWidget* newOutline);
-    void showRenameWarningIfFileIsGenerated(const Utils::FilePath &filePath);
-    void addRefactoringActions(QMenu *menu) const;
 
 private:
     QScopedPointer<Internal::CppEditorWidgetPrivate> d;

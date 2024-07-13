@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "processparameters.h"
 
@@ -7,7 +29,6 @@
 #include <utils/macroexpander.h>
 #include <utils/qtcprocess.h>
 #include <utils/theme/theme.h>
-#include <utils/utilstr.h>
 
 #include <QDir>
 
@@ -35,7 +56,7 @@ ProcessParameters::ProcessParameters() = default;
 */
 void ProcessParameters::setCommandLine(const CommandLine &cmdLine)
 {
-    m_runData.command = cmdLine;
+    m_command = cmdLine;
     m_effectiveCommand.clear();
     m_effectiveArguments.clear();
 
@@ -51,7 +72,7 @@ void ProcessParameters::setCommandLine(const CommandLine &cmdLine)
 
 void ProcessParameters::setWorkingDirectory(const FilePath &workingDirectory)
 {
-    m_runData.workingDirectory = workingDirectory;
+    m_workingDirectory = workingDirectory;
     m_effectiveWorkingDirectory.clear();
 
     effectiveWorkingDirectory();
@@ -79,12 +100,11 @@ void ProcessParameters::setWorkingDirectory(const FilePath &workingDirectory)
 FilePath ProcessParameters::effectiveWorkingDirectory() const
 {
     if (m_effectiveWorkingDirectory.isEmpty()) {
-        m_effectiveWorkingDirectory = m_runData.workingDirectory;
-        QString path = m_runData.workingDirectory.path();
+        m_effectiveWorkingDirectory = m_workingDirectory;
+        QString path = m_workingDirectory.path();
         if (m_macroExpander)
             path = m_macroExpander->expand(path);
-        m_effectiveWorkingDirectory = m_effectiveWorkingDirectory.withNewPath(
-            QDir::cleanPath(m_runData.environment.expandVariables(path)));
+        m_effectiveWorkingDirectory.setPath(QDir::cleanPath(m_environment.expandVariables(path)));
     }
     return m_effectiveWorkingDirectory;
 }
@@ -96,15 +116,15 @@ FilePath ProcessParameters::effectiveWorkingDirectory() const
 FilePath ProcessParameters::effectiveCommand() const
 {
     if (m_effectiveCommand.isEmpty()) {
-        FilePath cmd = m_runData.command.executable();
+        FilePath cmd = m_command.executable();
         if (m_macroExpander)
             cmd = m_macroExpander->expand(cmd);
         if (cmd.needsDevice()) {
             // Assume this is already good. FIXME: It is possibly not, so better fix  searchInPath.
             m_effectiveCommand = cmd;
         } else {
-            m_effectiveCommand = m_runData.environment.searchInPath(cmd.toString(),
-                                                                    {effectiveWorkingDirectory()});
+            m_effectiveCommand = m_environment.searchInPath(cmd.toString(),
+                                                            {effectiveWorkingDirectory()});
         }
         m_commandMissing = m_effectiveCommand.isEmpty();
         if (m_commandMissing)
@@ -126,7 +146,7 @@ bool ProcessParameters::commandMissing() const
 QString ProcessParameters::effectiveArguments() const
 {
     if (m_effectiveArguments.isEmpty()) {
-        m_effectiveArguments = m_runData.command.arguments();
+        m_effectiveArguments = m_command.arguments();
         if (m_macroExpander)
             m_effectiveArguments = m_macroExpander->expand(m_effectiveArguments);
     }
@@ -135,7 +155,7 @@ QString ProcessParameters::effectiveArguments() const
 
 QString ProcessParameters::prettyCommand() const
 {
-    QString cmd = m_runData.command.executable().toString();
+    QString cmd = m_command.executable().toString();
     if (m_macroExpander)
         cmd = m_macroExpander->expand(cmd);
     return FilePath::fromString(cmd).fileName();
@@ -143,11 +163,11 @@ QString ProcessParameters::prettyCommand() const
 
 QString ProcessParameters::prettyArguments() const
 {
-    const QString margs = effectiveArguments();
-    const FilePath workDir = effectiveWorkingDirectory();
+    QString margs = effectiveArguments();
+    FilePath workDir = effectiveWorkingDirectory();
     ProcessArgs::SplitError err;
-    const ProcessArgs args = ProcessArgs::prepareArgs(margs, &err, HostOsInfo::hostOs(),
-                                                      &m_runData.environment, &workDir);
+    ProcessArgs args =
+            ProcessArgs::prepareArgs(margs, &err, HostOsInfo::hostOs(), &m_environment, &workDir);
     if (err != ProcessArgs::SplitOk)
         return margs; // Sorry, too complex - just fall back.
     return args.toString();
@@ -157,8 +177,8 @@ static QString invalidCommandMessage(const QString &displayName)
 {
     return QString("<b>%1:</b> <font color='%3'>%2</font>")
                     .arg(displayName,
-                         ::Utils::Tr::tr("Invalid command"),
-                         creatorColor(Theme::TextColorError).name());
+                         QtcProcess::tr("Invalid command"),
+                         creatorTheme()->color(Theme::TextColorError).name());
 }
 
 QString ProcessParameters::summary(const QString &displayName) const

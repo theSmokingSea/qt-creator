@@ -1,11 +1,31 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "introductionwidget.h"
-#include "welcometr.h"
 
 #include <coreplugin/icore.h>
-
 #include <utils/algorithm.h>
 #include <utils/checkablemessagebox.h>
 #include <utils/infobar.h>
@@ -14,63 +34,48 @@
 
 #include <QEvent>
 #include <QGuiApplication>
-#include <QImage>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QPainter>
-#include <QPointer>
+#include <QPushButton>
 #include <QVBoxLayout>
 
-using namespace Core;
 using namespace Utils;
-
-namespace Welcome::Internal {
 
 const char kTakeTourSetting[] = "TakeUITour";
 
-struct Item
+namespace Welcome {
+namespace Internal {
+
+void IntroductionWidget::askUserAboutIntroduction(QWidget *parent, QSettings *settings)
 {
-    QString pointerAnchorObjectName;
-    QString title;
-    QString brief;
-    QString description;
-};
+    // CheckableMessageBox for compatibility with Qt Creator < 4.11
+    if (!CheckableMessageBox::shouldAskAgain(settings, kTakeTourSetting)
+        || !Core::ICore::infoBar()->canInfoBeAdded(kTakeTourSetting))
+        return;
 
-class IntroductionWidget : public QWidget
-{
-public:
-    IntroductionWidget();
+    Utils::InfoBarEntry
+        info(kTakeTourSetting,
+             tr("Would you like to take a quick UI tour? This tour highlights important user "
+                "interface elements and shows how they are used. To take the tour later, "
+                "select Help > UI Tour."),
+             Utils::InfoBarEntry::GlobalSuppression::Enabled);
+    info.addCustomButton(tr("Take UI Tour"), [parent] {
+        Core::ICore::infoBar()->removeInfo(kTakeTourSetting);
+        Core::ICore::infoBar()->globallySuppressInfo(kTakeTourSetting);
+        auto intro = new IntroductionWidget(parent);
+        intro->show();
+    });
+    Core::ICore::infoBar()->addInfo(info);
+}
 
-protected:
-    bool event(QEvent *e) override;
-    bool eventFilter(QObject *obj, QEvent *ev) override;
-    void paintEvent(QPaintEvent *ev) override;
-    void keyPressEvent(QKeyEvent *ke) override;
-    void mouseReleaseEvent(QMouseEvent *me) override;
-
-private:
-    void finish();
-    void step();
-    void setStep(uint index);
-    void resizeToParent();
-
-    QWidget *m_textWidget;
-    QLabel *m_stepText;
-    QLabel *m_continueLabel;
-    QImage m_borderImage;
-    QString m_bodyCss;
-    std::vector<Item> m_items;
-    QPointer<QWidget> m_stepPointerAnchor;
-    uint m_step = 0;
-};
-
-IntroductionWidget::IntroductionWidget()
-    : QWidget(ICore::dialogParent()),
+IntroductionWidget::IntroductionWidget(QWidget *parent)
+    : QWidget(parent),
       m_borderImage(":/welcome/images/border.png")
 {
     setFocusPolicy(Qt::StrongFocus);
     setFocus();
-    parentWidget()->installEventFilter(this);
+    parent->installEventFilter(this);
 
     QPalette p = palette();
     p.setColor(QPalette::WindowText, QColor(220, 220, 220));
@@ -94,69 +99,71 @@ IntroductionWidget::IntroductionWidget()
     m_continueLabel->setAlignment(Qt::AlignCenter);
     m_continueLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     m_continueLabel->setWordWrap(true);
-    m_continueLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH4));
+    auto fnt = font();
+    fnt.setPointSizeF(fnt.pointSizeF() * 1.5);
+    m_continueLabel->setFont(fnt);
     m_continueLabel->setPalette(palette());
     layout->addWidget(m_continueLabel);
     m_bodyCss = "font-size: 16px;";
     m_items = {
         {QLatin1String("ModeSelector"),
-         Tr::tr("Mode Selector"),
-         Tr::tr("Select different modes depending on the task at hand."),
-         Tr::tr("<p style=\"margin-top: 30px\"><table>"
-                "<tr><td style=\"padding-right: 20px\">Welcome:</td><td>Open examples, tutorials, and "
-                "recent sessions and projects.</td></tr>"
-                "<tr><td>Edit:</td><td>Work with code and navigate your project.</td></tr>"
-                "<tr><td>Design:</td><td>Visually edit Widget-based user interfaces, state charts and UML models.</td></tr>"
-                "<tr><td>Debug:</td><td>Analyze your application with a debugger or other "
-                "analyzers.</td></tr>"
-                "<tr><td>Projects:</td><td>Manage project settings.</td></tr>"
-                "<tr><td>Help:</td><td>Browse the help database.</td></tr>"
-                "</table></p>")},
+         tr("Mode Selector"),
+         tr("Select different modes depending on the task at hand."),
+         tr("<p style=\"margin-top: 30px\"><table>"
+            "<tr><td style=\"padding-right: 20px\">Welcome:</td><td>Open examples, tutorials, and "
+            "recent sessions and projects.</td></tr>"
+            "<tr><td>Edit:</td><td>Work with code and navigate your project.</td></tr>"
+            "<tr><td>Design:</td><td>Visually edit Widget-based user interfaces, state charts and UML models.</td></tr>"
+            "<tr><td>Debug:</td><td>Analyze your application with a debugger or other "
+            "analyzers.</td></tr>"
+            "<tr><td>Projects:</td><td>Manage project settings.</td></tr>"
+            "<tr><td>Help:</td><td>Browse the help database.</td></tr>"
+            "</table></p>")},
         {QLatin1String("KitSelector.Button"),
-         Tr::tr("Kit Selector"),
-         Tr::tr("Select the active project or project configuration."),
+         tr("Kit Selector"),
+         tr("Select the active project or project configuration."),
          {}},
         {QLatin1String("Run.Button"),
-         Tr::tr("Run Button"),
-         Tr::tr("Run the active project. By default this builds the project first."),
+         tr("Run Button"),
+         tr("Run the active project. By default this builds the project first."),
          {}},
         {QLatin1String("Debug.Button"),
-         Tr::tr("Debug Button"),
-         Tr::tr("Run the active project in a debugger."),
+         tr("Debug Button"),
+         tr("Run the active project in a debugger."),
          {}},
-        {QLatin1String("Build.Button"), Tr::tr("Build Button"), Tr::tr("Build the active project."), {}},
+        {QLatin1String("Build.Button"), tr("Build Button"), tr("Build the active project."), {}},
         {QLatin1String("LocatorInput"),
-         Tr::tr("Locator"),
-         Tr::tr("Type here to open a file from any open project."),
-         Tr::tr("Or:"
-                "<ul>"
-                "<li>type <code>c&lt;space&gt;&lt;pattern&gt;</code> to jump to a class definition</li>"
-                "<li>type <code>f&lt;space&gt;&lt;pattern&gt;</code> to open a file from the file "
-                "system</li>"
-                "<li>click on the magnifier icon for a complete list of possible options</li>"
-                "</ul>")},
+         tr("Locator"),
+         tr("Type here to open a file from any open project."),
+         tr("Or:"
+            "<ul>"
+            "<li>type <code>c&lt;space&gt;&lt;pattern&gt;</code> to jump to a class definition</li>"
+            "<li>type <code>f&lt;space&gt;&lt;pattern&gt;</code> to open a file from the file "
+            "system</li>"
+            "<li>click on the magnifier icon for a complete list of possible options</li>"
+            "</ul>")},
         {QLatin1String("OutputPaneButtons"),
-         Tr::tr("Output"),
-         Tr::tr("Find compile and application output here, "
-                "as well as a list of configuration and build issues, "
-                "and the panel for global searches."),
+         tr("Output"),
+         tr("Find compile and application output here, "
+            "as well as a list of configuration and build issues, "
+            "and the panel for global searches."),
          {}},
         {QLatin1String("ProgressInfo"),
-         Tr::tr("Progress Indicator"),
-         Tr::tr("Progress information about running tasks is shown here."),
+         tr("Progress Indicator"),
+         tr("Progress information about running tasks is shown here."),
          {}},
         {{},
-         Tr::tr("Escape to Editor"),
-         Tr::tr("Pressing the Escape key brings you back to the editor. Press it "
-                "multiple times to also hide context help and output, giving the editor more "
-                "space."),
+         tr("Escape to Editor"),
+         tr("Pressing the Escape key brings you back to the editor. Press it "
+            "multiple times to also hide context help and output, giving the editor more "
+            "space."),
          {}},
         {{},
-         Tr::tr("The End"),
-         Tr::tr("You have now completed the UI tour. To learn more about the highlighted "
-                "controls, see <a style=\"color: #41CD52\" "
-                "href=\"qthelp://org.qt-project.qtcreator/doc/creator-quick-tour.html\">User "
-                "Interface</a>."),
+         tr("The End"),
+         tr("You have now completed the UI tour. To learn more about the highlighted "
+            "controls, see <a style=\"color: #41CD52\" "
+            "href=\"qthelp://org.qt-project.qtcreator/doc/creator-quick-tour.html\">User "
+            "Interface</a>."),
          {}}};
     setStep(0);
     resizeToParent();
@@ -376,7 +383,7 @@ void IntroductionWidget::setStep(uint index)
 {
     QTC_ASSERT(index < m_items.size(), return);
     m_step = index;
-    m_continueLabel->setText(Tr::tr("UI Introduction %1/%2 >").arg(m_step + 1).arg(m_items.size()));
+    m_continueLabel->setText(tr("UI Introduction %1/%2 >").arg(m_step + 1).arg(m_items.size()));
     const Item &item = m_items.at(m_step);
     m_stepText->setText("<html><body style=\"" + m_bodyCss + "\">" + "<h1>" + item.title
                         + "</h1><p>" + item.brief + "</p>" + item.description + "</body></html>");
@@ -397,34 +404,5 @@ void IntroductionWidget::resizeToParent()
     m_textWidget->setGeometry(QRect(width()/4, height()/4, width()/2, height()/2));
 }
 
-
-// Public access.
-
-void runUiTour()
-{
-    auto intro = new IntroductionWidget;
-    intro->show();
-}
-
-void askUserAboutIntroduction()
-{
-    // CheckableMessageBox for compatibility with Qt Creator < 4.11
-    if (!CheckableDecider(Key(kTakeTourSetting)).shouldAskAgain()
-        || !ICore::infoBar()->canInfoBeAdded(kTakeTourSetting))
-        return;
-
-    InfoBarEntry
-        info(kTakeTourSetting,
-             Tr::tr("Would you like to take a quick UI tour? This tour highlights important user "
-                    "interface elements and shows how they are used. To take the tour later, "
-                    "select Help > UI Tour."),
-             InfoBarEntry::GlobalSuppression::Enabled);
-    info.addCustomButton(Tr::tr("Take UI Tour"), [] {
-        ICore::infoBar()->removeInfo(kTakeTourSetting);
-        ICore::infoBar()->globallySuppressInfo(kTakeTourSetting);
-        runUiTour();
-    });
-    ICore::infoBar()->addInfo(info);
-}
-
-} //  Welcome::Internal
+} // namespace Internal
+} // namespace Welcome

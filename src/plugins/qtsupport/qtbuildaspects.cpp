@@ -1,10 +1,31 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qtbuildaspects.h"
 
 #include "baseqtversion.h"
-#include "qtsupporttr.h"
 
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/buildpropertiessettings.h>
@@ -13,29 +34,30 @@
 
 #include <utils/infolabel.h>
 #include <utils/layoutbuilder.h>
-#include <utils/qtcassert.h>
 
 #include <QCheckBox>
+#include <QLayout>
 
 using namespace ProjectExplorer;
 using namespace Utils;
 
 namespace QtSupport {
 
-QmlDebuggingAspect::QmlDebuggingAspect(AspectContainer *container)
-    : TriStateAspect(container)
+QmlDebuggingAspect::QmlDebuggingAspect(BuildConfiguration *buildConfig)
+    : m_buildConfig(buildConfig)
 {
     setSettingsKey("EnableQmlDebugging");
-    setDisplayName(Tr::tr("QML debugging and profiling:"));
-    setValue(buildPropertiesSettings().qmlDebugging());
+    setDisplayName(tr("QML debugging and profiling:"));
+    setValue(ProjectExplorerPlugin::buildPropertiesSettings().qmlDebugging.value());
 }
 
-void QmlDebuggingAspect::addToLayoutImpl(Layouting::Layout &parent)
+void QmlDebuggingAspect::addToLayout(LayoutBuilder &builder)
 {
-    SelectionAspect::addToLayoutImpl(parent);
+    SelectionAspect::addToLayout(builder);
     const auto warningLabel = createSubWidget<InfoLabel>(QString(), InfoLabel::Warning);
     warningLabel->setElideMode(Qt::ElideNone);
-    parent.addRow({Layouting::empty, warningLabel});
+    warningLabel->setVisible(false);
+    builder.addRow({{}, warningLabel});
     const auto changeHandler = [this, warningLabel] {
         QString warningText;
         QTC_ASSERT(m_buildConfig, return);
@@ -44,15 +66,13 @@ void QmlDebuggingAspect::addToLayoutImpl(Layouting::Layout &parent)
         if (!supported) {
             setValue(TriState::Default);
         } else if (value() == TriState::Enabled) {
-            warningText = Tr::tr("Might make your application vulnerable.<br/>"
-                                 "Only use in a safe environment.");
+            warningText = tr("Might make your application vulnerable.<br/>"
+                             "Only use in a safe environment.");
         }
         warningLabel->setText(warningText);
         setVisible(supported);
         const bool warningLabelsVisible = supported && !warningText.isEmpty();
-        // avoid explicitly showing the widget when it doesn't have a parent, but always
-        // explicitly hide it when necessary
-        if (warningLabel->parentWidget() || !warningLabelsVisible)
+        if (warningLabel->parentWidget())
             warningLabel->setVisible(warningLabelsVisible);
     };
     connect(KitManager::instance(), &KitManager::kitsChanged, warningLabel, changeHandler);
@@ -60,31 +80,21 @@ void QmlDebuggingAspect::addToLayoutImpl(Layouting::Layout &parent)
     changeHandler();
 }
 
-void QmlDebuggingAspect::setBuildConfiguration(const BuildConfiguration *buildConfig)
-{
-    m_buildConfig = buildConfig;
-}
-
-QtQuickCompilerAspect::QtQuickCompilerAspect(AspectContainer *container)
-    : TriStateAspect(container)
+QtQuickCompilerAspect::QtQuickCompilerAspect(BuildConfiguration *buildConfig)
+    : m_buildConfig(buildConfig)
 {
     setSettingsKey("QtQuickCompiler");
-    setDisplayName(Tr::tr("Qt Quick Compiler:"));
-    setValue(buildPropertiesSettings().qtQuickCompiler());
+    setDisplayName(tr("Qt Quick Compiler:"));
+    setValue(ProjectExplorerPlugin::buildPropertiesSettings().qtQuickCompiler.value());
 }
 
-void QtQuickCompilerAspect::setBuildConfiguration(const BuildConfiguration *buildConfig)
+void QtQuickCompilerAspect::addToLayout(LayoutBuilder &builder)
 {
-    m_buildConfig = buildConfig;
-}
-
-void QtQuickCompilerAspect::addToLayoutImpl(Layouting::Layout &parent)
-{
-    SelectionAspect::addToLayoutImpl(parent);
+    SelectionAspect::addToLayout(builder);
     const auto warningLabel = createSubWidget<InfoLabel>(QString(), InfoLabel::Warning);
     warningLabel->setElideMode(Qt::ElideNone);
     warningLabel->setVisible(false);
-    parent.addRow({Layouting::empty, warningLabel});
+    builder.addRow({{}, warningLabel});
     const auto changeHandler = [this, warningLabel] {
         QString warningText;
         QTC_ASSERT(m_buildConfig, return);
@@ -96,7 +106,7 @@ void QtQuickCompilerAspect::addToLayoutImpl(Layouting::Layout &parent)
         if (value() == TriState::Enabled) {
             if (auto qmlDebuggingAspect = m_buildConfig->aspect<QmlDebuggingAspect>()) {
                 if (qmlDebuggingAspect->value() == TriState::Enabled)
-                    warningText = Tr::tr("Disables QML debugging. QML profiling will still work.");
+                    warningText = tr("Disables QML debugging. QML profiling will still work.");
             }
         }
         warningLabel->setText(warningText);

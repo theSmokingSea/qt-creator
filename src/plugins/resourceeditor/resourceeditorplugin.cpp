@@ -1,9 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-#include "resourceeditor.h"
+#include "resourceeditorplugin.h"
+
+#include "resourceeditorw.h"
 #include "resourceeditorconstants.h"
-#include "resourceeditortr.h"
+#include "resourceeditorfactory.h"
 #include "resourcenode.h"
 
 #include <coreplugin/icore.h>
@@ -12,52 +36,54 @@
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/actionmanager/command.h>
 #include <coreplugin/editormanager/editormanager.h>
-
-#include <extensionsystem/iplugin.h>
-#include <extensionsystem/pluginmanager.h>
-
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projecttree.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectnodes.h>
+#include <extensionsystem/pluginmanager.h>
 
-#include <utils/action.h>
 #include <utils/algorithm.h>
+#include <utils/parameteraction.h>
 #include <utils/qtcassert.h>
-#include <utils/stringutils.h>
+#include <utils/threadutils.h>
 
+#include <QCoreApplication>
+#include <QAction>
 #include <QDebug>
-#include <QDialogButtonBox>
-#include <QFormLayout>
 #include <QInputDialog>
 #include <QMenu>
 #include <QMessageBox>
+#include <QFormLayout>
+#include <QDialogButtonBox>
+#include <QClipboard>
+#include <QApplication>
 
 using namespace ProjectExplorer;
 using namespace Utils;
-using namespace Core;
 
-namespace ResourceEditor::Internal {
+namespace ResourceEditor {
+namespace Internal {
 
-const char resourcePrefix[] = ":";
-const char urlPrefix[] = "qrc:";
+static const char resourcePrefix[] = ":";
+static const char urlPrefix[] = "qrc:";
 
-class PrefixLangDialog final : public QDialog
+class PrefixLangDialog : public QDialog
 {
+    Q_OBJECT
 public:
-    PrefixLangDialog(const QString &title, const QString &prefix, const QString &lang)
-        : QDialog(ICore::dialogParent())
+    PrefixLangDialog(const QString &title, const QString &prefix, const QString &lang, QWidget *parent)
+        : QDialog(parent)
     {
         setWindowTitle(title);
         auto layout = new QFormLayout(this);
         m_prefixLineEdit = new QLineEdit(this);
         m_prefixLineEdit->setText(prefix);
-        layout->addRow(Tr::tr("Prefix:"), m_prefixLineEdit);
+        layout->addRow(tr("Prefix:"), m_prefixLineEdit);
 
         m_langLineEdit = new QLineEdit(this);
         m_langLineEdit->setText(lang);
-        layout->addRow(Tr::tr("Language:"), m_langLineEdit);
+        layout->addRow(tr("Language:"), m_langLineEdit);
 
         QDialogButtonBox *buttons = new QDialogButtonBox(QDialogButtonBox::Ok
                                                          | QDialogButtonBox::Cancel,
@@ -66,10 +92,11 @@ public:
 
         layout->addWidget(buttons);
 
-        connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
-        connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
+        connect(buttons, &QDialogButtonBox::accepted,
+                this, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::rejected,
+                this, &QDialog::reject);
     }
-
     QString prefix() const
     {
         return m_prefixLineEdit->text();
@@ -79,22 +106,17 @@ public:
     {
         return m_langLineEdit->text();
     }
-
 private:
     QLineEdit *m_prefixLineEdit;
     QLineEdit *m_langLineEdit;
 };
 
-// ResourceEditorPlugin
-
-class ResourceEditorPlugin final : public ExtensionSystem::IPlugin
+class ResourceEditorPluginPrivate : public QObject
 {
-    Q_OBJECT
-    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QtCreatorPlugin" FILE "ResourceEditor.json")
+    Q_DECLARE_TR_FUNCTIONS(ResourceEditor::Internal::ResourceEditorPlugin)
 
-    void initialize() final;
-
-    void extensionsInitialized() final;
+public:
+    explicit ResourceEditorPluginPrivate(ResourceEditorPlugin *q);
 
     void onUndo();
     void onRedo();
@@ -114,6 +136,12 @@ class ResourceEditorPlugin final : public ExtensionSystem::IPlugin
 
     void updateContextActions(Node *node);
 
+    ResourceEditorW * currentEditor() const;
+
+    QAction *m_redoAction = nullptr;
+    QAction *m_undoAction = nullptr;
+    QAction *m_refreshAction = nullptr;
+
     // project tree's folder context menu
     QAction *m_addPrefix = nullptr;
     QAction *m_removePrefix = nullptr;
@@ -127,144 +155,186 @@ class ResourceEditorPlugin final : public ExtensionSystem::IPlugin
     QMenu *m_openWithMenu = nullptr;
 
     // file context menu
-    Action *m_copyPath = nullptr;
-    Action *m_copyUrl = nullptr;
+    Utils::ParameterAction *m_copyPath = nullptr;
+    Utils::ParameterAction *m_copyUrl = nullptr;
+
+    ResourceEditorFactory m_editorFactory;
 };
 
-void ResourceEditorPlugin::initialize()
+ResourceEditorPluginPrivate::ResourceEditorPluginPrivate(ResourceEditorPlugin *q)
+    : m_editorFactory(q)
 {
-    setupResourceEditor(this);
+    // Register undo and redo
+    const Core::Context context(Constants::C_RESOURCEEDITOR);
+    m_undoAction = new QAction(tr("&Undo"), this);
+    m_redoAction = new QAction(tr("&Redo"), this);
+    m_refreshAction = new QAction(tr("Recheck Existence of Referenced Files"), this);
+    Core::ActionManager::registerAction(m_undoAction, Core::Constants::UNDO, context);
+    Core::ActionManager::registerAction(m_redoAction, Core::Constants::REDO, context);
+    Core::ActionManager::registerAction(m_refreshAction, Constants::REFRESH, context);
+    connect(m_undoAction, &QAction::triggered, this, &ResourceEditorPluginPrivate::onUndo);
+    connect(m_redoAction, &QAction::triggered, this, &ResourceEditorPluginPrivate::onRedo);
+    connect(m_refreshAction, &QAction::triggered, this, &ResourceEditorPluginPrivate::onRefresh);
 
-    const Context projectTreeContext(ProjectExplorer::Constants::C_PROJECT_TREE);
-    const Id folderContextMenu = ProjectExplorer::Constants::M_FOLDERCONTEXT;
-    const Id folderFilesGroup = ProjectExplorer::Constants::G_FOLDER_FILES;
-    const Id fileContextMenu = ProjectExplorer::Constants::M_FILECONTEXT;
+    Core::Context projectTreeContext(ProjectExplorer::Constants::C_PROJECT_TREE);
+    Core::ActionContainer *folderContextMenu =
+            Core::ActionManager::actionContainer(ProjectExplorer::Constants::M_FOLDERCONTEXT);
+    Core::ActionContainer *fileContextMenu =
+            Core::ActionManager::actionContainer(ProjectExplorer::Constants::M_FILECONTEXT);
+    Core::Command *command = nullptr;
 
-    ActionBuilder(this, Constants::C_ADD_PREFIX)
-        .setText(Tr::tr("Add Prefix..."))
-        .bindContextAction(&m_addPrefix)
-        .setContext(projectTreeContext)
-        .setEnabled(false)
-        .addToContainer(folderContextMenu, folderFilesGroup)
-        .addOnTriggered(this, &ResourceEditorPlugin::addPrefixContextMenu);
+    m_addPrefix = new QAction(tr("Add Prefix..."), this);
+    command = Core::ActionManager::registerAction(m_addPrefix, Constants::C_ADD_PREFIX, projectTreeContext);
+    folderContextMenu->addAction(command, ProjectExplorer::Constants::G_FOLDER_FILES);
+    connect(m_addPrefix, &QAction::triggered, this, &ResourceEditorPluginPrivate::addPrefixContextMenu);
 
-    ActionBuilder(this, Constants::C_RENAME_PREFIX)
-        .setText(Tr::tr("Change Prefix..."))
-        .bindContextAction(&m_renamePrefix)
-        .setContext(projectTreeContext)
-        .setEnabled(false)
-        .addToContainer(folderContextMenu, folderFilesGroup)
-        .addOnTriggered(this, &ResourceEditorPlugin::renamePrefixContextMenu);
+    m_renamePrefix = new QAction(tr("Change Prefix..."), this);
+    command = Core::ActionManager::registerAction(m_renamePrefix, Constants::C_RENAME_PREFIX, projectTreeContext);
+    folderContextMenu->addAction(command, ProjectExplorer::Constants::G_FOLDER_FILES);
+    connect(m_renamePrefix, &QAction::triggered, this, &ResourceEditorPluginPrivate::renamePrefixContextMenu);
 
-    ActionBuilder(this, Constants::C_REMOVE_PREFIX)
-        .setText(Tr::tr("Remove Prefix..."))
-        .bindContextAction(&m_removePrefix)
-        .setContext(projectTreeContext)
-        .setEnabled(false)
-        .addToContainer(folderContextMenu, folderFilesGroup)
-        .addOnTriggered(this, &ResourceEditorPlugin::removePrefixContextMenu);
+    m_removePrefix = new QAction(tr("Remove Prefix..."), this);
+    command = Core::ActionManager::registerAction(m_removePrefix, Constants::C_REMOVE_PREFIX, projectTreeContext);
+    folderContextMenu->addAction(command, ProjectExplorer::Constants::G_FOLDER_FILES);
+    connect(m_removePrefix, &QAction::triggered, this, &ResourceEditorPluginPrivate::removePrefixContextMenu);
 
-    ActionBuilder(this, Constants::C_REMOVE_NON_EXISTING)
-        .setText(Tr::tr("Remove Missing Files"))
-        .bindContextAction(&m_removeNonExisting)
-        .setContext(projectTreeContext)
-        .setEnabled(false)
-        .addToContainer(folderContextMenu, folderFilesGroup)
-        .addOnTriggered(this, &ResourceEditorPlugin::removeNonExisting);
+    m_removeNonExisting = new QAction(tr("Remove Missing Files"), this);
+    command = Core::ActionManager::registerAction(m_removeNonExisting, Constants::C_REMOVE_NON_EXISTING, projectTreeContext);
+    folderContextMenu->addAction(command, ProjectExplorer::Constants::G_FOLDER_FILES);
+    connect(m_removeNonExisting, &QAction::triggered, this, &ResourceEditorPluginPrivate::removeNonExisting);
 
-    ActionBuilder(this, Constants::C_RENAME_FILE)
-        .setText(Tr::tr("Rename..."))
-        .bindContextAction(&m_renameResourceFile)
-        .setContext(projectTreeContext)
-        .setEnabled(false)
-        .addToContainer(folderContextMenu, folderFilesGroup)
-        .addOnTriggered(this, &ResourceEditorPlugin::renameFileContextMenu);
+    m_renameResourceFile = new QAction(tr("Rename..."), this);
+    command = Core::ActionManager::registerAction(m_renameResourceFile, Constants::C_RENAME_FILE, projectTreeContext);
+    folderContextMenu->addAction(command, ProjectExplorer::Constants::G_FOLDER_FILES);
+    connect(m_renameResourceFile, &QAction::triggered, this, &ResourceEditorPluginPrivate::renameFileContextMenu);
 
-    ActionBuilder(this, Constants::C_REMOVE_FILE)
-        .setText(Tr::tr("Remove File..."))
-        .bindContextAction(&m_removeResourceFile)
-        .setContext(projectTreeContext)
-        .setEnabled(false)
-        .addToContainer(folderContextMenu, folderFilesGroup)
-        .addOnTriggered(this, &ResourceEditorPlugin::removeFileContextMenu);
+    m_removeResourceFile = new QAction(tr("Remove File..."), this);
+    command = Core::ActionManager::registerAction(m_removeResourceFile, Constants::C_REMOVE_FILE, projectTreeContext);
+    folderContextMenu->addAction(command, ProjectExplorer::Constants::G_FOLDER_FILES);
+    connect(m_removeResourceFile, &QAction::triggered, this, &ResourceEditorPluginPrivate::removeFileContextMenu);
 
-    ActionBuilder(this, Constants::C_OPEN_EDITOR)
-        .setText(Tr::tr("Open in Editor"))
-        .bindContextAction(&m_openInEditor)
-        .setContext(projectTreeContext)
-        .addToContainer(folderContextMenu, folderFilesGroup)
-        .addOnTriggered(this, &ResourceEditorPlugin::openEditorContextMenu);
+    m_openInEditor = new QAction(tr("Open in Editor"), this);
+    command = Core::ActionManager::registerAction(m_openInEditor, Constants::C_OPEN_EDITOR, projectTreeContext);
+    folderContextMenu->addAction(command, ProjectExplorer::Constants::G_FOLDER_FILES);
+    connect(m_openInEditor, &QAction::triggered, this, &ResourceEditorPluginPrivate::openEditorContextMenu);
 
-    ActionContainer *menu = ActionManager::actionContainer(folderContextMenu);
-    m_openWithMenu = new QMenu(Tr::tr("Open With"), menu->menu());
-    menu->menu()->insertMenu(
-        menu->insertLocation(ProjectExplorer::Constants::G_FOLDER_FILES),
-        m_openWithMenu);
+    m_openWithMenu = new QMenu(tr("Open With"), folderContextMenu->menu());
+    folderContextMenu->menu()->insertMenu(
+                folderContextMenu->insertLocation(ProjectExplorer::Constants::G_FOLDER_FILES),
+                m_openWithMenu);
 
-    ActionBuilder(this, Constants::C_COPY_PATH)
-        .setParameterText(Tr::tr("Copy Path \"%1\""),
-                          Tr::tr("Copy Path"),
-                          ActionBuilder::AlwaysEnabled)
-        .bindContextAction(&m_copyPath)
-        .setContext(projectTreeContext)
-        .setCommandAttribute(Command::CA_UpdateText)
-        .addToContainer(fileContextMenu, ProjectExplorer::Constants::G_FILE_OTHER)
-        .addOnTriggered(this, &ResourceEditorPlugin::copyPathContextMenu);
+    m_copyPath = new Utils::ParameterAction(tr("Copy Path"), tr("Copy Path \"%1\""), Utils::ParameterAction::AlwaysEnabled, this);
+    command = Core::ActionManager::registerAction(m_copyPath, Constants::C_COPY_PATH, projectTreeContext);
+    command->setAttribute(Core::Command::CA_UpdateText);
+    fileContextMenu->addAction(command, ProjectExplorer::Constants::G_FILE_OTHER);
+    connect(m_copyPath, &QAction::triggered, this, &ResourceEditorPluginPrivate::copyPathContextMenu);
 
-    ActionBuilder(this, Constants::C_COPY_URL)
-        .setParameterText(Tr::tr("Copy URL \"%1\""),
-                          Tr::tr("Copy URL"),
-                          ActionBuilder::AlwaysEnabled)
-        .bindContextAction(&m_copyUrl)
-        .setContext(projectTreeContext)
-        .setCommandAttribute(Command::CA_UpdateText)
-        .addToContainer(fileContextMenu, ProjectExplorer::Constants::G_FILE_OTHER)
-        .addOnTriggered(this, &ResourceEditorPlugin::copyUrlContextMenu);
+    m_copyUrl = new Utils::ParameterAction(tr("Copy URL"), tr("Copy URL \"%1\""), Utils::ParameterAction::AlwaysEnabled, this);
+    command = Core::ActionManager::registerAction(m_copyUrl, Constants::C_COPY_URL, projectTreeContext);
+    command->setAttribute(Core::Command::CA_UpdateText);
+    fileContextMenu->addAction(command, ProjectExplorer::Constants::G_FILE_OTHER);
+    connect(m_copyUrl, &QAction::triggered, this, &ResourceEditorPluginPrivate::copyUrlContextMenu);
+
+    m_addPrefix->setEnabled(false);
+    m_removePrefix->setEnabled(false);
+    m_renamePrefix->setEnabled(false);
+    m_removeNonExisting->setEnabled(false);
+    m_renameResourceFile->setEnabled(false);
+    m_removeResourceFile->setEnabled(false);
 
     connect(ProjectTree::instance(), &ProjectTree::currentNodeChanged,
-            this, &ResourceEditorPlugin::updateContextActions);
+            this, &ResourceEditorPluginPrivate::updateContextActions);
 }
 
-void ResourceEditorPlugin::addPrefixContextMenu()
+void ResourceEditorPlugin::extensionsInitialized()
+{
+    ProjectTree::registerTreeManager([](FolderNode *folder, ProjectTree::ConstructionPhase phase) {
+        switch (phase) {
+        case ProjectTree::AsyncPhase: {
+            QList<FileNode *> toReplace;
+            folder->forEachNode([&toReplace](FileNode *fn) {
+                if (fn->fileType() == FileType::Resource)
+                    toReplace.append(fn);
+            }, {}, [](const FolderNode *fn) {
+                return dynamic_cast<const ResourceTopLevelNode *>(fn) == nullptr;
+            });
+            for (FileNode *file : qAsConst(toReplace)) {
+                FolderNode *const pn = file->parentFolderNode();
+                QTC_ASSERT(pn, continue);
+                const Utils::FilePath path = file->filePath();
+                auto topLevel = std::make_unique<ResourceTopLevelNode>(path, pn->filePath());
+                topLevel->setEnabled(file->isEnabled());
+                topLevel->setIsGenerated(file->isGenerated());
+                pn->replaceSubtree(file, std::move(topLevel));
+            }
+            break;
+        }
+        case ProjectTree::FinalPhase: {
+            folder->forEachNode({}, [](FolderNode *fn) {
+                auto *topLevel = dynamic_cast<ResourceTopLevelNode *>(fn);
+                if (topLevel)
+                    topLevel->setupWatcherIfNeeded();
+            });
+            break;
+        }
+        }
+    });
+}
+
+void ResourceEditorPluginPrivate::onUndo()
+{
+    currentEditor()->onUndo();
+}
+
+void ResourceEditorPluginPrivate::onRedo()
+{
+    currentEditor()->onRedo();
+}
+
+void ResourceEditorPluginPrivate::onRefresh()
+{
+    currentEditor()->onRefresh();
+}
+
+void ResourceEditorPluginPrivate::addPrefixContextMenu()
 {
     auto topLevel = dynamic_cast<ResourceTopLevelNode *>(ProjectTree::currentNode());
     QTC_ASSERT(topLevel, return);
-    PrefixLangDialog dialog(Tr::tr("Add Prefix"), QString(), QString());
+    PrefixLangDialog dialog(tr("Add Prefix"), QString(), QString(), Core::ICore::dialogParent());
     if (dialog.exec() != QDialog::Accepted)
         return;
-
     QString prefix = dialog.prefix();
     if (prefix.isEmpty())
         return;
     topLevel->addPrefix(prefix, dialog.lang());
 }
 
-void ResourceEditorPlugin::removePrefixContextMenu()
+void ResourceEditorPluginPrivate::removePrefixContextMenu()
 {
     auto rfn = dynamic_cast<ResourceFolderNode *>(ProjectTree::currentNode());
     QTC_ASSERT(rfn, return);
-    if (QMessageBox::question(ICore::dialogParent(),
-                              Tr::tr("Remove Prefix"),
-                              Tr::tr("Remove prefix %1 and all its files?").arg(rfn->displayName()))
+    if (QMessageBox::question(Core::ICore::dialogParent(),
+                              tr("Remove Prefix"),
+                              tr("Remove prefix %1 and all its files?").arg(rfn->displayName()))
             == QMessageBox::Yes) {
         ResourceTopLevelNode *rn = rfn->resourceNode();
         rn->removePrefix(rfn->prefix(), rfn->lang());
     }
 }
 
-void ResourceEditorPlugin::removeNonExisting()
+void ResourceEditorPluginPrivate::removeNonExisting()
 {
     auto topLevel = dynamic_cast<ResourceTopLevelNode *>(ProjectTree::currentNode());
     QTC_ASSERT(topLevel, return);
     topLevel->removeNonExistingFiles();
 }
 
-void ResourceEditorPlugin::renameFileContextMenu()
+void ResourceEditorPluginPrivate::renameFileContextMenu()
 {
     ProjectExplorerPlugin::initiateInlineRenaming();
 }
 
-void ResourceEditorPlugin::removeFileContextMenu()
+void ResourceEditorPluginPrivate::removeFileContextMenu()
 {
     auto rfn = dynamic_cast<ResourceTopLevelNode *>(ProjectTree::currentNode());
     QTC_ASSERT(rfn, return);
@@ -272,39 +342,41 @@ void ResourceEditorPlugin::removeFileContextMenu()
     FolderNode *parent = rfn->parentFolderNode();
     QTC_ASSERT(parent, return);
     if (parent->removeFiles({path}) != RemovedFilesFromProject::Ok)
-        QMessageBox::warning(ICore::dialogParent(),
-                             Tr::tr("File Removal Failed"),
-                             Tr::tr("Removing file %1 from the project failed.").arg(path.toUserOutput()));
+        QMessageBox::warning(Core::ICore::dialogParent(),
+                             tr("File Removal Failed"),
+                             tr("Removing file %1 from the project failed.").arg(path.toUserOutput()));
 }
 
-void ResourceEditorPlugin::openEditorContextMenu()
+void ResourceEditorPluginPrivate::openEditorContextMenu()
 {
-    EditorManager::openEditor(ProjectTree::currentNode()->filePath());
+    Core::EditorManager::openEditor(ProjectTree::currentNode()->filePath());
 }
 
-void ResourceEditorPlugin::copyPathContextMenu()
-{
-    auto node = dynamic_cast<ResourceFileNode *>(ProjectTree::currentNode());
-    QTC_ASSERT(node, return);
-    setClipboardAndSelection(QLatin1String(resourcePrefix) + node->qrcPath());
-}
-
-void ResourceEditorPlugin::copyUrlContextMenu()
+void ResourceEditorPluginPrivate::copyPathContextMenu()
 {
     auto node = dynamic_cast<ResourceFileNode *>(ProjectTree::currentNode());
     QTC_ASSERT(node, return);
-    setClipboardAndSelection(QLatin1String(urlPrefix) + node->qrcPath());
+    QApplication::clipboard()->setText(QLatin1String(resourcePrefix) + node->qrcPath());
 }
 
-void ResourceEditorPlugin::renamePrefixContextMenu()
+void ResourceEditorPluginPrivate::copyUrlContextMenu()
+{
+    auto node = dynamic_cast<ResourceFileNode *>(ProjectTree::currentNode());
+    QTC_ASSERT(node, return);
+    QApplication::clipboard()->setText(QLatin1String(urlPrefix) + node->qrcPath());
+}
+
+void ResourceEditorPluginPrivate::renamePrefixContextMenu()
 {
     auto node = dynamic_cast<ResourceFolderNode *>(ProjectTree::currentNode());
     QTC_ASSERT(node, return);
 
-    PrefixLangDialog dialog(Tr::tr("Rename Prefix"), node->prefix(), node->lang());
+    PrefixLangDialog dialog(tr("Rename Prefix"),
+                            node->prefix(),
+                            node->lang(),
+                            Core::ICore::dialogParent());
     if (dialog.exec() != QDialog::Accepted)
         return;
-
     QString prefix = dialog.prefix();
     if (prefix.isEmpty())
         return;
@@ -312,7 +384,7 @@ void ResourceEditorPlugin::renamePrefixContextMenu()
     node->renamePrefix(prefix, dialog.lang());
 }
 
-void ResourceEditorPlugin::updateContextActions(Node *node)
+void ResourceEditorPluginPrivate::updateContextActions(Node *node)
 {
     const bool isResourceNode = dynamic_cast<const ResourceTopLevelNode *>(node);
     m_addPrefix->setEnabled(isResourceNode);
@@ -346,7 +418,7 @@ void ResourceEditorPlugin::updateContextActions(Node *node)
     m_removeNonExisting->setVisible(isResourceNode);
 
     if (isResourceNode)
-        EditorManager::populateOpenWithMenu(m_openWithMenu, node->filePath());
+        Core::EditorManager::populateOpenWithMenu(m_openWithMenu, node->filePath());
     else
         m_openWithMenu->clear();
     m_openWithMenu->menuAction()->setVisible(!m_openWithMenu->actions().isEmpty());
@@ -365,40 +437,40 @@ void ResourceEditorPlugin::updateContextActions(Node *node)
     }
 }
 
-void ResourceEditorPlugin::extensionsInitialized()
+ResourceEditorW * ResourceEditorPluginPrivate::currentEditor() const
 {
-    ProjectTree::registerTreeManager([](FolderNode *folder, ProjectTree::ConstructionPhase phase) {
-        switch (phase) {
-        case ProjectTree::AsyncPhase: {
-            QList<FileNode *> toReplace;
-            folder->forEachNode([&toReplace](FileNode *fn) {
-                if (fn->fileType() == FileType::Resource)
-                    toReplace.append(fn);
-            }, {}, [](const FolderNode *fn) {
-                return dynamic_cast<const ResourceTopLevelNode *>(fn) == nullptr;
-            });
-            for (FileNode *file : std::as_const(toReplace)) {
-                FolderNode *const pn = file->parentFolderNode();
-                QTC_ASSERT(pn, continue);
-                const FilePath path = file->filePath();
-                auto topLevel = std::make_unique<ResourceTopLevelNode>(path, pn->filePath());
-                topLevel->setEnabled(file->isEnabled());
-                topLevel->setIsGenerated(file->isGenerated());
-                pn->replaceSubtree(file, std::move(topLevel));
-            }
-            break;
-        }
-        case ProjectTree::FinalPhase: {
-            folder->forEachNode({}, [](FolderNode *fn) {
-                if (auto topLevel = dynamic_cast<ResourceTopLevelNode *>(fn))
-                    topLevel->setupWatcherIfNeeded();
-            });
-            break;
-        }
-        }
-    });
+    auto const focusEditor = qobject_cast<ResourceEditorW *>(Core::EditorManager::currentEditor());
+    QTC_ASSERT(focusEditor, return nullptr);
+    return focusEditor;
 }
 
-} // ResourceEditor::Internal
+// ResourceEditorPlugin
+
+ResourceEditorPlugin::~ResourceEditorPlugin()
+{
+    delete d;
+}
+
+bool ResourceEditorPlugin::initialize(const QStringList &arguments, QString *errorMessage)
+{
+    Q_UNUSED(arguments)
+    Q_UNUSED(errorMessage)
+
+    d = new ResourceEditorPluginPrivate(this);
+
+    return true;
+}
+
+void ResourceEditorPlugin::onUndoStackChanged(ResourceEditorW const *editor,
+        bool canUndo, bool canRedo)
+{
+    if (editor == d->currentEditor()) {
+        d->m_undoAction->setEnabled(canUndo);
+        d->m_redoAction->setEnabled(canRedo);
+    }
+}
+
+} // namespace Internal
+} // namespace ResourceEditor
 
 #include "resourceeditorplugin.moc"

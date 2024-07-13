@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "ldparser.h"
 #include "projectexplorerconstants.h"
@@ -39,49 +61,45 @@ Utils::OutputLineParser::Result LdParser::handleLine(const QString &line, Utils:
         return Status::NotHandled;
 
     QString lne = rightTrimmed(line);
+    if (!lne.isEmpty() && !lne.at(0).isSpace() && !m_incompleteTask.isNull()) {
+        flush();
+        return Status::NotHandled;
+    }
+
     if (lne.startsWith(QLatin1String("TeamBuilder "))
             || lne.startsWith(QLatin1String("distcc["))
             || lne.contains(QLatin1String("ar: creating "))) {
         return Status::NotHandled;
     }
 
-    const auto getStatus = [&lne] { return lne.endsWith(':') ? Status::InProgress : Status::Done; };
-
     // ld on macOS
-    if (lne.startsWith("Undefined symbols for architecture") && getStatus() == Status::InProgress) {
-        createOrAmendTask(Task::Error, lne, line);
+    if (lne.startsWith("Undefined symbols for architecture") && lne.endsWith(":")) {
+        m_incompleteTask = CompileTask(Task::Error, lne);
         return Status::InProgress;
     }
-
-    if (!currentTask().isNull() && isContinuation(line)) {
+    if (!m_incompleteTask.isNull() && lne.startsWith("  ")) {
+        m_incompleteTask.details.append(lne);
         static const QRegularExpression locRegExp("    (?<symbol>\\S+) in (?<file>\\S+)");
         const QRegularExpressionMatch match = locRegExp.match(lne);
         LinkSpecs linkSpecs;
-        Utils::FilePath filePath;
-        bool handle = false;
         if (match.hasMatch()) {
-            handle = true;
-            filePath = absoluteFilePath(Utils::FilePath::fromString(match.captured("file")));
-            addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, -1, -1, match, "file");
-            currentTask().setFile(filePath);
-        } else {
-            handle = !lne.isEmpty() && lne.at(0).isSpace();
+            m_incompleteTask.setFile(absoluteFilePath(Utils::FilePath::fromString(
+                                                          match.captured("file"))));
+            addLinkSpecForAbsoluteFilePath(linkSpecs, m_incompleteTask.file, 0, match, "file");
         }
-        if (handle) {
-            createOrAmendTask(Task::Unknown, {}, line, true, filePath);
-            return {Status::InProgress, linkSpecs};
-        }
+        return {Status::InProgress, linkSpecs};
     }
 
     if (lne.startsWith("collect2:") || lne.startsWith("collect2.exe:")) {
-        createOrAmendTask(Task::Error, lne, line);
-        return getStatus();
+        scheduleTask(CompileTask(Task::Error, lne /* description */), 1);
+        return Status::Done;
     }
 
     QRegularExpressionMatch match = m_ranlib.match(lne);
     if (match.hasMatch()) {
-        createOrAmendTask(Task::Warning, match.captured(2), line);
-        return getStatus();
+        QString description = match.captured(2);
+        scheduleTask(CompileTask(Task::Warning, description), 1);
+        return Status::Done;
     }
 
     match = m_regExpGccNames.match(lne);
@@ -94,8 +112,8 @@ Utils::OutputLineParser::Result LdParser::handleLine(const QString &line, Utils:
         } else if (description.startsWith(QLatin1String("fatal: ")))  {
             description = description.mid(7);
         }
-        createOrAmendTask(type, description, line);
-        return getStatus();
+        scheduleTask(CompileTask(type, description), 1);
+        return Status::Done;
     }
 
     match = m_regExpLinker.match(lne);
@@ -104,47 +122,50 @@ Utils::OutputLineParser::Result LdParser::handleLine(const QString &line, Utils:
         int lineno = match.captured(7).toInt(&ok);
         if (!ok)
             lineno = -1;
-        Utils::FilePath filePath
+        Utils::FilePath filename
                 = absoluteFilePath(Utils::FilePath::fromUserInput(match.captured(1)));
         int capIndex = 1;
         const QString sourceFileName = match.captured(4);
         if (!sourceFileName.isEmpty()
             && !sourceFileName.startsWith(QLatin1String("(.text"))
             && !sourceFileName.startsWith(QLatin1String("(.data"))) {
-            filePath = absoluteFilePath(Utils::FilePath::fromUserInput(sourceFileName));
+            filename = absoluteFilePath(Utils::FilePath::fromUserInput(sourceFileName));
             capIndex = 4;
         }
         QString description = match.captured(8).trimmed();
+        Task::TaskType type = Task::Error;
+        if (description.startsWith(QLatin1String("first defined here")) ||
+            description.startsWith(QLatin1String("note:"), Qt::CaseInsensitive)) {
+            type = Task::Unknown;
+        } else if (description.startsWith(QLatin1String("warning: "), Qt::CaseInsensitive)) {
+            type = Task::Warning;
+            description = description.mid(9);
+        }
         static const QStringList keywords{
             "File format not recognized",
             "undefined reference",
-            "multiple definition",
             "first defined here",
             "feupdateenv is not implemented and will always fail", // yes, this is quite special ...
         };
         const auto descriptionContainsKeyword = [&description](const QString &keyword) {
             return description.contains(keyword);
         };
-        Task::TaskType type = Task::Unknown;
-        const bool hasKeyword = Utils::anyOf(keywords, descriptionContainsKeyword);
-        if (description.startsWith(QLatin1String("warning: "), Qt::CaseInsensitive)) {
-            type = Task::Warning;
-            description = description.mid(9);
-        } else if (hasKeyword) {
-            type = Task::Error;
-        }
-        if (hasKeyword || filePath.fileName().endsWith(".o")) {
+        if (Utils::anyOf(keywords, descriptionContainsKeyword)) {
             LinkSpecs linkSpecs;
-            addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineno, -1, match, capIndex);
-            createOrAmendTask(type, description, line, false, filePath, lineno, 0, linkSpecs);
-            return {getStatus(), linkSpecs};
+            addLinkSpecForAbsoluteFilePath(linkSpecs, filename, lineno, match, capIndex);
+            scheduleTask(CompileTask(type, description, filename, lineno), 1);
+            return {Status::Done, linkSpecs};
         }
     }
 
     return Status::NotHandled;
 }
 
-bool LdParser::isContinuation(const QString &line) const
+void LdParser::flush()
 {
-    return currentTask().details.last().endsWith(':') || (!line.isEmpty() && line.at(0).isSpace());
+    if (m_incompleteTask.isNull())
+        return;
+    const Task t = m_incompleteTask;
+    m_incompleteTask.clear();
+    scheduleTask(t, 1);
 }

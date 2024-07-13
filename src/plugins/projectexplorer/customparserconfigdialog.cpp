@@ -1,206 +1,73 @@
-// Copyright (C) 2016 Andre Hartmann.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Andre Hartmann.
+** Contact: aha_1980@gmx.de
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "customparserconfigdialog.h"
+#include "ui_customparserconfigdialog.h"
 
-#include "projectexplorertr.h"
-
-#include <utils/layoutbuilder.h>
 #include <utils/theme/theme.h>
 
-#include <QApplication>
-#include <QCheckBox>
-#include <QDialog>
-#include <QDialogButtonBox>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QLabel>
-#include <QLineEdit>
 #include <QLineEdit>
 #include <QPushButton>
 #include <QRegularExpression>
-#include <QSpacerItem>
-#include <QSpinBox>
-#include <QTabWidget>
 
-namespace ProjectExplorer::Internal {
+namespace ProjectExplorer {
+namespace Internal {
 
-CustomParserConfigDialog::CustomParserConfigDialog(QWidget *parent)
-    : QDialog(parent)
+CustomParserConfigDialog::CustomParserConfigDialog(QWidget *parent) :
+    QDialog(parent),
+    ui(new Ui::CustomParserConfigDialog)
 {
-    resize(516, 480);
-    setWindowTitle(Tr::tr("Custom Parser"));
+    ui->setupUi(this);
 
-    m_errorPattern = new QLineEdit;
-    auto label_1 = new QLabel(Tr::tr("&Error message capture pattern:"));
-    label_1->setBuddy(m_errorPattern);
-
-    auto label = new QLabel(Tr::tr("&File name:"));
-    auto label_2 = new QLabel(Tr::tr("&Line number:"));
-    auto label_3 = new QLabel(Tr::tr("&Message:"));
-
-    m_errorFileNameCap = new QSpinBox;
-    m_errorFileNameCap->setMaximum(9);
-    m_errorFileNameCap->setValue(1);
-
-    m_errorLineNumberCap = new QSpinBox;
-    m_errorLineNumberCap->setMaximum(9);
-    m_errorLineNumberCap->setValue(2);
-
-    m_errorMessageCap = new QSpinBox;
-    m_errorMessageCap->setMaximum(9);
-    m_errorMessageCap->setValue(3);
-
-    label->setBuddy(m_errorFileNameCap);
-    label_2->setBuddy(m_errorLineNumberCap);
-    label_3->setBuddy(m_errorMessageCap);
-
-    m_errorStdOutChannel = new QCheckBox(Tr::tr("Standard output"));
-    m_errorStdErrChannel = new QCheckBox(Tr::tr("Standard error"));
-
-    auto label_5 = new QLabel(Tr::tr("E&rror message:"));
-    m_errorOutputMessage = new QLineEdit;
-    m_errorFileNameTest = new QLabel;
-    m_errorLineNumberTest = new QLabel;
-    m_errorMessageTest = new QLabel;
-    label_5->setBuddy(m_errorOutputMessage);
-
-
-    m_warningPattern = new QLineEdit;
-
-    auto label_11 = new QLabel(Tr::tr("&File name:"));
-    auto label_12 = new QLabel(Tr::tr("&Line number:"));
-    auto label_13 = new QLabel(Tr::tr("&Message:"));
-
-    m_warningLineNumberCap = new QSpinBox;
-    m_warningLineNumberCap->setMaximum(9);
-    m_warningLineNumberCap->setValue(2);
-
-    m_warningMessageCap = new QSpinBox;
-    m_warningMessageCap->setMaximum(9);
-    m_warningMessageCap->setValue(3);
-
-    m_warningFileNameCap = new QSpinBox;
-    m_warningFileNameCap->setMaximum(9);
-    m_warningFileNameCap->setValue(1);
-
-    label_11->setBuddy(m_warningFileNameCap);
-    label_12->setBuddy(m_warningLineNumberCap);
-    label_13->setBuddy(m_warningMessageCap);
-
-    m_warningStdOutChannel = new QCheckBox(Tr::tr("Standard output"));
-    m_warningStdErrChannel = new QCheckBox(Tr::tr("Standard error"));
-
-    auto label_14 = new QLabel(Tr::tr("Warning message:"));
-    m_warningOutputMessage = new QLineEdit;
-    m_warningFileNameTest = new QLabel;
-    m_warningLineNumberTest = new QLabel;
-    m_warningMessageTest = new QLabel;
-    label_14->setBuddy(m_warningOutputMessage);
-
-
-    auto buttonBox = new QDialogButtonBox(QDialogButtonBox::Cancel|QDialogButtonBox::Ok);
-
-    using namespace Layouting;
-
-    auto tabWarning = new QWidget;
-    Column {
-        Tr::tr("Warning message capture pattern:"),
-        m_warningPattern,
-        Group {
-            title(Tr::tr("Capture Positions")),
-            Grid {
-                label_11, label_12, label_13, br,
-                m_warningFileNameCap, m_warningLineNumberCap,  m_warningMessageCap
-            }
-        },
-        Group {
-            title(Tr::tr("Capture Output Channels")),
-            Row { m_warningStdOutChannel, m_warningStdErrChannel }
-        },
-        Group {
-            title(Tr::tr("Test")),
-            Column {
-                label_14,
-                m_warningOutputMessage,
-                Form {
-                    Tr::tr("File name:"), m_warningFileNameTest, br,
-                    Tr::tr("Line number:"), m_warningLineNumberTest, br,
-                    Tr::tr("Message:"), m_warningMessageTest
-                }
-            }
-        }
-    }.attachTo(tabWarning);
-
-    auto tabError = new QWidget;
-    Column {
-        label_1,
-        m_errorPattern,
-        Group {
-            title(Tr::tr("Capture Positions")),
-            Grid {
-                label, label_2, label_3, br,
-                m_errorFileNameCap, m_errorLineNumberCap, m_errorMessageCap
-            }
-        },
-        Group {
-            title(Tr::tr("Capture Output Channels")),
-            Row { m_errorStdOutChannel, m_errorStdErrChannel }
-        },
-        Group {
-            title(Tr::tr("Test")),
-            Column {
-                label_5,
-                m_errorOutputMessage,
-                Form {
-                    Tr::tr("File name:"), m_errorFileNameTest, br,
-                    Tr::tr("Line number:"), m_errorLineNumberTest, br,
-                    Tr::tr("Message:"), m_errorMessageTest
-                }
-            }
-        },
-    }.attachTo(tabError);
-
-    auto tabWidget = new QTabWidget(this);
-    tabWidget->addTab(tabError, Tr::tr("Error"));
-    tabWidget->addTab(tabWarning, Tr::tr("Warning"));
-    tabWidget->setCurrentIndex(0);
-
-    Column {
-        tabWidget,
-        st,
-        buttonBox
-    }.attachTo(this);
-
-    connect(m_errorPattern, &QLineEdit::textChanged,
+    connect(ui->errorPattern, &QLineEdit::textChanged, this, &CustomParserConfigDialog::changed);
+    connect(ui->errorOutputMessage, &QLineEdit::textChanged,
             this, &CustomParserConfigDialog::changed);
-    connect(m_errorOutputMessage, &QLineEdit::textChanged,
+    connect(ui->errorFileNameCap, QOverload<int>::of(&QSpinBox::valueChanged),
             this, &CustomParserConfigDialog::changed);
-    connect(m_errorFileNameCap, &QSpinBox::valueChanged,
+    connect(ui->errorLineNumberCap, QOverload<int>::of(&QSpinBox::valueChanged),
             this, &CustomParserConfigDialog::changed);
-    connect(m_errorLineNumberCap, &QSpinBox::valueChanged,
+    connect(ui->errorMessageCap, QOverload<int>::of(&QSpinBox::valueChanged),
             this, &CustomParserConfigDialog::changed);
-    connect(m_errorMessageCap, &QSpinBox::valueChanged,
+    connect(ui->warningPattern, &QLineEdit::textChanged, this, &CustomParserConfigDialog::changed);
+    connect(ui->warningOutputMessage, &QLineEdit::textChanged,
             this, &CustomParserConfigDialog::changed);
-    connect(m_warningPattern, &QLineEdit::textChanged,
+    connect(ui->warningFileNameCap, QOverload<int>::of(&QSpinBox::valueChanged),
             this, &CustomParserConfigDialog::changed);
-    connect(m_warningOutputMessage, &QLineEdit::textChanged,
+    connect(ui->warningLineNumberCap, QOverload<int>::of(&QSpinBox::valueChanged),
             this, &CustomParserConfigDialog::changed);
-    connect(m_warningFileNameCap, &QSpinBox::valueChanged,
+    connect(ui->warningMessageCap, QOverload<int>::of(&QSpinBox::valueChanged),
             this, &CustomParserConfigDialog::changed);
-    connect(m_warningLineNumberCap, &QSpinBox::valueChanged,
-            this, &CustomParserConfigDialog::changed);
-    connect(m_warningMessageCap, &QSpinBox::valueChanged,
-            this, &CustomParserConfigDialog::changed);
-
-    connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     changed();
     m_dirty = false;
 }
 
-CustomParserConfigDialog::~CustomParserConfigDialog() = default;
+CustomParserConfigDialog::~CustomParserConfigDialog()
+{
+    delete ui;
+}
 
 void CustomParserConfigDialog::setExampleSettings()
 {
@@ -214,9 +81,9 @@ void CustomParserConfigDialog::setExampleSettings()
     setWarningLineNumberCap(2);
     setWarningMessageCap(3);
     setWarningChannel(CustomParserExpression::ParseBothChannels);
-    m_errorOutputMessage->setText(
+    ui->errorOutputMessage->setText(
                 QLatin1String("#error /home/user/src/test.c:891: Unknown identifier `test`"));
-    m_warningOutputMessage->setText(
+    ui->warningOutputMessage->setText(
                 QLatin1String("#warning /home/user/src/test.c:49: Unreferenced variable `test`"));
 }
 
@@ -261,136 +128,136 @@ CustomParserSettings CustomParserConfigDialog::settings() const
 
 void CustomParserConfigDialog::setErrorPattern(const QString &errorPattern)
 {
-    m_errorPattern->setText(errorPattern);
+    ui->errorPattern->setText(errorPattern);
 }
 
 QString CustomParserConfigDialog::errorPattern() const
 {
-    return m_errorPattern->text();
+    return ui->errorPattern->text();
 }
 
 void CustomParserConfigDialog::setErrorFileNameCap(int fileNameCap)
 {
-    m_errorFileNameCap->setValue(fileNameCap);
+    ui->errorFileNameCap->setValue(fileNameCap);
 }
 
 int CustomParserConfigDialog::errorFileNameCap() const
 {
-    return m_errorFileNameCap->value();
+    return ui->errorFileNameCap->value();
 }
 
 void CustomParserConfigDialog::setErrorLineNumberCap(int lineNumberCap)
 {
-    m_errorLineNumberCap->setValue(lineNumberCap);
+    ui->errorLineNumberCap->setValue(lineNumberCap);
 }
 
 int CustomParserConfigDialog::errorLineNumberCap() const
 {
-    return m_errorLineNumberCap->value();
+    return ui->errorLineNumberCap->value();
 }
 
 void CustomParserConfigDialog::setErrorMessageCap(int messageCap)
 {
-    m_errorMessageCap->setValue(messageCap);
+    ui->errorMessageCap->setValue(messageCap);
 }
 
 int CustomParserConfigDialog::errorMessageCap() const
 {
-    return m_errorMessageCap->value();
+    return ui->errorMessageCap->value();
 }
 
 void CustomParserConfigDialog::setErrorChannel(CustomParserExpression::CustomParserChannel errorChannel)
 {
-    m_errorStdErrChannel->setChecked(
+    ui->errorStdErrChannel->setChecked(
                 errorChannel & static_cast<int>(CustomParserExpression::ParseStdErrChannel));
-    m_errorStdOutChannel->setChecked(
+    ui->errorStdOutChannel->setChecked(
                 errorChannel & static_cast<int>(CustomParserExpression::ParseStdOutChannel));
 }
 
 CustomParserExpression::CustomParserChannel CustomParserConfigDialog::errorChannel() const
 {
-    if (m_errorStdErrChannel->isChecked() && !m_errorStdOutChannel->isChecked())
+    if (ui->errorStdErrChannel->isChecked() && !ui->errorStdOutChannel->isChecked())
         return CustomParserExpression::ParseStdErrChannel;
-    if (m_errorStdOutChannel->isChecked() && !m_errorStdErrChannel->isChecked())
+    if (ui->errorStdOutChannel->isChecked() && !ui->errorStdErrChannel->isChecked())
         return CustomParserExpression::ParseStdOutChannel;
     return CustomParserExpression::ParseBothChannels;
 }
 
 void CustomParserConfigDialog::setErrorExample(const QString &errorExample)
 {
-    m_errorOutputMessage->setText(errorExample);
+    ui->errorOutputMessage->setText(errorExample);
 }
 
 QString CustomParserConfigDialog::errorExample() const
 {
-    return m_errorOutputMessage->text();
+    return ui->errorOutputMessage->text();
 }
 
 void CustomParserConfigDialog::setWarningPattern(const QString &warningPattern)
 {
-    m_warningPattern->setText(warningPattern);
+    ui->warningPattern->setText(warningPattern);
 }
 
 QString CustomParserConfigDialog::warningPattern() const
 {
-    return m_warningPattern->text();
+    return ui->warningPattern->text();
 }
 
 void CustomParserConfigDialog::setWarningFileNameCap(int warningFileNameCap)
 {
-    m_warningFileNameCap->setValue(warningFileNameCap);
+    ui->warningFileNameCap->setValue(warningFileNameCap);
 }
 
 int CustomParserConfigDialog::warningFileNameCap() const
 {
-    return m_warningFileNameCap->value();
+    return ui->warningFileNameCap->value();
 }
 
 void CustomParserConfigDialog::setWarningLineNumberCap(int warningLineNumberCap)
 {
-    m_warningLineNumberCap->setValue(warningLineNumberCap);
+    ui->warningLineNumberCap->setValue(warningLineNumberCap);
 }
 
 int CustomParserConfigDialog::warningLineNumberCap() const
 {
-    return m_warningLineNumberCap->value();
+    return ui->warningLineNumberCap->value();
 }
 
 void CustomParserConfigDialog::setWarningMessageCap(int warningMessageCap)
 {
-    m_warningMessageCap->setValue(warningMessageCap);
+    ui->warningMessageCap->setValue(warningMessageCap);
 }
 
 int CustomParserConfigDialog::warningMessageCap() const
 {
-    return m_warningMessageCap->value();
+    return ui->warningMessageCap->value();
 }
 
 void CustomParserConfigDialog::setWarningChannel(CustomParserExpression::CustomParserChannel warningChannel)
 {
-    m_warningStdErrChannel->setChecked(
+    ui->warningStdErrChannel->setChecked(
                 warningChannel & static_cast<int>(CustomParserExpression::ParseStdErrChannel));
-    m_warningStdOutChannel->setChecked(
+    ui->warningStdOutChannel->setChecked(
                 warningChannel & static_cast<int>(CustomParserExpression::ParseStdOutChannel));
 }
 
 CustomParserExpression::CustomParserChannel CustomParserConfigDialog::warningChannel() const
 {
-    if (m_warningStdErrChannel->isChecked() && !m_warningStdOutChannel->isChecked())
+    if (ui->warningStdErrChannel->isChecked() && !ui->warningStdOutChannel->isChecked())
         return CustomParserExpression::ParseStdErrChannel;
-    if (m_warningStdOutChannel->isChecked() && !m_warningStdErrChannel->isChecked())
+    if (ui->warningStdOutChannel->isChecked() && !ui->warningStdErrChannel->isChecked())
         return CustomParserExpression::ParseStdOutChannel;
     return CustomParserExpression::ParseBothChannels;
 }
 
 void CustomParserConfigDialog::setWarningExample(const QString &warningExample)
 {
-    m_warningOutputMessage->setText(warningExample);
+    ui->warningOutputMessage->setText(warningExample);
 }
 
 QString CustomParserConfigDialog::warningExample() const
 {
-    return m_warningOutputMessage->text();
+    return ui->warningOutputMessage->text();
 }
 
 bool CustomParserConfigDialog::isDirty() const
@@ -406,8 +273,8 @@ bool CustomParserConfigDialog::checkPattern(QLineEdit *pattern, const QString &o
 
     QPalette palette;
     palette.setColor(QPalette::Text,
-                     Utils::creatorColor(rx.isValid() ? Utils::Theme::TextColorNormal
-                                                      : Utils::Theme::TextColorError));
+                     Utils::creatorTheme()->color(rx.isValid() ? Utils::Theme::TextColorNormal
+                                                               : Utils::Theme::TextColorError));
     pattern->setPalette(palette);
     pattern->setToolTip(rx.isValid() ? QString() : rx.errorString());
 
@@ -415,16 +282,16 @@ bool CustomParserConfigDialog::checkPattern(QLineEdit *pattern, const QString &o
         *match = rx.match(outputText);
     if (rx.pattern().isEmpty() || !rx.isValid() || !match->hasMatch()) {
         *errorMessage = QString::fromLatin1("<font color=\"%1\">%2 ").arg(
-                    Utils::creatorColor(Utils::Theme::TextColorError).name(),
-                    Tr::tr("Not applicable:"));
+                    Utils::creatorTheme()->color(Utils::Theme::TextColorError).name(),
+                    tr("Not applicable:"));
         if (rx.pattern().isEmpty())
-            *errorMessage += Tr::tr("Pattern is empty.");
+            *errorMessage += tr("Pattern is empty.");
         else if (!rx.isValid())
             *errorMessage += rx.errorString();
         else if (outputText.isEmpty())
-            *errorMessage += Tr::tr("No message given.");
+            *errorMessage += tr("No message given.");
         else
-            *errorMessage += Tr::tr("Pattern does not match the message.");
+            *errorMessage += tr("Pattern does not match the message.");
 
         return false;
     }
@@ -438,26 +305,27 @@ void CustomParserConfigDialog::changed()
     QRegularExpressionMatch match;
     QString errorMessage;
 
-    if (checkPattern(m_errorPattern, m_errorOutputMessage->text(), &errorMessage, &match)) {
-        m_errorFileNameTest->setText(match.captured(m_errorFileNameCap->value()));
-        m_errorLineNumberTest->setText(match.captured(m_errorLineNumberCap->value()));
-        m_errorMessageTest->setText(match.captured(m_errorMessageCap->value()));
+    if (checkPattern(ui->errorPattern, ui->errorOutputMessage->text(), &errorMessage, &match)) {
+        ui->errorFileNameTest->setText(match.captured(ui->errorFileNameCap->value()));
+        ui->errorLineNumberTest->setText(match.captured(ui->errorLineNumberCap->value()));
+        ui->errorMessageTest->setText(match.captured(ui->errorMessageCap->value()));
     } else {
-        m_errorFileNameTest->setText(errorMessage);
-        m_errorLineNumberTest->setText(errorMessage);
-        m_errorMessageTest->setText(errorMessage);
+        ui->errorFileNameTest->setText(errorMessage);
+        ui->errorLineNumberTest->setText(errorMessage);
+        ui->errorMessageTest->setText(errorMessage);
     }
 
-    if (checkPattern(m_warningPattern, m_warningOutputMessage->text(), &errorMessage, &match)) {
-        m_warningFileNameTest->setText(match.captured(m_warningFileNameCap->value()));
-        m_warningLineNumberTest->setText(match.captured(m_warningLineNumberCap->value()));
-        m_warningMessageTest->setText(match.captured(m_warningMessageCap->value()));
+    if (checkPattern(ui->warningPattern, ui->warningOutputMessage->text(), &errorMessage, &match)) {
+        ui->warningFileNameTest->setText(match.captured(ui->warningFileNameCap->value()));
+        ui->warningLineNumberTest->setText(match.captured(ui->warningLineNumberCap->value()));
+        ui->warningMessageTest->setText(match.captured(ui->warningMessageCap->value()));
     } else {
-        m_warningFileNameTest->setText(errorMessage);
-        m_warningLineNumberTest->setText(errorMessage);
-        m_warningMessageTest->setText(errorMessage);
+        ui->warningFileNameTest->setText(errorMessage);
+        ui->warningLineNumberTest->setText(errorMessage);
+        ui->warningMessageTest->setText(errorMessage);
     }
     m_dirty = true;
 }
 
-} // ProjectExplorer::Internal
+} // namespace Internal
+} // namespace ProjectExplorer

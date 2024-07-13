@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "genericproposalmodel.h"
 
@@ -283,7 +305,7 @@ void GenericProposalModel::filter(const QString &prefix)
     m_currentItems.clear();
     const QString lowerPrefix = prefix.toLower();
     const bool checkInfix = prefix.size() >= 3;
-    for (const auto &item : std::as_const(m_originalItems)) {
+    for (const auto &item : qAsConst(m_originalItems)) {
         const QString &text = item->filterText();
 
         // Direct match?
@@ -295,44 +317,16 @@ void GenericProposalModel::filter(const QString &prefix)
             continue;
         }
 
-        switch (caseSensitivity) {
-        case FuzzyMatcher::CaseSensitivity::CaseInsensitive:
-            if (text.startsWith(lowerPrefix, Qt::CaseInsensitive)) {
-                m_currentItems.append(item);
-                item->setProposalMatch(AssistProposalItemInterface::ProposalMatch::Prefix);
-                continue;
-            }
-            if (checkInfix && text.contains(lowerPrefix, Qt::CaseInsensitive)) {
-                m_currentItems.append(item);
-                item->setProposalMatch(AssistProposalItemInterface::ProposalMatch::Infix);
-                continue;
-            }
-            break;
-        case FuzzyMatcher::CaseSensitivity::CaseSensitive:
-            if (checkInfix && text.contains(prefix)) {
-                m_currentItems.append(item);
-                item->setProposalMatch(AssistProposalItemInterface::ProposalMatch::Infix);
-                continue;
-            }
-            break;
-        case FuzzyMatcher::CaseSensitivity::FirstLetterCaseSensitive:
-            if (text.startsWith(prefix.at(0))
-                && text.mid(1).startsWith(lowerPrefix.mid(1), Qt::CaseInsensitive)) {
-                m_currentItems.append(item);
-                item->setProposalMatch(AssistProposalItemInterface::ProposalMatch::Prefix);
-                continue;
-            }
-            if (checkInfix) {
-                for (auto index = text.indexOf(prefix.at(0)); index >= 0;
-                     index = text.indexOf(prefix.at(0), index + 1)) {
-                    if (text.mid(index + 1).startsWith(lowerPrefix.mid(1), Qt::CaseInsensitive)) {
-                        m_currentItems.append(item);
-                        item->setProposalMatch(AssistProposalItemInterface::ProposalMatch::Infix);
-                        continue;
-                    }
-                }
-            }
-            break;
+        if (text.startsWith(lowerPrefix, Qt::CaseInsensitive)) {
+            m_currentItems.append(item);
+            item->setProposalMatch(AssistProposalItemInterface::ProposalMatch::Prefix);
+            continue;
+        }
+
+        if (checkInfix && text.contains(lowerPrefix, Qt::CaseInsensitive)) {
+            m_currentItems.append(item);
+            item->setProposalMatch(AssistProposalItemInterface::ProposalMatch::Infix);
+            continue;
         }
 
         // Our fuzzy matcher can become unusably slow with certain inputs, so skip it

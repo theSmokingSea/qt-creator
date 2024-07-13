@@ -1,50 +1,69 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "../projectexplorer_export.h"
 #include "idevicefwd.h"
 
-#include <solutions/tasking/tasktree.h>
-
-#include <utils/aspects.h>
-#include <utils/expected.h>
+#include <utils/id.h>
 #include <utils/filepath.h>
 #include <utils/hostosinfo.h>
-#include <utils/id.h>
-#include <utils/store.h>
 
 #include <QAbstractSocket>
 #include <QCoreApplication>
 #include <QList>
 #include <QObject>
+#include <QSharedPointer>
 #include <QUrl>
+#include <QVariantMap>
 
 #include <functional>
+#include <memory>
 
 QT_BEGIN_NAMESPACE
-class QPixmap;
 class QWidget;
 QT_END_NAMESPACE
 
 namespace Utils {
 class CommandLine;
-class DeviceFileAccess;
 class Environment;
+class Icon;
 class PortList;
 class Port;
-class Process;
 class ProcessInterface;
+class QtcProcess;
 } // Utils
 
 namespace ProjectExplorer {
 
+class DeviceProcessList;
 class FileTransferInterface;
 class FileTransferSetupData;
 class Kit;
 class SshParameters;
-class Target;
 class Task;
 
 namespace Internal { class IDevicePrivate; }
@@ -56,7 +75,7 @@ class PROJECTEXPLORER_EXPORT DeviceProcessSignalOperation : public QObject
 {
     Q_OBJECT
 public:
-    using Ptr = std::shared_ptr<DeviceProcessSignalOperation>;
+    using Ptr = QSharedPointer<DeviceProcessSignalOperation>;
 
     virtual void killProcess(qint64 pid) = 0;
     virtual void killProcess(const QString &filePath) = 0;
@@ -76,6 +95,21 @@ protected:
     QString m_errorMessage;
 };
 
+class PROJECTEXPLORER_EXPORT DeviceEnvironmentFetcher : public QObject
+{
+    Q_OBJECT
+public:
+    using Ptr = QSharedPointer<DeviceEnvironmentFetcher>;
+
+    virtual void start() = 0;
+
+signals:
+    void finished(const Utils::Environment &env, bool success);
+
+protected:
+    explicit DeviceEnvironmentFetcher();
+};
+
 class PROJECTEXPLORER_EXPORT PortsGatheringMethod final
 {
 public:
@@ -83,16 +117,8 @@ public:
     std::function<QList<Utils::Port>(const QByteArray &commandOutput)> parsePorts;
 };
 
-class PROJECTEXPLORER_EXPORT DeviceSettings : public Utils::AspectContainer
-{
-public:
-    DeviceSettings();
-
-    Utils::StringAspect displayName{this};
-};
-
 // See cpp file for documentation.
-class PROJECTEXPLORER_EXPORT IDevice : public std::enable_shared_from_this<IDevice>
+class PROJECTEXPLORER_EXPORT IDevice : public QEnableSharedFromThis<IDevice>
 {
     friend class Internal::IDevicePrivate;
 public:
@@ -105,11 +131,11 @@ public:
 
     virtual ~IDevice();
 
-    virtual Ptr clone() const;
-
-    DeviceSettings *settings() const;
+    Ptr clone() const;
 
     QString displayName() const;
+    void setDisplayName(const QString &name);
+    void setDefaultDisplayName(const QString &name);
 
     // Provide some information on the device suitable for formated
     // output, e.g. in tool tips. Get a list of name value pairs.
@@ -132,8 +158,6 @@ public:
     virtual bool isCompatibleWith(const Kit *k) const;
     virtual QList<Task> validate() const;
 
-    virtual bool usableAsBuildDevice() const { return false; }
-
     QString displayType() const;
     Utils::OsType osType() const;
 
@@ -146,23 +170,25 @@ public:
     void addDeviceAction(const DeviceAction &deviceAction);
     const QList<DeviceAction> deviceActions() const;
 
-    virtual PortsGatheringMethod portsGatheringMethod() const;
+    // Devices that can auto detect ports need not return a ports gathering method. Such devices can
+    // obtain a free port on demand. eg: Desktop device.
+    virtual bool canAutoDetectPorts() const { return false; }
+    virtual PortsGatheringMethod portsGatheringMethod() const { return {}; }
     virtual bool canCreateProcessModel() const { return false; }
+    virtual DeviceProcessList *createProcessListModel(QObject *parent = nullptr) const;
     virtual bool hasDeviceTester() const { return false; }
     virtual DeviceTester *createDeviceTester() const;
 
-    virtual bool canMount(const Utils::FilePath &filePath) const;
-
-    virtual DeviceProcessSignalOperation::Ptr signalOperation() const;
+    virtual DeviceProcessSignalOperation::Ptr signalOperation() const = 0;
+    virtual DeviceEnvironmentFetcher::Ptr environmentFetcher() const;
 
     enum DeviceState { DeviceReadyToUse, DeviceConnected, DeviceDisconnected, DeviceStateUnknown };
-    virtual DeviceState deviceState() const;
+    DeviceState deviceState() const;
     void setDeviceState(const DeviceState state);
-    virtual QString deviceStateToString() const;
-    QPixmap deviceStateIcon() const;
+    QString deviceStateToString() const;
 
-    static Utils::Id typeFromMap(const Utils::Store &map);
-    static Utils::Id idFromMap(const Utils::Store &map);
+    static Utils::Id typeFromMap(const QVariantMap &map);
+    static Utils::Id idFromMap(const QVariantMap &map);
 
     static QString defaultPrivateKeyFilePath();
     static QString defaultPublicKeyFilePath();
@@ -179,11 +205,14 @@ public:
     MachineType machineType() const;
     void setMachineType(MachineType machineType);
 
-    virtual Utils::FilePath rootPath() const;
-    virtual Utils::FilePath filePath(const QString &pathOnDevice) const;
+    Utils::FilePath rootPath() const;
+    Utils::FilePath filePath(const QString &pathOnDevice) const;
 
     Utils::FilePath debugServerPath() const;
     void setDebugServerPath(const Utils::FilePath &path);
+
+    Utils::FilePath debugDumperPath() const;
+    void setDebugDumperPath(const Utils::FilePath &path);
 
     Utils::FilePath qmlRunCommand() const;
     void setQmlRunCommand(const Utils::FilePath &path);
@@ -194,8 +223,7 @@ public:
     void setupId(Origin origin, Utils::Id id = Utils::Id());
 
     bool canOpenTerminal() const;
-    Utils::expected_str<void> openTerminal(const Utils::Environment &env,
-                                           const Utils::FilePath &workingDir) const;
+    void openTerminal(const Utils::Environment &env, const Utils::FilePath &workingDir) const;
 
     bool isEmptyCommandAllowed() const;
     void setAllowEmptyCommand(bool allow);
@@ -205,43 +233,65 @@ public:
     bool isMacDevice() const { return osType() == Utils::OsTypeMac; }
     bool isAnyUnixDevice() const;
 
-    Utils::DeviceFileAccess *fileAccess() const;
-    virtual bool handlesFile(const Utils::FilePath &filePath) const;
+    virtual Utils::FilePath mapToGlobalPath(const Utils::FilePath &pathOnDevice) const;
+    virtual QString mapToDevicePath(const Utils::FilePath &globalPath) const;
 
+    virtual bool handlesFile(const Utils::FilePath &filePath) const;
+    virtual bool isExecutableFile(const Utils::FilePath &filePath) const;
+    virtual bool isReadableFile(const Utils::FilePath &filePath) const;
+    virtual bool isWritableFile(const Utils::FilePath &filePath) const;
+    virtual bool isReadableDirectory(const Utils::FilePath &filePath) const;
+    virtual bool isWritableDirectory(const Utils::FilePath &filePath) const;
+    virtual bool isFile(const Utils::FilePath &filePath) const;
+    virtual bool isDirectory(const Utils::FilePath &filePath) const;
+    virtual bool ensureWritableDirectory(const Utils::FilePath &filePath) const;
+    virtual bool ensureExistingFile(const Utils::FilePath &filePath) const;
+    virtual bool createDirectory(const Utils::FilePath &filePath) const;
+    virtual bool exists(const Utils::FilePath &filePath) const;
+    virtual bool removeFile(const Utils::FilePath &filePath) const;
+    virtual bool removeRecursively(const Utils::FilePath &filePath) const;
+    virtual bool copyFile(const Utils::FilePath &filePath, const Utils::FilePath &target) const;
+    virtual bool renameFile(const Utils::FilePath &filePath, const Utils::FilePath &target) const;
     virtual Utils::FilePath searchExecutableInPath(const QString &fileName) const;
     virtual Utils::FilePath searchExecutable(const QString &fileName,
                                              const Utils::FilePaths &dirs) const;
-
+    virtual Utils::FilePath symLinkTarget(const Utils::FilePath &filePath) const;
+    virtual void iterateDirectory(const Utils::FilePath &filePath,
+                                  const std::function<bool(const Utils::FilePath &)> &callBack,
+                                  const Utils::FileFilter &filter) const;
+    virtual QByteArray fileContents(const Utils::FilePath &filePath,
+                                    qint64 limit,
+                                    qint64 offset) const;
+    virtual bool writeFileContents(const Utils::FilePath &filePath, const QByteArray &data) const;
+    virtual QDateTime lastModified(const Utils::FilePath &filePath) const;
+    virtual QFile::Permissions permissions(const Utils::FilePath &filePath) const;
+    virtual bool setPermissions(const Utils::FilePath &filePath, QFile::Permissions) const;
     virtual Utils::ProcessInterface *createProcessInterface() const;
     virtual FileTransferInterface *createFileTransferInterface(
             const FileTransferSetupData &setup) const;
-
-    Utils::Environment systemEnvironment() const;
-    virtual Utils::expected_str<Utils::Environment> systemEnvironmentWithError() const;
+    virtual Utils::Environment systemEnvironment() const;
+    virtual qint64 fileSize(const Utils::FilePath &filePath) const;
+    virtual qint64 bytesAvailable(const Utils::FilePath &filePath) const;
 
     virtual void aboutToBeRemoved() const {}
 
-    virtual bool ensureReachable(const Utils::FilePath &other) const;
-    virtual Utils::expected_str<Utils::FilePath> localSource(const Utils::FilePath &other) const;
-
-    virtual bool prepareForBuild(const Target *target);
-    virtual std::optional<Utils::FilePath> clangdExecutable() const;
-
-    virtual void checkOsType() {}
+    virtual void asyncFileContents(const Continuation<QByteArray> &cont,
+                                   const Utils::FilePath &filePath,
+                                   qint64 limit, qint64 offset) const;
+    virtual void asyncWriteFileContents(const Continuation<bool> &cont,
+                                        const Utils::FilePath &filePath,
+                                        const QByteArray &data) const;
 
 protected:
-    IDevice(std::unique_ptr<DeviceSettings> settings = nullptr);
+    IDevice();
 
-    virtual void fromMap(const Utils::Store &map);
-    virtual Utils::Store toMap() const;
+    virtual void fromMap(const QVariantMap &map);
+    virtual QVariantMap toMap() const;
 
-    using OpenTerminal = std::function<Utils::expected_str<void>(const Utils::Environment &,
-                                                                 const Utils::FilePath &)>;
+    using OpenTerminal = std::function<void(const Utils::Environment &, const Utils::FilePath &)>;
     void setOpenTerminal(const OpenTerminal &openTerminal);
     void setDisplayType(const QString &type);
     void setOsType(Utils::OsType osType);
-    void setFileAccess(Utils::DeviceFileAccess *fileAccess);
-    void setFileAccess(std::function<Utils::DeviceFileAccess *()> fileAccessFactory);
 
 private:
     IDevice(const IDevice &) = delete;
@@ -252,6 +302,7 @@ private:
     const std::unique_ptr<Internal::IDevicePrivate> d;
     friend class DeviceManager;
 };
+
 
 class PROJECTEXPLORER_EXPORT DeviceTester : public QObject
 {
@@ -271,33 +322,5 @@ signals:
 protected:
     explicit DeviceTester(QObject *parent = nullptr);
 };
-
-class PROJECTEXPLORER_EXPORT DeviceProcessKiller : public QObject
-{
-    Q_OBJECT
-
-public:
-    void setProcessPath(const Utils::FilePath &path) { m_processPath = path; }
-    void start();
-    QString errorString() const { return m_errorString; }
-
-signals:
-    void done(Tasking::DoneResult result);
-
-private:
-    Utils::FilePath m_processPath;
-    DeviceProcessSignalOperation::Ptr m_signalOperation;
-    QString m_errorString;
-};
-
-class PROJECTEXPLORER_EXPORT DeviceProcessKillerTaskAdapter final
-    : public Tasking::TaskAdapter<DeviceProcessKiller>
-{
-public:
-    DeviceProcessKillerTaskAdapter();
-    void start() final;
-};
-
-using DeviceProcessKillerTask = Tasking::CustomTask<DeviceProcessKillerTaskAdapter>;
 
 } // namespace ProjectExplorer

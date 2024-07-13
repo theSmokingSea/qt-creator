@@ -1,10 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
+
+#include "qmlengine.h"
 
 #include <qmljs/parser/qmljsast_p.h>
 #include <qmljs/qmljsmodelmanagerinterface.h>
 #include <debugger/console/console.h>
-#include <qmldebug/qdebugmessageclient.h>
 
 #include <coreplugin/editormanager/documentmodel.h>
 
@@ -20,9 +43,9 @@ using namespace QmlDebug;
 using namespace QmlJS;
 using namespace QmlJS::AST;
 using namespace TextEditor;
-using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 class ASTWalker : public Visitor
 {
@@ -205,6 +228,8 @@ void appendDebugOutput(QtMsgType type, const QString &message, const QDebugConte
         break;
     }
 
+    QTC_ASSERT(itemType != ConsoleItem::DefaultType, return);
+
     debuggerConsole()->printItem(new ConsoleItem(itemType, message, info.file, info.line));
 }
 
@@ -219,10 +244,11 @@ void clearExceptionSelection()
     }
 }
 
-QStringList highlightExceptionCode(int lineNumber, const FilePath &filePath, const QString &errorMessage)
+QStringList highlightExceptionCode(int lineNumber, const QString &filePath, const QString &errorMessage)
 {
     QStringList messages;
-    const QList<IEditor *> editors = DocumentModel::editorsForFilePath(filePath);
+    const QList<IEditor *> editors = DocumentModel::editorsForFilePath(
+        Utils::FilePath::fromString(filePath));
 
     const  TextEditor::FontSettings &fontSettings = TextEditor::TextEditorSettings::fontSettings();
     QTextCharFormat errorFormat = fontSettings.toTextCharFormat(TextEditor::C_ERROR);
@@ -251,9 +277,10 @@ QStringList highlightExceptionCode(int lineNumber, const FilePath &filePath, con
         selections.append(sel);
         ed->setExtraSelections(TextEditorWidget::DebuggerExceptionSelection, selections);
 
-        messages.append(QString::fromLatin1("%1: %2: %3").arg(filePath.toUserOutput()).arg(lineNumber).arg(errorMessage));
+        messages.append(QString::fromLatin1("%1: %2: %3").arg(filePath).arg(lineNumber).arg(errorMessage));
     }
     return messages;
 }
 
-} // Debugger::Internal
+} // Internal
+} // Debugger

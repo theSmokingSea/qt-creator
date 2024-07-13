@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "savefile.h"
 
@@ -20,8 +42,8 @@ namespace Utils {
 
 static QFile::Permissions m_umask;
 
-SaveFile::SaveFile(const FilePath &filePath) :
-    m_finalFilePath(filePath)
+SaveFile::SaveFile(const QString &filename) :
+    m_finalFileName(filename)
 {
 }
 
@@ -32,16 +54,16 @@ SaveFile::~SaveFile()
 
 bool SaveFile::open(OpenMode flags)
 {
-    QTC_ASSERT(!m_finalFilePath.isEmpty(), return false);
+    QTC_ASSERT(!m_finalFileName.isEmpty(), return false);
 
-    QFile ofi(m_finalFilePath.toFSPathString());
+    QFile ofi(m_finalFileName);
     // Check whether the existing file is writable
     if (ofi.exists() && !ofi.open(QIODevice::ReadWrite)) {
         setErrorString(ofi.errorString());
         return false;
     }
 
-    m_tempFile = std::make_unique<QTemporaryFile>(m_finalFilePath.toFSPathString());
+    m_tempFile = std::make_unique<QTemporaryFile>(m_finalFileName);
     m_tempFile->setAutoRemove(false);
     if (!m_tempFile->open())
         return false;
@@ -100,7 +122,7 @@ bool SaveFile::commit()
         return false;
     }
 
-    QString finalFileName = m_finalFilePath.resolveSymlinks().toString();
+    QString finalFileName = FilePath::fromString(m_finalFileName).resolveSymlinks().toString();
 
 #ifdef Q_OS_WIN
     // Release the file lock
@@ -111,7 +133,7 @@ bool SaveFile::commit()
     if (!result) {
         DWORD replaceErrorCode = GetLastError();
         QString errorStr;
-        if (!QFileInfo::exists(finalFileName)) {
+        if (!QFile::exists(finalFileName)) {
             // Replace failed because finalFileName does not exist, try rename.
             if (!(result = rename(finalFileName)))
                 errorStr = errorString();
@@ -148,7 +170,7 @@ bool SaveFile::commit()
 
     // Back up current file.
     // If it's opened by another application, the lock follows the move.
-    if (QFileInfo::exists(finalFileName)) {
+    if (QFile::exists(finalFileName)) {
         // Kill old backup. Might be useful if creator crashed before removing backup.
         QFile::remove(backupName);
         QFile finalFile(finalFileName);
@@ -200,4 +222,4 @@ void SaveFile::initializeUmask()
 #endif
 }
 
-} //  Utils
+} // namespace Utils

@@ -1,17 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "nicknamedialog.h"
+#include "ui_nicknamedialog.h"
 
-#include "vcsbasetr.h"
-
-#include <utils/fancylineedit.h>
 #include <utils/fileutils.h>
-#include <utils/itemviews.h>
-#include <utils/layoutbuilder.h>
 
 #include <QDebug>
-#include <QDialogButtonBox>
+#include <QDir>
 #include <QPushButton>
 #include <QStandardItemModel>
 #include <QSortFilterProxyModel>
@@ -32,7 +50,8 @@ enum { NickNameRole = Qt::UserRole + 1 };
     be preferred.
 */
 
-namespace VcsBase::Internal {
+namespace VcsBase {
+namespace Internal {
 
 // For code clarity, a struct representing the entries of a mail map file
 // with parse and model functions.
@@ -146,54 +165,42 @@ QDebug operator<<(QDebug d, const NickNameEntry &e)
 
 NickNameDialog::NickNameDialog(QStandardItemModel *model, QWidget *parent) :
         QDialog(parent),
+        m_ui(new Internal::Ui::NickNameDialog),
         m_model(model),
         m_filterModel(new QSortFilterProxyModel(this))
 {
-    auto filterLineEdit = new FancyLineEdit;
-
-    m_filterTreeView = new TreeView;
-
-    m_buttonBox = new QDialogButtonBox(QDialogButtonBox::Cancel|QDialogButtonBox::Ok);
-
+    m_ui->setupUi(this);
     okButton()->setEnabled(false);
 
     // Populate model and grow tree to accommodate it
     m_filterModel->setSourceModel(model);
     m_filterModel->setFilterCaseSensitivity(Qt::CaseInsensitive);
-    m_filterTreeView->setModel(m_filterModel);
-    m_filterTreeView->setActivationMode(DoubleClickActivation);
+    m_ui->filterTreeView->setModel(m_filterModel);
+    m_ui->filterTreeView->setActivationMode(DoubleClickActivation);
     const int columnCount = m_filterModel->columnCount();
     int treeWidth = 0;
     for (int c = 0; c < columnCount; c++) {
-        m_filterTreeView->resizeColumnToContents(c);
-        treeWidth += m_filterTreeView->columnWidth(c);
+        m_ui->filterTreeView->resizeColumnToContents(c);
+        treeWidth += m_ui->filterTreeView->columnWidth(c);
     }
-    m_filterTreeView->setMinimumWidth(treeWidth + 20);
-    filterLineEdit->setFiltering(true);
-
-    using namespace Layouting;
-    Column {
-        filterLineEdit,
-        m_filterTreeView,
-        m_buttonBox
-    }.attachTo(this);
-
-    connect(m_buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    connect(m_buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
-
-    connect(m_filterTreeView, &QAbstractItemView::activated, this,
+    m_ui->filterTreeView->setMinimumWidth(treeWidth + 20);
+    m_ui->filterLineEdit->setFiltering(true);
+    connect(m_ui->filterTreeView, &QAbstractItemView::activated, this,
             &NickNameDialog::slotActivated);
-    connect(m_filterTreeView->selectionModel(), &QItemSelectionModel::currentRowChanged,
+    connect(m_ui->filterTreeView->selectionModel(), &QItemSelectionModel::currentRowChanged,
             this, &NickNameDialog::slotCurrentItemChanged);
-    connect(filterLineEdit, &FancyLineEdit::filterChanged,
+    connect(m_ui->filterLineEdit, &FancyLineEdit::filterChanged,
             m_filterModel, &QSortFilterProxyModel::setFilterFixedString);
 }
 
-NickNameDialog::~NickNameDialog() = default;
+NickNameDialog::~NickNameDialog()
+{
+    delete m_ui;
+}
 
 QPushButton *NickNameDialog::okButton() const
 {
-    return m_buttonBox->button(QDialogButtonBox::Ok);
+    return m_ui->buttonBox->button(QDialogButtonBox::Ok);
 }
 
 void NickNameDialog::slotCurrentItemChanged(const QModelIndex &index)
@@ -209,24 +216,26 @@ void NickNameDialog::slotActivated(const QModelIndex &)
 
 QString NickNameDialog::nickName() const
 {
-    const QModelIndex index = m_filterTreeView->selectionModel()->currentIndex();
+    const QModelIndex index = m_ui->filterTreeView->selectionModel()->currentIndex();
     if (index.isValid()) {
         const QModelIndex sourceIndex = m_filterModel->mapToSource(index);
         if (const QStandardItem *item = m_model->itemFromIndex(sourceIndex))
             return NickNameEntry::nickNameOf(item);
     }
-    return {};
+    return QString();
 }
 
 QStandardItemModel *NickNameDialog::createModel(QObject *parent)
 {
     auto model = new QStandardItemModel(parent);
-    QStringList headers = {Tr::tr("Name"), Tr::tr("Email"), Tr::tr("Alias"), Tr::tr("Alias email")};
+    QStringList headers;
+    headers << tr("Name") << tr("Email")
+            << tr("Alias") << tr("Alias email");
     model->setHorizontalHeaderLabels(headers);
     return model;
 }
 
-bool NickNameDialog::populateModelFromMailCapFile(const FilePath &fileName,
+bool NickNameDialog::populateModelFromMailCapFile(const QString &fileName,
                                                   QStandardItemModel *model,
                                                   QString *errorMessage)
 {
@@ -235,7 +244,7 @@ bool NickNameDialog::populateModelFromMailCapFile(const FilePath &fileName,
     if (fileName.isEmpty())
         return true;
     FileReader reader;
-    if (!reader.fetch(fileName, QIODevice::Text, errorMessage))
+    if (!reader.fetch(Utils::FilePath::fromString(fileName), QIODevice::Text, errorMessage))
          return false;
     // Split into lines and read
     NickNameEntry entry;
@@ -246,7 +255,7 @@ bool NickNameDialog::populateModelFromMailCapFile(const FilePath &fileName,
             model->appendRow(entry.toModelRow());
         } else {
             qWarning("%s: Invalid mail cap entry at line %d: '%s'\n",
-                     qPrintable(fileName.toUserOutput()),
+                     qPrintable(QDir::toNativeSeparators(fileName)),
                      i + 1, qPrintable(lines.at(i)));
         }
     }
@@ -263,4 +272,5 @@ QStringList NickNameDialog::nickNameList(const QStandardItemModel *model)
     return rc;
 }
 
-} // VcsBase::Internal
+} // namespace Internal
+} // namespace VcsBase

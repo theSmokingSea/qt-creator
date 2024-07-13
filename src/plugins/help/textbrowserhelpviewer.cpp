@@ -1,18 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "textbrowserhelpviewer.h"
 
 #include "helpconstants.h"
-#include "helptr.h"
 #include "localhelpmanager.h"
 
 #include <coreplugin/find/findplugin.h>
-
 #include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
-#include <utils/stringutils.h>
 
+#include <QApplication>
+#include <QClipboard>
 #include <QContextMenuEvent>
 #include <QKeyEvent>
 #include <QMenu>
@@ -21,7 +42,8 @@
 #include <QToolTip>
 #include <QVBoxLayout>
 
-namespace Help::Internal {
+using namespace Help;
+using namespace Help::Internal;
 
 // -- HelpViewer
 
@@ -55,28 +77,22 @@ TextBrowserHelpViewer::~TextBrowserHelpViewer() = default;
 
 void TextBrowserHelpViewer::setViewerFont(const QFont &newFont)
 {
-    setFontAndScale(newFont, LocalHelpManager::fontZoom() / 100.0, LocalHelpManager::antialias());
+    setFontAndScale(newFont, LocalHelpManager::fontZoom() / 100.0);
 }
 
-void TextBrowserHelpViewer::setFontAndScale(const QFont &font, qreal scale, bool antialias)
+void TextBrowserHelpViewer::setFontAndScale(const QFont &font, qreal scale)
 {
-    m_textBrowser->withFixedTopPosition([this, &font, scale, antialias] {
+    m_textBrowser->withFixedTopPosition([this, &font, scale] {
         QFont newFont = font;
         const float newSize = font.pointSizeF() * scale;
         newFont.setPointSizeF(newSize);
-        newFont.setStyleStrategy(antialias ? QFont::PreferAntialias : QFont::NoAntialias);
         m_textBrowser->setFont(newFont);
     });
 }
 
 void TextBrowserHelpViewer::setScale(qreal scale)
 {
-    setFontAndScale(LocalHelpManager::fallbackFont(), scale, LocalHelpManager::antialias());
-}
-
-void TextBrowserHelpViewer::setAntialias(bool on)
-{
-    setFontAndScale(LocalHelpManager::fallbackFont(), LocalHelpManager::fontZoom() / 100.0, on);
+    setFontAndScale(LocalHelpManager::fallbackFont(), scale);
 }
 
 QString TextBrowserHelpViewer::title() const
@@ -128,10 +144,8 @@ void TextBrowserHelpViewer::addBackHistoryItems(QMenu *backMenu)
     for (int i = 1; i <= m_textBrowser->backwardHistoryCount(); ++i) {
         auto action = new QAction(backMenu);
         action->setText(m_textBrowser->historyTitle(-i));
-        connect(action, &QAction::triggered, this, [this, index = i] {
-            for (int i = 0; i < index; ++i)
-                m_textBrowser->backward();
-        });
+        action->setData(-i);
+        connect(action, &QAction::triggered, this, &TextBrowserHelpViewer::goToHistoryItem);
         backMenu->addAction(action);
     }
 }
@@ -141,15 +155,13 @@ void TextBrowserHelpViewer::addForwardHistoryItems(QMenu *forwardMenu)
     for (int i = 1; i <= m_textBrowser->forwardHistoryCount(); ++i) {
         auto action = new QAction(forwardMenu);
         action->setText(m_textBrowser->historyTitle(i));
-        connect(action, &QAction::triggered, this, [this, index = i] {
-            for (int i = 0; i < index; ++i)
-                m_textBrowser->forward();
-        });
+        action->setData(i);
+        connect(action, &QAction::triggered, this, &TextBrowserHelpViewer::goToHistoryItem);
         forwardMenu->addAction(action);
     }
 }
 
-bool TextBrowserHelpViewer::findText(const QString &text, Utils::FindFlags flags,
+bool TextBrowserHelpViewer::findText(const QString &text, Core::FindFlags flags,
     bool incremental, bool fromSearch, bool *wrapped)
 {
     if (wrapped)
@@ -163,10 +175,10 @@ bool TextBrowserHelpViewer::findText(const QString &text, Utils::FindFlags flags
     if (incremental)
         cursor.setPosition(position);
 
-    QTextDocument::FindFlags f = Utils::textDocumentFlagsForFindFlags(flags);
+    QTextDocument::FindFlags f = Core::textDocumentFlagsForFindFlags(flags);
     QTextCursor found = doc->find(text, cursor, f);
     if (found.isNull()) {
-        if ((flags & Utils::FindBackward) == 0)
+        if ((flags & Core::FindBackward) == 0)
             cursor.movePosition(QTextCursor::Start);
         else
             cursor.movePosition(QTextCursor::End);
@@ -230,6 +242,25 @@ void TextBrowserHelpViewer::print(QPrinter *printer)
     m_textBrowser->print(printer);
 }
 
+void TextBrowserHelpViewer::goToHistoryItem()
+{
+    auto action = qobject_cast<const QAction *>(sender());
+    QTC_ASSERT(action, return);
+    bool ok = false;
+    int index = action->data().toInt(&ok);
+    QTC_ASSERT(ok, return);
+    // go back?
+    while (index < 0) {
+        m_textBrowser->backward();
+        ++index;
+    }
+    // go forward?
+    while (index > 0) {
+        m_textBrowser->forward();
+        --index;
+    }
+}
+
 // -- private
 
 TextBrowserHelpWidget::TextBrowserHelpWidget(TextBrowserHelpViewer *parent)
@@ -288,29 +319,29 @@ void TextBrowserHelpWidget::contextMenuEvent(QContextMenuEvent *event)
     QAction *copyAnchorAction = nullptr;
     const QUrl link(linkAt(event->pos()));
     if (!link.isEmpty() && link.isValid()) {
-        QAction *action = menu.addAction(Tr::tr("Open Link"));
+        QAction *action = menu.addAction(tr("Open Link"));
         connect(action, &QAction::triggered, this, [this, link]() {
             setSource(link);
         });
         if (m_parent->isActionVisible(HelpViewer::Action::NewPage)) {
-            action = menu.addAction(Tr::tr(Constants::TR_OPEN_LINK_AS_NEW_PAGE));
+            action = menu.addAction(QCoreApplication::translate("HelpViewer", Constants::TR_OPEN_LINK_AS_NEW_PAGE));
             connect(action, &QAction::triggered, this, [this, link]() {
                 emit m_parent->newPageRequested(link);
             });
         }
         if (m_parent->isActionVisible(HelpViewer::Action::ExternalWindow)) {
-            action = menu.addAction(Tr::tr(Constants::TR_OPEN_LINK_IN_WINDOW));
+            action = menu.addAction(QCoreApplication::translate("HelpViewer", Constants::TR_OPEN_LINK_IN_WINDOW));
             connect(action, &QAction::triggered, this, [this, link]() {
                 emit m_parent->externalPageRequested(link);
             });
         }
-        copyAnchorAction = menu.addAction(Tr::tr("Copy Link"));
+        copyAnchorAction = menu.addAction(tr("Copy Link"));
     } else if (!textCursor().selectedText().isEmpty()) {
-        connect(menu.addAction(Tr::tr("Copy")), &QAction::triggered, this, &QTextEdit::copy);
+        connect(menu.addAction(tr("Copy")), &QAction::triggered, this, &QTextEdit::copy);
     }
 
     if (copyAnchorAction == menu.exec(event->globalPos()))
-        Utils::setClipboardAndSelection(link.toString());
+        QApplication::clipboard()->setText(link.toString());
 }
 
 bool TextBrowserHelpWidget::eventFilter(QObject *obj, QEvent *event)
@@ -377,5 +408,3 @@ void TextBrowserHelpWidget::resizeEvent(QResizeEvent *e)
     QTextBrowser::resizeEvent(e);
     scrollToTextPosition(topTextPosition);
 }
-
-} // Help::Internal

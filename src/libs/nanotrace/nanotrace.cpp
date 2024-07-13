@@ -1,5 +1,27 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 
 #include "nanotrace.h"
@@ -38,7 +60,7 @@ struct ConvertArgValueToString {
 
 std::string Arg::value() const
 {
-    return std::visit(ConvertArgValueToString(), m_value);
+    return Utils::visit(ConvertArgValueToString(), m_value);
 }
 
 
@@ -73,7 +95,6 @@ struct TraceEvent
 
     int64_t oh;
     int64_t ts;
-    int64_t dur = 0;
 
     std::vector< Nanotrace::Arg > args;
 
@@ -101,10 +122,7 @@ std::ostream& operator<<(std::ostream &stream, const TraceEvent &event)
         << "{ \"cat\":\"" << event.cat
         << "\", \"pid\":" << event.pid
         << ", \"tid\":\"" << event.tid << "\""
-        << ", \"ts\":" << event.ts;
-    if (event.dur > -1)
-        stream << ", \"dur\":" << event.dur;
-    stream
+        << ", \"ts\":" << event.ts
         << ", \"ph\":\"" << event.ph
         << "\", \"name\":\"" << event.name
         << "\", \"args\": { \"overhead\": " << event.oh;
@@ -115,6 +133,7 @@ std::ostream& operator<<(std::ostream &stream, const TraceEvent &event)
     stream << " } }";
     return stream;
 }
+
 
 void init(const std::string &process, const std::string &thread, const std::string &path)
 {
@@ -128,56 +147,55 @@ void init(const std::string &process, const std::string &thread, const std::stri
     initEvent.ts = now;
 
     events.reserve(eventCount);
-    events.push_back(TraceEvent{getProcessId(),
-                                std::this_thread::get_id(),
-                                "process_name",
-                                "",
-                                'M',
-                                0,
-                                0,
-                                -1,
-                                {{"name", process}}});
+    events.push_back(TraceEvent {
+        getProcessId(),
+        std::this_thread::get_id(),
+        "process_name",
+        "",
+        'M',
+        0,
+        0,
+        {{"name", process}}
+    } );
 
-    events.push_back(TraceEvent{getProcessId(),
-                                std::this_thread::get_id(),
-                                "thread_name",
-                                "",
-                                'M',
-                                0,
-                                0,
-                                -1,
-                                {{"name", thread}}});
+    events.push_back(TraceEvent {
+        getProcessId(),
+        std::this_thread::get_id(),
+        "thread_name",
+        "",
+        'M',
+        0,
+        0,
+        {{"name", thread}}
+    } );
 
     if (std::ofstream stream(path, std::ios::trunc); stream.good())
         stream << "{ \"traceEvents\": [\n";
     else
         std::cout << "Nanotrace::init: stream not good" << std::endl;
 
-    events.push_back(TraceEvent{getProcessId(),
-                                std::this_thread::get_id(),
-                                "Initialize",
-                                "Initialize",
-                                'I',
-                                0,
-                                std::chrono::duration_cast<Units>(Clock::now() - now).count(),
-                                -1,
-                                {}});
+    events.push_back(TraceEvent {
+        getProcessId(),
+        std::this_thread::get_id(),
+        "Initialize",
+        "Initialize",
+        'I',
+        0,
+        std::chrono::duration_cast< Units >(Clock::now() - now).count(),
+        {}
+    } );
 
     initEvent.overhead = std::chrono::duration_cast< Units >(Clock::now() - now).count();
 }
 
 void shutdown()
 {
-    if (!initEvent.initialized)
-        return;
-
     flush();
 
     if (std::ofstream stream(initEvent.filePath, std::ios::app); stream.good())
         stream << "\n] }";
     else
         std::cout << "Nanotrace::shutdown: stream not good" << std::endl;
-    initEvent = {};
 }
 
 void addTracePoint(
@@ -192,15 +210,16 @@ void addTracePoint(
     auto now = Clock::now();
     auto beg = std::chrono::duration_cast< Units >(now - initEvent.ts);
 
-    events.push_back(TraceEvent{getProcessId(),
-                                std::this_thread::get_id(),
-                                name,
-                                cat,
-                                phase,
-                                initEvent.overhead,
-                                beg.count(),
-                                -1,
-                                {arguments}});
+    events.push_back( TraceEvent {
+        getProcessId(),
+        std::this_thread::get_id(),
+        name,
+        cat,
+        phase,
+        initEvent.overhead,
+        beg.count(),
+        {arguments}
+    } );
 
     if (events.size() >= eventCount - 1)
         flush();
@@ -241,19 +260,20 @@ ScopeTracer::~ScopeTracer()
         return;
 
     auto now = Clock::now();
-    auto beg = std::chrono::duration_cast<Units>(m_start - initEvent.ts);
-    const int64_t dur = std::chrono::duration_cast<Units>(now - m_start).count();
+    auto beg = std::chrono::duration_cast< Units >(m_start - initEvent.ts);
 
-    m_args.push_back(Arg("dur", dur));
-    events.push_back(TraceEvent{getProcessId(),
-                                std::this_thread::get_id(),
-                                m_name,
-                                m_cat,
-                                'X',
-                                initEvent.overhead,
-                                beg.count(),
-                                dur,
-                                {m_args}});
+    m_args.push_back(Arg("dur", std::chrono::duration_cast< Units >(now - m_start).count()));
+
+    events.push_back(TraceEvent {
+        getProcessId(),
+        std::this_thread::get_id(),
+        m_name,
+        m_cat,
+        'X',
+        initEvent.overhead,
+        beg.count(),
+        { m_args }
+    } );
 
     if (events.size() >= eventCount - 1)
         flush();

@@ -1,15 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "codemodelhelpers.h"
-#include "designertr.h"
 
 #include <cppeditor/cppmodelmanager.h>
 
 #include <projectexplorer/buildsystem.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
-#include <projectexplorer/projectmanager.h>
+#include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
 
 #include <QCoreApplication>
@@ -30,7 +51,7 @@ static const char setupUiC[] = "setupUi";
 // Find the generated "ui_form.h" header of the form via project.
 static FilePath generatedHeaderOf(const FilePath &uiFileName)
 {
-    if (const Project *uiProject = ProjectManager::projectForFile(uiFileName)) {
+    if (const Project *uiProject = SessionManager::projectForFile(uiFileName)) {
         if (Target *t = uiProject->activeTarget()) {
             if (BuildSystem *bs = t->buildSystem()) {
                 FilePaths files = bs->filesGeneratedFrom(uiFileName);
@@ -102,13 +123,13 @@ bool navigateToSlot(const QString &uiFileName,
     // Find the generated header.
     const FilePath generatedHeaderFile = generatedHeaderOf(FilePath::fromString(uiFileName));
     if (generatedHeaderFile.isEmpty()) {
-        *errorMessage = Tr::tr("The generated header of the form \"%1\" could not be found.\nRebuilding the project might help.").arg(uiFileName);
+        *errorMessage = QCoreApplication::translate("Designer", "The generated header of the form \"%1\" could not be found.\nRebuilding the project might help.").arg(uiFileName);
         return false;
     }
-    const CPlusPlus::Snapshot snapshot = CppEditor::CppModelManager::snapshot();
+    const CPlusPlus::Snapshot snapshot = CppEditor::CppModelManager::instance()->snapshot();
     const DocumentPtr generatedHeaderDoc = snapshot.document(generatedHeaderFile);
     if (!generatedHeaderDoc) {
-        *errorMessage = Tr::tr("The generated header \"%1\" could not be found in the code model.\nRebuilding the project might help.").arg(generatedHeaderFile.toUserOutput());
+        *errorMessage = QCoreApplication::translate("Designer", "The generated header \"%1\" could not be found in the code model.\nRebuilding the project might help.").arg(generatedHeaderFile.toUserOutput());
         return false;
     }
 

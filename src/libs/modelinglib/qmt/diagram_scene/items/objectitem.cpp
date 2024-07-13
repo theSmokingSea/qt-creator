@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "objectitem.h"
 
@@ -28,8 +50,6 @@
 #include "qmt/style/styledobject.h"
 #include "qmt/tasks/diagramscenecontroller.h"
 #include "qmt/tasks/ielementtasks.h"
-
-#include "../../modelinglibtr.h"
 
 #include <QGraphicsScene>
 #include <QGraphicsSceneMouseEvent>
@@ -185,8 +205,6 @@ void ObjectItem::setFocusSelected(bool focusSelected)
     if (m_isFocusSelected != focusSelected) {
         m_isFocusSelected = focusSelected;
         update();
-        if (m_nameItem)
-            m_nameItem->setEditable(focusSelected);
     }
 }
 
@@ -355,9 +373,9 @@ void ObjectItem::relationDrawn(const QString &id, ObjectItem *targetItem, const 
                         elementType = targetItem->stereotypeIconId();
                     else if (!targetItem->shapeIconId().isEmpty())
                         elementType = targetItem->shapeIconId();
-                    if ((!elementType.isEmpty() && !endItems.contains(elementType))
-                         && !endItems.contains(targetItem->elementType()))
-                    {
+                    else
+                        elementType = targetItem->elementType();
+                    if (!endItems.contains(elementType)) {
                         return;
                     }
                     // create relation
@@ -500,7 +518,6 @@ void ObjectItem::updateStereotypes(const QString &stereotypeIconId, StereotypeIc
             m_stereotypeIcon = new CustomIconItem(m_diagramSceneModel, this);
         m_stereotypeIcon->setStereotypeIconId(stereotypeIconId);
         m_stereotypeIcon->setBaseSize(QSizeF(m_stereotypeIcon->shapeWidth(), m_stereotypeIcon->shapeHeight()));
-        m_stereotypeIcon->setActualSize(QSizeF(m_stereotypeIcon->shapeWidth(), m_stereotypeIcon->shapeHeight()));
         m_stereotypeIcon->setBrush(style->fillBrush());
         m_stereotypeIcon->setPen(style->innerLinePen());
     } else if (m_stereotypeIcon) {
@@ -521,90 +538,43 @@ void ObjectItem::updateStereotypes(const QString &stereotypeIconId, StereotypeIc
     }
 }
 
-QSizeF ObjectItem::customIconItemMinimumSize(const CustomIconItem *customIconItem,
+QSizeF ObjectItem::stereotypeIconMinimumSize(const StereotypeIcon &stereotypeIcon,
                                              qreal minimumWidth, qreal minimumHeight) const
 {
     Q_UNUSED(minimumWidth)
 
     qreal width = 0.0;
     qreal height = 0.0;
-    if (customIconItem->hasImage()) {
-        const QImage &image = customIconItem->image();
-        width = minimumWidth;
-        height = image.height() * width / image.width();
-        if (height < minimumHeight) {
-            height = minimumHeight;
-            width = image.width() * height / image.height();
-        }
-    } else {
-        const StereotypeIcon &stereotypeIcon = customIconItem->stereotypeIcon();
-        if (stereotypeIcon.hasMinWidth() && !stereotypeIcon.hasMinHeight()) {
-            width = stereotypeIcon.minWidth();
-            if (stereotypeIcon.sizeLock() == StereotypeIcon::LockHeight || stereotypeIcon.sizeLock() == StereotypeIcon::LockSize)
-                height = stereotypeIcon.minHeight();
-            else
-                height = width * stereotypeIcon.height() / stereotypeIcon.width();
-        } else if (!stereotypeIcon.hasMinWidth() && stereotypeIcon.hasMinHeight()) {
+    if (stereotypeIcon.hasMinWidth() && !stereotypeIcon.hasMinHeight()) {
+        width = stereotypeIcon.minWidth();
+        if (stereotypeIcon.sizeLock() == StereotypeIcon::LockHeight || stereotypeIcon.sizeLock() == StereotypeIcon::LockSize)
             height = stereotypeIcon.minHeight();
-            if (stereotypeIcon.sizeLock() == StereotypeIcon::LockWidth || stereotypeIcon.sizeLock() == StereotypeIcon::LockSize)
-                width = stereotypeIcon.minWidth();
-            else
-                width = height * stereotypeIcon.width() / stereotypeIcon.height();
-        } else if (stereotypeIcon.hasMinWidth() && stereotypeIcon.hasMinHeight()) {
-            if (stereotypeIcon.sizeLock() == StereotypeIcon::LockRatio) {
-                width = stereotypeIcon.minWidth();
-                height = width * stereotypeIcon.height() / stereotypeIcon.width();
-                if (height < stereotypeIcon.minHeight()) {
-                    height = stereotypeIcon.minHeight();
-                    width = height * stereotypeIcon.width() / stereotypeIcon.height();
-                    QMT_CHECK(width <= stereotypeIcon.minWidth());
-                }
-            } else {
-                width = stereotypeIcon.minWidth();
+        else
+            height = width * stereotypeIcon.height() / stereotypeIcon.width();
+    } else if (!stereotypeIcon.hasMinWidth() && stereotypeIcon.hasMinHeight()) {
+        height = stereotypeIcon.minHeight();
+        if (stereotypeIcon.sizeLock() == StereotypeIcon::LockWidth || stereotypeIcon.sizeLock() == StereotypeIcon::LockSize)
+            width = stereotypeIcon.minWidth();
+        else
+            width = height * stereotypeIcon.width() / stereotypeIcon.height();
+    } else if (stereotypeIcon.hasMinWidth() && stereotypeIcon.hasMinHeight()) {
+        if (stereotypeIcon.sizeLock() == StereotypeIcon::LockRatio) {
+            width = stereotypeIcon.minWidth();
+            height = width * stereotypeIcon.height() / stereotypeIcon.width();
+            if (height < stereotypeIcon.minHeight()) {
                 height = stereotypeIcon.minHeight();
+                width = height * stereotypeIcon.width() / stereotypeIcon.height();
+                QMT_CHECK(width <= stereotypeIcon.minWidth());
             }
         } else {
-            height = minimumHeight;
-            width = height * stereotypeIcon.width() / stereotypeIcon.height();
-        }
-    }
-    return QSizeF(width, height);
-}
-
-void ObjectItem::correctAutoSize(const CustomIconItem* customIconItem, qreal &width, qreal &height, qreal minimumWidth, qreal minimumHeight) const
-{
-    if (customIconItem) {
-        if (customIconItem->hasImage()) {
-            width = customIconItem->image().width();
-            height = customIconItem->image().height();
+            width = stereotypeIcon.minWidth();
+            height = stereotypeIcon.minHeight();
         }
     } else {
-        if (width < minimumWidth)
-            width = minimumWidth;
-        if (height < minimumHeight)
-            height = minimumHeight;
+        height = minimumHeight;
+        width = height * stereotypeIcon.width() / stereotypeIcon.height();
     }
-}
-
-void ObjectItem::updateCustomIcon(const Style *style)
-{
-    if (object()->hasImage()) {
-        if (!m_customIcon)
-            m_customIcon = new CustomIconItem(diagramSceneModel(), this);
-        m_customIcon->setImage(object()->image());
-        m_customIcon->setZValue(SHAPE_ZVALUE);
-    } else if (!shapeIconId().isEmpty()) {
-        if (!m_customIcon)
-            m_customIcon = new CustomIconItem(diagramSceneModel(), this);
-        m_customIcon->setStereotypeIconId(shapeIconId());
-        m_customIcon->setBrush(style->fillBrush());
-        m_customIcon->setPen(style->outerLinePen());
-        m_customIcon->setZValue(SHAPE_ZVALUE);
-    } else if (m_customIcon) {
-        m_customIcon->scene()->removeItem(m_customIcon);
-        delete m_customIcon;
-        m_customIcon = nullptr;
-    }
+    return QSizeF(width, height);
 }
 
 bool ObjectItem::suppressTextDisplay() const
@@ -614,7 +584,6 @@ bool ObjectItem::suppressTextDisplay() const
 
 void ObjectItem::updateNameItem(const Style *style)
 {
-    QString display_name = buildDisplayName();
     if (!suppressTextDisplay()) {
         if (!m_nameItem) {
             m_nameItem = new EditableTextItem(this);
@@ -625,26 +594,25 @@ void ObjectItem::updateNameItem(const Style *style)
             textOption.setAlignment(Qt::AlignHCenter);
             m_nameItem->document()->setDefaultTextOption(textOption);
             QObject::connect(m_nameItem->document(), &QTextDocument::contentsChanged, m_nameItem,
-                             [this] {
+                             [=]()
+            {
                 this->m_nameItem->setTextWidth(-1);
                 this->m_nameItem->setTextWidth(m_nameItem->boundingRect().width());
                 this->setFromDisplayName(m_nameItem->toPlainText());
             });
             QObject::connect(m_nameItem, &EditableTextItem::returnKeyPressed, m_nameItem,
-                             [this] { this->m_nameItem->clearFocus(); });
+                             [=]() { this->m_nameItem->clearFocus(); });
         }
-        QFont font = style->headerFont();
-        if (object()->hasLinkedFile())
-            font.setUnderline(true);
-        if (font != m_nameItem->font())
-            m_nameItem->setFont(font);
+        if (style->headerFont() != m_nameItem->font())
+            m_nameItem->setFont(style->headerFont());
         if (style->textBrush().color() != m_nameItem->defaultTextColor())
             m_nameItem->setDefaultTextColor(style->textBrush().color());
         if (!m_nameItem->hasFocus()) {
-            if (display_name != m_nameItem->toPlainText())
-                m_nameItem->setPlainText(display_name);
+            QString name = buildDisplayName();
+            if (name != m_nameItem->toPlainText())
+                m_nameItem->setPlainText(name);
         }
-    } else if (m_nameItem) {
+    } else if (m_nameItem ){
         m_nameItem->scene()->removeItem(m_nameItem);
         delete m_nameItem;
         m_nameItem = nullptr;
@@ -674,45 +642,30 @@ void ObjectItem::setObjectName(const QString &objectName)
 
 void ObjectItem::updateDepth()
 {
-    int depth_delta = 0;
-    switch (m_shapeIcon.depthLayer()) {
-    case StereotypeIcon::DepthBehindItems:
-        depth_delta = -1;
-        break;
-    case StereotypeIcon::DepthAmongItems:
-        depth_delta = 0;
-        break;
-    case StereotypeIcon::DepthBeforeItems:
-        depth_delta = 1;
-        break;
-    }
-    setZValue(m_object->depth() + depth_delta);
+    setZValue(m_object->depth());
 }
 
-void ObjectItem::updateSelectionMarker(const CustomIconItem *customIconItem)
+void ObjectItem::updateSelectionMarker(CustomIconItem *customIconItem)
 {
     if (customIconItem) {
+        StereotypeIcon stereotypeIcon = customIconItem->stereotypeIcon();
         ResizeFlags resizeFlags = ResizeUnlocked;
-        if (customIconItem->hasImage()) {
+        switch (stereotypeIcon.sizeLock()) {
+        case StereotypeIcon::LockNone:
+            resizeFlags = ResizeUnlocked;
+            break;
+        case StereotypeIcon::LockWidth:
+            resizeFlags = ResizeLockedWidth;
+            break;
+        case StereotypeIcon::LockHeight:
+            resizeFlags = ResizeLockedHeight;
+            break;
+        case StereotypeIcon::LockSize:
+            resizeFlags = ResizeLockedSize;
+            break;
+        case StereotypeIcon::LockRatio:
             resizeFlags = ResizeLockedRatio;
-        } else {
-            switch (customIconItem->stereotypeIcon().sizeLock()) {
-            case StereotypeIcon::LockNone:
-                resizeFlags = ResizeUnlocked;
-                break;
-            case StereotypeIcon::LockWidth:
-                resizeFlags = ResizeLockedWidth;
-                break;
-            case StereotypeIcon::LockHeight:
-                resizeFlags = ResizeLockedHeight;
-                break;
-            case StereotypeIcon::LockSize:
-                resizeFlags = ResizeLockedSize;
-                break;
-            case StereotypeIcon::LockRatio:
-                resizeFlags = ResizeLockedRatio;
-                break;
-            }
+            break;
         }
         updateSelectionMarker(resizeFlags);
     } else {
@@ -773,11 +726,10 @@ void ObjectItem::updateRelationStarter()
             else
                 elementType = m_elementType;
             StereotypeController *stereotypeController = diagramSceneModel()->stereotypeController();
-            const QList<Toolbar> toolbars = stereotypeController->findToolbars(elementType);
+            QList<Toolbar> toolbars = stereotypeController->findToolbars(elementType);
             if (!toolbars.isEmpty()) {
-                for (const Toolbar &toolbar : toolbars) {
-                    const QList<Toolbar::Tool> tools = toolbar.tools();
-                    for (const Toolbar::Tool &tool : tools) {
+                foreach (const Toolbar &toolbar, toolbars) {
+                    foreach (const Toolbar::Tool &tool, toolbar.tools()) {
                         CustomRelation customRelation =
                                 stereotypeController->findCustomRelation(tool.m_elementType);
                         if (!customRelation.isNull())
@@ -803,7 +755,7 @@ void ObjectItem::addRelationStarterTool(const QString &id)
     if (id == DEPENDENCY)
         m_relationStarter->addArrow(DEPENDENCY, ArrowItem::ShaftDashed,
                                     ArrowItem::HeadNone, ArrowItem::HeadOpen,
-                                    Tr::tr("Dependency"));
+                                    tr("Dependency"));
 }
 
 void ObjectItem::addRelationStarterTool(const CustomRelation &customRelation)
@@ -906,15 +858,13 @@ void ObjectItem::updateAlignmentButtonsGeometry(const QRectF &objectRect)
     if (m_horizontalAlignButtons) {
         m_horizontalAlignButtons->clear();
         m_horizontalAlignButtons->setPos(mapToScene(QPointF(0.0, objectRect.top() - AlignButtonsItem::NormalButtonHeight - AlignButtonsItem::VerticalDistanceToObejct)));
-        const QList<ILatchable::Latch> latches = horizontalLatches(ILatchable::Move, true);
-        for (const ILatchable::Latch &latch : latches)
+        foreach (const ILatchable::Latch &latch, horizontalLatches(ILatchable::Move, true))
             m_horizontalAlignButtons->addButton(translateLatchTypeToAlignType(latch.m_latchType), latch.m_identifier, mapFromScene(QPointF(latch.m_pos, 0.0)).x());
     }
     if (m_verticalAlignButtons) {
         m_verticalAlignButtons->clear();
         m_verticalAlignButtons->setPos(mapToScene(QPointF(objectRect.left() - AlignButtonsItem::NormalButtonWidth - AlignButtonsItem::HorizontalDistanceToObject, 0.0)));
-        const QList<ILatchable::Latch> latches = verticalLatches(ILatchable::Move, true);
-        for (const ILatchable::Latch &latch : latches)
+        foreach (const ILatchable::Latch &latch, verticalLatches(ILatchable::Move, true))
             m_verticalAlignButtons->addButton(translateLatchTypeToAlignType(latch.m_latchType), latch.m_identifier, mapFromScene(QPointF(0.0, latch.m_pos)).y());
     }
 }
@@ -951,9 +901,7 @@ IAlignable::AlignType ObjectItem::translateLatchTypeToAlignType(ILatchable::Latc
 const Style *ObjectItem::adaptedStyle(const QString &stereotypeIconId)
 {
     QList<const DObject *> collidingObjects;
-    const QList<QGraphicsItem *> items
-        = m_diagramSceneModel->collectCollidingObjectItems(this, DiagramSceneModel::CollidingItems);
-    for (const QGraphicsItem *item : items) {
+    foreach (const QGraphicsItem *item, m_diagramSceneModel->collectCollidingObjectItems(this, DiagramSceneModel::CollidingItems)) {
         if (auto objectItem = dynamic_cast<const ObjectItem *>(item))
             collidingObjects.append(objectItem->object());
     }
@@ -983,9 +931,7 @@ bool ObjectItem::showContext() const
         QMT_ASSERT(mobject, return false);
         MObject *owner = mobject->owner();
         if (owner) {
-            const QList<QGraphicsItem *> items = m_diagramSceneModel->collectCollidingObjectItems(
-                this, DiagramSceneModel::CollidingOuterItems);
-            for (QGraphicsItem *item : items) {
+            foreach (QGraphicsItem *item, m_diagramSceneModel->collectCollidingObjectItems(this, DiagramSceneModel::CollidingOuterItems)) {
                 if (auto objectItem = dynamic_cast<ObjectItem *>(item)) {
                     if (objectItem->object()->modelUid().isValid() && objectItem->object()->modelUid() == owner->uid()) {
                         showContext = false;
@@ -1048,52 +994,49 @@ void ObjectItem::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
 
     bool addSeparator = false;
     if (element_tasks->hasDiagram(m_object, m_diagramSceneModel->diagram())) {
-        menu.addAction(new ContextMenuAction(Tr::tr("Open Diagram"), "openDiagram", &menu));
+        menu.addAction(new ContextMenuAction(tr("Open Diagram"), "openDiagram", &menu));
         addSeparator = true;
     } else if (element_tasks->mayCreateDiagram(m_object, m_diagramSceneModel->diagram())) {
-        menu.addAction(new ContextMenuAction(Tr::tr("Create Diagram"), "createDiagram", &menu));
+        menu.addAction(new ContextMenuAction(tr("Create Diagram"), "createDiagram", &menu));
         addSeparator = true;
     }
     if (extendContextMenu(&menu))
         addSeparator = true;
     if (element_tasks->extendContextMenu(object(), diagramSceneModel()->diagram(), &menu))
         addSeparator = true;
-    if (element_tasks->hasLinkedFile(m_object, m_diagramSceneModel->diagram())) {
-        menu.addAction(new ContextMenuAction(Tr::tr("Open Linked File"), "openLinkedFile", &menu));
-        addSeparator = true;
-    }
     if (addSeparator)
         menu.addSeparator();
-    menu.addAction(new ContextMenuAction(Tr::tr("Remove"), "remove",
+    menu.addAction(new ContextMenuAction(tr("Remove"), "remove",
                                          QKeySequence(QKeySequence::Delete), &menu));
     menu.addAction(
-        new ContextMenuAction(Tr::tr("Delete"), "delete", QKeySequence(Qt::CTRL | Qt::Key_D), &menu));
-    //menu.addAction(new ContextMenuAction(Tr::tr("Select in Model Tree"), "selectInModelTree", &menu));
+        new ContextMenuAction(tr("Delete"), "delete", QKeySequence(Qt::CTRL | Qt::Key_D), &menu));
+    //menu.addAction(new ContextMenuAction(tr("Select in Model Tree"), "selectInModelTree", &menu));
     QMenu alignMenu;
-    alignMenu.setTitle(Tr::tr("Align Objects"));
-    alignMenu.addAction(new ContextMenuAction(Tr::tr("Align Left"), "alignLeft", &alignMenu));
-    alignMenu.addAction(new ContextMenuAction(Tr::tr("Center Horizontally"), "centerHorizontally",
+    alignMenu.setTitle(tr("Align Objects"));
+    alignMenu.addAction(new ContextMenuAction(tr("Align Left"), "alignLeft", &alignMenu));
+    alignMenu.addAction(new ContextMenuAction(tr("Center Vertically"), "centerVertically",
                                               &alignMenu));
-    alignMenu.addAction(new ContextMenuAction(Tr::tr("Align Right"), "alignRight", &alignMenu));
+    alignMenu.addAction(new ContextMenuAction(tr("Align Right"), "alignRight", &alignMenu));
     alignMenu.addSeparator();
-    alignMenu.addAction(new ContextMenuAction(Tr::tr("Align Top"), "alignTop", &alignMenu));
-    alignMenu.addAction(new ContextMenuAction(Tr::tr("Center Vertically"), "centerVertically",
+    alignMenu.addAction(new ContextMenuAction(tr("Align Top"), "alignTop", &alignMenu));
+    alignMenu.addAction(new ContextMenuAction(tr("Center Horizontally"), "centerHorizontally",
                                               &alignMenu));
-    alignMenu.addAction(new ContextMenuAction(Tr::tr("Align Bottom"), "alignBottom", &alignMenu));
+    alignMenu.addAction(new ContextMenuAction(tr("Align Bottom"), "alignBottom", &alignMenu));
     alignMenu.addSeparator();
-    alignMenu.addAction(new ContextMenuAction(Tr::tr("Same Width"), "sameWidth", &alignMenu));
-    alignMenu.addAction(new ContextMenuAction(Tr::tr("Same Height"), "sameHeight", &alignMenu));
-    alignMenu.addAction(new ContextMenuAction(Tr::tr("Same Size"), "sameSize", &alignMenu));
+    alignMenu.addAction(new ContextMenuAction(tr("Same Width"), "sameWidth", &alignMenu));
+    alignMenu.addAction(new ContextMenuAction(tr("Same Height"), "sameHeight", &alignMenu));
+    alignMenu.addAction(new ContextMenuAction(tr("Same Size"), "sameSize", &alignMenu));
     alignMenu.setEnabled(m_diagramSceneModel->hasMultiObjectsSelection());
     menu.addMenu(&alignMenu);
     QMenu layoutMenu;
-    layoutMenu.setTitle(Tr::tr("Layout Objects"));
-    layoutMenu.addAction(new ContextMenuAction(Tr::tr("Equal Horizontal Distance"), "sameHCenterDistance", &alignMenu));
-    layoutMenu.addAction(new ContextMenuAction(Tr::tr("Equal Vertical Distance"), "sameVCenterDistance", &alignMenu));
-    layoutMenu.addAction(new ContextMenuAction(Tr::tr("Equal Horizontal Space"), "sameHBorderDistance", &alignMenu));
-    layoutMenu.addAction(new ContextMenuAction(Tr::tr("Equal Vertical Space"), "sameVBorderDistance", &alignMenu));
+    layoutMenu.setTitle(tr("Layout Objects"));
+    layoutMenu.addAction(new ContextMenuAction(tr("Equal Horizontal Distance"), "sameHCenterDistance", &alignMenu));
+    layoutMenu.addAction(new ContextMenuAction(tr("Equal Vertical Distance"), "sameVCenterDistance", &alignMenu));
+    layoutMenu.addAction(new ContextMenuAction(tr("Equal Horizontal Space"), "sameHBorderDistance", &alignMenu));
+    layoutMenu.addAction(new ContextMenuAction(tr("Equal Vertical Space"), "sameVBorderDistance", &alignMenu));
     layoutMenu.setEnabled(m_diagramSceneModel->hasMultiObjectsSelection());
     menu.addMenu(&layoutMenu);
+    menu.addAction(new ContextMenuAction(tr("Add Related Elements"), "addRelatedElements", &menu));
 
     QAction *selectedAction = menu.exec(event->screenPos());
     if (selectedAction) {
@@ -1106,8 +1049,6 @@ void ObjectItem::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
                 m_diagramSceneModel->diagramSceneController()->elementTasks()->openDiagram(m_object, m_diagramSceneModel->diagram());
             } else if (action->id() == "createDiagram") {
                 m_diagramSceneModel->diagramSceneController()->elementTasks()->createAndOpenDiagram(m_object, m_diagramSceneModel->diagram());
-            } else if (action->id() == "openLinkedFile") {
-                m_diagramSceneModel->diagramSceneController()->elementTasks()->openLinkedFile(m_object, m_diagramSceneModel->diagram());
             } else if (action->id() == "remove") {
                 DSelection selection = m_diagramSceneModel->selectedElements();
                 if (selection.isEmpty())
@@ -1146,6 +1087,11 @@ void ObjectItem::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
                 align(IAlignable::AlignHeight, "height");
             } else if (action->id() == "sameSize") {
                 align(IAlignable::AlignSize, "size");
+            } else if (action->id() == "addRelatedElements") {
+                DSelection selection = m_diagramSceneModel->selectedElements();
+                if (selection.isEmpty())
+                    selection.append(m_object->uid(), m_diagramSceneModel->diagram()->uid());
+                m_diagramSceneModel->diagramSceneController()->addRelatedElements(selection, m_diagramSceneModel->diagram());
             }
         }
     }
@@ -1154,7 +1100,7 @@ void ObjectItem::contextMenuEvent(QGraphicsSceneContextMenuEvent *event)
 QSizeF ObjectItem::minimumSize(const QSet<QGraphicsItem *> &items) const
 {
     QSizeF minimumSize(0.0, 0.0);
-    for (QGraphicsItem *item : items) {
+    foreach (QGraphicsItem *item, items) {
         if (auto resizable = dynamic_cast<IResizable *>(item)) {
             QSizeF size = resizable->minimumSize();
             if (size.width() > minimumSize.width())

@@ -1,11 +1,33 @@
-// Copyright (C) 2017 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "jsonwizardfactory.h"
 
 #include <coreplugin/icore.h>
 
-#include <projectexplorer/projectexplorer_test.h>
+#include <projectexplorer/projectexplorer.h>
 
 #include <QJsonDocument>
 #include <QJsonArray>
@@ -20,9 +42,8 @@
 
 using namespace Utils;
 
-namespace ProjectExplorer::Internal {
-
-static QJsonObject createWidget(const QString &type, const QString &nameSuffix, const QJsonObject &data)
+namespace {
+QJsonObject createWidget(const QString &type, const QString& nameSuffix, const QJsonObject &data)
 {
     return QJsonObject{
         {"name", QJsonValue(nameSuffix + type)},
@@ -32,7 +53,7 @@ static QJsonObject createWidget(const QString &type, const QString &nameSuffix, 
     };
 }
 
-static QJsonObject createFieldPageJsonObject(const QJsonArray &widgets)
+QJsonObject createFieldPageJsonObject(const QJsonArray &widgets)
 {
     return QJsonObject{
         {"name", "testpage"},
@@ -65,36 +86,32 @@ QJsonObject createGeneralWizard(const QJsonObject &pages)
     };
 }
 
-QCheckBox *findCheckBox(Wizard *wizard, const QString &objectName)
-{
+auto findCheckBox(Utils::Wizard *wizard, const QString &objectName) {
     return wizard->findChild<QCheckBox *>(objectName + "CheckBox");
 }
-
-QLineEdit *findLineEdit(Wizard *wizard, const QString &objectName)
-{
+auto findLineEdit(Utils::Wizard *wizard, const QString &objectName) {
     return wizard->findChild<QLineEdit *>(objectName + "LineEdit");
 }
-
-QComboBox *findComboBox(Wizard *wizard, const QString &objectName)
-{
+auto findComboBox(Utils::Wizard *wizard, const QString &objectName) {
     return wizard->findChild<QComboBox *>(objectName + "ComboBox");
 };
 
-struct FactoryDeleter { void operator()(JsonWizardFactory *f) { f->deleteLater(); } };
+} // namespace
 
-using FactoryPtr = std::unique_ptr<JsonWizardFactory, FactoryDeleter>;
+struct FactoryDeleter { void operator()(ProjectExplorer::JsonWizardFactory *f) { f->deleteLater(); } };
+using FactoryPtr = std::unique_ptr<ProjectExplorer::JsonWizardFactory, FactoryDeleter>;
 
-void ProjectExplorerTest::testJsonWizardsEmptyWizard()
+void ProjectExplorer::ProjectExplorerPlugin::testJsonWizardsEmptyWizard()
 {
     QString errorMessage;
     const QJsonObject wizard = createGeneralWizard(QJsonObject());
 
-    const FactoryPtr factory(JsonWizardFactory::createWizardFactory(wizard.toVariantMap(), {}, &errorMessage));
+    const FactoryPtr factory(ProjectExplorer::JsonWizardFactory::createWizardFactory(wizard.toVariantMap(), {}, &errorMessage));
     QVERIFY(factory == nullptr);
     QCOMPARE(qPrintable(errorMessage), "Page has no typeId set.");
 }
 
-void ProjectExplorerTest::testJsonWizardsEmptyPage()
+void ProjectExplorer::ProjectExplorerPlugin::testJsonWizardsEmptyPage()
 {
     QString errorMessage;
     const QJsonObject pages = createFieldPageJsonObject(QJsonArray());
@@ -105,7 +122,7 @@ void ProjectExplorerTest::testJsonWizardsEmptyPage()
     QCOMPARE(qPrintable(errorMessage), "When parsing fields of page \"PE.Wizard.Page.Fields\": ");
 }
 
-void ProjectExplorerTest::testJsonWizardsUnusedKeyAtFields_data()
+void ProjectExplorer::ProjectExplorerPlugin::testJsonWizardsUnusedKeyAtFields_data()
 {
     const QPair<QString, QJsonValue> wrongData = {"wrong", false};
 
@@ -119,7 +136,7 @@ void ProjectExplorerTest::testJsonWizardsUnusedKeyAtFields_data()
     QTest::newRow("ComboBox") << QJsonObject({{wrongData, {"items", QJsonArray()}}});
 }
 
-void ProjectExplorerTest::testJsonWizardsUnusedKeyAtFields()
+void ProjectExplorer::ProjectExplorerPlugin::testJsonWizardsUnusedKeyAtFields()
 {
     QString fieldType(QString::fromLatin1(QTest::currentDataTag()));
     QFETCH(QJsonObject, wrongDataJsonObect);
@@ -138,7 +155,7 @@ void ProjectExplorerTest::testJsonWizardsUnusedKeyAtFields()
     QVERIFY(errorMessage.isEmpty());
 }
 
-void ProjectExplorerTest::testJsonWizardsCheckBox()
+void ProjectExplorer::ProjectExplorerPlugin::testJsonWizardsCheckBox()
 {
     QString errorMessage;
 
@@ -177,7 +194,7 @@ void ProjectExplorerTest::testJsonWizardsCheckBox()
     QCOMPARE(qPrintable(wizard->field("SpecialValueCheckedCheckBox").toString()), "SpecialCheckedValue");
 }
 
-void ProjectExplorerTest::testJsonWizardsLineEdit()
+void ProjectExplorer::ProjectExplorerPlugin::testJsonWizardsLineEdit()
 {
     QString errorMessage;
 
@@ -201,7 +218,7 @@ void ProjectExplorerTest::testJsonWizardsLineEdit()
     QVERIFY(wizard->page(0)->isComplete());
 }
 
-void ProjectExplorerTest::testJsonWizardsComboBox()
+void ProjectExplorer::ProjectExplorerPlugin::testJsonWizardsComboBox()
 {
     QString errorMessage;
     QWidget parent;
@@ -219,7 +236,7 @@ void ProjectExplorerTest::testJsonWizardsComboBox()
     const QJsonObject wizardObject = createGeneralWizard(pages);
     const FactoryPtr factory(JsonWizardFactory::createWizardFactory(wizardObject.toVariantMap(), {}, &errorMessage));
     QVERIFY2(factory, qPrintable(errorMessage));
-    Wizard *wizard = factory->runWizard({}, &parent, Id(), QVariantMap());
+    Utils::Wizard *wizard = factory->runWizard({}, &parent, Id(), QVariantMap());
 
     QComboBox *defaultComboBox = findComboBox(wizard, "Default");
     QVERIFY(defaultComboBox);
@@ -240,10 +257,11 @@ void ProjectExplorerTest::testJsonWizardsComboBox()
 
 static QString iconInsideResource(const QString &relativePathToIcon)
 {
-    return Core::ICore::resourcePath().resolvePath(relativePathToIcon).toString();
+    const QDir resourcePath(Core::ICore::resourcePath().toDir());
+    return resourcePath.filePath(relativePathToIcon);
 }
 
-void ProjectExplorerTest::testJsonWizardsIconList()
+void ProjectExplorer::ProjectExplorerPlugin::testJsonWizardsIconList()
 {
     QString errorMessage;
     QWidget parent;
@@ -285,5 +303,3 @@ void ProjectExplorerTest::testJsonWizardsIconList()
     QVERIFY(!icon.isNull());
     QVERIFY(!wizard->page(0)->isComplete());
 }
-
-} // ProjectExplorer::Internal

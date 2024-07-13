@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "textdocument.h"
 
@@ -11,33 +33,29 @@
 #include "textdocumentlayout.h"
 #include "texteditor.h"
 #include "texteditorconstants.h"
-#include "texteditorsettings.h"
-#include "texteditortr.h"
 #include "textindenter.h"
 #include "typingsettings.h"
-
-#include <coreplugin/coreconstants.h>
 #include <coreplugin/diffservice.h>
 #include <coreplugin/editormanager/documentmodel.h>
 #include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/documentmanager.h>
-#include <coreplugin/icore.h>
-#include <coreplugin/progressmanager/progressmanager.h>
-
 #include <extensionsystem/pluginmanager.h>
-
-#include <utils/environment.h>
 #include <utils/guard.h>
 #include <utils/mimeutils.h>
-#include <utils/qtcassert.h>
 #include <utils/textutils.h>
 
 #include <QAction>
 #include <QApplication>
+#include <QDir>
+#include <QFileInfo>
 #include <QFutureInterface>
 #include <QScrollBar>
 #include <QStringList>
 #include <QTextCodec>
+
+#include <coreplugin/coreconstants.h>
+#include <coreplugin/icore.h>
+#include <coreplugin/progressmanager/progressmanager.h>
+#include <utils/qtcassert.h>
 
 using namespace Core;
 using namespace Utils;
@@ -59,11 +77,7 @@ class TextDocumentPrivate
 {
 public:
     TextDocumentPrivate()
-        : m_indenter(new PlainTextIndenter(&m_document))
-    {
-    }
-
-    ~TextDocumentPrivate()
+        : m_indenter(new TextIndenter(&m_document))
     {
     }
 
@@ -81,26 +95,18 @@ public:
     FontSettings m_fontSettings;
     bool m_fontSettingsNeedsApply = false; // for applying font settings delayed till an editor becomes visible
     QTextDocument m_document;
+    SyntaxHighlighter *m_highlighter = nullptr;
     CompletionAssistProvider *m_completionAssistProvider = nullptr;
     CompletionAssistProvider *m_functionHintAssistProvider = nullptr;
     IAssistProvider *m_quickFixProvider = nullptr;
     QScopedPointer<Indenter> m_indenter;
     QScopedPointer<Formatter> m_formatter;
-    struct PlainTextCache
-    {
-        int revision = -1;
-        QString plainText;
-    };
-
-    PlainTextCache m_plainTextCache;
 
     int m_autoSaveRevision = -1;
     bool m_silentReload = false;
 
     TextMarks m_marksCache; // Marks not owned
     Utils::Guard m_modificationChangedGuard;
-
-    SyntaxHighlighter *m_highlighter = nullptr;
 };
 
 MultiTextCursor TextDocumentPrivate::indentOrUnindent(const MultiTextCursor &cursors,
@@ -167,16 +173,12 @@ MultiTextCursor TextDocumentPrivate::indentOrUnindent(const MultiTextCursor &cur
                 }
             }
         } else {
-            const QString text = startBlock.text();
+            QString text = startBlock.text();
             int indentPosition = tabSettings.positionAtColumn(text, column, nullptr, true);
-            int spaces = TabSettings::spacesLeftFromPosition(text, indentPosition);
-            if (!doIndent && spaces == 0) {
-                indentPosition = tabSettings.firstNonSpace(text);
-                spaces = TabSettings::spacesLeftFromPosition(text, indentPosition);
-            }
-            const int startColumn = tabSettings.columnAt(text, indentPosition - spaces);
-            const int targetColumn
-                = tabSettings.indentedColumn(tabSettings.columnAt(text, indentPosition), doIndent);
+            int spaces = tabSettings.spacesLeftFromPosition(text, indentPosition);
+            int startColumn = tabSettings.columnAt(text, indentPosition - spaces);
+            int targetColumn = tabSettings.indentedColumn(tabSettings.columnAt(text, indentPosition),
+                                                          doIndent);
             cursor.setPosition(startBlock.position() + indentPosition);
             cursor.setPosition(startBlock.position() + indentPosition - spaces,
                                QTextCursor::KeepAnchor);
@@ -228,7 +230,6 @@ void TextDocumentPrivate::updateRevisions()
 TextDocument::TextDocument(Id id)
     : d(new TextDocumentPrivate)
 {
-    d->m_document.setParent(this);
     connect(&d->m_document, &QTextDocument::modificationChanged,
             this, &TextDocument::modificationChanged);
     connect(&d->m_document, &QTextDocument::contentsChanged,
@@ -256,29 +257,29 @@ TextDocument::~TextDocument()
     delete d;
 }
 
-QMap<FilePath, QString> TextDocument::openedTextDocumentContents()
+QMap<QString, QString> TextDocument::openedTextDocumentContents()
 {
-    QMap<FilePath, QString> workingCopy;
+    QMap<QString, QString> workingCopy;
     const QList<IDocument *> documents = DocumentModel::openedDocuments();
     for (IDocument *document : documents) {
         auto textEditorDocument = qobject_cast<TextDocument *>(document);
         if (!textEditorDocument)
             continue;
-        const FilePath fileName = textEditorDocument->filePath();
+        QString fileName = textEditorDocument->filePath().toString();
         workingCopy[fileName] = textEditorDocument->plainText();
     }
     return workingCopy;
 }
 
-QMap<FilePath, QTextCodec *> TextDocument::openedTextDocumentEncodings()
+QMap<QString, QTextCodec *> TextDocument::openedTextDocumentEncodings()
 {
-    QMap<FilePath, QTextCodec *> workingCopy;
+    QMap<QString, QTextCodec *> workingCopy;
     const QList<IDocument *> documents = DocumentModel::openedDocuments();
     for (IDocument *document : documents) {
         auto textEditorDocument = qobject_cast<TextDocument *>(document);
         if (!textEditorDocument)
             continue;
-        const FilePath fileName = textEditorDocument->filePath();
+        QString fileName = textEditorDocument->filePath().toString();
         workingCopy[fileName] = const_cast<QTextCodec *>(textEditorDocument->codec());
     }
     return workingCopy;
@@ -291,43 +292,12 @@ TextDocument *TextDocument::currentTextDocument()
 
 TextDocument *TextDocument::textDocumentForFilePath(const Utils::FilePath &filePath)
 {
-    if (filePath.isEmpty())
-        return nullptr;
     return qobject_cast<TextDocument *>(DocumentModel::documentForFilePath(filePath));
-}
-
-QString TextDocument::convertToPlainText(const QString &rawText)
-{
-    // This is basically a copy of QTextDocument::toPlainText but since toRawText returns a
-    // text containing formating characters and toPlainText replaces non breaking spaces, we
-    // provide our own plain text conversion to be able to save and copy document content
-    // containing non breaking spaces.
-
-    QString txt = rawText;
-    QChar *uc = txt.data();
-    QChar *e = uc + txt.size();
-
-    for (; uc != e; ++uc) {
-        switch (uc->unicode()) {
-        case 0xfdd0: // QTextBeginningOfFrame
-        case 0xfdd1: // QTextEndOfFrame
-        case QChar::ParagraphSeparator:
-        case QChar::LineSeparator:
-            *uc = QLatin1Char('\n');
-            break;
-        default:;
-        }
-    }
-    return txt;
 }
 
 QString TextDocument::plainText() const
 {
-    if (d->m_plainTextCache.revision != d->m_document.revision()) {
-        d->m_plainTextCache.plainText = convertToPlainText(d->m_document.toRawText());
-        d->m_plainTextCache.revision = d->m_document.revision();
-    }
-    return d->m_plainTextCache.plainText;
+    return document()->toPlainText();
 }
 
 QString TextDocument::textAt(int pos, int length) const
@@ -338,11 +308,6 @@ QString TextDocument::textAt(int pos, int length) const
 QChar TextDocument::characterAt(int pos) const
 {
     return document()->characterAt(pos);
-}
-
-QString TextDocument::blockText(int blockNumber) const
-{
-    return document()->findBlockByNumber(blockNumber).text();
 }
 
 void TextDocument::setTypingSettings(const TypingSettings &typingSettings)
@@ -399,19 +364,9 @@ QAction *TextDocument::createDiffAgainstCurrentFileAction(
         if (diffService && !leftFilePath.isEmpty() && !rightFilePath.isEmpty())
             diffService->diffFiles(leftFilePath, rightFilePath);
     };
-    auto diffAction = new QAction(Tr::tr("Diff Against Current File"), parent);
+    auto diffAction = new QAction(tr("Diff Against Current File"), parent);
     QObject::connect(diffAction, &QAction::triggered, parent, diffAgainstCurrentFile);
     return diffAction;
-}
-
-void TextDocument::insertSuggestion(std::unique_ptr<TextSuggestion> &&suggestion)
-{
-    QTextCursor cursor(&d->m_document);
-    cursor.setPosition(suggestion->position());
-    const QTextBlock block = cursor.block();
-    TextDocumentLayout::userData(block)->insertSuggestion(std::move(suggestion));
-    TextDocumentLayout::updateSuggestionFormats(block, fontSettings());
-    updateLayout();
 }
 
 #ifdef WITH_TESTS
@@ -460,14 +415,10 @@ IAssistProvider *TextDocument::quickFixAssistProvider() const
 void TextDocument::applyFontSettings()
 {
     d->m_fontSettingsNeedsApply = false;
-    QTextBlock block = document()->firstBlock();
-    while (block.isValid()) {
-        TextDocumentLayout::updateSuggestionFormats(block, fontSettings());
-        block = block.next();
-    }
-    updateLayout();
-    if (d->m_highlighter)
+    if (d->m_highlighter) {
         d->m_highlighter->setFontSettings(d->m_fontSettings);
+        d->m_highlighter->rehighlight();
+    }
 }
 
 const FontSettings &TextDocument::fontSettings() const
@@ -528,7 +479,64 @@ bool TextDocument::applyChangeSet(const ChangeSet &changeSet)
 {
     if (changeSet.isEmpty())
         return true;
-    return PlainRefactoringFileFactory().file(filePath())->apply(changeSet);
+    RefactoringChanges changes;
+    const RefactoringFilePtr file = changes.file(filePath());
+    file->setChangeSet(changeSet);
+    return file->apply();
+}
+
+// the blocks list must be sorted
+void TextDocument::setIfdefedOutBlocks(const QList<BlockRange> &blocks)
+{
+    QTextDocument *doc = document();
+    auto documentLayout = qobject_cast<TextDocumentLayout*>(doc->documentLayout());
+    QTC_ASSERT(documentLayout, return);
+
+    bool needUpdate = false;
+
+    QTextBlock block = doc->firstBlock();
+
+    int rangeNumber = 0;
+    int braceDepthDelta = 0;
+    while (block.isValid()) {
+        bool cleared = false;
+        bool set = false;
+        if (rangeNumber < blocks.size()) {
+            const BlockRange &range = blocks.at(rangeNumber);
+            if (block.position() >= range.first()
+                && ((block.position() + block.length() - 1) <= range.last() || !range.last()))
+                set = TextDocumentLayout::setIfdefedOut(block);
+            else
+                cleared = TextDocumentLayout::clearIfdefedOut(block);
+            if (block.contains(range.last()))
+                ++rangeNumber;
+        } else {
+            cleared = TextDocumentLayout::clearIfdefedOut(block);
+        }
+
+        if (cleared || set) {
+            needUpdate = true;
+            int delta = TextDocumentLayout::braceDepthDelta(block);
+            if (cleared)
+                braceDepthDelta += delta;
+            else if (set)
+                braceDepthDelta -= delta;
+        }
+
+        if (braceDepthDelta) {
+            TextDocumentLayout::changeBraceDepth(block,braceDepthDelta);
+            TextDocumentLayout::changeFoldingIndent(block, braceDepthDelta); // ### C++ only, refactor!
+        }
+
+        block = block.next();
+    }
+
+    if (needUpdate)
+        documentLayout->requestUpdate();
+
+#ifdef WITH_TESTS
+    emit ifdefedOutBlocksChanged(blocks);
+#endif
 }
 
 const ExtraEncodingSettings &TextDocument::extraEncodingSettings() const
@@ -582,6 +590,11 @@ QTextDocument *TextDocument::document() const
     return &d->m_document;
 }
 
+SyntaxHighlighter *TextDocument::syntaxHighlighter() const
+{
+    return d->m_highlighter;
+}
+
 /*!
  * Saves the document to the file specified by \a fileName. If errors occur,
  * \a errorString contains their cause.
@@ -589,7 +602,7 @@ QTextDocument *TextDocument::document() const
  * If \a autoSave is true, the cursor will be restored and some signals suppressed
  * and we do not clean up the text file (cleanWhitespace(), ensureFinalNewLine()).
  */
-bool TextDocument::saveImpl(QString *errorString, const FilePath &filePath, bool autoSave)
+bool TextDocument::save(QString *errorString, const FilePath &filePath, bool autoSave)
 {
     QTextCursor cursor(&d->m_document);
 
@@ -629,6 +642,8 @@ bool TextDocument::saveImpl(QString *errorString, const FilePath &filePath, bool
         cursor.endEditBlock();
     }
 
+    const Utils::FilePath &savePath = filePath.isEmpty() ? this->filePath() : filePath;
+
     // check if UTF8-BOM has to be added or removed
     Utils::TextFileFormat saveFormat = format();
     if (saveFormat.codec->name() == "UTF-8" && supportsUtf8Bom()) {
@@ -644,7 +659,7 @@ bool TextDocument::saveImpl(QString *errorString, const FilePath &filePath, bool
         }
     }
 
-    const bool ok = write(filePath, saveFormat, plainText(), errorString);
+    const bool ok = write(savePath, saveFormat, d->m_document.toPlainText(), errorString);
 
     // restore text cursor and scroll bar positions
     if (autoSave && undos < d->m_document.availableUndoSteps()) {
@@ -667,7 +682,7 @@ bool TextDocument::saveImpl(QString *errorString, const FilePath &filePath, bool
 
     // inform about the new filename
     d->m_document.setModified(false); // also triggers update of the block revisions
-    setFilePath(filePath.absoluteFilePath());
+    setFilePath(savePath.absoluteFilePath());
     emit changed();
     return true;
 }
@@ -680,12 +695,6 @@ QByteArray TextDocument::contents() const
 bool TextDocument::setContents(const QByteArray &contents)
 {
     return setPlainText(QString::fromUtf8(contents));
-}
-
-void TextDocument::formatContents()
-{
-    d->m_indenter->format({{document()->firstBlock().blockNumber() + 1,
-                            document()->lastBlock().blockNumber() + 1}});
 }
 
 bool TextDocument::shouldAutoSave() const
@@ -719,7 +728,7 @@ Core::IDocument::OpenResult TextDocument::open(QString *errorString,
     emit aboutToOpen(filePath, realFilePath);
     OpenResult success = openImpl(errorString, filePath, realFilePath, /*reload =*/ false);
     if (success == OpenResult::Success) {
-        setMimeType(Utils::mimeTypeForFile(filePath, MimeMatchMode::MatchDefaultAndRemote).name());
+        setMimeType(Utils::mimeTypeForFile(filePath).name());
         emit openFinishedSuccessfully();
     }
     return success;
@@ -757,7 +766,7 @@ Core::IDocument::OpenResult TextDocument::openImpl(QString *errorString,
         } else if (chunks > 1) {
             QFutureInterface<void> interface;
             interface.setProgressRange(0, chunks);
-            ProgressManager::addTask(interface.future(), Tr::tr("Opening File"),
+            ProgressManager::addTask(interface.future(), tr("Opening File"),
                                      Constants::TASK_OPEN_FILE);
             interface.reportStarted();
 
@@ -807,14 +816,15 @@ bool TextDocument::reload(QString *errorString, const FilePath &realFilePath)
     emit aboutToReload();
     auto documentLayout =
         qobject_cast<TextDocumentLayout*>(d->m_document.documentLayout());
+    TextMarks marks;
     if (documentLayout)
-        documentLayout->documentAboutToReload(this); // removes text marks non-permanently
+        marks = documentLayout->documentClosing(); // removes text marks non-permanently
 
     bool success = openImpl(errorString, filePath(), realFilePath, /*reload =*/true)
                    == OpenResult::Success;
 
     if (documentLayout)
-        documentLayout->documentReloaded(this); // re-adds text marks
+        documentLayout->documentReloaded(marks, this); // re-adds text marks
     emit reloadFinished(success);
     return success;
 }
@@ -853,19 +863,13 @@ bool TextDocument::reload(QString *errorString, ReloadFlag flag, ChangeType type
     return reload(errorString);
 }
 
-void TextDocument::resetSyntaxHighlighter(const std::function<SyntaxHighlighter *()> &creator)
+void TextDocument::setSyntaxHighlighter(SyntaxHighlighter *highlighter)
 {
-    SyntaxHighlighter *highlighter = creator();
-    highlighter->setParent(this);
-    highlighter->setDocument(this->document());
-    highlighter->setFontSettings(TextEditorSettings::fontSettings());
-    highlighter->setMimeType(mimeType());
+    if (d->m_highlighter)
+        delete d->m_highlighter;
     d->m_highlighter = highlighter;
-}
-
-SyntaxHighlighter *TextDocument::syntaxHighlighter() const
-{
-    return d->m_highlighter;
+    d->m_highlighter->setParent(this);
+    d->m_highlighter->setDocument(&d->m_document);
 }
 
 void TextDocument::cleanWhitespace(const QTextCursor &cursor)
@@ -910,7 +914,7 @@ void TextDocument::cleanWhitespace(QTextCursor &cursor, bool inEntireDocument,
     const IndentationForBlock &indentations
         = d->m_indenter->indentationForBlocks(blocks, currentTabSettings);
 
-    for (QTextBlock block : std::as_const(blocks)) {
+    for (QTextBlock block : qAsConst(blocks)) {
         QString blockText = block.text();
 
         if (removeTrailingWhitespace)
@@ -999,12 +1003,10 @@ bool TextDocument::addMark(TextMark *mark)
         if (!mark->isVisible())
             return true;
         // Update document layout
-        bool fullUpdate = !documentLayout->hasMarks;
+        double newMaxWidthFactor = qMax(mark->widthFactor(), documentLayout->maxMarkWidthFactor);
+        bool fullUpdate =  newMaxWidthFactor > documentLayout->maxMarkWidthFactor || !documentLayout->hasMarks;
         documentLayout->hasMarks = true;
-        if (!documentLayout->hasLocationMarker && mark->isLocationMarker()) {
-            documentLayout->hasLocationMarker = true;
-            fullUpdate = true;
-        }
+        documentLayout->maxMarkWidthFactor = newMaxWidthFactor;
         if (fullUpdate)
             documentLayout->scheduleUpdate();
         else
@@ -1040,13 +1042,9 @@ void TextDocument::removeMarkFromMarksCache(TextMark *mark)
                                   Qt::QueuedConnection);
     };
 
-    if (mark->isLocationMarker()) {
-        documentLayout->hasLocationMarker = false;
-        scheduleLayoutUpdate();
-    }
-
     if (d->m_marksCache.isEmpty()) {
         documentLayout->hasMarks = false;
+        documentLayout->maxMarkWidthFactor = 1.0;
         scheduleLayoutUpdate();
         return;
     }
@@ -1054,48 +1052,28 @@ void TextDocument::removeMarkFromMarksCache(TextMark *mark)
     if (!mark->isVisible())
         return;
 
-    documentLayout->requestExtraAreaUpdate();
-}
+    if (documentLayout->maxMarkWidthFactor == 1.0
+            || mark->widthFactor() == 1.0
+            || mark->widthFactor() < documentLayout->maxMarkWidthFactor) {
+        // No change in width possible
+        documentLayout->requestExtraAreaUpdate();
+    } else {
+        double maxWidthFactor = 1.0;
+        for (const TextMark *mark : qAsConst(d->m_marksCache)) {
+            if (!mark->isVisible())
+                continue;
+            maxWidthFactor = qMax(mark->widthFactor(), maxWidthFactor);
+            if (maxWidthFactor == documentLayout->maxMarkWidthFactor)
+                break; // Still a mark with the maxMarkWidthFactor
+        }
 
-static QSet<Id> &hiddenMarksIds()
-{
-    static QSet<Id> ids;
-    return ids;
-}
-
-void TextDocument::temporaryHideMarksAnnotation(const Utils::Id &category)
-{
-    hiddenMarksIds().insert(category);
-    const QList<IDocument *> documents = DocumentModel::openedDocuments();
-    for (auto document : documents) {
-        if (auto textDocument = qobject_cast<TextDocument*>(document)) {
-            const TextMarks marks = textDocument->marks();
-            for (const auto mark : marks) {
-                if (mark->category().id == category)
-                    mark->updateMarker();
-            }
+        if (maxWidthFactor != documentLayout->maxMarkWidthFactor) {
+            documentLayout->maxMarkWidthFactor = maxWidthFactor;
+            scheduleLayoutUpdate();
+        } else {
+            documentLayout->requestExtraAreaUpdate();
         }
     }
-}
-
-void TextDocument::showMarksAnnotation(const Utils::Id &category)
-{
-    hiddenMarksIds().remove(category);
-    const QList<IDocument *> documents = DocumentModel::openedDocuments();
-    for (auto document : documents) {
-        if (auto textDocument = qobject_cast<TextDocument*>(document)) {
-            const TextMarks marks = textDocument->marks();
-            for (const auto mark : marks) {
-                if (mark->category().id == category)
-                    mark->updateMarker();
-            }
-        }
-    }
-}
-
-bool TextDocument::marksAnnotationHidden(const Utils::Id &category)
-{
-    return hiddenMarksIds().contains(category);
 }
 
 void TextDocument::removeMark(TextMark *mark)

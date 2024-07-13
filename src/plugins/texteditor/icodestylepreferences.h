@@ -1,16 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "texteditor_global.h"
 
-#include <utils/store.h>
-
 #include <QObject>
 
 QT_BEGIN_NAMESPACE
 class QVariant;
+class QSettings;
 QT_END_NAMESPACE
 
 namespace TextEditor {
@@ -38,15 +59,6 @@ public:
     bool isReadOnly() const;
     void setReadOnly(bool on);
 
-    bool isTemporarilyReadOnly() const;
-    void setTemporarilyReadOnly(bool on);
-
-    bool isAdditionalTabVisible() const;
-    void setIsAdditionalTabVisible(bool on);
-
-    bool additionalTabExist() const;
-    void setAdditionalTabExist(bool on);
-
     void setTabSettings(const TabSettings &settings);
     TabSettings tabSettings() const;
     TabSettings currentTabSettings() const;
@@ -67,13 +79,13 @@ public:
     QByteArray currentDelegateId() const;
     void setCurrentDelegate(const QByteArray &id);
 
-    void setSettingsSuffix(const Utils::Key &suffix);
-    void toSettings(const Utils::Key &category) const;
-    void fromSettings(const Utils::Key &category);
+    void setSettingsSuffix(const QString &suffix);
+    void toSettings(const QString &category, QSettings *s) const;
+    void fromSettings(const QString &category, QSettings *s);
 
     // make below 2 protected?
-    virtual Utils::Store toMap() const;
-    virtual void fromMap(const Utils::Store &map);
+    virtual QVariantMap toMap() const;
+    virtual void fromMap(const QVariantMap &map);
 
 signals:
     void tabSettingsChanged(const TextEditor::TabSettings &settings);
@@ -83,9 +95,6 @@ signals:
     void currentDelegateChanged(TextEditor::ICodeStylePreferences *currentDelegate);
     void currentPreferencesChanged(TextEditor::ICodeStylePreferences *currentPreferences);
     void displayNameChanged(const QString &newName);
-    void aboutToBeRemoved(TextEditor::ICodeStylePreferences *preferences);
-    void aboutToBeCopied(TextEditor::ICodeStylePreferences *current,
-                         TextEditor::ICodeStylePreferences *target);
 
 private:
     void codeStyleRemoved(ICodeStylePreferences *preferences);

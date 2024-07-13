@@ -1,75 +1,100 @@
-// Copyright (C) 2016 Nicolas Arnaud-Cormos
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Nicolas Arnaud-Cormos
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "macrolocatorfilter.h"
 
 #include "macro.h"
 #include "macromanager.h"
-#include "macrostr.h"
 
 #include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/editormanager/ieditor.h>
+#include <coreplugin/icore.h>
 
 #include <QPixmap>
 
-using namespace Core;
 using namespace Macros;
 using namespace Macros::Internal;
-using namespace Utils;
 
 MacroLocatorFilter::MacroLocatorFilter()
     : m_icon(QPixmap(":/macros/images/macro.png"))
 {
     setId("Macros");
-    setDisplayName(Tr::tr("Text Editing Macros"));
-    setDescription(Tr::tr("Runs a text editing macro that was recorded with Tools > Text Editing "
-                          "Macros > Record Macro."));
+    setDisplayName(tr("Text Editing Macros"));
+    setDescription(tr("Runs a text editing macro that was recorded with Tools > Text Editing "
+                      "Macros > Record Macro."));
     setDefaultShortcutString("rm");
 }
 
-LocatorMatcherTasks MacroLocatorFilter::matchers()
+MacroLocatorFilter::~MacroLocatorFilter() = default;
+
+QList<Core::LocatorFilterEntry> MacroLocatorFilter::matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future, const QString &entry)
 {
-    using namespace Tasking;
+    Q_UNUSED(future)
+    QList<Core::LocatorFilterEntry> goodEntries;
+    QList<Core::LocatorFilterEntry> betterEntries;
 
-    Storage<LocatorStorage> storage;
+    const Qt::CaseSensitivity entryCaseSensitivity = caseSensitivity(entry);
 
-    const auto onSetup = [storage, icon = m_icon] {
-        const QString input = storage->input();
-        const Qt::CaseSensitivity entryCaseSensitivity = caseSensitivity(input);
-        const QMap<QString, Macro *> &macros = MacroManager::macros();
-        LocatorFilterEntries goodEntries;
-        LocatorFilterEntries betterEntries;
-        for (auto it = macros.cbegin(); it != macros.cend(); ++it) {
-            const QString displayName = it.key();
-            const QString description = it.value()->description();
-            int index = displayName.indexOf(input, 0, entryCaseSensitivity);
-            LocatorFilterEntry::HighlightInfo::DataType hDataType
-                = LocatorFilterEntry::HighlightInfo::DisplayName;
-            if (index < 0) {
-                index = description.indexOf(input, 0, entryCaseSensitivity);
-                hDataType = LocatorFilterEntry::HighlightInfo::ExtraInfo;
-            }
+    const QMap<QString, Macro*> &macros = MacroManager::macros();
 
-            if (index >= 0) {
-                LocatorFilterEntry filterEntry;
-                filterEntry.displayName = displayName;
-                filterEntry.acceptor = [displayName] {
-                    IEditor *editor = EditorManager::currentEditor();
-                    if (editor)
-                        editor->widget()->setFocus(Qt::OtherFocusReason);
-                    MacroManager::instance()->executeMacro(displayName);
-                    return AcceptResult();
-                };
-                filterEntry.displayIcon = icon;
-                filterEntry.extraInfo = description;
-                filterEntry.highlightInfo = LocatorFilterEntry::HighlightInfo(index, input.length(),
-                                                                              hDataType);
-                if (index == 0)
-                    betterEntries.append(filterEntry);
-                else
-                    goodEntries.append(filterEntry);
-            }
+    for (auto it = macros.cbegin(), end = macros.cend(); it != end; ++it) {
+        const QString displayName = it.key();
+        const QString description = it.value()->description();
+
+        int index = displayName.indexOf(entry, 0, entryCaseSensitivity);
+        Core::LocatorFilterEntry::HighlightInfo::DataType hDataType = Core::LocatorFilterEntry::HighlightInfo::DisplayName;
+        if (index < 0) {
+            index = description.indexOf(entry, 0, entryCaseSensitivity);
+            hDataType = Core::LocatorFilterEntry::HighlightInfo::ExtraInfo;
         }
-        storage->reportOutput(betterEntries + goodEntries);
-    };
-    return {{Sync(onSetup), storage}};
+
+        if (index >= 0) {
+            Core::LocatorFilterEntry filterEntry(this, displayName, QVariant(), m_icon);
+            filterEntry.extraInfo = description;
+            filterEntry.highlightInfo = Core::LocatorFilterEntry::HighlightInfo(index, entry.length(), hDataType);
+
+            if (index == 0)
+                betterEntries.append(filterEntry);
+            else
+                goodEntries.append(filterEntry);
+        }
+    }
+    betterEntries.append(goodEntries);
+    return betterEntries;
+}
+
+void MacroLocatorFilter::accept(const Core::LocatorFilterEntry &selection,
+                                QString *newText, int *selectionStart, int *selectionLength) const
+{
+    Q_UNUSED(newText)
+    Q_UNUSED(selectionStart)
+    Q_UNUSED(selectionLength)
+    // Give the focus back to the editor
+    Core::IEditor *editor = Core::EditorManager::currentEditor();
+    if (editor)
+        editor->widget()->setFocus(Qt::OtherFocusReason);
+
+    MacroManager::instance()->executeMacro(selection.displayName);
 }

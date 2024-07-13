@@ -1,19 +1,40 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "debuggersourcepathmappingwidget.h"
 
-#include "commonoptionspage.h"
+#include "debuggeractions.h"
 #include "debuggerengine.h"
-#include "debuggertr.h"
 
 #include <utils/buildablehelperlibrary.h>
 #include <utils/fancylineedit.h>
 #include <utils/hostosinfo.h>
 #include <utils/layoutbuilder.h>
 #include <utils/pathchooser.h>
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 #include <utils/variablechooser.h>
 
 #include <QFileDialog>
@@ -22,12 +43,14 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QSettings>
 #include <QStandardItemModel>
 #include <QTreeView>
 
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 class SourcePathMappingModel;
 
@@ -37,6 +60,8 @@ using Mapping = QPair<FilePath, FilePath>;
 
 class DebuggerSourcePathMappingWidget : public QGroupBox
 {
+    Q_DECLARE_TR_FUNCTIONS(Debugger::Internal::DebuggerSourcePathMappingWidget)
+
 public:
     DebuggerSourcePathMappingWidget();
 
@@ -125,12 +150,12 @@ private:
 
 SourcePathMappingModel::SourcePathMappingModel(QObject *parent) :
     QStandardItemModel(0, ColumnCount, parent),
-    m_newSourcePlaceHolder(Tr::tr("<new source>")),
-    m_newTargetPlaceHolder(Tr::tr("<new target>"))
+    m_newSourcePlaceHolder(DebuggerSourcePathMappingWidget::tr("<new source>")),
+    m_newTargetPlaceHolder(DebuggerSourcePathMappingWidget::tr("<new target>"))
 {
     QStringList headers;
-    headers.append(Tr::tr("Source path"));
-    headers.append(Tr::tr("Target path"));
+    headers.append(DebuggerSourcePathMappingWidget::tr("Source path"));
+    headers.append(DebuggerSourcePathMappingWidget::tr("Target path"));
     setHorizontalHeaderLabels(headers);
 }
 
@@ -218,14 +243,14 @@ void SourcePathMappingModel::setTarget(int row, const QString &t)
 DebuggerSourcePathMappingWidget::DebuggerSourcePathMappingWidget() :
     m_model(new SourcePathMappingModel(this)),
     m_treeView(new QTreeView(this)),
-    m_addButton(new QPushButton(Tr::tr("Add"), this)),
-    m_addQtButton(new QPushButton(Tr::tr("Add Qt sources..."), this)),
-    m_removeButton(new QPushButton(Tr::tr("Remove"), this)),
+    m_addButton(new QPushButton(tr("Add"), this)),
+    m_addQtButton(new QPushButton(tr("Add Qt sources..."), this)),
+    m_removeButton(new QPushButton(tr("Remove"), this)),
     m_sourceLineEdit(new QLineEdit(this)),
     m_targetChooser(new PathChooser(this))
 {
-    setTitle(Tr::tr("Source Paths Mapping"));
-    setToolTip(Tr::tr("<p>Mappings of source file folders to "
+    setTitle(tr("Source Paths Mapping"));
+    setToolTip(tr("<p>Mappings of source file folders to "
                   "be used in the debugger can be entered here.</p>"
                   "<p>This is useful when using a copy of the source tree "
                   "at a location different from the one "
@@ -250,7 +275,7 @@ DebuggerSourcePathMappingWidget::DebuggerSourcePathMappingWidget() :
     buttonLayout->addWidget(m_addButton);
     buttonLayout->addWidget(m_addQtButton);
     m_addQtButton->setVisible(!qtBuildPaths().isEmpty());
-    m_addQtButton->setToolTip(Tr::tr("<p>Add a mapping for Qt's source folders "
+    m_addQtButton->setToolTip(tr("<p>Add a mapping for Qt's source folders "
         "when using an unpatched version of Qt."));
     buttonLayout->addWidget(m_removeButton);
     connect(m_addButton, &QAbstractButton::clicked,
@@ -271,20 +296,20 @@ DebuggerSourcePathMappingWidget::DebuggerSourcePathMappingWidget() :
     m_targetChooser->setHistoryCompleter("Debugger.MappingTarget.History");
     connect(m_sourceLineEdit, &QLineEdit::textChanged,
             this, &DebuggerSourcePathMappingWidget::slotEditSourceFieldChanged);
-    connect(m_targetChooser, &PathChooser::textChanged,
+    connect(m_targetChooser, &PathChooser::pathChanged,
             this, &DebuggerSourcePathMappingWidget::slotEditTargetFieldChanged);
     auto editLayout = new QFormLayout;
-    const QString sourceToolTip = Tr::tr("<p>The source path contained in the "
+    const QString sourceToolTip = tr("<p>The source path contained in the "
         "debug information of the executable as reported by the debugger");
-    auto editSourceLabel = new QLabel(Tr::tr("&Source path:"));
+    auto editSourceLabel = new QLabel(tr("&Source path:"));
     editSourceLabel->setToolTip(sourceToolTip);
     m_sourceLineEdit->setToolTip(sourceToolTip);
     editSourceLabel->setBuddy(m_sourceLineEdit);
     editLayout->addRow(editSourceLabel, m_sourceLineEdit);
 
-    const QString targetToolTip = Tr::tr("<p>The actual location of the source "
+    const QString targetToolTip = tr("<p>The actual location of the source "
         "tree on the local machine");
-    auto editTargetLabel = new QLabel(Tr::tr("&Target path:"));
+    auto editTargetLabel = new QLabel(tr("&Target path:"));
     editTargetLabel->setToolTip(targetToolTip);
     editTargetLabel->setBuddy(m_targetChooser);
     m_targetChooser->setToolTip(targetToolTip);
@@ -309,7 +334,7 @@ QString DebuggerSourcePathMappingWidget::editSourceField() const
 
 QString DebuggerSourcePathMappingWidget::editTargetField() const
 {
-    return m_targetChooser->unexpandedFilePath().toString();
+    return m_targetChooser->rawPath();
 }
 
 void DebuggerSourcePathMappingWidget::setEditFieldMapping(const Mapping &m)
@@ -380,7 +405,7 @@ void DebuggerSourcePathMappingWidget::slotAdd()
 void DebuggerSourcePathMappingWidget::slotAddQt()
 {
     // Add a mapping for various Qt build locations in case of unpatched builds.
-    const FilePath qtSourcesPath = FileUtils::getExistingDirectory(this, Tr::tr("Qt Sources"));
+    const FilePath qtSourcesPath = FileUtils::getExistingDirectory(this, tr("Qt Sources"));
     if (qtSourcesPath.isEmpty())
         return;
     for (const QString &buildPath : qtBuildPaths())
@@ -414,18 +439,52 @@ void DebuggerSourcePathMappingWidget::slotEditTargetFieldChanged()
     }
 }
 
+// Find Qt installation by running qmake
+static QString findQtInstallPath(const FilePath &qmakePath)
+{
+    if (qmakePath.isEmpty())
+        return QString();
+    QtcProcess proc;
+    proc.setCommand({qmakePath, {"-query", "QT_INSTALL_HEADERS"}});
+    proc.start();
+    if (!proc.waitForStarted()) {
+        qWarning("%s: Cannot start '%s': %s", Q_FUNC_INFO, qPrintable(qmakePath.toString()),
+           qPrintable(proc.errorString()));
+        return QString();
+    }
+    if (!proc.waitForFinished()) {
+        qWarning("%s: Timeout running '%s'.", Q_FUNC_INFO, qPrintable(qmakePath.toString()));
+        return QString();
+    }
+    if (proc.exitStatus() != QProcess::NormalExit) {
+        qWarning("%s: '%s' crashed.", Q_FUNC_INFO, qPrintable(qmakePath.toString()));
+        return QString();
+    }
+    const QByteArray ba = proc.readAllStandardOutput().trimmed();
+    QDir dir(QString::fromLocal8Bit(ba));
+    if (dir.exists() && dir.cdUp())
+        return dir.absolutePath();
+    return QString();
+}
+
 /* Merge settings for an installed Qt (unless another setting is already in the map. */
 SourcePathMap mergePlatformQtPath(const DebuggerRunParameters &sp, const SourcePathMap &in)
 {
-    static const QString qglobal = "qtbase/src/corelib/global/qglobal.h";
-    const FilePath sourceLocation = sp.qtSourceLocation;
-    if (!(sourceLocation / qglobal).exists())
+    const FilePath qmake = BuildableHelperLibrary::findSystemQt(sp.inferior.environment);
+    // FIXME: Get this from the profile?
+    //        We could query the QtVersion for this information directly, but then we
+    //        will need to add a dependency on QtSupport to the debugger.
+    //
+    //        The profile could also get a function to extract the required information from
+    //        its information to avoid this dependency (as we do for the environment).
+    const QString qtInstallPath = findQtInstallPath(qmake);
+    if (qtInstallPath.isEmpty())
         return in;
 
     SourcePathMap rc = in;
     for (const QString &buildPath : qtBuildPaths()) {
         if (!rc.contains(buildPath)) // Do not overwrite user settings.
-            rc.insert(buildPath, sourceLocation.path());
+            rc.insert(buildPath, qtInstallPath + "/../Src");
     }
     return rc;
 }
@@ -441,8 +500,8 @@ public:
 };
 
 
-SourcePathMapAspect::SourcePathMapAspect(AspectContainer *container)
-    : TypedAspect(container), d(new SourcePathMapAspectPrivate)
+SourcePathMapAspect::SourcePathMapAspect()
+    : d(new SourcePathMapAspectPrivate)
 {
 }
 
@@ -451,56 +510,54 @@ SourcePathMapAspect::~SourcePathMapAspect()
     delete d;
 }
 
-void SourcePathMapAspect::fromMap(const Store &)
+void SourcePathMapAspect::fromMap(const QVariantMap &)
 {
     QTC_CHECK(false); // This is only used via read/writeSettings
 }
 
-void SourcePathMapAspect::toMap(Store &) const
+void SourcePathMapAspect::toMap(QVariantMap &) const
 {
     QTC_CHECK(false);
 }
 
-bool SourcePathMapAspect::isDirty()
-{
-    guiToBuffer();
-    return m_internal != m_buffer;
-}
-
-void SourcePathMapAspect::addToLayoutImpl(Layouting::Layout &parent)
+void SourcePathMapAspect::addToLayout(LayoutBuilder &builder)
 {
     QTC_CHECK(!d->m_widget);
     d->m_widget = createSubWidget<DebuggerSourcePathMappingWidget>();
     d->m_widget->setSourcePathMap(value());
-    parent.addItem(d->m_widget.data());
+    builder.addRow(d->m_widget.data());
 }
 
-bool SourcePathMapAspect::guiToBuffer()
+QVariant SourcePathMapAspect::volatileValue() const
 {
-    const SourcePathMap old = m_buffer;
-    if (d->m_widget)
-        m_buffer = d->m_widget->sourcePathMap();
-    return m_buffer != old;
+    QTC_CHECK(!isAutoApply());
+    QTC_ASSERT(d->m_widget, return {});
+    return QVariant::fromValue(d->m_widget->sourcePathMap());
 }
 
-void SourcePathMapAspect::bufferToGui()
+void SourcePathMapAspect::setVolatileValue(const QVariant &val)
 {
+    QTC_CHECK(!isAutoApply());
     if (d->m_widget)
-        d->m_widget->setSourcePathMap(m_buffer);
+        d->m_widget->setSourcePathMap(val.value<SourcePathMap>());
 }
 
 const char sourcePathMappingArrayNameC[] = "SourcePathMappings";
 const char sourcePathMappingSourceKeyC[] = "Source";
 const char sourcePathMappingTargetKeyC[] = "Target";
 
-void SourcePathMapAspect::writeSettings() const
+SourcePathMap SourcePathMapAspect::value() const
+{
+    return BaseAspect::value().value<SourcePathMap>();
+}
+
+void SourcePathMapAspect::writeSettings(QSettings *s) const
 {
     const SourcePathMap sourcePathMap = value();
-    QtcSettings *s = qtcSettings();
     s->beginWriteArray(sourcePathMappingArrayNameC);
     if (!sourcePathMap.isEmpty()) {
-        const Key sourcePathMappingSourceKey(sourcePathMappingSourceKeyC);
-        const Key sourcePathMappingTargetKey(sourcePathMappingTargetKeyC);
+        const QString sourcePathMappingSourceKey(sourcePathMappingSourceKeyC);
+        const QString sourcePathMappingTargetKey(sourcePathMappingTargetKeyC);
         int i = 0;
         for (auto it = sourcePathMap.constBegin(), cend = sourcePathMap.constEnd();
              it != cend;
@@ -513,13 +570,14 @@ void SourcePathMapAspect::writeSettings() const
     s->endArray();
 }
 
-void SourcePathMapAspect::readSettings()
+void SourcePathMapAspect::readSettings(const QSettings *settings)
 {
-    QtcSettings *s = qtcSettings();
+    // Eeks. But legitimate, this operates on ICore::settings();
+    QSettings *s = const_cast<QSettings *>(settings);
     SourcePathMap sourcePathMap;
     if (const int count = s->beginReadArray(sourcePathMappingArrayNameC)) {
-        const Key sourcePathMappingSourceKey(sourcePathMappingSourceKeyC);
-        const Key sourcePathMappingTargetKey(sourcePathMappingTargetKeyC);
+        const QString sourcePathMappingSourceKey(sourcePathMappingSourceKeyC);
+        const QString sourcePathMappingTargetKey(sourcePathMappingTargetKeyC);
         for (int i = 0; i < count; ++i) {
              s->setArrayIndex(i);
              const QString key = s->value(sourcePathMappingSourceKey).toString();
@@ -528,7 +586,8 @@ void SourcePathMapAspect::readSettings()
         }
     }
     s->endArray();
-    setValue(sourcePathMap);
+    setValue(QVariant::fromValue(sourcePathMap));
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

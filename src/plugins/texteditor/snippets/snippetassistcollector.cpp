@@ -1,45 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "snippetassistcollector.h"
 #include "snippetscollection.h"
 
 #include <texteditor/texteditorconstants.h>
-#include <texteditor/texteditor.h>
 #include <texteditor/codeassist/assistproposalitem.h>
 
 using namespace TextEditor;
 using namespace Internal;
-
-class SnippetProposalItem : public AssistProposalItemInterface
-{
-public:
-    SnippetProposalItem(const Snippet &snippet, const QIcon &icon)
-        : m_snippet(snippet)
-        , m_icon(icon)
-    {}
-
-    QString text() const override
-    {
-        return m_snippet.trigger() + QLatin1Char(' ') + m_snippet.complement();
-    }
-    bool implicitlyApplies() const override { return false; }
-    bool prematurelyApplies(const QChar &) const override { return false; }
-    void apply(TextEditorWidget *editorWidget, int basePosition) const override
-    {
-        QTC_ASSERT(editorWidget, return);
-        editorWidget->insertCodeSnippet(basePosition, m_snippet.content(), &Snippet::parse);
-    }
-    QIcon icon() const override { return m_icon; }
-    QString detail() const override { return m_snippet.generateTip(); }
-    bool isSnippet() const override { return true; }
-    bool isValid() const override { return true; }
-    quint64 hash() const override { return 0; }
-
-private:
-    const Snippet m_snippet;
-    const QIcon m_icon;
-};
 
 static void appendSnippets(QList<AssistProposalItemInterface *> *items,
                     const QString &groupId,
@@ -50,7 +41,11 @@ static void appendSnippets(QList<AssistProposalItemInterface *> *items,
     const int size = collection->totalActiveSnippets(groupId);
     for (int i = 0; i < size; ++i) {
         const Snippet &snippet = collection->snippet(i, groupId);
-        auto item = new SnippetProposalItem(snippet, icon);
+        auto item = new AssistProposalItem;
+        item->setText(snippet.trigger() + QLatin1Char(' ') + snippet.complement());
+        item->setData(snippet.content());
+        item->setDetail(snippet.generateTip());
+        item->setIcon(icon);
         item->setOrder(order);
         items->append(item);
     }

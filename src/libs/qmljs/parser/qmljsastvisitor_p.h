@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -377,8 +399,8 @@ public:
     virtual bool visit(Type *) = 0;
     virtual void endVisit(Type *) = 0;
 
-    virtual bool visit(TypeArgument *) = 0;
-    virtual void endVisit(TypeArgument *) = 0;
+    virtual bool visit(TypeArgumentList *) = 0;
+    virtual void endVisit(TypeArgumentList *) = 0;
 
     virtual bool visit(TypeAnnotation *) = 0;
     virtual void endVisit(TypeAnnotation *) = 0;
@@ -721,8 +743,8 @@ public:
     bool visit(Type *) override { return true; }
     void endVisit(Type *) override {}
 
-    bool visit(TypeArgument *) override { return true; }
-    void endVisit(TypeArgument *) override {}
+    bool visit(TypeArgumentList *) override { return true; }
+    void endVisit(TypeArgumentList *) override {}
 
     bool visit(TypeAnnotation *) override { return true; }
     void endVisit(TypeAnnotation *) override {}

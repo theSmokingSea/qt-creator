@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppuseselections_test.h"
 
@@ -77,30 +99,22 @@ UseSelectionsTestCase::UseSelectionsTestCase(CppTestDocument &testFile,
     closeEditorAtEndOfTestCase(testFile.m_editor);
 
     testFile.m_editor->setCursorPosition(testFile.m_cursorPosition);
-    QVERIFY(waitForRehighlightedSemanticDocument(m_editorWidget));
+    waitForRehighlightedSemanticDocument(m_editorWidget);
 
     bool hasTimedOut;
     const SelectionList selections = waitForUseSelections(&hasTimedOut);
-    const bool clangCodeModel = CppModelManager::isClangCodeModelActive();
+    const bool clangCodeModel = CppModelManager::instance()->isClangCodeModelActive();
     if (clangCodeModel) {
-        QEXPECT_FAIL("local use as macro argument 2 - argument eaten",
-                     "https://github.com/clangd/clangd/issues/1844", Abort);
-        QEXPECT_FAIL("macro use 1",
-                     "clangd does not support document highlights for macros", Abort);
-        QEXPECT_FAIL("macro use 2",
-                     "clangd does not support document highlights for macros", Abort);
-        QEXPECT_FAIL("macro use 3",
-                     "clangd does not support document highlights for macros", Abort);
-        QEXPECT_FAIL("macro use 4",
-                     "clangd does not support document highlights for macros", Abort);
+        QEXPECT_FAIL("local use as macro argument - argument eaten", "fails with CCM, find out why",
+                     Abort);
     } else {
         QEXPECT_FAIL("non-local use as macro argument - argument expanded 1", "TODO", Abort);
     }
     QVERIFY(!hasTimedOut);
-//    for (const Selection &selection : selections)
+//    foreach (const Selection &selection, selections)
 //        qDebug() << QTest::toString(selection);
-    QEXPECT_FAIL("non-local use as macro argument - argument expanded 2",
-                 clangCodeModel ? "FIXME: One occurrence comes in twice" : "TODO", Abort);
+    if (!clangCodeModel)
+        QEXPECT_FAIL("non-local use as macro argument - argument expanded 2", "TODO", Abort);
     QCOMPARE(selections, expectedSelections);
 }
 
@@ -112,7 +126,7 @@ SelectionList UseSelectionsTestCase::toSelectionList(
         int line, column;
         const int position = qMin(selection.cursor.position(), selection.cursor.anchor());
         m_editorWidget->convertPosition(position, &line, &column);
-        result << Selection(line, column, selection.cursor.selectedText().length());
+        result << Selection(line, column - 1, selection.cursor.selectedText().length());
     }
     return result;
 }
@@ -180,14 +194,12 @@ void SelectionsTest::testUseSelections_data()
                 << Selection(5, 13, 4)
                 );
 
-    // clangd differentiates between constructor and class.
-    SelectionList nonLocalUses;
-    if (!CppModelManager::isClangCodeModelActive())
-        nonLocalUses << Selection(1, 7, 3);
-    nonLocalUses << Selection(1, 13, 3);
     QTest::newRow("non-local uses")
             << _("struct Foo { @Foo(); };\n")
-            << nonLocalUses;
+            << (SelectionList()
+                << Selection(1, 7, 3)
+                << Selection(1, 13, 3)
+                );
 
     QTest::newRow("non-local use as macro argument - argument expanded 1")
             << _("#define QT_FORWARD_DECLARE_CLASS(name) class name;\n"
@@ -195,7 +207,7 @@ void SelectionsTest::testUseSelections_data()
                  "@Class *foo;\n")
             << (SelectionList()
                 << Selection(2, 25, 5)
-                << Selection(3, 0, 5)
+                << Selection(3, 1, 5)
                 );
 
     QTest::newRow("non-local use as macro argument - argument expanded 2")

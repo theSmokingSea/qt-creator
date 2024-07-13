@@ -1,5 +1,27 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -39,7 +61,7 @@ public:
     QString name() const { return typedValue<QString>(nameKey); }
     void setName(const QString &name) { insert(nameKey, name); }
 
-    std::optional<QString> version() const { return optionalValue<QString>(versionKey); }
+    Utils::optional<QString> version() const { return optionalValue<QString>(versionKey); }
     void setVersion(const QString &version) { insert(versionKey, version); }
     void clearVersion() { remove(versionKey); }
 };
@@ -65,7 +87,7 @@ public:
      *
      * @deprecated in favor of rootUri.
      */
-    std::optional<LanguageClientValue<QString>> rootPath() const
+    Utils::optional<LanguageClientValue<QString>> rootPath() const
     { return optionalClientValue<QString>(rootPathKey); }
     void setRootPath(const LanguageClientValue<QString> &path)
     { insert(rootPathKey, path); }
@@ -82,7 +104,7 @@ public:
     { insert(rootUriKey, uri); }
 
     // User provided initialization options.
-    std::optional<QJsonObject> initializationOptions() const;
+    Utils::optional<QJsonObject> initializationOptions() const;
     void setInitializationOptions(const QJsonObject &options)
     { insert(initializationOptionsKey, options); }
     void clearInitializationOptions() { remove(initializationOptionsKey); }
@@ -93,7 +115,7 @@ public:
     { insert(capabilitiesKey, capabilities); }
 
     // The initial trace setting. If omitted trace is disabled ('off').
-    std::optional<Trace> trace() const;
+    Utils::optional<Trace> trace() const;
     void setTrace(Trace trace) { insert(traceKey, trace.toString()); }
     void clearTrace() { remove(traceKey); }
 
@@ -105,13 +127,13 @@ public:
      *
      * Since 3.6.0
      */
-    std::optional<LanguageClientArray<WorkSpaceFolder>> workspaceFolders() const
+    Utils::optional<LanguageClientArray<WorkSpaceFolder>> workspaceFolders() const
     { return optionalClientArray<WorkSpaceFolder>(workspaceFoldersKey); }
     void setWorkSpaceFolders(const LanguageClientArray<WorkSpaceFolder> &folders)
     { insert(workspaceFoldersKey, folders.toJson()); }
     void clearWorkSpaceFolders() { remove(workspaceFoldersKey); }
 
-    std::optional<ClientInfo> clientInfo() const { return optionalValue<ClientInfo>(clientInfoKey); }
+    Utils::optional<ClientInfo> clientInfo() const { return optionalValue<ClientInfo>(clientInfoKey); }
     void setClientInfo(const ClientInfo &clientInfo) { insert(clientInfoKey, clientInfo); }
     void clearClientInfo() { remove(clientInfoKey); }
 
@@ -137,7 +159,7 @@ public:
     using JsonObject::JsonObject;
 
     QString name() const { return typedValue<QString>(nameKey); }
-    std::optional<QString> version() const { return optionalValue<QString>(versionKey); }
+    Utils::optional<QString> version() const { return optionalValue<QString>(versionKey); }
 
     bool isValid() const override { return contains(nameKey); }
 };
@@ -152,7 +174,7 @@ public:
     void setCapabilities(const ServerCapabilities &capabilities)
     { insert(capabilitiesKey, capabilities); }
 
-    std::optional<ServerInfo> serverInfo() const
+    Utils::optional<ServerInfo> serverInfo() const
     { return optionalValue<ServerInfo>(serverInfoKey); }
 
     bool isValid() const override { return contains(capabilitiesKey); }

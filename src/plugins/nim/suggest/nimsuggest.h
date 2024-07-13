@@ -1,15 +1,35 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "client.h"
 #include "server.h"
 
-#include <utils/filepath.h>
-
-
-namespace Nim::Suggest {
+namespace Nim {
+namespace Suggest {
 
 class NimSuggest : public QObject
 {
@@ -18,11 +38,11 @@ class NimSuggest : public QObject
 public:
     NimSuggest(QObject *parent = nullptr);
 
-    Utils::FilePath projectFile() const;
-    void setProjectFile(const Utils::FilePath &file);
+    QString projectFile() const;
+    void setProjectFile(const QString &file);
 
-    Utils::FilePath executablePath() const;
-    void setExecutablePath(const Utils::FilePath &path);
+    QString executablePath() const;
+    void setExecutablePath(const QString &path);
 
     bool isReady() const;
 
@@ -34,8 +54,8 @@ public:
 
 signals:
     void readyChanged(bool ready);
-    void projectFileChanged(const Utils::FilePath &projectFile);
-    void executablePathChanged(const Utils::FilePath &executablePath);
+    void projectFileChanged(const QString &projectFile);
+    void executablePathChanged(const QString &executablePath);
 
 private:
     void restart();
@@ -63,10 +83,11 @@ private:
     bool m_ready = false;
     bool m_clientReady = false;
     bool m_serverReady = false;
-    Utils::FilePath m_projectFile;
-    Utils::FilePath m_executablePath;
+    QString m_projectFile;
+    QString m_executablePath;
     NimSuggestServer m_server;
     NimSuggestClient m_client;
 };
 
-} // Nim::Suggest
+} // namespace Suggest
+} // namespace Nim

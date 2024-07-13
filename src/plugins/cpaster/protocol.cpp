@@ -1,26 +1,52 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "protocol.h"
 
-#include "cpastertr.h"
+#include <utils/networkaccessmanager.h>
 
+#include <cppeditor/cppeditorconstants.h>
+#include <designer/designerconstants.h>
+#include <glsleditor/glsleditorconstants.h>
+// #include <qmljstools/qmljstoolsconstants.h>
+#include <resourceeditor/resourceeditorconstants.h>
 #include <coreplugin/icore.h>
 #include <coreplugin/dialogs/ioptionspage.h>
 
-#include <utils/networkaccessmanager.h>
-#include <utils/mimeconstants.h>
-
-#include <QApplication>
-#include <QDebug>
-#include <QMessageBox>
 #include <QNetworkCookie>
 #include <QNetworkCookieJar>
-#include <QNetworkReply>
 #include <QNetworkRequest>
-#include <QPushButton>
+#include <QNetworkReply>
+
 #include <QUrl>
+#include <QDebug>
 #include <QVariant>
+
+#include <QMessageBox>
+#include <QApplication>
+#include <QPushButton>
 
 #include <memory>
 
@@ -43,7 +69,7 @@ bool Protocol::checkConfiguration(QString *)
     return true;
 }
 
-const Core::IOptionsPage *Protocol::settingsPage() const
+Core::IOptionsPage *Protocol::settingsPage() const
 {
     return nullptr;
 }
@@ -55,33 +81,32 @@ void Protocol::list()
 
 Protocol::ContentType Protocol::contentType(const QString &mt)
 {
-    using namespace Utils::Constants;
-    if (mt == QLatin1String(C_SOURCE_MIMETYPE)
-        || mt == QLatin1String(C_HEADER_MIMETYPE)
-        || mt == QLatin1String(GLSL_MIMETYPE)
-        || mt == QLatin1String(GLSL_VERT_MIMETYPE)
-        || mt == QLatin1String(GLSL_FRAG_MIMETYPE)
-        || mt == QLatin1String(GLSL_ES_VERT_MIMETYPE)
-        || mt == QLatin1String(GLSL_ES_FRAG_MIMETYPE))
+    if (mt == QLatin1String(CppEditor::Constants::C_SOURCE_MIMETYPE)
+        || mt == QLatin1String(CppEditor::Constants::C_HEADER_MIMETYPE)
+        || mt == QLatin1String(GlslEditor::Constants::GLSL_MIMETYPE)
+        || mt == QLatin1String(GlslEditor::Constants::GLSL_MIMETYPE_VERT)
+        || mt == QLatin1String(GlslEditor::Constants::GLSL_MIMETYPE_FRAG)
+        || mt == QLatin1String(GlslEditor::Constants::GLSL_MIMETYPE_VERT_ES)
+        || mt == QLatin1String(GlslEditor::Constants::GLSL_MIMETYPE_FRAG_ES))
         return C;
-    if (mt == QLatin1String(CPP_SOURCE_MIMETYPE)
-        || mt == QLatin1String(CPP_HEADER_MIMETYPE)
-        || mt == QLatin1String(OBJECTIVE_C_SOURCE_MIMETYPE)
-        || mt == QLatin1String(OBJECTIVE_CPP_SOURCE_MIMETYPE))
+    if (mt == QLatin1String(CppEditor::Constants::CPP_SOURCE_MIMETYPE)
+        || mt == QLatin1String(CppEditor::Constants::CPP_HEADER_MIMETYPE)
+        || mt == QLatin1String(CppEditor::Constants::OBJECTIVE_C_SOURCE_MIMETYPE)
+        || mt == QLatin1String(CppEditor::Constants::OBJECTIVE_CPP_SOURCE_MIMETYPE))
         return Cpp;
-    if (mt == QLatin1String(QML_MIMETYPE)
-        || mt == QLatin1String(QMLUI_MIMETYPE)
-        || mt == QLatin1String(QMLPROJECT_MIMETYPE)
-        || mt == QLatin1String(QBS_MIMETYPE)
-        || mt == QLatin1String(JS_MIMETYPE)
-        || mt == QLatin1String(JSON_MIMETYPE))
-        return JavaScript;
+    // if (mt == QLatin1String(QmlJSTools::Constants::QML_MIMETYPE)
+    //     || mt == QLatin1String(QmlJSTools::Constants::QMLUI_MIMETYPE)
+    //     || mt == QLatin1String(QmlJSTools::Constants::QMLPROJECT_MIMETYPE)
+    //     || mt == QLatin1String(QmlJSTools::Constants::QBS_MIMETYPE)
+    //     || mt == QLatin1String(QmlJSTools::Constants::JS_MIMETYPE)
+    //     || mt == QLatin1String(QmlJSTools::Constants::JSON_MIMETYPE))
+    //     return JavaScript;
     if (mt == QLatin1String("text/x-patch"))
         return Diff;
     if (mt == QLatin1String("text/xml")
         || mt == QLatin1String("application/xml")
-        || mt == QLatin1String(RESOURCE_MIMETYPE)
-        || mt == QLatin1String(FORM_MIMETYPE))
+        || mt == QLatin1String(ResourceEditor::Constants::C_RESOURCE_MIMETYPE)
+        || mt == QLatin1String(Designer::Constants::FORM_MIMETYPE))
         return Xml;
     return Text;
 }
@@ -137,7 +162,7 @@ bool Protocol::showConfigurationError(const Protocol *p,
 
     if (!parent)
         parent = Core::ICore::dialogParent();
-    const QString title = Tr::tr("%1 - Configuration Error").arg(p->name());
+    const QString title = tr("%1 - Configuration Error").arg(p->name());
     QMessageBox mb(QMessageBox::Warning, title, message, QMessageBox::Cancel, parent);
     QPushButton *settingsButton = nullptr;
     if (showConfig)
@@ -194,8 +219,8 @@ bool NetworkProtocol::httpStatus(QString url, QString *errorMessage, bool useHtt
     }
     std::unique_ptr<QNetworkReply> reply(httpGet(url));
     QMessageBox box(QMessageBox::Information,
-                    Tr::tr("Checking connection"),
-                    Tr::tr("Connecting to %1...").arg(url),
+                    tr("Checking connection"),
+                    tr("Connecting to %1...").arg(url),
                     QMessageBox::Cancel,
                     Core::ICore::dialogParent());
     connect(reply.get(), &QNetworkReply::finished, &box, &QWidget::close);
@@ -216,4 +241,4 @@ bool NetworkProtocol::httpStatus(QString url, QString *errorMessage, bool useHtt
     return false;
 }
 
-} // CodePaster
+} //namespace CodePaster

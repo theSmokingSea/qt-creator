@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "pytype.h"
 
@@ -49,24 +71,10 @@ static bool isType(const std::string &typeName, const std::vector<std::string> &
 
 static bool isIntegralType(const std::string &typeName)
 {
-    static const std::vector<std::string> integralTypes(
-                {"bool",
-                 "char",
-                 "unsigned char",
-                 "char16_t",
-                 "char32_t",
-                 "wchar_t",
-                 "short",
-                 "unsigned short",
-                 "int",
-                 "unsigned int",
-                 "long",
-                 "unsigned long",
-                 "int64",
-                 "unsigned int64",
-                 "__int64",
-                 "unsigned __int64",
-                 "HRESULT"});
+    static const std::vector<std::string> integralTypes({"bool",
+            "char", "unsigned char", "char16_t", "char32_t", "wchar_t",
+            "short", "unsigned short", "int", "unsigned int",
+            "long", "unsigned long", "int64", "unsigned int64", "__int64", "unsigned __int64"});
     return isType(typeName, integralTypes);
 }
 
@@ -135,9 +143,6 @@ static std::string stripPointerType(const std::string &typeNameIn)
     std::string typeName = typeNameIn;
     if (typeName.back() == '*') {
         typeName.pop_back();
-        trimBack(typeName);
-        if (endsWith(typeName, "const"))
-            typeName = typeName.erase(typeName.size() - 5, 5);
     } else {
         const auto arrayPosition = typeName.find_first_of('[');
         if (arrayPosition != std::string::npos
@@ -213,49 +218,22 @@ static std::string getModuleName(ULONG64 module)
     return std::string();
 }
 
-static std::unordered_map<std::string, PyType> &typeCache()
-{
-    static std::unordered_map<std::string, PyType> cache;
-    return cache;
-}
-
 PyType::PyType(ULONG64 module, unsigned long typeId, const std::string &name, int tag)
-    : m_typeId(typeId)
-    , m_module(module)
+    : m_module(module)
+    , m_typeId(typeId)
     , m_resolved(true)
     , m_tag(tag)
 {
-    if (!name.empty()) {
-        m_name = SymbolGroupValue::stripClassPrefixes(name);
-        if (m_name.compare(0, 6, "union ") == 0)
-            m_name.erase(0, 6);
-        if (m_name == "<function> *")
-            m_name.erase(10);
-        typeCache()[m_name] = *this;
-        if (debuggingTypeEnabled())
-            DebugPrint() << "create resolved '" << m_name << "'";
-    }
-}
-
-PyType::PyType(const std::string &name, ULONG64 module)
-    : m_module(module)
-    , m_name(name)
-{
-    if (!m_name.empty()) {
-        m_name = SymbolGroupValue::stripClassPrefixes(name);
-        if (m_name.compare(0, 6, "union ") == 0)
-            m_name.erase(0, 6);
-        if (m_name == "<function> *")
-            m_name.erase(10);
-    }
-
-    if (debuggingTypeEnabled())
-        DebugPrint() << "create unresolved '" << m_name << "'";
+    m_name = SymbolGroupValue::stripClassPrefixes(name);
+    if (m_name.compare(0, 6, "union ") == 0)
+           m_name.erase(0, 6);
+    if (m_name == "<function> *")
+           m_name.erase(10);
 }
 
 std::string PyType::name(bool withModule) const
 {
-    if (m_name.empty() && m_resolved.value_or(false)) {
+    if (m_name.empty()) {
         auto symbols = ExtensionCommandContext::instance()->symbols();
         ULONG size = 0;
         symbols->GetTypeName(m_module, m_typeId, NULL, 0, &size);
@@ -267,7 +245,6 @@ std::string PyType::name(bool withModule) const
             return std::string();
 
         m_name = typeName;
-        typeCache()[m_name] = *this;
     }
 
     if (withModule && !isIntegralType(m_name) && !isFloatType(m_name)) {
@@ -283,7 +260,7 @@ std::string PyType::name(bool withModule) const
 
 ULONG64 PyType::bitsize() const
 {
-    if (!resolve())
+    if (!m_resolved)
         return 0;
 
     ULONG size = 0;
@@ -295,7 +272,12 @@ ULONG64 PyType::bitsize() const
 
 int PyType::code() const
 {
-    auto parseTypeName = [this](const std::string &typeName) -> std::optional<TypeCodes> {
+    if (!m_resolved)
+        return TypeCodeUnresolvable;
+
+    if (m_tag < 0) {
+        // try to parse typeName
+        const std::string &typeName = name();
         if (typeName.empty())
             return TypeCodeUnresolvable;
         if (isPointerType(typeName))
@@ -308,24 +290,32 @@ int PyType::code() const
             return TypeCodeIntegral;
         if (isFloatType(typeName))
             return TypeCodeFloat;
+
+        IDebugSymbolGroup2 *sg = 0;
+        if (FAILED(ExtensionCommandContext::instance()->symbols()->CreateSymbolGroup2(&sg)))
+            return TypeCodeStruct;
+
         if (knownType(name(), 0) != KT_Unknown)
             return TypeCodeStruct;
-        return std::nullopt;
-    };
 
-    if (m_tag >= 0) {
-        switch (m_tag) {
-        case SymTagUDT: return TypeCodeStruct;
-        case SymTagEnum: return TypeCodeEnum;
-        case SymTagTypedef: return TypeCodeTypedef;
-        case SymTagFunctionType: return TypeCodeFunction;
-        case SymTagPointerType: return TypeCodePointer;
-        case SymTagArrayType: return TypeCodeArray;
-        case SymTagBaseType: return isIntegralType(name()) ? TypeCodeIntegral : TypeCodeFloat;
-        default: break;
-        }
+        const std::string helperValueName = SymbolGroupValue::pointedToSymbolName(0, name(true));
+        ULONG index = DEBUG_ANY_ID;
+        if (SUCCEEDED(sg->AddSymbol(helperValueName.c_str(), &index)))
+            m_tag = PyValue(index, sg).tag();
+        sg->Release();
     }
-    return parseTypeName(name()).value_or(TypeCodeStruct);
+    switch (m_tag) {
+    case SymTagUDT: return TypeCodeStruct;
+    case SymTagEnum: return TypeCodeEnum;
+    case SymTagTypedef: return TypeCodeTypedef;
+    case SymTagFunctionType: return TypeCodeFunction;
+    case SymTagPointerType: return TypeCodePointer;
+    case SymTagArrayType: return TypeCodeArray;
+    case SymTagBaseType: return isIntegralType(name()) ? TypeCodeIntegral : TypeCodeFloat;
+    default: break;
+    }
+
+    return TypeCodeStruct;
 }
 
 PyType PyType::target() const
@@ -355,9 +345,6 @@ std::string PyType::targetName() const
 
 PyFields PyType::fields() const
 {
-    if (!resolve())
-        return {};
-
     CIDebugSymbols *symbols = ExtensionCommandContext::instance()->symbols();
     PyFields fields;
     if (isArrayType(name()) || isPointerType(name()))
@@ -378,25 +365,19 @@ PyFields PyType::fields() const
 
 std::string PyType::module() const
 {
-    if (!resolve())
-        return {};
-
     CIDebugSymbols *symbols = ExtensionCommandContext::instance()->symbols();
-    ULONG size = 0;
+    ULONG size;
     symbols->GetModuleNameString(DEBUG_MODNAME_MODULE, DEBUG_ANY_ID, m_module, NULL, 0, &size);
-    if (size == 0)
-        return {};
     std::string name(size - 1, '\0');
     if (SUCCEEDED(symbols->GetModuleNameString(DEBUG_MODNAME_MODULE, DEBUG_ANY_ID,
                                                m_module, &name[0], size, NULL))) {
         return name;
     }
-    return {};
+    return std::string();
 }
 
 ULONG64 PyType::moduleId() const
 {
-    resolve();
     return m_module;
 }
 
@@ -449,72 +430,37 @@ PyType PyType::lookupType(const std::string &typeNameIn, ULONG64 module)
         typeName.erase(0, 7);
 
     const static std::regex typeNameRE("^[a-zA-Z_][a-zA-Z0-9_]*!?[a-zA-Z0-9_<>:, \\*\\&\\[\\]]*$");
-    if (std::regex_match(typeName, typeNameRE))
-        return PyType(typeName, module);
-    return PyType();
+    if (!std::regex_match(typeName, typeNameRE))
+        return PyType();
+
+    CIDebugSymbols *symbols = ExtensionCommandContext::instance()->symbols();
+    ULONG typeId;
+    HRESULT result = S_FALSE;
+    if (module != 0 && !isIntegralType(typeName) && !isFloatType(typeName))
+        result = symbols->GetTypeId(module, typeName.c_str(), &typeId);
+    if (FAILED(result) || result == S_FALSE)
+        result = symbols->GetSymbolTypeId(typeName.c_str(), &typeId, &module);
+    if (FAILED(result))
+        return createUnresolvedType(typeName);
+    return PyType(module, typeId, typeName);
+
 }
 
-bool PyType::resolve() const
+PyType PyType::createUnresolvedType(const std::string &typeName)
 {
-    if (m_resolved)
-        return *m_resolved;
-
-    if (!m_name.empty()) {
-        auto cacheIt = typeCache().find(m_name);
-        if (cacheIt != typeCache().end() && cacheIt->second.m_resolved.has_value()) {
-            if (debuggingTypeEnabled())
-                DebugPrint() << "found cached '" << m_name << "'";
-
-            // found a resolved cache entry use the ids of this entry
-            m_typeId = cacheIt->second.m_typeId;
-            m_module = cacheIt->second.m_module;
-            m_resolved = cacheIt->second.m_resolved;
-        } else {
-            if (debuggingTypeEnabled())
-                DebugPrint() << "resolve '" << m_name << "'";
-
-            CIDebugSymbols *symbols = ExtensionCommandContext::instance()->symbols();
-            ULONG typeId;
-            HRESULT result = S_FALSE;
-            if (m_module != 0 && !isIntegralType(m_name) && !isFloatType(m_name))
-                result = symbols->GetTypeId(m_module, m_name.c_str(), &typeId);
-            if (FAILED(result) || result == S_FALSE) {
-                ULONG64 module;
-                result = symbols->GetSymbolTypeId(m_name.c_str(), &typeId, &module);
-                if (FAILED(result) || result == S_FALSE) {
-                    ULONG loaded = 0;
-                    ULONG unloaded = 0;
-                    symbols->GetNumberModules(&loaded, &unloaded);
-                    ULONG moduleCount = loaded + unloaded;
-                    for (ULONG moduleIndex = 0;
-                         (FAILED(result) || result == S_FALSE) && moduleIndex < moduleCount;
-                         ++moduleIndex) {
-                        symbols->GetModuleByIndex(moduleIndex, &module);
-                        result = symbols->GetTypeId(module, m_name.c_str(), &typeId);
-                    }
-                }
-
-                m_module = SUCCEEDED(result) ? module : 0;
-            }
-            m_typeId = SUCCEEDED(result) ? typeId : 0;
-            m_resolved = SUCCEEDED(result);
-            typeCache()[m_name] = *this;
-        }
-    }
-    if (!m_resolved)
-        m_resolved = false;
-    return *m_resolved;
+    PyType unresolvedType;
+    unresolvedType.m_name = typeName;
+    return unresolvedType;
 }
 
 unsigned long PyType::getTypeId() const
 {
-    resolve();
     return m_typeId;
 }
 
 bool PyType::isValid() const
 {
-    return !m_name.empty() || m_resolved.has_value();
+    return m_resolved;
 }
 
 // Python interface implementation
@@ -534,7 +480,6 @@ PY_FUNC_RET_OBJECT_LIST(fields, PY_OBJ_NAME)
 PY_FUNC_RET_STD_STRING(module, PY_OBJ_NAME)
 PY_FUNC(moduleId, PY_OBJ_NAME, "K")
 PY_FUNC(arrayElements, PY_OBJ_NAME, "k")
-PY_FUNC_RET_BOOL(resolved, PY_OBJ_NAME)
 PY_FUNC_DECL(templateArguments, PY_OBJ_NAME)
 {
     PY_IMPL_GUARD;
@@ -570,8 +515,6 @@ static PyMethodDef typeMethods[] = {
      "Returns the number of elements in an array or 0 for non array types"},
     {"templateArguments",   PyCFunction(templateArguments),     METH_NOARGS,
      "Returns all template arguments."},
-    {"resolved",            PyCFunction(resolved),              METH_NOARGS,
-     "Returns whether the type is resolved"},
 
     {NULL}  /* Sentinel */
 };

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "adddeviceoperation.h"
 
@@ -58,7 +80,6 @@ QString AddDeviceOperation::argumentsHelpText() const
                          "    --dockerRepo <STRING>                      Docker image repo.\n"
                          "    --dockerTag <STRING>                       Docker image tag.\n"
                          "    --dockerMappedPaths <STRING>               Docker mapped paths (semi-colon separated).\n"
-                         "    --dockerClangdExecutable <STRING>          Path to clangd inside the docker.\n"
                          "    <KEY> <TYPE:VALUE>                         extra key value pairs\n");
 }
 
@@ -220,14 +241,6 @@ bool AddDeviceOperation::setArguments(const QStringList &args)
             continue;
         }
 
-        if (current == QLatin1String("--dockerClangdExecutable")) {
-            if (next.isNull())
-                return false;
-            ++i; // skip next;
-            m_clangdExecutable = next;
-            continue;
-        }
-
         if (current == QLatin1String("--dockerRepo")) {
             if (next.isNull())
                 return false;
@@ -301,14 +314,14 @@ void AddDeviceOperation::unittest()
     devData.m_dockerMappedPaths = QStringList{"/opt", "/data"};
     devData.m_dockerRepo = "repo";
     devData.m_dockerTag = "tag";
-    devData.m_clangdExecutable = "clangdexe";
+
 
     QVariantMap result = devData.addDevice(map);
     QVariantMap data = result.value(QLatin1String(DEVICEMANAGER_ID)).toMap();
     QVariantList devList = data.value(QLatin1String(DEVICE_LIST_ID)).toList();
     QCOMPARE(devList.count(), 1);
     QVariantMap dev = devList.at(0).toMap();
-    QCOMPARE(dev.count(), 21);
+    QCOMPARE(dev.count(), 20);
     QCOMPARE(dev.value(QLatin1String("Authentication")).toInt(), 2);
     QCOMPARE(dev.value(QLatin1String("DebugServerKey")).toString(), QLatin1String("debugServer"));
     QCOMPARE(dev.value(QLatin1String("FreePortsSpec")).toString(), QLatin1String("ports"));
@@ -326,7 +339,6 @@ void AddDeviceOperation::unittest()
     QCOMPARE(dev.value(QLatin1String("Version")).toInt(), 6);
     QCOMPARE(dev.value(QLatin1String("DockerDeviceDataRepo")).toString(), "repo");
     QCOMPARE(dev.value(QLatin1String("DockerDeviceDataTag")).toString(), "tag");
-    QCOMPARE(dev.value(QLatin1String("DockerDeviceClangDExecutable")).toString(), "clangdexe");
 
     const QStringList paths = dev.value(QLatin1String("DockerDeviceMappedPaths")).toStringList();
     QCOMPARE(paths, QStringList({"/opt", "/data"}));
@@ -363,7 +375,6 @@ QVariantMap AddDeviceData::addDevice(const QVariantMap &map) const
     dev.append(KeyValuePair(QLatin1String("Uname"), QVariant(m_uname)));
     dev.append(KeyValuePair(QLatin1String("Version"), QVariant(m_version)));
     dev.append(KeyValuePair(QLatin1String("DockerDeviceMappedPaths"), QVariant(m_dockerMappedPaths)));
-    dev.append(KeyValuePair(QLatin1String("DockerDeviceClangDExecutable"), QVariant(m_clangdExecutable)));
     dev.append(KeyValuePair(QLatin1String("DockerDeviceDataRepo"), QVariant(m_dockerRepo)));
     dev.append(KeyValuePair(QLatin1String("DockerDeviceDataTag"), QVariant(m_dockerTag)));
     dev.append(m_extra);

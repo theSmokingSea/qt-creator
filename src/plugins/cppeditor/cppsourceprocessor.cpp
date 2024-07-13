@@ -1,16 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppsourceprocessor.h"
 
-#include "cppeditortr.h"
 #include "cppmodelmanager.h"
 #include "cpptoolsreuse.h"
 
 #include <coreplugin/editormanager/editormanager.h>
 
-#include <utils/algorithm.h>
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
 #include <utils/qtcassert.h>
 #include <utils/textfileformat.h>
@@ -33,7 +53,6 @@
  */
 
 using namespace CPlusPlus;
-using namespace Utils;
 
 using Message = Document::DiagnosticMessage;
 
@@ -56,34 +75,35 @@ inline QByteArray generateFingerPrint(const QList<CPlusPlus::Macro> &definedMacr
         } else {
             static const QByteArray def("#define ");
             hash.addData(macro.name());
-            hash.addData(QByteArrayView(" ", 1));
+            hash.addData(" ", 1);
             hash.addData(def);
             hash.addData(macro.definitionText());
         }
-        hash.addData(QByteArrayView("\n", 1));
+        hash.addData("\n", 1);
     }
     return hash.result();
 }
 
-inline Message messageNoSuchFile(Document::Ptr &document, const FilePath &filePath, unsigned line)
+inline Message messageNoSuchFile(Document::Ptr &document, const QString &fileName, unsigned line)
 {
-    const QString text = Tr::tr("%1: No such file or directory").arg(filePath.displayName());
-    return Message(Message::Warning, document->filePath(), line, /*column =*/ 0, text);
+    const QString text = QCoreApplication::translate(
+        "CppSourceProcessor", "%1: No such file or directory").arg(fileName);
+    return Message(Message::Warning, document->fileName(), line, /*column =*/ 0, text);
 }
 
-inline Message messageNoFileContents(Document::Ptr &document, const FilePath &filePath,
+inline Message messageNoFileContents(Document::Ptr &document, const QString &fileName,
                                      unsigned line)
 {
-    const QString text = Tr::tr("%1: Could not get file contents").arg(filePath.displayName());
-    return Message(Message::Warning, document->filePath(), line, /*column =*/ 0, text);
+    const QString text = QCoreApplication::translate(
+        "CppSourceProcessor", "%1: Could not get file contents").arg(fileName);
+    return Message(Message::Warning, document->fileName(), line, /*column =*/ 0, text);
 }
 
 inline const CPlusPlus::Macro revision(const WorkingCopy &workingCopy,
                                        const CPlusPlus::Macro &macro)
 {
     CPlusPlus::Macro newMacro(macro);
-    if (const auto entry = workingCopy.get(macro.filePath()))
-        newMacro.setFileRevision(entry->second);
+    newMacro.setFileRevision(workingCopy.get(macro.fileName()).second);
     return newMacro;
 }
 
@@ -118,7 +138,7 @@ void CppSourceProcessor::setHeaderPaths(const ProjectExplorer::HeaderPaths &head
          if (path.type == HeaderPathType::Framework )
             addFrameworkPath(path);
         else
-            m_headerPaths.append({path.path, path.type});
+            m_headerPaths.append({cleanPath(path.path), path.type});
     }
 }
 
@@ -142,7 +162,7 @@ void CppSourceProcessor::addFrameworkPath(const ProjectExplorer::HeaderPath &fra
     // in the frameworks we're linking against. If we would have that, then we could
     // add only those private frameworks.
     const auto cleanFrameworkPath = ProjectExplorer::HeaderPath::makeFramework(
-                frameworkPath.path);
+                cleanPath(frameworkPath.path));
     if (!m_headerPaths.contains(cleanFrameworkPath))
         m_headerPaths.append(cleanFrameworkPath);
 
@@ -165,15 +185,15 @@ void CppSourceProcessor::setTodo(const QSet<QString> &files)
     m_todo = files;
 }
 
-void CppSourceProcessor::run(const FilePath &filePath,
-                             const FilePaths &initialIncludes)
+void CppSourceProcessor::run(const QString &fileName,
+                             const QStringList &initialIncludes)
 {
-    sourceNeeded(0, filePath, IncludeGlobal, initialIncludes);
+    sourceNeeded(0, fileName, IncludeGlobal, initialIncludes);
 }
 
-void CppSourceProcessor::removeFromCache(const FilePath &filePath)
+void CppSourceProcessor::removeFromCache(const QString &fileName)
 {
-    m_snapshot.remove(filePath);
+    m_snapshot.remove(fileName);
 }
 
 void CppSourceProcessor::resetEnvironment()
@@ -183,7 +203,7 @@ void CppSourceProcessor::resetEnvironment()
     m_included.clear();
 }
 
-bool CppSourceProcessor::getFileContents(const FilePath &absoluteFilePath,
+bool CppSourceProcessor::getFileContents(const QString &absoluteFilePath,
                                          QByteArray *contents,
                                          unsigned *revision) const
 {
@@ -191,21 +211,22 @@ bool CppSourceProcessor::getFileContents(const FilePath &absoluteFilePath,
         return false;
 
     // Get from working copy
-    if (const auto entry = m_workingCopy.get(absoluteFilePath)) {
-        *contents = entry->first;
-        *revision = entry->second;
+    if (m_workingCopy.contains(absoluteFilePath)) {
+        const QPair<QByteArray, unsigned> entry = m_workingCopy.get(absoluteFilePath);
+        *contents = entry.first;
+        *revision = entry.second;
         return true;
     }
 
     // Get from file
     *revision = 0;
     QString error;
-    if (Utils::TextFileFormat::readFileUTF8(absoluteFilePath,
+    if (Utils::TextFileFormat::readFileUTF8(Utils::FilePath::fromString(absoluteFilePath),
                                             m_defaultCodec,
                                             contents,
                                             &error)
         != Utils::TextFileFormat::ReadSuccess) {
-        qWarning("Error reading file \"%s\": \"%s\".", qPrintable(absoluteFilePath.toString()),
+        qWarning("Error reading file \"%s\": \"%s\".", qPrintable(absoluteFilePath),
                  qPrintable(error));
         return false;
     }
@@ -213,81 +234,90 @@ bool CppSourceProcessor::getFileContents(const FilePath &absoluteFilePath,
     return true;
 }
 
-bool CppSourceProcessor::checkFile(const FilePath &absoluteFilePath) const
+bool CppSourceProcessor::checkFile(const QString &absoluteFilePath) const
 {
     if (absoluteFilePath.isEmpty()
             || m_included.contains(absoluteFilePath)
-            || m_workingCopy.get(absoluteFilePath)) {
+            || m_workingCopy.contains(absoluteFilePath)) {
         return true;
     }
 
-    return absoluteFilePath.isReadableFile();
+    const QFileInfo fileInfo(absoluteFilePath);
+    return fileInfo.isFile() && fileInfo.isReadable();
+}
+
+QString CppSourceProcessor::cleanPath(const QString &path)
+{
+    QString result = QDir::cleanPath(path);
+    const QChar slash(QLatin1Char('/'));
+    if (!result.endsWith(slash))
+        result.append(slash);
+    return result;
 }
 
 /// Resolve the given file name to its absolute path w.r.t. the include type.
-FilePath CppSourceProcessor::resolveFile(const FilePath &filePath, IncludeType type)
+QString CppSourceProcessor::resolveFile(const QString &fileName, IncludeType type)
 {
-    if (isInjectedFile(filePath.path()))
-        return filePath;
+    if (isInjectedFile(fileName))
+        return fileName;
 
-    if (filePath.isAbsolutePath())
-        return checkFile(filePath) ? filePath : FilePath();
+    if (QFileInfo(fileName).isAbsolute())
+        return checkFile(fileName) ? fileName : QString();
 
     if (m_currentDoc) {
         if (type == IncludeLocal) {
-            const FilePath currentFilePath = m_currentDoc->filePath();
-            const FilePath path = currentFilePath.resolvePath("../" + filePath.path());
+            const QFileInfo currentFileInfo(m_currentDoc->fileName());
+            const QString path = cleanPath(currentFileInfo.absolutePath()) + fileName;
             if (checkFile(path))
                 return path;
             // Fall through! "16.2 Source file inclusion" from the standard states to continue
             // searching as if this would be a global include.
 
         } else if (type == IncludeNext) {
-            const FilePath currentFilePath = m_currentDoc->filePath();
-            const FilePath currentDirPath = currentFilePath.parentDir();
+            const QFileInfo currentFileInfo(m_currentDoc->fileName());
+            const QString currentDirPath = cleanPath(currentFileInfo.dir().path());
             auto headerPathsEnd = m_headerPaths.end();
             auto headerPathsIt = m_headerPaths.begin();
             for (; headerPathsIt != headerPathsEnd; ++headerPathsIt) {
-                if (headerPathsIt->path == currentDirPath.path()) {
+                if (headerPathsIt->path == currentDirPath) {
                     ++headerPathsIt;
-                    return resolveFile_helper(filePath, headerPathsIt);
+                    return resolveFile_helper(fileName, headerPathsIt);
                 }
             }
         }
     }
 
-    const auto it = m_fileNameCache.constFind(filePath);
+    QHash<QString, QString>::ConstIterator it = m_fileNameCache.constFind(fileName);
     if (it != m_fileNameCache.constEnd())
         return it.value();
-    const FilePath fn = resolveFile_helper(filePath, m_headerPaths.begin());
+    const QString fn = resolveFile_helper(fileName, m_headerPaths.begin());
     if (!fn.isEmpty())
-        m_fileNameCache.insert(filePath, fn);
+        m_fileNameCache.insert(fileName, fn);
     return fn;
 }
 
-FilePath CppSourceProcessor::resolveFile_helper(const FilePath &filePath,
-                                                ProjectExplorer::HeaderPaths::Iterator headerPathsIt)
+QString CppSourceProcessor::resolveFile_helper(const QString &fileName,
+                                               ProjectExplorer::HeaderPaths::Iterator headerPathsIt)
 {
-    const QString fileName = filePath.path();
     auto headerPathsEnd = m_headerPaths.end();
     const int index = fileName.indexOf(QLatin1Char('/'));
     for (; headerPathsIt != headerPathsEnd; ++headerPathsIt) {
         if (!headerPathsIt->path.isNull()) {
-            FilePath path;
+            QString path;
             if (headerPathsIt->type == ProjectExplorer::HeaderPathType::Framework) {
                 if (index == -1)
                     continue;
-                path = FilePath::fromString(headerPathsIt->path).pathAppended(fileName.left(index)
-                       + QLatin1String(".framework/Headers/") + fileName.mid(index + 1));
+                path = headerPathsIt->path + fileName.left(index)
+                       + QLatin1String(".framework/Headers/") + fileName.mid(index + 1);
             } else {
-                path = FilePath::fromString(headerPathsIt->path) /  fileName;
+                path = headerPathsIt->path + fileName;
             }
-            if (m_workingCopy.get(path) || checkFile(path))
+            if (m_workingCopy.contains(path) || checkFile(path))
                 return path;
         }
     }
 
-    return {};
+    return QString();
 }
 
 void CppSourceProcessor::macroAdded(const CPlusPlus::Macro &macro)
@@ -296,13 +326,6 @@ void CppSourceProcessor::macroAdded(const CPlusPlus::Macro &macro)
         return;
 
     m_currentDoc->appendMacro(macro);
-}
-
-void CppSourceProcessor::pragmaAdded(const CPlusPlus::Pragma &pragma)
-{
-    if (!m_currentDoc)
-        return;
-    m_currentDoc->appendPragma(pragma);
 }
 
 void CppSourceProcessor::passedMacroDefinitionCheck(int bytesOffset, int utf16charsOffset,
@@ -371,12 +394,16 @@ void CppSourceProcessor::mergeEnvironment(Document::Ptr doc)
     if (!doc)
         return;
 
-    if (!Utils::insert(m_processed, doc->filePath()))
+    const QString fn = doc->fileName();
+
+    if (m_processed.contains(fn))
         return;
+
+    m_processed.insert(fn);
 
     const QList<Document::Include> includes = doc->resolvedIncludes();
     for (const Document::Include &incl : includes) {
-        const FilePath includedFile = incl.resolvedFileName();
+        const QString includedFile = incl.resolvedFileName();
 
         if (Document::Ptr includedDoc = m_snapshot.document(includedFile))
             mergeEnvironment(includedDoc);
@@ -399,59 +426,60 @@ void CppSourceProcessor::stopSkippingBlocks(int utf16charsOffset)
         m_currentDoc->stopSkippingBlocks(utf16charsOffset);
 }
 
-void CppSourceProcessor::sourceNeeded(int line, const FilePath &filePath, IncludeType type,
-                                      const FilePaths &initialIncludes)
+void CppSourceProcessor::sourceNeeded(int line, const QString &fileName, IncludeType type,
+                                      const QStringList &initialIncludes)
 {
-    if (filePath.isEmpty())
+    if (fileName.isEmpty())
         return;
 
-    const FilePath absoluteFilePath = resolveFile(filePath, type);
-
+    QString absoluteFileName = resolveFile(fileName, type);
+    absoluteFileName = QDir::cleanPath(absoluteFileName);
     if (m_currentDoc) {
-        m_currentDoc->addIncludeFile(Document::Include(filePath.toString(), absoluteFilePath, line, type));
-        if (absoluteFilePath.isEmpty()) {
-            m_currentDoc->addDiagnosticMessage(messageNoSuchFile(m_currentDoc, filePath, line));
+        m_currentDoc->addIncludeFile(Document::Include(fileName, absoluteFileName, line, type));
+        if (absoluteFileName.isEmpty()) {
+            m_currentDoc->addDiagnosticMessage(messageNoSuchFile(m_currentDoc, fileName, line));
             return;
         }
     }
-    if (m_included.contains(absoluteFilePath))
+    if (m_included.contains(absoluteFileName))
         return; // We've already seen this file.
-    if (!isInjectedFile(absoluteFilePath.path()))
-        m_included.insert(absoluteFilePath);
+    if (!isInjectedFile(absoluteFileName))
+        m_included.insert(absoluteFileName);
 
     // Already in snapshot? Use it!
-    if (Document::Ptr document = m_snapshot.document(absoluteFilePath)) {
+    if (Document::Ptr document = m_snapshot.document(absoluteFileName)) {
         mergeEnvironment(document);
         return;
     }
 
-    if (fileSizeExceedsLimit(absoluteFilePath, m_fileSizeLimitInMb))
+    const QFileInfo info(absoluteFileName);
+    if (fileSizeExceedsLimit(info, m_fileSizeLimitInMb))
         return; // TODO: Add diagnostic message
 
     // Otherwise get file contents
     unsigned editorRevision = 0;
     QByteArray contents;
-    const bool gotFileContents = getFileContents(absoluteFilePath, &contents, &editorRevision);
+    const bool gotFileContents = getFileContents(absoluteFileName, &contents, &editorRevision);
     if (m_currentDoc && !gotFileContents) {
-        m_currentDoc->addDiagnosticMessage(messageNoFileContents(m_currentDoc, filePath, line));
+        m_currentDoc->addDiagnosticMessage(messageNoFileContents(m_currentDoc, fileName, line));
         return;
     }
 
-    qCDebug(log) << "Parsing:" << absoluteFilePath.toString() << "contents:" << contents.size() << "bytes";
+    qCDebug(log) << "Parsing:" << absoluteFileName << "contents:" << contents.size() << "bytes";
 
-    Document::Ptr document = Document::create(absoluteFilePath);
+    Document::Ptr document = Document::create(absoluteFileName);
     document->setEditorRevision(editorRevision);
     document->setLanguageFeatures(m_languageFeatures);
-    for (const FilePath &include : initialIncludes) {
+    for (const QString &include : initialIncludes) {
         m_included.insert(include);
-        Document::Include inc(include.toString(), include, 0, IncludeLocal);
+        Document::Include inc(include, include, 0, IncludeLocal);
         document->addIncludeFile(inc);
     }
-    if (absoluteFilePath.exists())
-        document->setLastModified(absoluteFilePath.lastModified());
+    if (info.exists())
+        document->setLastModified(info.lastModified());
 
     const Document::Ptr previousDocument = switchCurrentDocument(document);
-    const QByteArray preprocessedCode = m_preprocess.run(absoluteFilePath, contents);
+    const QByteArray preprocessedCode = m_preprocess.run(absoluteFileName, contents);
 //    {
 //        QByteArray b(preprocessedCode); b.replace("\n", "<<<\n");
 //        qDebug("Preprocessed code for \"%s\": [[%s]]", fileName.toUtf8().constData(), b.constData());
@@ -459,12 +487,12 @@ void CppSourceProcessor::sourceNeeded(int line, const FilePath &filePath, Includ
     document->setFingerprint(generateFingerPrint(document->definedMacros(), preprocessedCode));
 
     // Re-use document from global snapshot if possible
-    Document::Ptr globalDocument = m_globalSnapshot.document(absoluteFilePath);
+    Document::Ptr globalDocument = m_globalSnapshot.document(absoluteFileName);
     if (globalDocument && globalDocument->fingerprint() == document->fingerprint()) {
         switchCurrentDocument(previousDocument);
         mergeEnvironment(globalDocument);
         m_snapshot.insert(globalDocument);
-        m_todo.remove(absoluteFilePath.toString());
+        m_todo.remove(absoluteFileName);
         return;
     }
 
@@ -472,13 +500,13 @@ void CppSourceProcessor::sourceNeeded(int line, const FilePath &filePath, Includ
     document->setUtf8Source(preprocessedCode);
     document->keepSourceAndAST();
     document->tokenize();
-    document->check(m_workingCopy.get(document->filePath()) ? Document::FullCheck
-                                                            : Document::FastCheck);
+    document->check(m_workingCopy.contains(document->fileName()) ? Document::FullCheck
+                                                                 : Document::FastCheck);
 
     m_documentFinished(document);
 
     m_snapshot.insert(document);
-    m_todo.remove(absoluteFilePath.toString());
+    m_todo.remove(absoluteFileName);
     switchCurrentDocument(previousDocument);
 }
 

@@ -1,14 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "watchwindow.h"
 
 #include "debuggeractions.h"
 #include "debuggerinternalconstants.h"
-#include "debuggertr.h"
+#include "debuggercore.h"
 #include "watchhandler.h"
 
-#include <utils/algorithm.h>
 #include <utils/aspects.h>
 #include <utils/qtcassert.h>
 
@@ -23,21 +44,17 @@ WatchTreeView::WatchTreeView(WatchType type)
   : m_type(type)
 {
     setObjectName("WatchWindow");
-    setWindowTitle(Tr::tr("Locals and Expressions"));
+    setWindowTitle(tr("Locals and Expressions"));
     setIndentation(indentation() * 9/10);
     setUniformRowHeights(true);
     setDragEnabled(true);
     setAcceptDrops(true);
     setDropIndicatorShown(true);
 
-    m_progressDelayTimer.setSingleShot(true);
-    m_progressDelayTimer.setInterval(80);
-    connect(&m_progressDelayTimer, &QTimer::timeout, this, &WatchTreeView::showProgressIndicator);
-
     connect(this, &QTreeView::expanded, this, &WatchTreeView::expandNode);
     connect(this, &QTreeView::collapsed, this, &WatchTreeView::collapseNode);
 
-    connect(&settings().logTimeStamps, &Utils::BaseAspect::changed,
+    connect(&debuggerSettings()->logTimeStamps, &Utils::BaseAspect::changed,
             this, &WatchTreeView::updateTimeColumn);
 }
 
@@ -76,10 +93,12 @@ void WatchTreeView::setModel(QAbstractItemModel *model)
             this, &QAbstractItemView::setCurrentIndex);
     connect(watchModel, &WatchModelBase::itemIsExpanded,
             this, &WatchTreeView::handleItemIsExpanded);
-    connect(watchModel, &WatchModelBase::updateStarted,
-            this, &WatchTreeView::handleUpdateStarted);
-    connect(watchModel, &WatchModelBase::updateFinished,
-            this, &WatchTreeView::handleUpdateFinished);
+    if (m_type == LocalsType) {
+        connect(watchModel, &WatchModelBase::updateStarted,
+                this, &WatchTreeView::showProgressIndicator);
+        connect(watchModel, &WatchModelBase::updateFinished,
+                this, &WatchTreeView::hideProgressIndicator);
+    }
 
     updateTimeColumn();
 }
@@ -87,7 +106,8 @@ void WatchTreeView::setModel(QAbstractItemModel *model)
 void WatchTreeView::updateTimeColumn()
 {
     if (header())
-        header()->setSectionHidden(WatchModelBase::TimeColumn, !settings().logTimeStamps());
+        header()->setSectionHidden(WatchModelBase::TimeColumn,
+                                   !debuggerSettings()->logTimeStamps.value());
 }
 
 void WatchTreeView::handleItemIsExpanded(const QModelIndex &idx)
@@ -96,39 +116,6 @@ void WatchTreeView::handleItemIsExpanded(const QModelIndex &idx)
     QTC_ASSERT(on, return);
     if (!isExpanded(idx))
         expand(idx);
-}
-
-void WatchTreeView::handleUpdateStarted()
-{
-    m_selectedInames = Utils::transform(selectedIndexes(), [this](const QModelIndex &idx) {
-        return model()->data(idx, LocalsINameRole).toString();
-    });
-    m_currentIname = currentIndex().data(LocalsINameRole).toString();
-    if (m_type == LocalsType)
-        m_progressDelayTimer.start();
-}
-
-void WatchTreeView::handleUpdateFinished()
-{
-    m_progressDelayTimer.stop();
-    if (m_type == LocalsType)
-        hideProgressIndicator();
-
-    auto watchModel = qobject_cast<WatchModelBase *>(model());
-    QTC_ASSERT(watchModel, return);
-    QItemSelection selection;
-    QModelIndex currentIndex;
-    watchModel->forAllItems([&](Utils::TreeItem *item) {
-        const QModelIndex index = item->index();
-        const QString iName = index.data(LocalsINameRole).toString();
-        if (m_selectedInames.contains(iName))
-            selection.append(QItemSelectionRange(index));
-        if (iName == m_currentIname)
-            currentIndex = index;
-    });
-    selectionModel()->select(selection, QItemSelectionModel::Select);
-    if (currentIndex.isValid())
-        setCurrentIndex(currentIndex);
 }
 
 void WatchTreeView::reexpand(QTreeView *view, const QModelIndex &idx)

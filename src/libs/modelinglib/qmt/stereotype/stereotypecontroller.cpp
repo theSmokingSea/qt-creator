@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "stereotypecontroller.h"
 
@@ -10,8 +32,6 @@
 
 #include "qmt/infrastructure/qmtassert.h"
 #include "qmt/style/style.h"
-
-#include <utils/filepath.h>
 #include <utils/algorithm.h>
 
 #include <QHash>
@@ -21,14 +41,12 @@
 
 #include <algorithm>
 
-using Utils::FilePath;
-
 namespace qmt {
 
 namespace {
 
 struct IconKey {
-    IconKey(StereotypeIcon::Element element, const QList<QString> &stereotypes, const FilePath &defaultIconPath,
+    IconKey(StereotypeIcon::Element element, const QList<QString> &stereotypes, const QString &defaultIconPath,
             const Uid &styleUid, const QSize &size, const QMarginsF &margins, qreal lineWidth)
         : m_element(element),
           m_stereotypes(stereotypes),
@@ -57,7 +75,7 @@ struct IconKey {
 
     const StereotypeIcon::Element m_element;
     const QList<QString> m_stereotypes;
-    const FilePath m_defaultIconPath;
+    const QString m_defaultIconPath;
     const Uid m_styleUid;
     const QSize m_size;
     const QMarginsF m_margins;
@@ -72,7 +90,6 @@ public:
     QHash<QPair<StereotypeIcon::Element, QString>, QString> m_stereotypeToIconIdMap;
     QHash<QString, StereotypeIcon> m_iconIdToStereotypeIconsMap;
     QHash<QString, CustomRelation> m_relationIdToCustomRelationMap;
-    QHash<QString, CustomRelation> m_stereotypeToCustomRelationMap;
     QList<Toolbar> m_toolbars;
     QList<Toolbar> m_elementToolbars;
     QHash<IconKey, QIcon> m_iconMap;
@@ -109,7 +126,7 @@ QList<Toolbar> StereotypeController::findToolbars(const QString &elementType) co
 QList<QString> StereotypeController::knownStereotypes(StereotypeIcon::Element stereotypeElement) const
 {
     QSet<QString> stereotypes;
-    for (const StereotypeIcon &icon : d->m_iconIdToStereotypeIconsMap) {
+    foreach (const StereotypeIcon &icon, d->m_iconIdToStereotypeIconsMap) {
         if (icon.elements().isEmpty() || icon.elements().contains(stereotypeElement))
             stereotypes += icon.stereotypes();
     }
@@ -121,15 +138,13 @@ QList<QString> StereotypeController::knownStereotypes(StereotypeIcon::Element st
 QString StereotypeController::findStereotypeIconId(StereotypeIcon::Element element,
                                                    const QList<QString> &stereotypes) const
 {
-    for (const QString &stereotype : stereotypes) {
-        auto it = d->m_stereotypeToIconIdMap.constFind({element, stereotype});
-        if (it != d->m_stereotypeToIconIdMap.constEnd())
-            return it.value();
-        it = d->m_stereotypeToIconIdMap.constFind({StereotypeIcon::ElementAny, stereotype});
-        if (it != d->m_stereotypeToIconIdMap.constEnd())
-            return it.value();
+    foreach (const QString &stereotype, stereotypes) {
+        if (d->m_stereotypeToIconIdMap.contains(qMakePair(element, stereotype)))
+            return d->m_stereotypeToIconIdMap.value(qMakePair(element, stereotype));
+        else if (d->m_stereotypeToIconIdMap.contains(qMakePair(StereotypeIcon::ElementAny, stereotype)))
+            return d->m_stereotypeToIconIdMap.value(qMakePair(StereotypeIcon::ElementAny, stereotype));
     }
-    return {};
+    return QString();
 }
 
 QList<QString> StereotypeController::filterStereotypesByIconId(const QString &stereotypeIconId,
@@ -138,8 +153,7 @@ QList<QString> StereotypeController::filterStereotypesByIconId(const QString &st
     if (!d->m_iconIdToStereotypeIconsMap.contains(stereotypeIconId))
         return stereotypes;
     QList<QString> filteredStereotypes = stereotypes;
-    const QSet<QString> stereotypeList = d->m_iconIdToStereotypeIconsMap.value(stereotypeIconId).stereotypes();
-    for (const QString &stereotype : stereotypeList)
+    foreach (const QString &stereotype, d->m_iconIdToStereotypeIconsMap.value(stereotypeIconId).stereotypes())
         filteredStereotypes.removeAll(stereotype);
     return filteredStereotypes;
 }
@@ -155,13 +169,8 @@ CustomRelation StereotypeController::findCustomRelation(const QString &customRel
     return d->m_relationIdToCustomRelationMap.value(customRelationId);
 }
 
-CustomRelation StereotypeController::findCustomRelationByStereotype(const QString &steoreotype) const
-{
-    return d->m_stereotypeToCustomRelationMap.value(steoreotype);
-}
-
 QIcon StereotypeController::createIcon(StereotypeIcon::Element element, const QList<QString> &stereotypes,
-                                       const FilePath &defaultIconPath, const Style *style, const QSize &size,
+                                       const QString &defaultIconPath, const Style *style, const QSize &size,
                                        const QMarginsF &margins, qreal lineWidth)
 {
     IconKey key(element, stereotypes, defaultIconPath, style->uid(), size, margins, lineWidth);
@@ -235,7 +244,7 @@ QIcon StereotypeController::createIcon(StereotypeIcon::Element element, const QL
         icon = QIcon(pixmap);
     }
     if (icon.isNull() && !defaultIconPath.isEmpty())
-        icon = QIcon(defaultIconPath.toFSPathString());
+        icon = QIcon(defaultIconPath);
     d->m_iconMap.insert(key, icon);
     return icon;
 
@@ -244,15 +253,12 @@ QIcon StereotypeController::createIcon(StereotypeIcon::Element element, const QL
 void StereotypeController::addStereotypeIcon(const StereotypeIcon &stereotypeIcon)
 {
     if (stereotypeIcon.elements().isEmpty()) {
-        const QSet<QString> stereotypes = stereotypeIcon.stereotypes();
-        for (const QString &stereotype : stereotypes)
-            d->m_stereotypeToIconIdMap.insert({StereotypeIcon::ElementAny, stereotype}, stereotypeIcon.id());
+        foreach (const QString &stereotype, stereotypeIcon.stereotypes())
+            d->m_stereotypeToIconIdMap.insert(qMakePair(StereotypeIcon::ElementAny, stereotype), stereotypeIcon.id());
     } else {
-        const QSet<StereotypeIcon::Element> elements = stereotypeIcon.elements();
-        for (StereotypeIcon::Element element : elements) {
-            const QSet<QString> stereotypes = stereotypeIcon.stereotypes();
-            for (const QString &stereotype : stereotypes)
-                d->m_stereotypeToIconIdMap.insert({element, stereotype}, stereotypeIcon.id());
+        foreach (StereotypeIcon::Element element, stereotypeIcon.elements()) {
+            foreach (const QString &stereotype, stereotypeIcon.stereotypes())
+                d->m_stereotypeToIconIdMap.insert(qMakePair(element, stereotype), stereotypeIcon.id());
         }
     }
     d->m_iconIdToStereotypeIconsMap.insert(stereotypeIcon.id(), stereotypeIcon);
@@ -261,9 +267,6 @@ void StereotypeController::addStereotypeIcon(const StereotypeIcon &stereotypeIco
 void StereotypeController::addCustomRelation(const CustomRelation &customRelation)
 {
     d->m_relationIdToCustomRelationMap.insert(customRelation.id(), customRelation);
-    QString stereotype = Utils::toList(customRelation.stereotypes()).value(0);
-    if (!stereotype.isEmpty())
-        d->m_stereotypeToCustomRelationMap.insert(stereotype, customRelation);
 }
 
 void StereotypeController::addToolbar(const Toolbar &toolbar)

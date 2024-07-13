@@ -1,13 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "icodestylepreferences.h"
 #include "codestylepool.h"
 #include "tabsettings.h"
+#include <utils/settingsutils.h>
 
-#include <coreplugin/icore.h>
+#include <QSettings>
 
-using namespace Utils;
+using namespace TextEditor;
 
 static const char currentPreferencesKey[] = "CurrentPreferences";
 
@@ -23,10 +46,7 @@ public:
     QByteArray m_id;
     QString m_displayName;
     bool m_readOnly = false;
-    bool m_temporarilyReadOnly = false;
-    bool m_isAdditionalTabVisible = false;
-    bool m_isAdditionalTabExist = false;
-    Key m_settingsSuffix;
+    QString m_settingsSuffix;
 };
 
 }
@@ -71,36 +91,6 @@ bool ICodeStylePreferences::isReadOnly() const
 void ICodeStylePreferences::setReadOnly(bool on)
 {
     d->m_readOnly = on;
-}
-
-void ICodeStylePreferences::setTemporarilyReadOnly(bool on)
-{
-    d->m_temporarilyReadOnly = on;
-}
-
-bool ICodeStylePreferences::isTemporarilyReadOnly() const
-{
-    return d->m_temporarilyReadOnly;
-}
-
-bool ICodeStylePreferences::isAdditionalTabVisible() const
-{
-    return d->m_isAdditionalTabVisible;
-}
-
-void ICodeStylePreferences::setIsAdditionalTabVisible(bool on)
-{
-    d->m_isAdditionalTabVisible = on;
-}
-
-bool ICodeStylePreferences::additionalTabExist() const
-{
-    return d->m_isAdditionalTabExist;
-}
-
-void ICodeStylePreferences::setAdditionalTabExist(bool on)
-{
-    d->m_isAdditionalTabExist = on;
 }
 
 void ICodeStylePreferences::setTabSettings(const TabSettings &settings)
@@ -216,29 +206,32 @@ void ICodeStylePreferences::setCurrentDelegate(const QByteArray &id)
         setCurrentDelegate(d->m_pool->codeStyle(id));
 }
 
-void ICodeStylePreferences::setSettingsSuffix(const Key &suffix)
+void ICodeStylePreferences::setSettingsSuffix(const QString &suffix)
 {
     d->m_settingsSuffix = suffix;
 }
 
-void ICodeStylePreferences::toSettings(const Key &category) const
+void ICodeStylePreferences::toSettings(const QString &category, QSettings *s) const
 {
-    Utils::storeToSettings(category + d->m_settingsSuffix, Core::ICore::settings(), toMap());
+    Utils::toSettings(d->m_settingsSuffix, category, s, this);
 }
 
-void ICodeStylePreferences::fromSettings(const Key &category)
+void ICodeStylePreferences::fromSettings(const QString &category, QSettings *s)
 {
-    fromMap(Utils::storeFromSettings(category + d->m_settingsSuffix, Core::ICore::settings()));
+    Utils::fromSettings(d->m_settingsSuffix, category, s, this);
 }
 
-Store ICodeStylePreferences::toMap() const
+QVariantMap ICodeStylePreferences::toMap() const
 {
+    QVariantMap map;
     if (!currentDelegate())
         return d->m_tabSettings.toMap();
-    return {{currentPreferencesKey, currentDelegateId()}};
+    return {
+        {currentPreferencesKey, currentDelegateId()}
+    };
 }
 
-void ICodeStylePreferences::fromMap(const Store &map)
+void ICodeStylePreferences::fromMap(const QVariantMap &map)
 {
     d->m_tabSettings.fromMap(map);
     const QByteArray delegateId = map.value(currentPreferencesKey).toByteArray();
@@ -252,8 +245,6 @@ void ICodeStylePreferences::fromMap(const Store &map)
 void ICodeStylePreferences::codeStyleRemoved(ICodeStylePreferences *preferences)
 {
     if (currentDelegate() == preferences) {
-        emit aboutToBeRemoved(preferences);
-
         CodeStylePool *pool = delegatingPool();
         QList<ICodeStylePreferences *> codeStyles = pool->codeStyles();
         const int idx = codeStyles.indexOf(preferences);

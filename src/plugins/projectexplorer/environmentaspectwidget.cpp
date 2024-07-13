@@ -1,15 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "environmentaspectwidget.h"
 
 #include "environmentwidget.h"
-#include "projectexplorertr.h"
 
 #include <utils/environment.h>
 #include <utils/qtcassert.h>
 
-#include <QCheckBox>
 #include <QComboBox>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -26,10 +46,6 @@ EnvironmentAspectWidget::EnvironmentAspectWidget(EnvironmentAspect *aspect)
 {
     QTC_CHECK(m_aspect);
 
-    connect(m_aspect, &EnvironmentAspect::userChangesUpdateRequested, this, [this] {
-        m_environmentWidget->forceUpdateCheck();
-    });
-
     setContentsMargins(0, 0, 0, 0);
     auto topLayout = new QVBoxLayout(this);
     topLayout->setContentsMargins(0, 0, 0, 25);
@@ -37,13 +53,8 @@ EnvironmentAspectWidget::EnvironmentAspectWidget(EnvironmentAspect *aspect)
     auto baseEnvironmentWidget = new QWidget;
     m_baseLayout = new QHBoxLayout(baseEnvironmentWidget);
     m_baseLayout->setContentsMargins(0, 0, 0, 0);
-
-    auto label = [aspect]() {
-        if (aspect->labelText().isEmpty())
-            aspect->setLabelText(Tr::tr("Base environment for this run configuration:"));
-        return aspect->createLabel();
-    };
-    m_baseLayout->addWidget(label());
+    auto label = new QLabel(tr("Base environment for this run configuration:"), this);
+    m_baseLayout->addWidget(label);
 
     m_baseEnvironmentComboBox = new QComboBox;
     for (const QString &displayName : m_aspect->displayNames())
@@ -52,7 +63,7 @@ EnvironmentAspectWidget::EnvironmentAspectWidget(EnvironmentAspect *aspect)
         m_baseEnvironmentComboBox->setEnabled(false);
     m_baseEnvironmentComboBox->setCurrentIndex(m_aspect->baseEnvironmentBase());
 
-    connect(m_baseEnvironmentComboBox, &QComboBox::currentIndexChanged,
+    connect(m_baseEnvironmentComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &EnvironmentAspectWidget::baseEnvironmentSelected);
 
     m_baseLayout->addWidget(m_baseEnvironmentComboBox);
@@ -66,15 +77,6 @@ EnvironmentAspectWidget::EnvironmentAspectWidget(EnvironmentAspect *aspect)
     m_environmentWidget->setUserChanges(m_aspect->userEnvironmentChanges());
     m_environmentWidget->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     topLayout->addWidget(m_environmentWidget);
-
-    if (m_aspect->isPrintOnRunAllowed()) {
-        const auto printOnRunCheckBox = new QCheckBox(
-            Tr::tr("Show in Application Output when running"));
-        printOnRunCheckBox->setChecked(m_aspect->isPrintOnRunEnabled());
-        connect(printOnRunCheckBox, &QCheckBox::toggled,
-                m_aspect, &EnvironmentAspect::setPrintOnRun);
-        topLayout->addWidget(printOnRunCheckBox);
-    }
 
     connect(m_environmentWidget, &EnvironmentWidget::userChangesChanged,
             this, &EnvironmentAspectWidget::userChangesEdited);
@@ -94,15 +96,16 @@ void EnvironmentAspectWidget::addWidget(QWidget *widget)
 
 void EnvironmentAspectWidget::baseEnvironmentSelected(int idx)
 {
-    const Utils::GuardLocker locker(m_ignoreChanges);
+    m_ignoreChange = true;
     m_aspect->setBaseEnvironmentBase(idx);
     m_environmentWidget->setBaseEnvironment(m_aspect->modifiedBaseEnvironment());
     m_environmentWidget->setBaseEnvironmentText(m_aspect->currentDisplayName());
+    m_ignoreChange = false;
 }
 
 void EnvironmentAspectWidget::changeBaseEnvironment()
 {
-    if (m_ignoreChanges.isLocked())
+    if (m_ignoreChange)
         return;
 
     int base = m_aspect->baseEnvironmentBase();
@@ -116,20 +119,21 @@ void EnvironmentAspectWidget::changeBaseEnvironment()
 
 void EnvironmentAspectWidget::userChangesEdited()
 {
-    const Utils::GuardLocker locker(m_ignoreChanges);
+    m_ignoreChange = true;
     m_aspect->setUserEnvironmentChanges(m_environmentWidget->userChanges());
+    m_ignoreChange = false;
 }
 
 void EnvironmentAspectWidget::changeUserChanges(Utils::EnvironmentItems changes)
 {
-    if (m_ignoreChanges.isLocked())
+    if (m_ignoreChange)
         return;
     m_environmentWidget->setUserChanges(changes);
 }
 
 void EnvironmentAspectWidget::environmentChanged()
 {
-    if (m_ignoreChanges.isLocked())
+    if (m_ignoreChange)
         return;
     m_environmentWidget->setBaseEnvironment(m_aspect->modifiedBaseEnvironment());
 }

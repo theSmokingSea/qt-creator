@@ -19,6 +19,7 @@
 // THE SOFTWARE.
 
 #include "Scope.h"
+#include "Symbols.h"
 #include "Names.h"
 #include "Literals.h"
 #include "Templates.h"
@@ -54,19 +55,19 @@ public:
     void enterSymbol(Symbol *symbol);
 
     /// Returns true if this Scope is empty; otherwise returns false.
-    bool isEmpty() const { return _symbolCount == -1; }
+    bool isEmpty() const;
 
     /// Returns the number of symbols is in the scope.
-    int symbolCount() const { return _symbolCount + 1; }
+    int symbolCount() const;
 
     /// Returns the Symbol at the given position.
     Symbol *symbolAt(int index) const;
 
     /// Returns the first Symbol in the scope.
-    iterator firstSymbol() const { return _symbols; }
+    iterator firstSymbol() const;
 
     /// Returns the last Symbol in the scope.
-    iterator lastSymbol() const { return _symbols + _symbolCount + 1; }
+    iterator lastSymbol() const;
 
     Symbol *lookat(const Identifier *id) const;
     Symbol *lookat(OperatorNameId::Kind operatorId) const;
@@ -224,12 +225,24 @@ unsigned SymbolTable::hashValue(Symbol *symbol) const
     return symbol->hashCode() % _hashSize;
 }
 
+bool SymbolTable::isEmpty() const
+{ return _symbolCount == -1; }
+
+int SymbolTable::symbolCount() const
+{ return _symbolCount + 1; }
+
 Symbol *SymbolTable::symbolAt(int index) const
 {
     if (! _symbols)
         return nullptr;
     return _symbols[index];
 }
+
+SymbolTable::iterator SymbolTable::firstSymbol() const
+{ return _symbols; }
+
+SymbolTable::iterator SymbolTable::lastSymbol() const
+{ return _symbols + _symbolCount + 1; }
 
 Scope::Scope(TranslationUnit *translationUnit, int sourceLocation, const Name *name)
     : Symbol(translationUnit, sourceLocation, name),
@@ -288,5 +301,19 @@ Symbol *Scope::find(OperatorNameId::Kind operatorId) const
 
 Symbol *Scope::find(const ConversionNameId *conv) const
 { return _members ? _members->lookat(conv) : nullptr; }
+
+/// Set the start offset of the scope
+int Scope::startOffset() const
+{ return _startOffset; }
+
+void Scope::setStartOffset(int offset)
+{ _startOffset = offset; }
+
+/// Set the end offset of the scope
+int Scope::endOffset() const
+{ return _endOffset; }
+
+void Scope::setEndOffset(int offset)
+{ _endOffset = offset; }
 
 } // namespace CPlusPlus

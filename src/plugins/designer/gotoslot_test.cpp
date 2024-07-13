@@ -1,10 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-#include "formeditor.h"
+#include "formeditorplugin.h"
+
+#include "formeditorw.h"
 
 #include <coreplugin/editormanager/editormanager.h>
-#include <coreplugin/systemsettings.h>
 #include <coreplugin/testdatadir.h>
 #include <cppeditor/builtineditordocumentprocessor.h>
 #include <cppeditor/cppmodelmanager.h>
@@ -26,9 +49,8 @@ using namespace CppEditor;
 using namespace CPlusPlus;
 using namespace Designer;
 using namespace Designer::Internal;
-using namespace Utils;
 
-namespace Designer::Internal {
+namespace {
 
 QTC_DECLARE_MYTESTDATADIR("../../../tests/designer/")
 
@@ -125,39 +147,39 @@ bool documentContainsMemberFunctionDeclaration(const Document::Ptr &document,
 class GoToSlotTestCase : public CppEditor::Tests::TestCase
 {
 public:
-    GoToSlotTestCase(const FilePaths &files)
+    GoToSlotTestCase(const QStringList &files)
     {
         QVERIFY(succeededSoFar());
         QCOMPARE(files.size(), 3);
 
         QList<TextEditor::BaseTextEditor *> editors;
-        for (const FilePath &file : files) {
-            IEditor *editor = EditorManager::openEditor(file);
+        for (const QString &file : files) {
+            IEditor *editor = EditorManager::openEditor(Utils::FilePath::fromString(file));
             TextEditor::BaseTextEditor *e = qobject_cast<TextEditor::BaseTextEditor *>(editor);
             QVERIFY(e);
             closeEditorAtEndOfTestCase(editor);
             editors << e;
         }
 
-        const FilePath cppFile = files.at(0);
-        const FilePath hFile = files.at(1);
+        const QString cppFile = files.at(0);
+        const QString hFile = files.at(1);
 
         QCOMPARE(DocumentModel::openedDocuments().size(), files.size());
         waitForFilesInGlobalSnapshot({cppFile, hFile});
 
         // Execute "Go To Slot"
-        QDesignerIntegrationInterface *integration = designerEditor()->integration();
+        QDesignerIntegrationInterface *integration = FormEditorW::designerEditor()->integration();
         QVERIFY(integration);
         integration->emitNavigateToSlot("pushButton", "clicked()", QStringList());
 
-        QCOMPARE(EditorManager::currentDocument()->filePath(), cppFile);
+        QCOMPARE(EditorManager::currentDocument()->filePath().toString(), cppFile);
         QVERIFY(EditorManager::currentDocument()->isModified());
 
         // Wait for updated documents
-        for (TextEditor::BaseTextEditor *editor : std::as_const(editors)) {
+        for (TextEditor::BaseTextEditor *editor : qAsConst(editors)) {
             QElapsedTimer t;
             t.start();
-            const FilePath filePath = editor->document()->filePath();
+            const QString filePath = editor->document()->filePath().toString();
             if (auto parser = BuiltinEditorDocumentParser::get(filePath)) {
                 while (t.elapsed() < 2000) {
                     if (Document::Ptr document = parser->document()) {
@@ -205,39 +227,20 @@ public:
     }
 };
 
-class GoToSlotTest final : public QObject
-{
-    Q_OBJECT
+} // anonymous namespace
 
-private slots:
-    void test_gotoslot();
-    void test_gotoslot_data();
-};
+namespace Designer {
+namespace Internal {
 
 /// Check: Executes "Go To Slot..." on a QPushButton in a *.ui file and checks if the respective
 /// header and source files are correctly updated.
-void GoToSlotTest::test_gotoslot()
+void FormEditorPlugin::test_gotoslot()
 {
-    class SystemSettingsMgr {
-    public:
-        SystemSettingsMgr()
-            : m_saveAfterRefactor(Core::Internal::systemSettings().autoSaveAfterRefactoring.value())
-        {
-            Core::Internal::systemSettings().autoSaveAfterRefactoring.setValue(false);
-        }
-        ~SystemSettingsMgr()
-        {
-            Core::Internal::systemSettings().autoSaveAfterRefactoring.setValue(m_saveAfterRefactor);
-        }
-    private:
-        const bool m_saveAfterRefactor;
-    } systemSettingsMgr;
-
     QFETCH(QStringList, files);
-    (GoToSlotTestCase(Utils::transform(files, FilePath::fromString)));
+    (GoToSlotTestCase(files));
 }
 
-void GoToSlotTest::test_gotoslot_data()
+void FormEditorPlugin::test_gotoslot_data()
 {
     typedef QLatin1String _;
     QTest::addColumn<QStringList>("files");
@@ -271,11 +274,5 @@ void GoToSlotTest::test_gotoslot_data()
                         testDataDir.file(_("form.ui"))});
 }
 
-QObject *createGoToSlotTest()
-{
-    return new GoToSlotTest;
-}
-
-} // Designer::Internal
-
-#include "gotoslot_test.moc"
+} // namespace Internal
+} // namespace Designer

@@ -26,10 +26,6 @@
 #include "AST.h"
 #include "Literals.h"
 #include "DiagnosticClient.h"
-
-#include <utils/qtcassert.h>
-#include <utils/textutils.h>
-
 #include <stack>
 #include <vector>
 #include <cstdarg>
@@ -88,7 +84,6 @@ int TranslationUnit::sourceLength() const
 
 void TranslationUnit::setSource(const char *source, int size)
 {
-    QTC_ASSERT(source, return);
     _firstSourceChar = source;
     _lastSourceChar = source + size;
 }
@@ -106,35 +101,6 @@ int TranslationUnit::commentCount() const
 
 const Token &TranslationUnit::commentAt(int index) const
 { return _comments->at(index); }
-
-std::vector<Token> TranslationUnit::allTokens() const
-{
-    std::vector<Token> all;
-    int tokIndex = 0;
-    int commentIndex = 0;
-    while (true) {
-        if (tokIndex == tokenCount()) {
-            for (int i = commentIndex; i < commentCount(); ++i)
-                all.push_back(commentAt(i));
-            break;
-        }
-        if (commentIndex == commentCount()) {
-            for (int i = tokIndex; i < tokenCount(); ++i)
-                all.push_back(tokenAt(i));
-            break;
-        }
-        const Token &tok = tokenAt(tokIndex);
-        const Token &comment = commentAt(commentIndex);
-        if (tok.utf16charsBegin() < comment.utf16charsBegin()) {
-            all.push_back(tok);
-            ++tokIndex;
-        } else {
-            all.push_back(comment);
-            ++commentIndex;
-        }
-    }
-    return all;
-}
 
 const Identifier *TranslationUnit::identifier(int index) const
 { return tokenAt(index).identifier; }
@@ -191,8 +157,6 @@ void TranslationUnit::tokenize()
     int lineColumnIdx = 0;
 
     Token tk;
-    int macroOffset = -1;
-    int macroLength = -1;
     do {
         lex(&tk);
 
@@ -211,11 +175,16 @@ recognize:
                         lex(&tk);
 
                         // Gather where the expansion happens and its length.
-                        macroOffset = static_cast<int>(strtoul(tk.spell(), 0, 0));
+                        //int macroOffset = static_cast<int>(strtoul(tk.spell(), 0, 0));
                         lex(&tk);
                         lex(&tk); // Skip the separating comma
-                        macroLength = static_cast<int>(strtoul(tk.spell(), 0, 0));
+                        //int macroLength = static_cast<int>(strtoul(tk.spell(), 0, 0));
                         lex(&tk);
+
+                        // NOTE: We are currently not using the macro offset and length. They
+                        // are kept here for now because of future use.
+                        //Q_UNUSED(macroOffset)
+                        //Q_UNUSED(macroLength)
 
                         // Now we need to gather the real line and columns from the upcoming
                         // tokens. But notice this is only relevant for tokens which are expanded
@@ -304,11 +273,6 @@ recognize:
         tk.f.generated = currentGenerated;
 
         _tokens->push_back(tk);
-
-        if (currentExpanded) {
-            QTC_ASSERT(macroOffset != -1 && macroLength != -1, continue);
-            _expansionPositions[int(_tokens->size()) - 1] = std::make_pair(macroOffset, macroLength);
-        }
     } while (tk.kind());
 
     for (; ! braces.empty(); braces.pop()) {
@@ -412,65 +376,21 @@ int TranslationUnit::findColumnNumber(int utf16CharOffset, int lineNumber) const
     return utf16CharOffset - _lineOffsets[lineNumber];
 }
 
-int TranslationUnit::getTokenPositionInDocument(int index, const QTextDocument *doc) const
-{
-    return getTokenPositionInDocument(_tokens->at(index), doc);
-}
-
-int TranslationUnit::getTokenEndPositionInDocument(int index, const QTextDocument *doc) const
-{
-    return getTokenEndPositionInDocument(_tokens->at(index), doc);
-}
-
-void TranslationUnit::getTokenPosition(int index, int *line,
+void TranslationUnit::getTokenPosition(int index,
+                                       int *line,
                                        int *column,
                                        const StringLiteral **fileName) const
-{
-    return getTokenPosition(_tokens->at(index), line, column, fileName);
-}
+{ return getPosition(tokenAt(index).utf16charsBegin(), line, column, fileName); }
+
+void TranslationUnit::getTokenStartPosition(int index, int *line,
+                                            int *column,
+                                            const StringLiteral **fileName) const
+{ return getPosition(tokenAt(index).utf16charsBegin(), line, column, fileName); }
 
 void TranslationUnit::getTokenEndPosition(int index, int *line,
                                           int *column,
                                           const StringLiteral **fileName) const
-{
-    return getTokenEndPosition(_tokens->at(index), line, column, fileName);
-}
-
-void TranslationUnit::getTokenPosition(const Token &token, int *line, int *column,
-                                       const StringLiteral **fileName) const
-{
-    return getPosition(token.utf16charsBegin(), line, column, fileName);
-}
-
-void TranslationUnit::getTokenEndPosition(const Token &token, int *line,
-                                          int *column, const StringLiteral **fileName) const
-{
-    return getPosition(token.utf16charsEnd(), line, column, fileName);
-}
-
-int TranslationUnit::getTokenPositionInDocument(const Token token,
-                                                const QTextDocument *doc) const
-{
-    int line, column;
-    getTokenPosition(token, &line, &column);
-    return Utils::Text::positionInText(doc, line, column);
-}
-
-int TranslationUnit::getTokenEndPositionInDocument(const Token &token,
-                                                   const QTextDocument *doc) const
-{
-    int line, column;
-    getTokenEndPosition(token, &line, &column);
-    return Utils::Text::positionInText(doc, line, column);
-}
-
-std::pair<int, int> TranslationUnit::getExpansionPosition(int tokenIndex) const
-{
-    QTC_ASSERT(tokenIndex < int(_tokens->size()) && tokenAt(tokenIndex).generated(), return {});
-    const auto it = _expansionPositions.find(tokenIndex);
-    QTC_ASSERT(it != _expansionPositions.end(), return {});
-    return it->second;
-}
+{ return getPosition(tokenAt(index).utf16charsEnd(), line, column, fileName); }
 
 void TranslationUnit::getPosition(int utf16charOffset,
                                   int *line,

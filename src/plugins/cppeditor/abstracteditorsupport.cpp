@@ -1,9 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "abstracteditorsupport.h"
 
-#include "cppeditortr.h"
+#include "cppeditorplugin.h"
 #include "cppfilesettingspage.h"
 #include "cppmodelmanager.h"
 
@@ -11,49 +33,46 @@
 #include <utils/macroexpander.h>
 #include <utils/templateengine.h>
 
-using namespace Utils;
-
 namespace CppEditor {
 
-AbstractEditorSupport::AbstractEditorSupport(QObject *parent) :
-    QObject(parent), m_revision(1)
+AbstractEditorSupport::AbstractEditorSupport(CppModelManager *modelmanager, QObject *parent) :
+    QObject(parent), m_modelmanager(modelmanager), m_revision(1)
 {
-    CppModelManager::addExtraEditorSupport(this);
+    modelmanager->addExtraEditorSupport(this);
 }
 
 AbstractEditorSupport::~AbstractEditorSupport()
 {
-    CppModelManager::removeExtraEditorSupport(this);
+    m_modelmanager->removeExtraEditorSupport(this);
 }
 
 void AbstractEditorSupport::updateDocument()
 {
     ++m_revision;
-    CppModelManager::updateSourceFiles({filePath()});
+    m_modelmanager->updateSourceFiles(QSet<QString>() << fileName());
 }
 
 void AbstractEditorSupport::notifyAboutUpdatedContents() const
 {
-    CppModelManager::emitAbstractEditorSupportContentsUpdated(
-                filePath().toString(), sourceFilePath().toString(), contents());
+    m_modelmanager->emitAbstractEditorSupportContentsUpdated(fileName(), sourceFileName(), contents());
 }
 
-QString AbstractEditorSupport::licenseTemplate(ProjectExplorer::Project *project,
-                                               const FilePath &filePath, const QString &className)
+QString AbstractEditorSupport::licenseTemplate(const QString &file, const QString &className)
 {
-    const QString license = Internal::cppFileSettingsForProject(project).licenseTemplate();
+    const QString license = Internal::CppFileSettings::licenseTemplate();
     Utils::MacroExpander expander;
-    expander.registerVariable("Cpp:License:FileName", Tr::tr("The file name."),
-                              [filePath] { return filePath.fileName(); });
-    expander.registerVariable("Cpp:License:ClassName", Tr::tr("The class name."),
-                              [className] { return className; });
+    expander.registerVariable("Cpp:License:FileName", tr("The file name."),
+                              [file]() { return Utils::FilePath::fromString(file).fileName(); });
+    expander.registerVariable("Cpp:License:ClassName", tr("The class name."),
+                              [className]() { return className; });
 
     return Utils::TemplateEngine::processText(&expander, license, nullptr);
 }
 
-bool AbstractEditorSupport::usePragmaOnce(ProjectExplorer::Project *project)
+bool AbstractEditorSupport::usePragmaOnce()
 {
-    return Internal::cppFileSettingsForProject(project).headerPragmaOnce;
+    return Internal::CppEditorPlugin::usePragmaOnce();
 }
 
-} // CppEditor
+} // namespace CppEditor
+

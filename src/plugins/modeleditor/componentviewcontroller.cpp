@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "componentviewcontroller.h"
 
@@ -18,9 +40,9 @@
 #include <cppeditor/cppmodelmanager.h>
 #include <cplusplus/CppDocument.h>
 
-#include <projectexplorer/project.h>
-#include <projectexplorer/projectmanager.h>
+#include <projectexplorer/session.h>
 #include <projectexplorer/projectnodes.h>
+#include <projectexplorer/project.h>
 
 #include <utils/qtcassert.h>
 
@@ -28,10 +50,6 @@
 
 // TODO implement removing include dependencies that are not longer used
 // TODO refactor add/remove relations between ancestor packages into extra controller class
-
-using namespace ProjectExplorer;
-using namespace Utils;
-using Utils::FilePath;
 
 namespace ModelEditor {
 namespace Internal {
@@ -53,9 +71,9 @@ private:
 
 void FindComponentFromFilePath::setFilePath(const QString &filePath)
 {
-    m_elementName = qmt::NameController::convertFileNameToElementName(FilePath::fromString(filePath));
+    m_elementName = qmt::NameController::convertFileNameToElementName(filePath);
     QFileInfo fileInfo(filePath);
-    m_elementsPath = qmt::NameController::buildElementsPath(FilePath::fromString(fileInfo.path()), false);
+    m_elementsPath = qmt::NameController::buildElementsPath(fileInfo.path(), false);
 }
 
 void FindComponentFromFilePath::visitMComponent(qmt::MComponent *component)
@@ -138,7 +156,7 @@ void UpdateIncludeDependenciesVisitor::setModelUtilities(ModelUtilities *modelUt
 void UpdateIncludeDependenciesVisitor::updateFilePaths()
 {
     m_filePaths.clear();
-    for (const ProjectExplorer::Project *project : ProjectExplorer::ProjectManager::projects()) {
+    for (const ProjectExplorer::Project *project : ProjectExplorer::SessionManager::projects()) {
         ProjectExplorer::ProjectNode *projectNode = project->rootProjectNode();
         if (projectNode)
             collectElementPaths(projectNode, &m_filePaths);
@@ -147,26 +165,27 @@ void UpdateIncludeDependenciesVisitor::updateFilePaths()
 
 void UpdateIncludeDependenciesVisitor::visitMComponent(qmt::MComponent *component)
 {
-    CPlusPlus::Snapshot snapshot = CppEditor::CppModelManager::snapshot();
+    CppEditor::CppModelManager *cppModelManager = CppEditor::CppModelManager::instance();
+    CPlusPlus::Snapshot snapshot = cppModelManager->snapshot();
 
     const QStringList filePaths = findFilePathOfComponent(component);
     for (const QString &filePath : filePaths) {
-        CPlusPlus::Document::Ptr document = snapshot.document(FilePath::fromString(filePath));
+        CPlusPlus::Document::Ptr document = snapshot.document(filePath);
         if (document) {
             const QList<CPlusPlus::Document::Include> includes = document->resolvedIncludes();
             for (const CPlusPlus::Document::Include &include : includes) {
-                FilePath includeFilePath = include.resolvedFileName();
+                QString includeFilePath = include.resolvedFileName();
                 // replace proxy header with real one
                 CPlusPlus::Document::Ptr includeDocument = snapshot.document(includeFilePath);
                 if (includeDocument) {
                     QList<CPlusPlus::Document::Include> includes = includeDocument->resolvedIncludes();
                     if (includes.count() == 1 &&
-                            includes.at(0).resolvedFileName().fileName() == includeFilePath.fileName())
+                            QFileInfo(includes.at(0).resolvedFileName()).fileName() == QFileInfo(includeFilePath).fileName())
                     {
                         includeFilePath = includes.at(0).resolvedFileName();
                     }
                 }
-                qmt::MComponent *includeComponent = findComponentFromFilePath(includeFilePath.toString());
+                qmt::MComponent *includeComponent = findComponentFromFilePath(includeFilePath);
                 if (includeComponent && includeComponent != component) {
                     // add dependency between components
                     if (!m_modelUtilities->haveDependency(component, includeComponent)) {
@@ -218,16 +237,17 @@ QStringList UpdateIncludeDependenciesVisitor::findFilePathOfComponent(const qmt:
 void UpdateIncludeDependenciesVisitor::collectElementPaths(const ProjectExplorer::FolderNode *folderNode,
                                                            QMultiHash<QString, Node> *filePathsMap)
 {
-    folderNode->forEachFileNode([&](FileNode *fileNode) {
-        QString elementName = qmt::NameController::convertFileNameToElementName(fileNode->filePath());
+    const QList<ProjectExplorer::FileNode *> fileNodes = folderNode->fileNodes();
+    for (const ProjectExplorer::FileNode *fileNode : fileNodes) {
+        QString elementName = qmt::NameController::convertFileNameToElementName(fileNode->filePath().toString());
         QFileInfo fileInfo = fileNode->filePath().toFileInfo();
         QString nodePath = fileInfo.path();
-        QStringList elementsPath = qmt::NameController::buildElementsPath(FilePath::fromString(nodePath), false);
+        QStringList elementsPath = qmt::NameController::buildElementsPath(nodePath, false);
         filePathsMap->insert(elementName, Node(fileNode->filePath().toString(), elementsPath));
-    });
-    folderNode->forEachFolderNode([&](FolderNode *subNode) {
+    }
+    const QList<ProjectExplorer::FolderNode *> subNodes = folderNode->folderNodes();
+    for (const ProjectExplorer::FolderNode *subNode : subNodes)
         collectElementPaths(subNode, filePathsMap);
-    });
 }
 
 qmt::MComponent *UpdateIncludeDependenciesVisitor::findComponentFromFilePath(const QString &filePath)
@@ -310,7 +330,7 @@ void ComponentViewController::doCreateComponentModel(const QString &filePath, qm
 {
     for (const QString &fileName : QDir(filePath).entryList(QDir::Files)) {
         QString file = filePath + "/" + fileName;
-        QString componentName = qmt::NameController::convertFileNameToElementName(FilePath::fromString(file));
+        QString componentName = qmt::NameController::convertFileNameToElementName(file);
         qmt::MComponent *component = nullptr;
         bool isSource = false;
         CppEditor::ProjectFile::Kind kind = CppEditor::ProjectFile::classify(file);
@@ -342,7 +362,7 @@ void ComponentViewController::doCreateComponentModel(const QString &filePath, qm
         }
         if (component) {
             QStringList relativeElements = qmt::NameController::buildElementsPath(
-                FilePath::fromString(d->pxnodeUtilities->calcRelativePath(file, anchorFolder)), false);
+                        d->pxnodeUtilities->calcRelativePath(file, anchorFolder), false);
             if (d->pxnodeUtilities->findSameObject(relativeElements, component)) {
                 delete component;
             } else {

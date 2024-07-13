@@ -1,31 +1,52 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Templates as T
+import QtQuick 2.15
+import QtQuick.Templates 2.15 as T
 import StudioTheme 1.0 as StudioTheme
 
 T.CheckBox {
-    id: control
-
-    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
+    id: myCheckBox
 
     property alias actionIndicator: actionIndicator
 
     // This property is used to indicate the global hover state
-    property bool hover: control.hovered && control.enabled
+    property bool hover: myCheckBox.hovered && myCheckBox.enabled
+    property bool edit: false
 
     property alias actionIndicatorVisible: actionIndicator.visible
-    property real __actionIndicatorWidth: control.style.actionIndicatorSize.width
-    property real __actionIndicatorHeight: control.style.actionIndicatorSize.height
+    property real __actionIndicatorWidth: StudioTheme.Values.actionIndicatorWidth
+    property real __actionIndicatorHeight: StudioTheme.Values.actionIndicatorHeight
 
-    property alias labelVisible: label.visible
-    property alias labelColor: label.color
+    property alias labelVisible: checkBoxLabel.visible
+    property alias labelColor: checkBoxLabel.color
 
-    property alias fontFamily: label.font.family
-    property alias fontPixelSize: label.font.pixelSize
+    property alias fontFamily: checkBoxLabel.font.family
+    property alias fontPixelSize: checkBoxLabel.font.pixelSize
 
-    font.pixelSize: control.style.baseFontSize
+    font.pixelSize: StudioTheme.Values.myFontSize
 
     implicitWidth: Math.max(implicitBackgroundWidth + leftInset + rightInset,
                             implicitContentWidth + leftPadding + rightPadding)
@@ -33,16 +54,15 @@ T.CheckBox {
                              implicitContentHeight + topPadding + bottomPadding,
                              implicitIndicatorHeight + topPadding + bottomPadding)
 
-    spacing: label.visible ? control.style.controlSpacing : 0
+    spacing: StudioTheme.Values.checkBoxSpacing
     hoverEnabled: true
     activeFocusOnTab: false
 
     ActionIndicator {
         id: actionIndicator
-        style: control.style
-        __parentControl: control
-        width: actionIndicator.visible ? control.__actionIndicatorWidth : 0
-        height: actionIndicator.visible ? control.__actionIndicatorHeight : 0
+        myControl: myCheckBox
+        width: actionIndicator.visible ? myCheckBox.__actionIndicatorWidth : 0
+        height: actionIndicator.visible ? myCheckBox.__actionIndicatorHeight : 0
     }
 
     indicator: Rectangle {
@@ -50,20 +70,20 @@ T.CheckBox {
         x: actionIndicator.width
         y: 0
         z: 5
-        implicitWidth: control.style.squareControlSize.width
-        implicitHeight: control.style.squareControlSize.height
-        color: control.style.background.idle
-        border.color: control.style.border.idle
-        border.width: control.style.borderWidth
+        implicitWidth: StudioTheme.Values.height
+        implicitHeight: StudioTheme.Values.height
+        color: StudioTheme.Values.themeControlBackground
+        border.color: StudioTheme.Values.themeControlOutline
+        border.width: StudioTheme.Values.border
 
         T.Label {
             id: checkedIcon
             x: (parent.width - checkedIcon.width) / 2
             y: (parent.height - checkedIcon.height) / 2
             text: StudioTheme.Constants.tickIcon
-            visible: control.checkState === Qt.Checked
-            color: control.style.icon.idle
-            font.pixelSize: control.style.baseIconFontSize
+            visible: myCheckBox.checkState === Qt.Checked
+            color: StudioTheme.Values.themeTextColor
+            font.pixelSize: StudioTheme.Values.sliderControlSizeMulti
             font.family: StudioTheme.Constants.iconFont.family
         }
 
@@ -72,113 +92,113 @@ T.CheckBox {
             x: (parent.width - checkedIcon.width) / 2
             y: (parent.height - checkedIcon.height) / 2
             text: StudioTheme.Constants.triState
-            visible: control.checkState === Qt.PartiallyChecked
-            color: control.style.icon.idle
-            font.pixelSize: control.style.baseIconFontSize
+            visible: myCheckBox.checkState === Qt.PartiallyChecked
+            color: StudioTheme.Values.themeTextColor
+            font.pixelSize: StudioTheme.Values.sliderControlSizeMulti
             font.family: StudioTheme.Constants.iconFont.family
         }
     }
 
     contentItem: T.Label {
-        id: label
-        leftPadding: checkBoxBackground.x + checkBoxBackground.width + control.spacing
+        id: checkBoxLabel
+        leftPadding: checkBoxBackground.x + checkBoxBackground.width + myCheckBox.spacing
         rightPadding: 0
         verticalAlignment: Text.AlignVCenter
-        text: control.text
-        font: control.font
-        color: control.style.text.idle
-        visible: label.text !== ""
+        text: myCheckBox.text
+        font: myCheckBox.font
+        color: StudioTheme.Values.themeTextColor
+        visible: text !== ""
     }
 
     states: [
         State {
             name: "default"
-            when: control.enabled && !control.hover
-                  && !control.pressed && !actionIndicator.hover
+            when: myCheckBox.enabled && !myCheckBox.hover
+                  && !myCheckBox.pressed && !actionIndicator.hover
             PropertyChanges {
                 target: checkBoxBackground
-                color: control.style.background.idle
-                border.color: control.style.border.idle
+                color: StudioTheme.Values.themeControlBackground
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
                 target: checkedIcon
-                color: control.style.icon.idle
+                color: StudioTheme.Values.themeIconColor
             }
             PropertyChanges {
                 target: partiallyCheckedIcon
-                color: control.style.icon.idle
+                color: StudioTheme.Values.themeIconColor
             }
         },
         State {
             name: "globalHover"
-            when: actionIndicator.hover && !control.pressed && control.enabled
+            when: actionIndicator.hover && !myCheckBox.pressed && myCheckBox.enabled
             PropertyChanges {
                 target: checkBoxBackground
-                color: control.style.background.globalHover
-                border.color: control.style.border.idle
+                color: StudioTheme.Values.themeControlBackgroundGlobalHover
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
                 target: checkedIcon
-                color: control.style.icon.idle
+                color: StudioTheme.Values.themeIconColor
             }
             PropertyChanges {
                 target: partiallyCheckedIcon
-                color: control.style.icon.idle
+                color: StudioTheme.Values.themeIconColor
             }
         },
         State {
             name: "hover"
-            when: control.hover && !actionIndicator.hover && !control.pressed
+            when: myCheckBox.hover && !actionIndicator.hover && !myCheckBox.pressed
             PropertyChanges {
                 target: checkBoxBackground
-                color: control.style.background.hover
-                border.color: control.style.border.hover
+                color: StudioTheme.Values.themeControlBackgroundHover
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
                 target: checkedIcon
-                color: control.style.icon.hover
+                color: StudioTheme.Values.themeIconColor // TODO naming
             }
             PropertyChanges {
                 target: partiallyCheckedIcon
-                color: control.style.icon.hover
+                color: StudioTheme.Values.themeIconColor
             }
         },
         State {
             name: "press"
-            when: control.hover && control.pressed
+            when: myCheckBox.hover && myCheckBox.pressed
             PropertyChanges {
                 target: checkBoxBackground
-                color: control.style.background.interaction
-                border.color: control.style.border.interaction
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
             PropertyChanges {
                 target: checkedIcon
-                color: control.style.icon.interaction
+                color: StudioTheme.Values.themeIconColorInteraction
             }
             PropertyChanges {
                 target: partiallyCheckedIcon
-                color: control.style.icon.interaction
+                color: StudioTheme.Values.themeIconColorInteraction
             }
         },
         State {
             name: "disable"
-            when: !control.enabled
+            when: !myCheckBox.enabled
             PropertyChanges {
                 target: checkBoxBackground
-                color: control.style.background.disabled
-                border.color: control.style.border.disabled
+                color: StudioTheme.Values.themeControlBackgroundDisabled
+                border.color: StudioTheme.Values.themeControlOutlineDisabled
             }
             PropertyChanges {
                 target: checkedIcon
-                color: control.style.icon.disabled
+                color: StudioTheme.Values.themeIconColorDisabled
             }
             PropertyChanges {
                 target: partiallyCheckedIcon
-                color: control.style.icon.disabled
+                color: StudioTheme.Values.themeIconColorDisabled
             }
             PropertyChanges {
-                target: label
-                color: control.style.text.disabled
+                target: checkBoxLabel
+                color: StudioTheme.Values.themeTextColorDisabled
             }
         }
     ]

@@ -1,69 +1,72 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cpppreprocessordialog.h"
+#include "ui_cpppreprocessordialog.h"
 
+#include "cppeditorwidget.h"
 #include "cppeditorconstants.h"
-#include "cppeditortr.h"
 #include "cpptoolsreuse.h"
 
-#include <coreplugin/session.h>
+#include <projectexplorer/session.h>
 
-#include <texteditor/snippets/snippeteditor.h>
+using namespace CppEditor::Internal;
 
-#include <utils/layoutbuilder.h>
-
-#include <QDialogButtonBox>
-
-using namespace Utils;
-
-namespace CppEditor::Internal {
-
-CppPreProcessorDialog::CppPreProcessorDialog(const FilePath &filePath, QWidget *parent)
+CppPreProcessorDialog::CppPreProcessorDialog(const QString &filePath, QWidget *parent)
     : QDialog(parent)
+    , m_ui(new Ui::CppPreProcessorDialog())
     , m_filePath(filePath)
 {
-    resize(400, 300);
-    setWindowTitle(Tr::tr("Additional C++ Preprocessor Directives"));
+    m_ui->setupUi(this);
+    m_ui->editorLabel->setText(m_ui->editorLabel->text().arg(Utils::FilePath::fromString(m_filePath).fileName()));
+    m_ui->editWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
 
-    const Key key = Constants::EXTRA_PREPROCESSOR_DIRECTIVES + keyFromString(m_filePath.toString());
-    const QString directives = Core::SessionManager::value(key).toString();
+    decorateCppEditor(m_ui->editWidget);
 
-    m_editWidget = new TextEditor::SnippetEditorWidget;
-    m_editWidget->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
-    m_editWidget->setPlainText(directives);
-    decorateCppEditor(m_editWidget);
-
-    auto buttonBox = new QDialogButtonBox(QDialogButtonBox::Cancel|QDialogButtonBox::Ok);
-
-    using namespace Layouting;
-
-    Column {
-        Tr::tr("Additional C++ Preprocessor Directives for %1:").arg(m_filePath.fileName()),
-        m_editWidget,
-        buttonBox,
-    }.attachTo(this);
-
-    connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
-    connect(buttonBox, &QDialogButtonBox::rejected, this, &QDialog::reject);
+    const QString key = Constants::EXTRA_PREPROCESSOR_DIRECTIVES + m_filePath;
+    const QString directives = ProjectExplorer::SessionManager::value(key).toString();
+    m_ui->editWidget->setPlainText(directives);
 }
 
-CppPreProcessorDialog::~CppPreProcessorDialog() = default;
+CppPreProcessorDialog::~CppPreProcessorDialog()
+{
+    delete m_ui;
+}
 
 int CppPreProcessorDialog::exec()
 {
     if (QDialog::exec() == Rejected)
         return Rejected;
 
-    const Key key = Constants::EXTRA_PREPROCESSOR_DIRECTIVES + keyFromString(m_filePath.toString());
-    Core::SessionManager::setValue(key, extraPreprocessorDirectives());
+    const QString key = Constants::EXTRA_PREPROCESSOR_DIRECTIVES + m_filePath;
+    ProjectExplorer::SessionManager::setValue(key, extraPreprocessorDirectives());
 
     return Accepted;
 }
 
 QString CppPreProcessorDialog::extraPreprocessorDirectives() const
 {
-    return m_editWidget->toPlainText();
+    return m_ui->editWidget->toPlainText();
 }
-
-} // CppEditor::Internal

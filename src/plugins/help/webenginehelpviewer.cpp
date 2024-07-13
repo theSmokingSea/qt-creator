@@ -1,10 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "webenginehelpviewer.h"
 
 #include "helpconstants.h"
-#include "helptr.h"
 #include "localhelpmanager.h"
 #include "openpagesmanager.h"
 
@@ -126,7 +147,8 @@ WebEngineHelpViewer::WebEngineHelpViewer(QWidget *parent) :
     });
 
     QAction* action = m_widget->pageAction(QWebEnginePage::OpenLinkInNewTab);
-    action->setText(Tr::tr(Constants::TR_OPEN_LINK_AS_NEW_PAGE));
+    action->setText(QCoreApplication::translate("HelpViewer",
+                                                Constants::TR_OPEN_LINK_AS_NEW_PAGE));
 
     QWebEnginePage *viewPage = m_widget->page();
     QTC_ASSERT(viewPage, return);
@@ -219,7 +241,7 @@ void WebEngineHelpViewer::addForwardHistoryItems(QMenu *forwardMenu)
     }
 }
 
-bool WebEngineHelpViewer::findText(const QString &text, Utils::FindFlags flags, bool incremental,
+bool WebEngineHelpViewer::findText(const QString &text, Core::FindFlags flags, bool incremental,
                                    bool fromSearch, bool *wrapped)
 {
     Q_UNUSED(incremental)
@@ -227,9 +249,9 @@ bool WebEngineHelpViewer::findText(const QString &text, Utils::FindFlags flags, 
     if (wrapped)
         *wrapped = false; // missing feature in QWebEngine
     QWebEnginePage::FindFlags webEngineFlags;
-    if (flags & Utils::FindBackward)
+    if (flags & Core::FindBackward)
         webEngineFlags |= QWebEnginePage::FindBackward;
-    if (flags & Utils::FindCaseSensitively)
+    if (flags & Core::FindCaseSensitively)
         webEngineFlags |= QWebEnginePage::FindCaseSensitively;
     // QWebEngineView's findText is asynchronous, and the variant taking a callback runs the
     // callback on the main thread, so blocking here becomes ugly too
@@ -336,14 +358,16 @@ void WebView::contextMenuEvent(QContextMenuEvent *event)
         QUrl url = page()->contextMenuData().linkUrl();
 #endif
         if (m_viewer->isActionVisible(HelpViewer::Action::NewPage)) {
-            auto openLink = new QAction(Tr::tr(Constants::TR_OPEN_LINK_AS_NEW_PAGE), menu);
+            auto openLink = new QAction(QCoreApplication::translate("HelpViewer",
+                                        Constants::TR_OPEN_LINK_AS_NEW_PAGE), menu);
             connect(openLink, &QAction::triggered, m_viewer, [this, url] {
                 m_viewer->newPageRequested(url);
             });
             menu->insertAction(before, openLink);
         }
         if (m_viewer->isActionVisible(HelpViewer::Action::ExternalWindow)) {
-            auto openLink = new QAction(Tr::tr(Constants::TR_OPEN_LINK_IN_WINDOW), menu);
+            auto openLink = new QAction(QCoreApplication::translate("HelpViewer",
+                                        Constants::TR_OPEN_LINK_IN_WINDOW), menu);
             connect(openLink, &QAction::triggered, m_viewer, [this, url] {
                 m_viewer->externalPageRequested(url);
             });

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -119,9 +141,9 @@ private:
     QHash<Block *, ClassOrNamespace *> _blocks;
     QList<Enum *> _enums;
     QList<Symbol *> _todo;
-    std::shared_ptr<Control> _control;
+    QSharedPointer<Control> _control;
     TemplateNameIdTable _specializations;
-    QHash<const TemplateNameId *, ClassOrNamespace *> _instantiations;
+    QMap<const TemplateNameId *, ClassOrNamespace *> _instantiations;
     Anonymouses _anonymouses;
     QSet<const AnonymousNameId *> _declaredOrTypedefedAnonymouses;
 
@@ -182,7 +204,7 @@ public:
 
     /// Returns the Control that must be used to create temporary symbols.
     /// \internal
-    std::shared_ptr<Control> control() const
+    QSharedPointer<Control> control() const
     { return _control; }
 
     bool expandTemplates() const
@@ -250,7 +272,7 @@ private:
                                         Template *specialization) const;
 
     Snapshot _snapshot;
-    std::shared_ptr<Control> _control;
+    QSharedPointer<Control> _control;
     QSet<Namespace *> _processed;
     QList<ClassOrNamespace *> _entities;
     ClassOrNamespace *_globalNamespace;
@@ -269,14 +291,14 @@ public:
     LookupContext(Document::Ptr expressionDocument,
                   Document::Ptr thisDocument,
                   const Snapshot &snapshot,
-                  std::shared_ptr<CreateBindings> bindings = {});
+                  QSharedPointer<CreateBindings> bindings = QSharedPointer<CreateBindings>());
 
     LookupContext(const LookupContext &other);
     LookupContext &operator = (const LookupContext &other);
 
     Document::Ptr expressionDocument() const;
     Document::Ptr thisDocument() const;
-    Document::Ptr document(const Utils::FilePath &filePath) const;
+    Document::Ptr document(const QString &fileName) const;
     Snapshot snapshot() const;
 
     ClassOrNamespace *globalNamespace() const;
@@ -291,7 +313,8 @@ public:
     ClassOrNamespace *lookupParent(Symbol *symbol) const;
 
     /// \internal
-    std::shared_ptr<CreateBindings> bindings() const { return _bindings; }
+    QSharedPointer<CreateBindings> bindings() const
+    { return _bindings; }
 
     enum InlineNamespacePolicy { ShowInlineNamespaces, HideInlineNamespaces };
     static QList<const Name *> fullyQualifiedName(
@@ -321,7 +344,7 @@ private:
     Snapshot _snapshot;
 
     // Bindings
-    std::shared_ptr<CreateBindings> _bindings;
+    QSharedPointer<CreateBindings> _bindings;
 
     bool m_expandTemplates;
 };
@@ -329,4 +352,5 @@ private:
 bool CPLUSPLUS_EXPORT compareFullyQualifiedName(const QList<const Name *> &path,
                                                 const QList<const Name *> &other);
 
-} // CPlusPlus
+
+} // namespace CPlusPlus

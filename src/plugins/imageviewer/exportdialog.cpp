@@ -1,10 +1,30 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "exportdialog.h"
-
 #include "imageview.h" // ExportData
-#include "imageviewertr.h"
 
 #include <coreplugin/coreicons.h>
 
@@ -24,9 +44,8 @@
 #include <QSpinBox>
 #include <QToolButton>
 
-using namespace Utils;
-
-namespace ImageViewer::Internal {
+namespace ImageViewer {
+namespace Internal {
 
 enum { exportMinimumSize = 1, exportMaximumSize = 2000 };
 
@@ -35,9 +54,8 @@ QString ExportDialog::imageNameFilterString()
     static QString result;
     if (result.isEmpty()) {
         QMimeDatabase mimeDatabase;
-        const QString separator = ";;";
-        const QList<QByteArray> mimeTypes = QImageWriter::supportedMimeTypes();
-        for (const QByteArray &mimeType : mimeTypes) {
+        const QString separator = QStringLiteral(";;");
+        foreach (const QByteArray &mimeType, QImageWriter::supportedMimeTypes()) {
             const QString filter = mimeDatabase.mimeTypeForName(QLatin1String(mimeType)).filterString();
             if (!filter.isEmpty()) {
                 if (mimeType == QByteArrayLiteral("image/png")) {
@@ -67,25 +85,27 @@ ExportDialog::ExportDialog(QWidget *parent)
     m_pathChooser->setMinimumWidth(screen()->availableGeometry().width() / 5);
     m_pathChooser->setExpectedKind(Utils::PathChooser::SaveFile);
     m_pathChooser->setPromptDialogFilter(imageNameFilterString());
-    formLayout->addRow(Tr::tr("File:"), m_pathChooser);
+    formLayout->addRow(tr("File:"), m_pathChooser);
 
     auto sizeLayout = new QHBoxLayout;
     m_widthSpinBox->setMinimum(exportMinimumSize);
     m_widthSpinBox->setMaximum(exportMaximumSize);
-    connect(m_widthSpinBox, &QSpinBox::valueChanged, this, &ExportDialog::exportWidthChanged);
+    connect(m_widthSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &ExportDialog::exportWidthChanged);
     sizeLayout->addWidget(m_widthSpinBox);
     //: Multiplication, as in 32x32
-    sizeLayout->addWidget(new QLabel(Tr::tr("x")));
+    sizeLayout->addWidget(new QLabel(tr("x")));
     m_heightSpinBox->setMinimum(exportMinimumSize);
     m_heightSpinBox->setMaximum(exportMaximumSize);
-    connect(m_heightSpinBox, &QSpinBox::valueChanged, this, &ExportDialog::exportHeightChanged);
+    connect(m_heightSpinBox, QOverload<int>::of(&QSpinBox::valueChanged),
+            this, &ExportDialog::exportHeightChanged);
     sizeLayout->addWidget(m_heightSpinBox);
     auto resetButton = new QToolButton(this);
-    resetButton->setIcon(QIcon(":/qt-project.org/styles/commonstyle/images/refresh-32.png"));
+    resetButton->setIcon(QIcon(QStringLiteral(":/qt-project.org/styles/commonstyle/images/refresh-32.png")));
     sizeLayout->addWidget(resetButton);
     sizeLayout->addStretch();
     connect(resetButton, &QAbstractButton::clicked, this, &ExportDialog::resetExportSize);
-    formLayout->addRow(Tr::tr("Size:"), sizeLayout);
+    formLayout->addRow(tr("Size:"), sizeLayout);
 
     auto buttonBox = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
     connect(buttonBox, &QDialogButtonBox::accepted, this, &QDialog::accept);
@@ -99,10 +119,10 @@ void ExportDialog::accept()
         QMessageBox::warning(this, windowTitle(), m_pathChooser->errorMessage());
         return;
     }
-    const FilePath filePath = exportFileName();
-    if (filePath.exists()) {
-        const QString question = Tr::tr("%1 already exists.\nWould you like to overwrite it?")
-            .arg(filePath.toUserOutput());
+    const QString fileName = exportFileName();
+    if (QFileInfo::exists(fileName)) {
+        const QString question = tr("%1 already exists.\nWould you like to overwrite it?")
+            .arg(QDir::toNativeSeparators(fileName));
         if (QMessageBox::question(this, windowTitle(), question, QMessageBox::Yes | QMessageBox::No) !=  QMessageBox::Yes)
             return;
     }
@@ -157,14 +177,14 @@ void ExportDialog::exportHeightChanged(int height)
     setExportWidthBlocked(square ? height : qRound(qreal(height) * m_aspectRatio));
 }
 
-FilePath ExportDialog::exportFileName() const
+QString ExportDialog::exportFileName() const
 {
-    return m_pathChooser->filePath();
+    return m_pathChooser->filePath().toString();
 }
 
-void ExportDialog::setExportFileName(const FilePath &f)
+void ExportDialog::setExportFileName(const QString &f)
 {
-    m_pathChooser->setFilePath(f);
+    m_pathChooser->setFilePath(Utils::FilePath::fromString(f));
 }
 
 ExportData ExportDialog::exportData() const
@@ -172,4 +192,5 @@ ExportData ExportDialog::exportData() const
     return {exportFileName(), exportSize()};
 }
 
-} // ImageViewer::Internal
+} // namespace Internal
+} // namespace ImageViewer

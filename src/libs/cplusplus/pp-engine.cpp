@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 /*
   Copyright 2005 Roberto Raggi <roberto@kdevelop.org>
@@ -30,31 +52,32 @@
 #include <cplusplus/Literals.h>
 #include <cplusplus/cppassert.h>
 
-#include <utils/filepath.h>
+#include <utils/executeondestruction.h>
 #include <utils/scopedswap.h>
 
 #include <QDebug>
 #include <QList>
 #include <QDate>
-#include <QLoggingCategory>
 #include <QTime>
 #include <QPair>
-#include <QScopeGuard>
 
 #include <cctype>
-#include <deque>
 #include <list>
 #include <algorithm>
 
-// FIXME: This is used for errors that should appear in the editor.
-static Q_LOGGING_CATEGORY(lexerLog, "qtc.cpp.lexer", QtWarningMsg)
+#define NO_DEBUG
+
+#ifndef NO_DEBUG
+#  include <iostream>
+#endif // NO_DEBUG
+
+#include <deque>
 
 using namespace Utils;
 
 namespace {
 enum {
     MAX_FUNCTION_LIKE_ARGUMENTS_COUNT = 100,
-    MAX_INCLUDE_DEPTH = 200,
     MAX_TOKEN_EXPANSION_COUNT = 5000,
     MAX_TOKEN_BUFFER_DEPTH = 16000 // for when macros are using some kind of right-folding, this is the list of "delayed" buffers waiting to be expanded after the current one.
 };
@@ -114,6 +137,13 @@ static bool isQtReservedWord(const char *name, int size)
         return size == 4 && same(name, "emit", size);
 
     return false;
+}
+
+static void nestingTooDeep()
+{
+#ifndef NO_DEBUG
+        std::cerr << "*** WARNING #if / #ifdef nesting exceeded the max level " << MAX_LEVEL << std::endl;
+#endif
 }
 
 } // anonymous namespace
@@ -193,24 +223,6 @@ struct Value
     inline bool is_zero () const
     { return l == 0; }
 
-    template<typename T> static int cmpImpl(T v1, T v2)
-    {
-        if (v1 < v2)
-            return -1;
-        if (v1 > v2)
-            return 1;
-        return 0;
-    }
-    Value cmp(const Value &other) const
-    {
-        Value v = *this;
-        if (v.is_ulong() || other.is_ulong())
-            v.set_long(cmpImpl(v.ul, other.ul));
-        else
-            v.set_long(cmpImpl(v.l, other.l));
-        return v;
-    }
-
 #define PP_DEFINE_BIN_OP(name, op) \
     inline Value operator op(const Value &other) const \
     { \
@@ -245,6 +257,7 @@ struct Value
 };
 
 } // namespace Internal
+} // namespace CPlusPlus
 
 using namespace CPlusPlus;
 using namespace CPlusPlus::Internal;
@@ -260,7 +273,7 @@ Macro *macroDefinition(const ByteArrayRef &name,
                        unsigned bytesOffset,
                        unsigned utf16charsOffset,
                        unsigned line,
-                       CPlusPlus::Environment *env,
+                       Environment *env,
                        Client *client)
 {
     Macro *m = env->resolve(name);
@@ -329,7 +342,7 @@ class ExpressionEvaluator
     void operator = (const ExpressionEvaluator &other);
 
 public:
-    ExpressionEvaluator(Client *client, CPlusPlus::Environment *env)
+    ExpressionEvaluator(Client *client, Environment *env)
         : client(client), env(env), _lex(nullptr)
     { }
 
@@ -497,25 +510,24 @@ private:
     inline int precedence(int tokenKind) const
     {
         switch (tokenKind) {
-        case T_PIPE_PIPE:           return 0;
-        case T_AMPER_AMPER:         return 1;
-        case T_PIPE:                return 2;
-        case T_CARET:               return 3;
-        case T_AMPER:               return 4;
+        case T_PIPE_PIPE:       return 0;
+        case T_AMPER_AMPER:     return 1;
+        case T_PIPE:            return 2;
+        case T_CARET:           return 3;
+        case T_AMPER:           return 4;
         case T_EQUAL_EQUAL:
-        case T_EXCLAIM_EQUAL:       return 5;
+        case T_EXCLAIM_EQUAL:   return 5;
         case T_GREATER:
         case T_LESS:
         case T_LESS_EQUAL:
-        case T_GREATER_EQUAL:       return 6;
-        case T_LESS_EQUAL_GREATER:  return 7;
+        case T_GREATER_EQUAL:   return 6;
         case T_LESS_LESS:
-        case T_GREATER_GREATER:     return 8;
+        case T_GREATER_GREATER: return 7;
         case T_PLUS:
-        case T_MINUS:               return 9;
+        case T_MINUS:           return 8;
         case T_STAR:
         case T_SLASH:
-        case T_PERCENT:             return 10;
+        case T_PERCENT:         return 9;
 
         default:
             return -1;
@@ -535,7 +547,6 @@ private:
         case T_GREATER:
         case T_LESS:
         case T_LESS_EQUAL:
-        case T_LESS_EQUAL_GREATER:
         case T_GREATER_EQUAL:
         case T_LESS_LESS:
         case T_GREATER_GREATER:
@@ -554,25 +565,24 @@ private:
     static inline Value evaluate_expression(int tokenKind, const Value &lhs, const Value &rhs)
     {
         switch (tokenKind) {
-        case T_PIPE_PIPE:            return lhs || rhs;
-        case T_AMPER_AMPER:          return lhs && rhs;
-        case T_PIPE:                 return lhs | rhs;
-        case T_CARET:                return lhs ^ rhs;
-        case T_AMPER:                return lhs & rhs;
-        case T_EQUAL_EQUAL:          return lhs == rhs;
-        case T_EXCLAIM_EQUAL:        return lhs != rhs;
-        case T_GREATER:              return lhs > rhs;
-        case T_LESS:                 return lhs < rhs;
-        case T_LESS_EQUAL:           return lhs <= rhs;
-        case T_LESS_EQUAL_GREATER:   return lhs.cmp(rhs);
-        case T_GREATER_EQUAL:        return lhs >= rhs;
-        case T_LESS_LESS:            return lhs << rhs;
-        case T_GREATER_GREATER:      return lhs >> rhs;
-        case T_PLUS:                 return lhs + rhs;
-        case T_MINUS:                return lhs - rhs;
-        case T_STAR:                 return lhs * rhs;
-        case T_SLASH:                return rhs.is_zero() ? Value() : lhs / rhs;
-        case T_PERCENT:              return rhs.is_zero() ? Value() : lhs % rhs;
+        case T_PIPE_PIPE:       return lhs || rhs;
+        case T_AMPER_AMPER:     return lhs && rhs;
+        case T_PIPE:            return lhs | rhs;
+        case T_CARET:           return lhs ^ rhs;
+        case T_AMPER:           return lhs & rhs;
+        case T_EQUAL_EQUAL:     return lhs == rhs;
+        case T_EXCLAIM_EQUAL:   return lhs != rhs;
+        case T_GREATER:         return lhs > rhs;
+        case T_LESS:            return lhs < rhs;
+        case T_LESS_EQUAL:      return lhs <= rhs;
+        case T_GREATER_EQUAL:   return lhs >= rhs;
+        case T_LESS_LESS:       return lhs << rhs;
+        case T_GREATER_GREATER: return lhs >> rhs;
+        case T_PLUS:            return lhs + rhs;
+        case T_MINUS:           return lhs - rhs;
+        case T_STAR:            return lhs * rhs;
+        case T_SLASH:           return rhs.is_zero() ? Value() : lhs / rhs;
+        case T_PERCENT:         return rhs.is_zero() ? Value() : lhs % rhs;
 
         default:
             return Value();
@@ -728,11 +738,7 @@ void Preprocessor::State::updateIncludeGuardState_helper(IncludeGuardStateHint h
 #endif // DEBUG_INCLUDE_GUARD_TRACKING
 }
 
-const FilePath &Preprocessor::configurationFileName()
-{
-    const static FilePath configurationFile = FilePath::fromPathPart(u"<configuration>");
-    return configurationFile;
-}
+QString Preprocessor::configurationFileName() { return QStringLiteral("<configuration>"); }
 
 Preprocessor::Preprocessor(Client *client, Environment *env)
     : m_client(client)
@@ -740,15 +746,11 @@ Preprocessor::Preprocessor(Client *client, Environment *env)
     , m_expandFunctionlikeMacros(true)
     , m_keepComments(false)
 {
-    m_scratchBuffer.reserve(256);
 }
 
-QByteArray Preprocessor::run(const Utils::FilePath &filePath,
-                             const QByteArray &source,
-                             bool noLines,
-                             bool markGeneratedTokens)
+QByteArray Preprocessor::run(const QString &fileName, const QString &source)
 {
-    return run(filePath.toString(), source, noLines, markGeneratedTokens);
+    return run(fileName, source.toUtf8());
 }
 
 QByteArray Preprocessor::run(const QString &fileName,
@@ -1131,8 +1133,7 @@ bool Preprocessor::handleIdentifier(PPToken *tk)
         }
     }
 
-    const PPToken *start = body.constData();
-    m_state.pushTokenBuffer(start, start + body.size(), macro);
+    m_state.pushTokenBuffer(body.constBegin(), body.constEnd(), macro);
 
     if (m_client && !idTk.generated())
         m_client->stopExpandingMacro(idTk.byteOffset, *macro);
@@ -1446,7 +1447,7 @@ void Preprocessor::preprocess(const QString &fileName, const QByteArray &source,
                 trackedLine = tk.lineno;
                 trackedColumn = unsigned(computeDistance(tk, true));
             }
-            m_state.m_expandedTokensInfo.push_back({trackedLine, trackedColumn});
+            m_state.m_expandedTokensInfo.append(qMakePair(trackedLine, trackedColumn));
         } else if (m_state.m_expansionStatus == JustFinishedExpansion) {
             m_state.setExpansionStatus(NotExpanding);
             macroExpanded = true;
@@ -1514,15 +1515,14 @@ bool Preprocessor::collectActualArguments(PPToken *tk, QVector<QVector<PPToken> 
     Q_ASSERT(tk);
     Q_ASSERT(actuals);
 
-    QScopeGuard cleanup([this] {
-        if (m_state.m_tokenBuffer && !m_state.m_tokenBuffer->blockedMacroNames.empty())
-            m_state.m_tokenBuffer->blockedMacroNames.pop_back();
-    });
-
-    if (m_state.m_tokenBuffer)
+    ExecuteOnDestruction removeBlockedName;
+    if (m_state.m_tokenBuffer) {
+        removeBlockedName.reset([this] {
+            if (m_state.m_tokenBuffer && !m_state.m_tokenBuffer->blockedMacroNames.empty())
+                m_state.m_tokenBuffer->blockedMacroNames.pop_back();
+        });
         m_state.m_tokenBuffer->blockedMacroNames.push_back(parentMacroName);
-    else
-        cleanup.dismiss();
+    }
 
     lex(tk); // consume the identifier
 
@@ -1626,10 +1626,10 @@ void Preprocessor::handlePreprocessorDirective(PPToken *tk)
     static const QByteArray ppInclude("include");
     static const QByteArray ppIncludeNext("include_next");
     static const QByteArray ppImport("import");
-    static const QByteArray ppPragma("pragma");
     //### TODO:
     // line
     // error
+    // pragma
 
     if (tk->is(T_IDENTIFIER)) {
         const ByteArrayRef directive = tk->asByteArrayRef();
@@ -1640,8 +1640,6 @@ void Preprocessor::handlePreprocessorDirective(PPToken *tk)
             handleIfDefDirective(true, tk);
         } else if (directive == ppEndIf) {
             handleEndIfDirective(tk, poundToken);
-        } else if (directive == ppPragma) {
-            handlePragmaDirective(tk);
         } else {
             m_state.updateIncludeGuardState(State::IncludeGuardStateHint_OtherToken);
 
@@ -1671,12 +1669,6 @@ void Preprocessor::handleIncludeDirective(PPToken *tk, bool includeNext)
 {
     if (m_cancelChecker && m_cancelChecker())
         return;
-
-    GuardLocker depthLocker(m_includeDepthGuard);
-    if (m_includeDepthGuard.lockCount() > MAX_INCLUDE_DEPTH) {
-        qCWarning(lexerLog) << "Maximum include depth exceeded" << m_state.m_currentFileName;
-        return;
-    }
 
     m_state.m_lexer->setScanAngleStringLiteralTokens(true);
     lex(tk); // consume "include" token
@@ -1710,7 +1702,7 @@ void Preprocessor::handleIncludeDirective(PPToken *tk, bool includeNext)
 
     if (m_client) {
         QString inc = QString::fromUtf8(included.constData() + 1, included.size() - 2);
-        m_client->sourceNeeded(line, FilePath::fromString(inc), mode);
+        m_client->sourceNeeded(line, inc, mode);
     }
 }
 
@@ -1726,7 +1718,7 @@ void Preprocessor::handleDefineDirective(PPToken *tk)
         return;
 
     Macro macro;
-    macro.setFilePath(FilePath::fromString(m_env->currentFile));
+    macro.setFileName(m_env->currentFile);
     macro.setLine(tk->lineno);
     QByteArray macroName = tk->asByteArrayRef().toByteArray();
     macro.setName(macroName);
@@ -1868,23 +1860,6 @@ void Preprocessor::handleDefineDirective(PPToken *tk)
         m_client->macroAdded(macro);
 }
 
-void Preprocessor::handlePragmaDirective(PPToken *tk)
-{
-    Pragma pragma;
-    pragma.line = tk->lineno;
-    lex(tk); // consume "pragma" token
-
-    while (isContinuationToken(*tk)) {
-        if (!consumeComments(tk))
-            return;
-        pragma.tokens << tk->asByteArrayRef().toByteArray();
-        lex(tk);
-    }
-
-    if (m_client)
-        m_client->pragmaAdded(pragma);
-}
-
 QByteArray Preprocessor::expand(PPToken *tk, PPToken *lastConditionToken)
 {
     unsigned line = tk->lineno;
@@ -1937,8 +1912,10 @@ void Preprocessor::handleIfDirective(PPToken *tk)
     Value result;
     const PPToken lastExpressionToken = evalExpression(tk, result);
 
-    if (!checkConditionalNesting())
+    if (m_state.m_ifLevel >= MAX_LEVEL - 1) {
+        nestingTooDeep();
         return;
+    }
 
     const bool value = !result.is_zero();
 
@@ -1959,7 +1936,7 @@ void Preprocessor::handleIfDirective(PPToken *tk)
 void Preprocessor::handleElifDirective(PPToken *tk, const PPToken &poundToken)
 {
     if (m_state.m_ifLevel == 0) {
-        qCWarning(lexerLog) << "#elif without #if";
+//        std::cerr << "*** WARNING #elif without #if" << std::endl;
         handleIfDirective(tk);
     } else {
         lex(tk); // consume "elif" token
@@ -2006,18 +1983,22 @@ void Preprocessor::handleElseDirective(PPToken *tk, const PPToken &poundToken)
             else if (m_client && !wasSkipping && startSkipping)
                 startSkippingBlocks(poundToken);
         }
+#ifndef NO_DEBUG
     } else {
-        qCWarning(lexerLog) << "#else without #if";
+        std::cerr << "*** WARNING #else without #if" << std::endl;
+#endif // NO_DEBUG
     }
 }
 
 void Preprocessor::handleEndIfDirective(PPToken *tk, const PPToken &poundToken)
 {
     if (m_state.m_ifLevel == 0) {
-        qCWarning(lexerLog) << "#endif without #if";
+#ifndef NO_DEBUG
+        std::cerr << "*** WARNING #endif without #if";
         if (!tk->generated())
-            qCWarning(lexerLog) << "on line" << tk->lineno << "of file"
-                              << m_state.m_currentFileName.toUtf8().constData();
+            std::cerr << " on line " << tk->lineno << " of file " << m_state.m_currentFileName.toUtf8().constData();
+        std::cerr << std::endl;
+#endif // NO_DEBUG
     } else {
         bool wasSkipping = m_state.m_skipping[m_state.m_ifLevel];
         m_state.m_skipping[m_state.m_ifLevel] = false;
@@ -2048,7 +2029,7 @@ void Preprocessor::handleIfDefDirective(bool checkUndefined, PPToken *tk)
 
             // the macro is a feature constraint(e.g. QT_NO_XXX)
             if (checkUndefined && macroName.startsWith("QT_NO_")) {
-                if (macro->filePath() == configurationFileName()) {
+                if (macro->fileName() == configurationFileName()) {
                     // and it' defined in a pro file (e.g. DEFINES += QT_NO_QOBJECT)
 
                     value = false; // take the branch
@@ -2063,18 +2044,22 @@ void Preprocessor::handleIfDefDirective(bool checkUndefined, PPToken *tk)
 
         const bool wasSkipping = m_state.m_skipping[m_state.m_ifLevel];
 
-        if (checkConditionalNesting()) {
+        if (m_state.m_ifLevel < MAX_LEVEL - 1) {
             ++m_state.m_ifLevel;
             m_state.m_trueTest[m_state.m_ifLevel] = value;
             m_state.m_skipping[m_state.m_ifLevel] = wasSkipping ? wasSkipping : !value;
 
             if (m_client && !wasSkipping && !value)
                 startSkippingBlocks(*tk);
+        } else {
+            nestingTooDeep();
         }
 
         lex(tk); // consume the identifier
+#ifndef NO_DEBUG
     } else {
-        qCWarning(lexerLog) << "#ifdef without identifier";
+        std::cerr << "*** WARNING #ifdef without identifier" << std::endl;
+#endif // NO_DEBUG
     }
 }
 
@@ -2101,8 +2086,10 @@ void Preprocessor::handleUndefDirective(PPToken *tk)
             m_client->macroAdded(*macro);
         }
         lex(tk); // consume macro name
+#ifndef NO_DEBUG
     } else {
-        qCWarning(lexerLog) << "#undef without identifier";
+        std::cerr << "*** WARNING #undef without identifier" << std::endl;
+#endif // NO_DEBUG
     }
 }
 
@@ -2198,15 +2185,3 @@ void Preprocessor::maybeStartOutputLine()
     if (*ch == '\\')
         buffer.append('\n');
 }
-
-bool Preprocessor::checkConditionalNesting() const
-{
-    if (m_state.m_ifLevel >= MAX_LEVEL - 1) {
-        qCWarning(lexerLog) << "#if/#ifdef nesting exceeding maximum level" << MAX_LEVEL;
-        return false;
-    }
-    return true;
-}
-
-
-} // namespace CPlusPlus

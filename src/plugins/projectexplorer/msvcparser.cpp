@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "msvcparser.h"
 #include "projectexplorerconstants.h"
@@ -19,7 +41,7 @@ static QPair<FilePath, int> parseFileName(const QString &input)
 {
     QString fileName = input;
     if (fileName.startsWith("LINK") || fileName.startsWith("cl"))
-        return {{}, -1};
+        return qMakePair(FilePath(), -1);
 
     // Extract linenumber (if it is there):
     int linenumber = -1;
@@ -39,7 +61,7 @@ static QPair<FilePath, int> parseFileName(const QString &input)
         }
     }
     const QString normalized = FileUtils::normalizedPathName(fileName);
-    return {FilePath::fromUserInput(normalized), linenumber};
+    return qMakePair(FilePath::fromUserInput(normalized), linenumber);
 }
 
 using namespace ProjectExplorer;
@@ -61,7 +83,7 @@ static Task handleNmakeJomMessage(const QString &line)
 
     CompileTask task(type, line.mid(matchLength).trimmed());
     task.details << line;
-    return task;
+    return std::move(task);
 }
 
 static Task::TaskType taskType(const QString &category)
@@ -94,28 +116,36 @@ OutputLineParser::Result MsvcParser::handleLine(const QString &line, OutputForma
     if (type == OutputFormat::StdOutFormat) {
         QRegularExpressionMatch match = m_additionalInfoRegExp.match(line);
         if (line.startsWith("        ") && !match.hasMatch()) {
-            if (currentTask().isNull())
+            if (m_lastTask.isNull())
                 return Status::NotHandled;
-            createOrAmendTask(Task::Unknown, {}, line, true);
+
+            m_lastTask.details.append(rightTrimmed(line));
+            ++m_lines;
             return Status::InProgress;
         }
 
         const Result res = processCompileLine(line);
         if (res.status != Status::NotHandled)
             return res;
-        if (const Task t = handleNmakeJomMessage(line); !t.isNull()) {
-            setCurrentTask(t);
+        const Task t = handleNmakeJomMessage(line);
+        if (!t.isNull()) {
+            flush();
+            m_lastTask = t;
+            m_lines = 1;
             return Status::InProgress;
         }
         if (match.hasMatch()) {
-            QString description = match.captured(1) + match.captured(4).trimmed();
+            QString description = match.captured(1)
+                    + match.captured(4).trimmed();
             if (!match.captured(1).isEmpty())
                 description.chop(1); // Remove trailing quote
             const FilePath filePath = absoluteFilePath(FilePath::fromUserInput(match.captured(2)));
             const int lineNo = match.captured(3).toInt();
             LinkSpecs linkSpecs;
-            addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, -1, match, 2);
-            createOrAmendTask(Task::Unknown, description, line, false, filePath, lineNo, 0, linkSpecs);
+            addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, match, 2);
+            m_lastTask = CompileTask(Task::Unknown, description, filePath, lineNo);
+            m_lastTask.details << line;
+            m_lines = 1;
             return {Status::InProgress, linkSpecs};
         }
         return Status::NotHandled;
@@ -124,19 +154,15 @@ OutputLineParser::Result MsvcParser::handleLine(const QString &line, OutputForma
     const Result res = processCompileLine(line);
     if (res.status != Status::NotHandled)
         return res;
-
     // Jom outputs errors to stderr
-    if (const Task t = handleNmakeJomMessage(line); !t.isNull()) {
-        setCurrentTask(t);
+    const Task t = handleNmakeJomMessage(line);
+    if (!t.isNull()) {
+        flush();
+        m_lastTask = t;
+        m_lines = 1;
         return Status::InProgress;
     }
-
     return Status::NotHandled;
-}
-
-bool MsvcParser::isContinuation(const QString &line) const
-{
-    return line.contains("note: ");
 }
 
 MsvcParser::Result MsvcParser::processCompileLine(const QString &line)
@@ -146,22 +172,42 @@ MsvcParser::Result MsvcParser::processCompileLine(const QString &line)
         QPair<FilePath, int> position = parseFileName(match.captured(1));
         const FilePath filePath = absoluteFilePath(position.first);
         LinkSpecs linkSpecs;
-        addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, position.second, -1, match, 1);
-        const QString &description = match.captured(3) + match.captured(4).trimmed();
-        createOrAmendTask(
-            taskType(match.captured(2)),
-            description,
-            line,
-            false,
-            filePath,
-            position.second,
-            0,
-            linkSpecs);
+        addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, position.second, match, 1);
+        if (!m_lastTask.isNull() && line.contains("note: ")) {
+            const int offset = std::accumulate(m_lastTask.details.cbegin(),
+                    m_lastTask.details.cend(), 0,
+                    [](int total, const QString &line) { return total + line.length() + 1;});
+            for (LinkSpec &ls : linkSpecs)
+                ls.startPos += offset;
+            ++m_lines;
+        } else {
+            flush();
+            m_lastTask = CompileTask(taskType(match.captured(2)),
+                                     match.captured(3) + match.captured(4).trimmed(), // description
+                                     filePath, position.second);
+            m_lines = 1;
+        }
+        m_linkSpecs << linkSpecs;
+        m_lastTask.details.append(line);
         return {Status::InProgress, linkSpecs};
     }
 
     flush();
     return Status::NotHandled;
+}
+
+void MsvcParser::flush()
+{
+    if (m_lastTask.isNull())
+        return;
+
+    if (m_lastTask.details.count() == 1)
+        m_lastTask.details.clear();
+    setDetailsFormat(m_lastTask, m_linkSpecs);
+    Task t = m_lastTask;
+    m_lastTask.clear();
+    m_linkSpecs.clear();
+    scheduleTask(t, m_lines, 1);
 }
 
 // --------------------------------------------------------------------------
@@ -194,8 +240,11 @@ static inline bool isClangCodeMarker(const QString &trimmedLine)
 OutputLineParser::Result ClangClParser::handleLine(const QString &line, OutputFormat type)
 {
     if (type == StdOutFormat) {
-        if (const Task t = handleNmakeJomMessage(line); !t.isNull()) {
-            setCurrentTask(t);
+        const Task t = handleNmakeJomMessage(line);
+        if (!t.isNull()) {
+            flush();
+            m_lastTask = t;
+            m_linkedLines = 1;
             flush();
             return Status::Done;
         }
@@ -203,8 +252,11 @@ OutputLineParser::Result ClangClParser::handleLine(const QString &line, OutputFo
     }
     const QString lne = rightTrimmed(line); // Strip \n.
 
-    if (const Task t = handleNmakeJomMessage(lne); !t.isNull()) {
-        setCurrentTask(t);
+    const Task t = handleNmakeJomMessage(lne);
+    if (!t.isNull()) {
+        flush();
+        m_lastTask = t;
+        m_linkedLines = 1;
         flush();
         return Status::Done;
     }
@@ -225,38 +277,46 @@ OutputLineParser::Result ClangClParser::handleLine(const QString &line, OutputFo
     if (match.hasMatch()) {
         flush();
         const QPair<FilePath, int> position = parseFileName(match.captured(1));
-        const FilePath file = absoluteFilePath(position.first);
-        const int lineNo = position.second;
+        m_lastTask = CompileTask(taskType(match.captured(2)), match.captured(3).trimmed(),
+                                 absoluteFilePath(position.first), position.second);
+        m_linkedLines = 1;
         LinkSpecs linkSpecs;
-        addLinkSpecForAbsoluteFilePath(linkSpecs, file, lineNo, -1, match, 1);
-        createOrAmendTask(
-            taskType(match.captured(2)), match.captured(3).trimmed(), line, false, file, lineNo);
+        addLinkSpecForAbsoluteFilePath(linkSpecs, m_lastTask.file, m_lastTask.line, match, 1);
         return {Status::InProgress, linkSpecs};
     }
 
-    if (!currentTask().isNull()) {
+    if (!m_lastTask.isNull()) {
         const QString trimmed = lne.trimmed();
         if (isClangCodeMarker(trimmed)) {
             flush();
             return Status::Done;
         }
-        createOrAmendTask(Task::Unknown, {}, line, true);
+        m_lastTask.details.append(trimmed);
+        ++m_linkedLines;
         return Status::InProgress;
     }
 
     return Status::NotHandled;
 }
 
+void ClangClParser::flush()
+{
+    if (!m_lastTask.isNull()) {
+        scheduleTask(m_lastTask, m_linkedLines, 1);
+        m_lastTask.clear();
+    }
+}
+
 // Unit tests:
 
 #ifdef WITH_TESTS
 #   include <QTest>
-#   include "projectexplorer_test.h"
+#   include "projectexplorer.h"
 #   include "projectexplorer/outputparser_test.h"
 
-namespace ProjectExplorer::Internal {
+namespace ProjectExplorer {
 
-void ProjectExplorerTest::testMsvcOutputParsers_data()
+void ProjectExplorerPlugin::testMsvcOutputParsers_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<OutputParserTester::Channel>("inputChannel");
@@ -555,7 +615,7 @@ void ProjectExplorerTest::testMsvcOutputParsers_data()
             << "";
 }
 
-void ProjectExplorerTest::testMsvcOutputParsers()
+void ProjectExplorerPlugin::testMsvcOutputParsers()
 {
     OutputParserTester testbench;
     testbench.addLineParser(new MsvcParser);
@@ -571,7 +631,7 @@ void ProjectExplorerTest::testMsvcOutputParsers()
                           outputLines);
 }
 
-void ProjectExplorerTest::testClangClOutputParsers_data()
+void ProjectExplorerPlugin::testClangClOutputParsers_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<OutputParserTester::Channel>("inputChannel");
@@ -580,23 +640,32 @@ void ProjectExplorerTest::testClangClOutputParsers_data()
     QTest::addColumn<Tasks >("tasks");
     QTest::addColumn<QString>("outputLines");
 
+    const QString warning1 = "private field 'm_version' is not used [-Wunused-private-field]\n"
+                             "const int m_version; //! majorVersion<<8 + minorVersion\n";
+    const QString warning2 = "unused variable 'formatTextPlainC' [-Wunused-const-variable]\n"
+                             "static const char formatTextPlainC[] = \"text/plain\";\n";
+    const QString warning3 = "unused variable 'formatTextHtmlC' [-Wunused-const-variable]\n"
+                             "static const char formatTextHtmlC[] = \"text/html\";\n";
+    const QString error1 = "unknown type name 'errr'\n"
+                           "  errr\n";
+    const QString expectedError1 = "unknown type name 'errr'\n"
+                                   "errr"; // Line 2 trimmed.
+    const QString error2 =
+            "expected unqualified-id\n"
+            "void *QWindowsGdiNativeInterface::nativeResourceForBackingStore(const QByteArray &resource, QBackingStore *bs)\n";
+
     const QString clangClCompilerLog =
             "In file included from .\\qwindowseglcontext.cpp:40:\n"
-            "./qwindowseglcontext.h(282,15) :  warning: private field 'm_version' is not used [-Wunused-private-field]\n"
-            "const int m_version; //! majorVersion<<8 + minorVersion\n"
+            "./qwindowseglcontext.h(282,15) :  warning: "  + warning1 +
             "5 warnings generated.\n"
-            ".\\qwindowsclipboard.cpp(60,19) :  warning: unused variable 'formatTextPlainC' [-Wunused-const-variable]\n"
-            "static const char formatTextPlainC[] = \"text/plain\";\n"
+            ".\\qwindowsclipboard.cpp(60,19) :  warning: " + warning2 +
             "                  ^\n"
-            ".\\qwindowsclipboard.cpp(61,19) :  warning: unused variable 'formatTextHtmlC' [-Wunused-const-variable]\n"
-            "static const char formatTextHtmlC[] = \"text/html\";\n"
+            ".\\qwindowsclipboard.cpp(61,19) :  warning: " + warning3 +
             "                  ^\n"
             "2 warnings generated.\n"
-            ".\\qwindowsgdinativeinterface.cpp(48,3) :  error: unknown type name 'errr'\n"
-            "  errr\n"
+            ".\\qwindowsgdinativeinterface.cpp(48,3) :  error: " + error1 +
             "  ^\n"
-            ".\\qwindowsgdinativeinterface.cpp(51,1) :  error: expected unqualified-id\n"
-            "void *QWindowsGdiNativeInterface::nativeResourceForBackingStore(const QByteArray &resource, QBackingStore *bs)\n"
+            ".\\qwindowsgdinativeinterface.cpp(51,1) :  error: " + error2 +
             "^\n"
             "2 errors generated.\n";
 
@@ -612,31 +681,16 @@ void ProjectExplorerTest::testClangClOutputParsers_data()
             << OutputParserTester::STDERR
             << "" << expectedStderr
             << (Tasks()
-                << CompileTask(Task::Warning,
-                           "private field 'm_version' is not used [-Wunused-private-field]\n"
-                           "./qwindowseglcontext.h(282,15) :  warning: private field 'm_version' is not used [-Wunused-private-field]\n"
-                           "const int m_version; //! majorVersion<<8 + minorVersion",
-                           FilePath::fromUserInput("./qwindowseglcontext.h"), 282)
-                << CompileTask(Task::Warning,
-                           "unused variable 'formatTextPlainC' [-Wunused-const-variable]\n"
-                           ".\\qwindowsclipboard.cpp(60,19) :  warning: unused variable 'formatTextPlainC' [-Wunused-const-variable]\n"
-                           "static const char formatTextPlainC[] = \"text/plain\";",
-                           FilePath::fromUserInput(".\\qwindowsclipboard.cpp"), 60)
-                << CompileTask(Task::Warning,
-                           "unused variable 'formatTextHtmlC' [-Wunused-const-variable]\n"
-                           ".\\qwindowsclipboard.cpp(61,19) :  warning: unused variable 'formatTextHtmlC' [-Wunused-const-variable]\n"
-                           "static const char formatTextHtmlC[] = \"text/html\";",
-                           FilePath::fromUserInput(".\\qwindowsclipboard.cpp"), 61)
-                << CompileTask(Task::Error,
-                           "unknown type name 'errr'\n"
-                           ".\\qwindowsgdinativeinterface.cpp(48,3) :  error: unknown type name 'errr'\n"
-                           "  errr",
-                           FilePath::fromUserInput(".\\qwindowsgdinativeinterface.cpp"), 48)
-                << CompileTask(Task::Error,
-                           "expected unqualified-id\n"
-                           ".\\qwindowsgdinativeinterface.cpp(51,1) :  error: expected unqualified-id\n"
-                           "void *QWindowsGdiNativeInterface::nativeResourceForBackingStore(const QByteArray &resource, QBackingStore *bs)",
-                           FilePath::fromUserInput(".\\qwindowsgdinativeinterface.cpp"), 51))
+                << CompileTask(Task::Warning, warning1.trimmed(),
+                               FilePath::fromUserInput("./qwindowseglcontext.h"), 282)
+                << CompileTask(Task::Warning, warning2.trimmed(),
+                               FilePath::fromUserInput(".\\qwindowsclipboard.cpp"), 60)
+                << CompileTask(Task::Warning, warning3.trimmed(),
+                               FilePath::fromUserInput(".\\qwindowsclipboard.cpp"), 61)
+                << CompileTask(Task::Error, expectedError1,
+                               FilePath::fromUserInput(".\\qwindowsgdinativeinterface.cpp"), 48)
+                << CompileTask(Task::Error, error2.trimmed(),
+                               FilePath::fromUserInput(".\\qwindowsgdinativeinterface.cpp"), 51))
             << "";
 
     QTest::newRow("other error")
@@ -655,16 +709,13 @@ void ProjectExplorerTest::testClangClOutputParsers_data()
                "/FoC:\\MyData\\Project_home\\cpp\build-TestForError-msvc_2017_clang-Debug\\Debug_msvc_201_47eca974c876c8b3\\TestForError.b6dd39ae\\3a52ce780950d4d9\\main.cpp.obj "
                "C:\\MyData\\Project_home\\cpp\\TestForError\\main.cpp /TP\n"
                "              ;\n"
-            << Tasks{CompileTask(Task::Error,
-                             "expected ';' after return statement\n"
-                             "C:\\MyData\\Project_home\\cpp\\TestForError\\main.cpp(3,10): error: expected ';' after return statement\n"
-                             "return 0",
-                             FilePath::fromUserInput("C:\\MyData\\Project_home\\cpp\\TestForError\\main.cpp"),
-                             3)}
+            << Tasks{CompileTask(Task::Error, "expected ';' after return statement\nreturn 0",
+                                 FilePath::fromUserInput("C:\\MyData\\Project_home\\cpp\\TestForError\\main.cpp"),
+                                 3)}
             << "";
 }
 
-void ProjectExplorerTest::testClangClOutputParsers()
+void ProjectExplorerPlugin::testClangClOutputParsers()
 {
     OutputParserTester testbench;
     testbench.addLineParser(new ClangClParser);
@@ -680,6 +731,6 @@ void ProjectExplorerTest::testClangClOutputParsers()
                           outputLines);
 }
 
-} // ProjectExplorer::Internal
+} // namespace ProjectExplorer
 
 #endif // WITH_TEST

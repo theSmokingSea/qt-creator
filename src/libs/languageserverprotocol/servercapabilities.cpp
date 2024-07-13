@@ -1,18 +1,39 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "servercapabilities.h"
 
 namespace LanguageServerProtocol {
 
-std::optional<ServerCapabilities::TextDocumentSync> ServerCapabilities::textDocumentSync() const
+Utils::optional<ServerCapabilities::TextDocumentSync> ServerCapabilities::textDocumentSync() const
 {
     const QJsonValue &sync = value(textDocumentSyncKey);
     if (sync.isUndefined())
-        return std::nullopt;
-    return std::make_optional(sync.isDouble()
-                                  ? TextDocumentSync(sync.toInt())
-                                  : TextDocumentSync(TextDocumentSyncOptions(sync.toObject())));
+        return Utils::nullopt;
+    return Utils::make_optional(sync.isDouble() ? TextDocumentSync(sync.toInt())
+                                                : TextDocumentSync(TextDocumentSyncOptions(sync.toObject())));
 }
 
 void ServerCapabilities::setTextDocumentSync(const ServerCapabilities::TextDocumentSync &textDocumentSync)
@@ -22,148 +43,128 @@ void ServerCapabilities::setTextDocumentSync(const ServerCapabilities::TextDocum
 
 TextDocumentSyncKind ServerCapabilities::textDocumentSyncKindHelper()
 {
-    if (std::optional<TextDocumentSync> sync = textDocumentSync()) {
-        if (auto kind = std::get_if<int>(&*sync))
+    if (Utils::optional<TextDocumentSync> sync = textDocumentSync()) {
+        if (auto kind = Utils::get_if<int>(&*sync))
             return static_cast<TextDocumentSyncKind>(*kind);
-        if (auto options = std::get_if<TextDocumentSyncOptions>(&*sync)) {
-            if (const std::optional<int> &change = options->change())
+        if (auto options = Utils::get_if<TextDocumentSyncOptions>(&*sync)) {
+            if (const Utils::optional<int> &change = options->change())
                 return static_cast<TextDocumentSyncKind>(*change);
         }
     }
     return TextDocumentSyncKind::None;
 }
 
-std::optional<std::variant<bool, WorkDoneProgressOptions>> ServerCapabilities::hoverProvider()
+Utils::optional<Utils::variant<bool, WorkDoneProgressOptions>> ServerCapabilities::hoverProvider()
     const
 {
-    using RetType = std::variant<bool, WorkDoneProgressOptions>;
+    using RetType = Utils::variant<bool, WorkDoneProgressOptions>;
     const QJsonValue &provider = value(hoverProviderKey);
     if (provider.isBool())
-        return std::make_optional(RetType(provider.toBool()));
+        return Utils::make_optional(RetType(provider.toBool()));
     if (provider.isObject())
-        return std::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
-    return std::nullopt;
+        return Utils::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
+    return Utils::nullopt;
 }
 
 void ServerCapabilities::setHoverProvider(
-    const std::variant<bool, WorkDoneProgressOptions> &hoverProvider)
+    const Utils::variant<bool, WorkDoneProgressOptions> &hoverProvider)
 {
     insertVariant<bool, WorkDoneProgressOptions>(hoverProviderKey, hoverProvider);
 }
 
-std::optional<std::variant<bool, ServerCapabilities::RegistrationOptions>>
-ServerCapabilities::definitionProvider() const
-{
-    using RetType = std::variant<bool, ServerCapabilities::RegistrationOptions>;
-    const QJsonValue &provider = value(definitionProviderKey);
-    if (provider.isUndefined() || !(provider.isBool() || provider.isObject()))
-        return std::nullopt;
-    return std::make_optional(provider.isBool()
-                                  ? RetType(provider.toBool())
-                                  : RetType(RegistrationOptions(provider.toObject())));
-}
-
-void ServerCapabilities::setDefinitionProvider(
-    const std::variant<bool, RegistrationOptions> &definitionProvider)
-{
-    insertVariant<bool, RegistrationOptions>(definitionProviderKey, definitionProvider);
-}
-
-std::optional<std::variant<bool, ServerCapabilities::RegistrationOptions>>
+Utils::optional<Utils::variant<bool, ServerCapabilities::RegistrationOptions>>
 ServerCapabilities::typeDefinitionProvider() const
 {
-    using RetType = std::variant<bool, ServerCapabilities::RegistrationOptions>;
+    using RetType = Utils::variant<bool, ServerCapabilities::RegistrationOptions>;
     const QJsonValue &provider = value(typeDefinitionProviderKey);
     if (provider.isUndefined() || !(provider.isBool() || provider.isObject()))
-        return std::nullopt;
-    return std::make_optional(provider.isBool()
-                                  ? RetType(provider.toBool())
-                                  : RetType(RegistrationOptions(provider.toObject())));
+        return Utils::nullopt;
+    return Utils::make_optional(provider.isBool() ? RetType(provider.toBool())
+                                                  : RetType(RegistrationOptions(provider.toObject())));
 }
 
 void ServerCapabilities::setTypeDefinitionProvider(
-        const std::variant<bool, ServerCapabilities::RegistrationOptions> &typeDefinitionProvider)
+        const Utils::variant<bool, ServerCapabilities::RegistrationOptions> &typeDefinitionProvider)
 {
     insertVariant<bool, ServerCapabilities::RegistrationOptions>(typeDefinitionProviderKey,
                                                                  typeDefinitionProvider);
 }
 
-std::optional<std::variant<bool, ServerCapabilities::RegistrationOptions>>
+Utils::optional<Utils::variant<bool, ServerCapabilities::RegistrationOptions>>
 ServerCapabilities::implementationProvider() const
 {
-    using RetType = std::variant<bool, ServerCapabilities::RegistrationOptions>;
+    using RetType = Utils::variant<bool, ServerCapabilities::RegistrationOptions>;
     const QJsonValue &provider = value(implementationProviderKey);
     if (provider.isUndefined() || !(provider.isBool() || provider.isObject()))
-        return std::nullopt;
-    return std::make_optional(provider.isBool()
-                                  ? RetType(provider.toBool())
-                                  : RetType(RegistrationOptions(provider.toObject())));
+        return Utils::nullopt;
+    return Utils::make_optional(provider.isBool() ? RetType(provider.toBool())
+                                                  : RetType(RegistrationOptions(provider.toObject())));
 }
 
 void ServerCapabilities::setImplementationProvider(
-        const std::variant<bool, ServerCapabilities::RegistrationOptions> &implementationProvider)
+        const Utils::variant<bool, ServerCapabilities::RegistrationOptions> &implementationProvider)
 {
     insertVariant<bool, RegistrationOptions>(implementationProviderKey, implementationProvider);
 }
 
-std::optional<std::variant<bool, WorkDoneProgressOptions>>
+Utils::optional<Utils::variant<bool, WorkDoneProgressOptions>>
 ServerCapabilities::referencesProvider() const
 {
-    using RetType = std::variant<bool, WorkDoneProgressOptions>;
+    using RetType = Utils::variant<bool, WorkDoneProgressOptions>;
     const QJsonValue &provider = value(referencesProviderKey);
     if (provider.isBool())
-        return std::make_optional(RetType(provider.toBool()));
+        return Utils::make_optional(RetType(provider.toBool()));
     if (provider.isObject())
-        return std::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
-    return std::nullopt;
+        return Utils::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
+    return Utils::nullopt;
 }
 
 void ServerCapabilities::setReferencesProvider(
-    const std::variant<bool, WorkDoneProgressOptions> &referencesProvider)
+    const Utils::variant<bool, WorkDoneProgressOptions> &referencesProvider)
 {
     insertVariant<bool, WorkDoneProgressOptions>(referencesProviderKey,
                                                  referencesProvider);
 }
 
-std::optional<std::variant<bool, WorkDoneProgressOptions>>
+Utils::optional<Utils::variant<bool, WorkDoneProgressOptions>>
 ServerCapabilities::documentHighlightProvider() const
 {
-    using RetType = std::variant<bool, WorkDoneProgressOptions>;
+    using RetType = Utils::variant<bool, WorkDoneProgressOptions>;
     const QJsonValue &provider = value(documentHighlightProviderKey);
     if (provider.isBool())
-        return std::make_optional(RetType(provider.toBool()));
+        return Utils::make_optional(RetType(provider.toBool()));
     if (provider.isObject())
-        return std::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
-    return std::nullopt;
+        return Utils::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
+    return Utils::nullopt;
 }
 
 void ServerCapabilities::setDocumentHighlightProvider(
-    const std::variant<bool, WorkDoneProgressOptions> &documentHighlightProvider)
+    const Utils::variant<bool, WorkDoneProgressOptions> &documentHighlightProvider)
 {
     insertVariant<bool, WorkDoneProgressOptions>(documentHighlightProviderKey,
                                                  documentHighlightProvider);
 }
 
-std::optional<std::variant<bool, WorkDoneProgressOptions>>
+Utils::optional<Utils::variant<bool, WorkDoneProgressOptions>>
 ServerCapabilities::documentSymbolProvider() const
 {
-    using RetType = std::variant<bool, WorkDoneProgressOptions>;
+    using RetType = Utils::variant<bool, WorkDoneProgressOptions>;
     const QJsonValue &provider = value(documentSymbolProviderKey);
     if (provider.isBool())
-        return std::make_optional(RetType(provider.toBool()));
+        return Utils::make_optional(RetType(provider.toBool()));
     if (provider.isObject())
-        return std::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
-    return std::nullopt;
+        return Utils::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
+    return Utils::nullopt;
 }
 
 void ServerCapabilities::setDocumentSymbolProvider(
-    std::variant<bool, WorkDoneProgressOptions> documentSymbolProvider)
+    Utils::variant<bool, WorkDoneProgressOptions> documentSymbolProvider)
 {
     insertVariant<bool, WorkDoneProgressOptions>(documentSymbolProviderKey,
                                                  documentSymbolProvider);
 }
 
-std::optional<SemanticTokensOptions> ServerCapabilities::semanticTokensProvider() const
+Utils::optional<SemanticTokensOptions> ServerCapabilities::semanticTokensProvider() const
 {
     return optionalValue<SemanticTokensOptions>(semanticTokensProviderKey);
 }
@@ -174,165 +175,121 @@ void ServerCapabilities::setSemanticTokensProvider(
     insert(semanticTokensProviderKey, semanticTokensProvider);
 }
 
-std::optional<std::variant<bool, WorkDoneProgressOptions> >
-ServerCapabilities::callHierarchyProvider() const
-{
-    const QJsonValue &provider = value(callHierarchyProviderKey);
-    if (provider.isBool())
-        return provider.toBool();
-    else if (provider.isObject())
-        return WorkDoneProgressOptions(provider.toObject());
-    return std::nullopt;
-}
-
-void ServerCapabilities::setCallHierarchyProvider(
-    const std::variant<bool, WorkDoneProgressOptions> &callHierarchyProvider)
-{
-    QJsonValue val;
-    if (const auto boolvalue = std::get_if<bool>(&callHierarchyProvider))
-        val = *boolvalue;
-    else if (const auto options = std::get_if<WorkDoneProgressOptions>(&callHierarchyProvider))
-        val = QJsonObject(*options);
-    insert(callHierarchyProviderKey, val);
-}
-
-std::optional<std::variant<bool, WorkDoneProgressOptions>> ServerCapabilities::typeHierarchyProvider()
-    const
-{
-    const QJsonValue &provider = value(typeHierarchyProviderKey);
-    if (provider.isBool())
-        return provider.toBool();
-    else if (provider.isObject())
-        return WorkDoneProgressOptions(provider.toObject());
-    return std::nullopt;
-}
-
-void ServerCapabilities::setTypeHierarchyProvider(
-    const std::variant<bool, WorkDoneProgressOptions> &typeHierarchyProvider)
-{
-    QJsonValue val;
-    if (const auto boolvalue = std::get_if<bool>(&typeHierarchyProvider))
-        val = *boolvalue;
-    else if (const auto options = std::get_if<WorkDoneProgressOptions>(&typeHierarchyProvider))
-        val = QJsonObject(*options);
-    insert(typeHierarchyProviderKey, val);
-}
-
-std::optional<std::variant<bool, WorkDoneProgressOptions>>
+Utils::optional<Utils::variant<bool, WorkDoneProgressOptions>>
 ServerCapabilities::workspaceSymbolProvider() const
 {
-    using RetType = std::variant<bool, WorkDoneProgressOptions>;
+    using RetType = Utils::variant<bool, WorkDoneProgressOptions>;
     const QJsonValue &provider = value(workspaceSymbolProviderKey);
     if (provider.isBool())
-        return std::make_optional(RetType(provider.toBool()));
+        return Utils::make_optional(RetType(provider.toBool()));
     if (provider.isObject())
-        return std::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
-    return std::nullopt;
+        return Utils::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
+    return Utils::nullopt;
 }
 
 void ServerCapabilities::setWorkspaceSymbolProvider(
-    std::variant<bool, WorkDoneProgressOptions> workspaceSymbolProvider)
+    Utils::variant<bool, WorkDoneProgressOptions> workspaceSymbolProvider)
 {
     insertVariant<bool, WorkDoneProgressOptions>(workspaceSymbolProviderKey,
                                                  workspaceSymbolProvider);
 }
 
-std::optional<std::variant<bool, CodeActionOptions>> ServerCapabilities::codeActionProvider() const
+Utils::optional<Utils::variant<bool, CodeActionOptions>> ServerCapabilities::codeActionProvider() const
 {
     const QJsonValue &provider = value(codeActionProviderKey);
     if (provider.isBool())
-        return std::make_optional(std::variant<bool, CodeActionOptions>(provider.toBool()));
+        return Utils::make_optional(Utils::variant<bool, CodeActionOptions>(provider.toBool()));
     if (provider.isObject()) {
         CodeActionOptions options(provider);
         if (options.isValid())
-            return std::make_optional(std::variant<bool, CodeActionOptions>(options));
+            return Utils::make_optional(Utils::variant<bool, CodeActionOptions>(options));
     }
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
-std::optional<std::variant<bool, WorkDoneProgressOptions>>
+Utils::optional<Utils::variant<bool, WorkDoneProgressOptions>>
 ServerCapabilities::documentFormattingProvider() const
 {
-    using RetType = std::variant<bool, WorkDoneProgressOptions>;
+    using RetType = Utils::variant<bool, WorkDoneProgressOptions>;
     const QJsonValue &provider = value(documentFormattingProviderKey);
     if (provider.isBool())
-        return std::make_optional(RetType(provider.toBool()));
+        return Utils::make_optional(RetType(provider.toBool()));
     if (provider.isObject())
-        return std::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
-    return std::nullopt;
+        return Utils::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
+    return Utils::nullopt;
 }
 
 void ServerCapabilities::setDocumentFormattingProvider(
-    const std::variant<bool, WorkDoneProgressOptions> &documentFormattingProvider)
+    const Utils::variant<bool, WorkDoneProgressOptions> &documentFormattingProvider)
 {
     insertVariant<bool, WorkDoneProgressOptions>(documentFormattingProviderKey,
                                                  documentFormattingProvider);
 }
 
-std::optional<std::variant<bool, WorkDoneProgressOptions>>
+Utils::optional<Utils::variant<bool, WorkDoneProgressOptions>>
 ServerCapabilities::documentRangeFormattingProvider() const
 {
-    using RetType = std::variant<bool, WorkDoneProgressOptions>;
+    using RetType = Utils::variant<bool, WorkDoneProgressOptions>;
     const QJsonValue &provider = value(documentRangeFormattingProviderKey);
     if (provider.isBool())
-        return std::make_optional(RetType(provider.toBool()));
+        return Utils::make_optional(RetType(provider.toBool()));
     if (provider.isObject())
-        return std::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
-    return std::nullopt;
+        return Utils::make_optional(RetType(WorkDoneProgressOptions(provider.toObject())));
+    return Utils::nullopt;
 }
 
 void ServerCapabilities::setDocumentRangeFormattingProvider(
-    std::variant<bool, WorkDoneProgressOptions> documentRangeFormattingProvider)
+    Utils::variant<bool, WorkDoneProgressOptions> documentRangeFormattingProvider)
 {
     insertVariant<bool, WorkDoneProgressOptions>(documentRangeFormattingProviderKey,
                                                  documentRangeFormattingProvider);
 }
 
-std::optional<std::variant<ServerCapabilities::RenameOptions, bool>> ServerCapabilities::renameProvider() const
+Utils::optional<Utils::variant<ServerCapabilities::RenameOptions, bool>> ServerCapabilities::renameProvider() const
 {
-    using RetType = std::variant<ServerCapabilities::RenameOptions, bool>;
+    using RetType = Utils::variant<ServerCapabilities::RenameOptions, bool>;
     const QJsonValue &localValue = value(renameProviderKey);
     if (localValue.isBool())
         return RetType(localValue.toBool());
     if (localValue.isObject())
         return RetType(RenameOptions(localValue.toObject()));
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
-void ServerCapabilities::setRenameProvider(std::variant<ServerCapabilities::RenameOptions, bool> renameProvider)
+void ServerCapabilities::setRenameProvider(Utils::variant<ServerCapabilities::RenameOptions, bool> renameProvider)
 {
     insertVariant<RenameOptions, bool>(renameProviderKey, renameProvider);
 }
 
-std::optional<std::variant<bool, JsonObject>> ServerCapabilities::colorProvider() const
+Utils::optional<Utils::variant<bool, JsonObject>> ServerCapabilities::colorProvider() const
 {
-    using RetType = std::variant<bool, JsonObject>;
+    using RetType = Utils::variant<bool, JsonObject>;
     const QJsonValue &localValue = value(colorProviderKey);
     if (localValue.isBool())
         return RetType(localValue.toBool());
     if (localValue.isObject())
         return RetType(JsonObject(localValue.toObject()));
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
-void ServerCapabilities::setColorProvider(std::variant<bool, JsonObject> colorProvider)
+void ServerCapabilities::setColorProvider(Utils::variant<bool, JsonObject> colorProvider)
 {
     insertVariant<bool, JsonObject>(renameProviderKey, colorProvider);
 }
 
-std::optional<std::variant<QString, bool> >
+Utils::optional<Utils::variant<QString, bool> >
 ServerCapabilities::WorkspaceServerCapabilities::WorkspaceFoldersCapabilities::changeNotifications() const
 {
-    using RetType = std::variant<QString, bool>;
+    using RetType = Utils::variant<QString, bool>;
     const QJsonValue &change = value(changeNotificationsKey);
     if (change.isUndefined())
-        return std::nullopt;
-    return std::make_optional(change.isBool() ? RetType(change.toBool())
-                                              : RetType(change.toString()));
+        return Utils::nullopt;
+    return Utils::make_optional(change.isBool() ? RetType(change.toBool())
+                                                : RetType(change.toString()));
 }
 
 void ServerCapabilities::WorkspaceServerCapabilities::WorkspaceFoldersCapabilities::setChangeNotifications(
-        std::variant<QString, bool> changeNotifications)
+        Utils::variant<QString, bool> changeNotifications)
 {
     insertVariant<QString, bool>(changeNotificationsKey, changeNotifications);
 }
@@ -358,36 +315,36 @@ bool CodeActionOptions::isValid() const
     return WorkDoneProgressOptions::isValid() && contains(codeActionKindsKey);
 }
 
-std::optional<std::variant<bool, QJsonObject>> SemanticTokensOptions::range() const
+Utils::optional<Utils::variant<bool, QJsonObject>> SemanticTokensOptions::range() const
 {
-    using RetType = std::variant<bool, QJsonObject>;
+    using RetType = Utils::variant<bool, QJsonObject>;
     const QJsonValue &rangeOptions = value(rangeKey);
     if (rangeOptions.isBool())
         return RetType(rangeOptions.toBool());
     if (rangeOptions.isObject())
         return RetType(rangeOptions.toObject());
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
-void SemanticTokensOptions::setRange(const std::variant<bool, QJsonObject> &range)
+void SemanticTokensOptions::setRange(const Utils::variant<bool, QJsonObject> &range)
 {
     insertVariant<bool, QJsonObject>(rangeKey, range);
 }
 
-std::optional<std::variant<bool, SemanticTokensOptions::FullSemanticTokenOptions>>
+Utils::optional<Utils::variant<bool, SemanticTokensOptions::FullSemanticTokenOptions>>
 SemanticTokensOptions::full() const
 {
-    using RetType = std::variant<bool, SemanticTokensOptions::FullSemanticTokenOptions>;
+    using RetType = Utils::variant<bool, SemanticTokensOptions::FullSemanticTokenOptions>;
     const QJsonValue &fullOptions = value(fullKey);
     if (fullOptions.isBool())
         return RetType(fullOptions.toBool());
     if (fullOptions.isObject())
         return RetType(FullSemanticTokenOptions(fullOptions.toObject()));
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
 void SemanticTokensOptions::setFull(
-    const std::variant<bool, SemanticTokensOptions::FullSemanticTokenOptions> &full)
+    const Utils::variant<bool, SemanticTokensOptions::FullSemanticTokenOptions> &full)
 {
     insertVariant<bool, FullSemanticTokenOptions>(fullKey, full);
 }

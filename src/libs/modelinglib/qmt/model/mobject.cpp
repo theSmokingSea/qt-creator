@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "mobject.h"
 
@@ -7,8 +29,6 @@
 
 #include "mvisitor.h"
 #include "mconstvisitor.h"
-
-using Utils::FilePath;
 
 namespace qmt {
 
@@ -22,7 +42,6 @@ MObject::MObject()
 MObject::MObject(const MObject &rhs)
     : MElement(rhs),
       m_name(rhs.m_name),
-      m_linkedfilename(rhs.m_linkedfilename),
       m_children(true),
       m_relations(true)
 {
@@ -37,7 +56,6 @@ MObject &MObject::operator =(const MObject &rhs)
     if (this != &rhs) {
         MElement::operator=(rhs);
         m_name = rhs.m_name;
-        m_linkedfilename = rhs.m_linkedfilename;
         // no deep copy; list of children remains unchanged
     }
     return *this;
@@ -48,15 +66,10 @@ void MObject::setName(const QString &name)
     m_name = name;
 }
 
-void MObject::setLinkedFileName(const FilePath &linkedfilename)
-{
-    m_linkedfilename = linkedfilename;
-}
-
 void MObject::setChildren(const Handles<MObject> &children)
 {
     m_children = children;
-    for (const Handle<MObject> &handle : children) {
+    foreach (const Handle<MObject> &handle, children) {
         if (handle.hasTarget())
             handle.target()->setOwner(this);
     }
@@ -125,7 +138,7 @@ void MObject::decontrolChild(MObject *child)
 void MObject::setRelations(const Handles<MRelation> &relations)
 {
     m_relations = relations;
-    for (const Handle<MRelation> &handle : relations) {
+    foreach (const Handle<MRelation> &handle, relations) {
         if (handle.hasTarget())
             handle.target()->setOwner(this);
     }

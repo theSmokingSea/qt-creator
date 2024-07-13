@@ -1,17 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cpplocalsymbols.h"
 
 #include "cppsemanticinfo.h"
-#include "cpptoolsreuse.h"
 #include "semantichighlighter.h"
-
-#include <cplusplus/declarationcomments.h>
-#include <cplusplus/Overview.h>
-#include <utils/textutils.h>
-
-#include <QTextDocument>
 
 using namespace CPlusPlus;
 
@@ -22,8 +37,8 @@ namespace {
 class FindLocalSymbols: protected ASTVisitor
 {
 public:
-    explicit FindLocalSymbols(Document::Ptr doc, const QString &content)
-        : ASTVisitor(doc->translationUnit()), _doc(doc), _content(content)
+    explicit FindLocalSymbols(Document::Ptr doc)
+        : ASTVisitor(doc->translationUnit())
     { }
 
     // local and external uses.
@@ -43,37 +58,6 @@ public:
         } else if (ObjCMethodDeclarationAST *decl = ast->asObjCMethodDeclaration()) {
             if (decl->method_prototype->symbol) {
                 accept(ast);
-            }
-        }
-
-        if (localUses.isEmpty())
-            return;
-
-        // Look for parameter occurrences in function comments.
-        if (_content.isEmpty())
-            return;
-        QTextDocument textDoc(_content);
-        const QStringView docView(_content);
-        for (auto it = localUses.begin(); it != localUses.end(); ++it) {
-            Symbol * const symbol = it.key();
-            if (!symbol->asArgument())
-                continue;
-            const QList<Token> commentTokens = commentsForDeclaration(symbol, ast, textDoc, _doc);
-            if (commentTokens.isEmpty())
-                continue;
-            const QString symbolName = Overview().prettyName(symbol->name());
-            for (const Token &tok : commentTokens) {
-                const int commentPos = translationUnit()->getTokenPositionInDocument(tok, &textDoc);
-                const int commentEndPos = translationUnit()->getTokenEndPositionInDocument(
-                    tok, &textDoc);
-                const QStringView commentView = docView.mid(commentPos, commentEndPos - commentPos);
-                const QList<Utils::Text::Range> ranges = symbolOccurrencesInText(
-                    textDoc, commentView, commentPos, symbolName);
-                for (const Utils::Text::Range &range : ranges) {
-                    it.value().append(HighlightingResult(range.begin.line, range.begin.column + 1,
-                                                         symbolName.size(),
-                                                         SemanticHighlighter::LocalUse));
-                }
             }
         }
     }
@@ -313,16 +297,14 @@ protected:
 
 private:
     QList<Scope *> _scopeStack;
-    Document::Ptr _doc;
-    const QString _content;
 };
 
 } // end of anonymous namespace
 
 
-LocalSymbols::LocalSymbols(Document::Ptr doc, const QString &content, DeclarationAST *ast)
+LocalSymbols::LocalSymbols(Document::Ptr doc, DeclarationAST *ast)
 {
-    FindLocalSymbols findLocalSymbols(doc, content);
+    FindLocalSymbols findLocalSymbols(doc);
     findLocalSymbols(ast);
     uses = findLocalSymbols.localUses;
 }

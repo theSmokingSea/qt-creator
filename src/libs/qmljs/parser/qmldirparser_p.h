@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -102,11 +124,9 @@ public:
     struct Import
     {
         enum Flag {
-            Default = 0x0,
-            Auto = 0x1,     // forward the version of the importing module
-            Optional = 0x2, // is not automatically imported but only a tooling hint
-            OptionalDefault
-            = 0x4, // tooling hint only, denotes this entry should be imported by tooling
+            Default  = 0x0,
+            Auto     = 0x1, // forward the version of the importing module
+            Optional = 0x2  // is not automatically imported but only a tooling hint
         };
         Q_DECLARE_FLAGS(Flags, Flag)
 
@@ -119,11 +139,6 @@ public:
         QString module;
         LanguageUtils::ComponentVersion version;     // invalid version is latest version, unless Flag::Auto
         Flags flags;
-
-        friend bool operator==(const Import &a, const Import &b)
-        {
-            return a.module == b.module && a.version == b.version && a.flags == b.flags;
-        }
     };
 
     QMultiHash<QString,Component> components() const { return _components; }
@@ -132,8 +147,6 @@ public:
     QList<Script> scripts() const { return _scripts; }
     QList<Plugin> plugins() const { return _plugins; }
     bool designerSupported() const { return _designerSupported; }
-    bool isStaticModule() const { return _isStaticModule; }
-    bool isSystemModule() const { return _isSystemModule; }
 
     QStringList typeInfos() const { return _typeInfos; }
     QStringList classNames() const { return _classNames; }
@@ -154,8 +167,6 @@ private:
     QList<Script> _scripts;
     QList<Plugin> _plugins;
     bool _designerSupported = false;
-    bool _isStaticModule = false;
-    bool _isSystemModule = false;
     QStringList _typeInfos;
     QStringList _classNames;
     QString _linkTarget;

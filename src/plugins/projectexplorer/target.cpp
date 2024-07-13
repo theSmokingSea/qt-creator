@@ -1,6 +1,29 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
+#include "projectconfigurationmodel.h"
 #include "target.h"
 
 #include "buildconfiguration.h"
@@ -11,19 +34,18 @@
 #include "deployconfiguration.h"
 #include "deploymentdata.h"
 #include "devicesupport/devicemanager.h"
+#include "environmentaspect.h"
 #include "kit.h"
-#include "kitaspects.h"
+#include "kitinformation.h"
 #include "kitmanager.h"
 #include "miniprojecttargetselector.h"
 #include "project.h"
-#include "projectconfigurationmodel.h"
 #include "projectexplorer.h"
-#include "projectexplorerconstants.h"
 #include "projectexplorericons.h"
 #include "projectexplorersettings.h"
-#include "projectexplorertr.h"
-#include "projectmanager.h"
 #include "runconfiguration.h"
+#include "runconfigurationaspects.h"
+#include "session.h"
 
 #include <coreplugin/coreconstants.h>
 
@@ -92,7 +114,7 @@ public:
     DeployConfiguration *m_activeDeployConfiguration = nullptr;
     QList<RunConfiguration *> m_runConfigurations;
     RunConfiguration* m_activeRunConfiguration = nullptr;
-    Store m_pluginSettings;
+    QVariantMap m_pluginSettings;
 
     Kit *const m_kit;
     MacroExpander m_macroExpander;
@@ -121,10 +143,10 @@ Target::Target(Project *project, Kit *k, _constructor_tag) :
     });
 
     connect(this, &Target::parsingFinished, this, [this, project](bool success) {
-        if (success && this == ProjectManager::startupTarget())
+        if (success && this == SessionManager::startupTarget())
             updateDefaultRunConfigurations();
         // For testing.
-        emit ProjectManager::instance()->projectFinishedParsing(project);
+        emit SessionManager::instance()->projectFinishedParsing(project);
         emit project->anyParsingFinished(this, success);
     }, Qt::QueuedConnection); // Must wait for run configs to change their enabled state.
 
@@ -132,22 +154,59 @@ Target::Target(Project *project, Kit *k, _constructor_tag) :
     connect(km, &KitManager::kitUpdated, this, &Target::handleKitUpdates);
     connect(km, &KitManager::kitRemoved, this, &Target::handleKitRemoval);
 
-    d->m_macroExpander.setDisplayName(Tr::tr("Target Settings"));
+    d->m_macroExpander.setDisplayName(tr("Target Settings"));
     d->m_macroExpander.setAccumulating(true);
 
     d->m_macroExpander.registerSubProvider([this] { return kit()->macroExpander(); });
 
-    d->m_macroExpander.registerVariable("sourceDir", Tr::tr("Source directory"),
+    d->m_macroExpander.registerVariable("sourceDir", tr("Source directory"),
             [project] { return project->projectDirectory().toUserOutput(); });
-    d->m_macroExpander.registerVariable("BuildSystem:Name", Tr::tr("Build system"), [this] {
+    d->m_macroExpander.registerVariable("BuildSystem:Name", tr("Build system"), [this] {
         if (const BuildSystem * const bs = buildSystem())
             return bs->name();
         return QString();
     });
 
+    // TODO: Remove in ~4.16.
+    d->m_macroExpander.registerVariable(Constants::VAR_CURRENTPROJECT_NAME,
+            QCoreApplication::translate("ProjectExplorer", "Name of current project"),
+            [project] { return project->displayName(); },
+            false);
     d->m_macroExpander.registerVariable("Project:Name",
-            Tr::tr("Name of current project"),
+            QCoreApplication::translate("ProjectExplorer", "Name of current project"),
             [project] { return project->displayName(); });
+
+    d->m_macroExpander.registerVariable("CurrentRun:Name",
+        tr("The currently active run configuration's name."),
+        [this]() -> QString {
+            if (RunConfiguration * const rc = activeRunConfiguration())
+                return rc->displayName();
+            return QString();
+        }, false);
+    d->m_macroExpander.registerFileVariables("CurrentRun:Executable",
+        tr("The currently active run configuration's executable (if applicable)."),
+        [this]() -> FilePath {
+            if (RunConfiguration * const rc = activeRunConfiguration())
+                return rc->commandLine().executable();
+            return FilePath();
+        }, false);
+    d->m_macroExpander.registerPrefix("CurrentRun:Env", tr("Variables in the current run environment."),
+                             [this](const QString &var) {
+        if (RunConfiguration * const rc = activeRunConfiguration()) {
+            if (const auto envAspect = rc->aspect<EnvironmentAspect>())
+                return envAspect->environment().expandedValueForKey(var);
+        }
+        return QString();
+    }, false);
+    d->m_macroExpander.registerVariable("CurrentRun:WorkingDir",
+                               tr("The currently active run configuration's working directory."),
+                               [this] {
+        if (RunConfiguration * const rc = activeRunConfiguration()) {
+            if (const auto wdAspect = rc->aspect<WorkingDirectoryAspect>())
+                return wdAspect->workingDirectory().toString();
+        }
+        return QString();
+    }, false);
 }
 
 Target::~Target()
@@ -243,70 +302,6 @@ QString Target::activeBuildKey() const
     return d->m_activeRunConfiguration->buildKey();
 }
 
-void Target::setActiveBuildConfiguration(BuildConfiguration *bc, SetActive cascade)
-{
-    QTC_ASSERT(project(), return);
-
-    if (project()->isShuttingDown() || isShuttingDown())
-        return;
-
-    setActiveBuildConfiguration(bc);
-
-    if (!bc)
-        return;
-    if (cascade != SetActive::Cascade || !ProjectManager::isProjectConfigurationCascading())
-        return;
-
-    Id kitId = kit()->id();
-    QString name = bc->displayName(); // We match on displayname
-    for (Project *otherProject : ProjectManager::projects()) {
-        if (otherProject == project())
-            continue;
-        Target *otherTarget = otherProject->activeTarget();
-        if (!otherTarget || otherTarget->kit()->id() != kitId)
-            continue;
-
-        for (BuildConfiguration *otherBc : otherTarget->buildConfigurations()) {
-            if (otherBc->displayName() == name) {
-                otherTarget->setActiveBuildConfiguration(otherBc);
-                break;
-            }
-        }
-    }
-}
-
-void Target::setActiveDeployConfiguration(DeployConfiguration *dc, SetActive cascade)
-{
-    QTC_ASSERT(project(), return);
-
-    if (project()->isShuttingDown() || isShuttingDown())
-        return;
-
-    setActiveDeployConfiguration(dc);
-
-    if (!dc)
-        return;
-    if (cascade != SetActive::Cascade || !ProjectManager::isProjectConfigurationCascading())
-        return;
-
-    Id kitId = kit()->id();
-    QString name = dc->displayName(); // We match on displayname
-    for (Project *otherProject : ProjectManager::projects()) {
-        if (otherProject == project())
-            continue;
-        Target *otherTarget = otherProject->activeTarget();
-        if (!otherTarget || otherTarget->kit()->id() != kitId)
-            continue;
-
-        for (DeployConfiguration *otherDc : otherTarget->deployConfigurations()) {
-            if (otherDc->displayName() == name) {
-                otherTarget->setActiveDeployConfiguration(otherDc);
-                break;
-            }
-        }
-    }
-}
-
 Utils::Id Target::id() const
 {
     return d->m_kit->id();
@@ -322,14 +317,14 @@ QString Target::toolTip() const
     return d->m_kit->toHtml();
 }
 
-Key Target::displayNameKey()
+QString Target::displayNameKey()
 {
-    return "ProjectExplorer.ProjectConfiguration.DisplayName";
+    return QString("ProjectExplorer.ProjectConfiguration.DisplayName");
 }
 
-Key Target::deviceTypeKey()
+QString Target::deviceTypeKey()
 {
-    return "DeviceType";
+    return QString("DeviceType");
 }
 
 void Target::addBuildConfiguration(BuildConfiguration *bc)
@@ -372,9 +367,9 @@ bool Target::removeBuildConfiguration(BuildConfiguration *bc)
 
     if (activeBuildConfiguration() == bc) {
         if (d->m_buildConfigurations.isEmpty())
-            setActiveBuildConfiguration(nullptr, SetActive::Cascade);
+            SessionManager::setActiveBuildConfiguration(this, nullptr, SetActive::Cascade);
         else
-            setActiveBuildConfiguration(d->m_buildConfigurations.at(0), SetActive::Cascade);
+            SessionManager::setActiveBuildConfiguration(this, d->m_buildConfigurations.at(0), SetActive::Cascade);
     }
 
     emit removedBuildConfiguration(bc);
@@ -442,9 +437,10 @@ bool Target::removeDeployConfiguration(DeployConfiguration *dc)
 
     if (activeDeployConfiguration() == dc) {
         if (d->m_deployConfigurations.isEmpty())
-            setActiveDeployConfiguration(nullptr, SetActive::Cascade);
+            SessionManager::setActiveDeployConfiguration(this, nullptr, SetActive::Cascade);
         else
-            setActiveDeployConfiguration(d->m_deployConfigurations.at(0), SetActive::Cascade);
+            SessionManager::setActiveDeployConfiguration(this, d->m_deployConfigurations.at(0),
+                                                         SetActive::Cascade);
     }
 
     ProjectExplorerPlugin::targetSelector()->removedDeployConfiguration(dc);
@@ -526,20 +522,6 @@ void Target::removeRunConfiguration(RunConfiguration *rc)
     delete rc;
 }
 
-void Target::removeAllRunConfigurations()
-{
-    QList<RunConfiguration *> runConfigs = d->m_runConfigurations;
-    d->m_runConfigurations.clear();
-    setActiveRunConfiguration(nullptr);
-    while (!runConfigs.isEmpty()) {
-        RunConfiguration * const rc = runConfigs.takeFirst();
-        emit removedRunConfiguration(rc);
-        ProjectExplorerPlugin::targetSelector()->removedRunConfiguration(rc);
-        d->m_runConfigurationModel.removeProjectConfiguration(rc);
-        delete rc;
-    }
-}
-
 RunConfiguration *Target::activeRunConfiguration() const
 {
     return d->m_activeRunConfiguration;
@@ -579,15 +561,15 @@ void Target::setOverlayIcon(const QIcon &icon)
 QString Target::overlayIconToolTip()
 {
     IDevice::ConstPtr current = DeviceKitAspect::device(kit());
-    return current ? formatDeviceInfo(current->deviceInformation()) : QString();
+    return current.isNull() ? QString() : formatDeviceInfo(current->deviceInformation());
 }
 
-Store Target::toMap() const
+QVariantMap Target::toMap() const
 {
     if (!d->m_kit) // Kit was deleted, target is only around to be copied.
-        return {};
+        return QVariantMap();
 
-    Store map;
+    QVariantMap map;
     map.insert(displayNameKey(), displayName());
     map.insert(deviceTypeKey(), DeviceTypeKitAspect::deviceTypeId(kit()).toSetting());
 
@@ -596,39 +578,30 @@ Store Target::toMap() const
         // This is only read by older versions of Creator, but even there not actively used.
         const char CONFIGURATION_ID_KEY[] = "ProjectExplorer.ProjectConfiguration.Id";
         const char DEFAULT_DISPLAY_NAME_KEY[] = "ProjectExplorer.ProjectConfiguration.DefaultDisplayName";
-        map.insert(CONFIGURATION_ID_KEY, id().toSetting());
-        map.insert(DEFAULT_DISPLAY_NAME_KEY, displayName());
+        map.insert(QLatin1String(CONFIGURATION_ID_KEY), id().toSetting());
+        map.insert(QLatin1String(DEFAULT_DISPLAY_NAME_KEY), displayName());
     }
 
     const QList<BuildConfiguration *> bcs = buildConfigurations();
-    map.insert(ACTIVE_BC_KEY, bcs.indexOf(d->m_activeBuildConfiguration));
-    map.insert(BC_COUNT_KEY, bcs.size());
-    for (int i = 0; i < bcs.size(); ++i) {
-        Store data;
-        bcs.at(i)->toMap(data);
-        map.insert(numberedKey(BC_KEY_PREFIX, i), variantFromStore(data));
-    }
+    map.insert(QLatin1String(ACTIVE_BC_KEY), bcs.indexOf(d->m_activeBuildConfiguration));
+    map.insert(QLatin1String(BC_COUNT_KEY), bcs.size());
+    for (int i = 0; i < bcs.size(); ++i)
+        map.insert(QString::fromLatin1(BC_KEY_PREFIX) + QString::number(i), bcs.at(i)->toMap());
 
     const QList<DeployConfiguration *> dcs = deployConfigurations();
-    map.insert(ACTIVE_DC_KEY, dcs.indexOf(d->m_activeDeployConfiguration));
-    map.insert(DC_COUNT_KEY, dcs.size());
-    for (int i = 0; i < dcs.size(); ++i) {
-        Store data;
-        dcs.at(i)->toMap(data);
-        map.insert(numberedKey(DC_KEY_PREFIX, i), variantFromStore(data));
-    }
+    map.insert(QLatin1String(ACTIVE_DC_KEY), dcs.indexOf(d->m_activeDeployConfiguration));
+    map.insert(QLatin1String(DC_COUNT_KEY), dcs.size());
+    for (int i = 0; i < dcs.size(); ++i)
+        map.insert(QString::fromLatin1(DC_KEY_PREFIX) + QString::number(i), dcs.at(i)->toMap());
 
     const QList<RunConfiguration *> rcs = runConfigurations();
-    map.insert(ACTIVE_RC_KEY, rcs.indexOf(d->m_activeRunConfiguration));
-    map.insert(RC_COUNT_KEY, rcs.size());
-    for (int i = 0; i < rcs.size(); ++i) {
-        Store data;
-        rcs.at(i)->toMap(data);
-        map.insert(numberedKey(RC_KEY_PREFIX, i), variantFromStore(data));
-    }
+    map.insert(QLatin1String(ACTIVE_RC_KEY), rcs.indexOf(d->m_activeRunConfiguration));
+    map.insert(QLatin1String(RC_COUNT_KEY), rcs.size());
+    for (int i = 0; i < rcs.size(); ++i)
+        map.insert(QString::fromLatin1(RC_KEY_PREFIX) + QString::number(i), rcs.at(i)->toMap());
 
     if (!d->m_pluginSettings.isEmpty())
-        map.insert(PLUGIN_SETTINGS_KEY, variantFromStore(d->m_pluginSettings));
+        map.insert(QLatin1String(PLUGIN_SETTINGS_KEY), d->m_pluginSettings);
 
     return map;
 }
@@ -668,7 +641,7 @@ void Target::updateDefaultDeployConfigurations()
             removeDeployConfiguration(dc);
     }
 
-    for (Utils::Id id : std::as_const(toCreate)) {
+    for (Utils::Id id : qAsConst(toCreate)) {
         for (DeployConfigurationFactory *dcFactory : dcFactories) {
             if (dcFactory->creationId() == id) {
                 DeployConfiguration *dc = dcFactory->create(this);
@@ -707,7 +680,7 @@ void Target::updateDefaultRunConfigurations()
     // that produce already existing RCs
     QList<RunConfiguration *> toRemove;
     QList<RunConfigurationCreationInfo> existing;
-    for (RunConfiguration *rc : std::as_const(existingConfigured)) {
+    for (RunConfiguration *rc : qAsConst(existingConfigured)) {
         bool present = false;
         for (const RunConfigurationCreationInfo &item : creators) {
             QString buildKey = rc->buildKey();
@@ -716,13 +689,13 @@ void Target::updateDefaultRunConfigurations()
                 present = true;
             }
         }
-        if (!present && !rc->isCustomized())
+        if (!present)
             toRemove.append(rc);
     }
     configuredCount -= toRemove.count();
 
     bool removeExistingUnconfigured = false;
-    if (projectExplorerSettings().automaticallyCreateRunConfigurations) {
+    if (ProjectExplorerPlugin::projectExplorerSettings().automaticallyCreateRunConfigurations) {
         // Create new "automatic" RCs and put them into newConfigured/newUnconfigured
         for (const RunConfigurationCreationInfo &item : creators) {
             if (item.creationMode == RunConfigurationCreationInfo::ManualCreationOnly)
@@ -762,14 +735,14 @@ void Target::updateDefaultRunConfigurations()
     }
 
     // Do actual changes:
-    for (RunConfiguration *rc : std::as_const(newConfigured))
+    for (RunConfiguration *rc : qAsConst(newConfigured))
         addRunConfiguration(rc);
-    for (RunConfiguration *rc : std::as_const(newUnconfigured))
+    for (RunConfiguration *rc : qAsConst(newUnconfigured))
         addRunConfiguration(rc);
 
     // Generate complete list of RCs to remove later:
     QList<RunConfiguration *> removalList;
-    for (RunConfiguration *rc : std::as_const(toRemove)) {
+    for (RunConfiguration *rc : qAsConst(toRemove)) {
         removalList << rc;
         existingConfigured.removeOne(rc); // make sure to also remove them from existingConfigured!
     }
@@ -781,12 +754,12 @@ void Target::updateDefaultRunConfigurations()
 
     // Make sure a configured RC will be active after we delete the RCs:
     RunConfiguration *active = activeRunConfiguration();
-    if (active && (removalList.contains(active) || !active->isEnabled(Constants::NORMAL_RUN_MODE))) {
+    if (active && (removalList.contains(active) || !active->isEnabled())) {
         RunConfiguration *newConfiguredDefault = newConfigured.isEmpty() ? nullptr : newConfigured.at(0);
 
-        RunConfiguration *rc = Utils::findOrDefault(existingConfigured, [](RunConfiguration *rc) {
-            return rc->isEnabled(Constants::NORMAL_RUN_MODE);
-        });
+        RunConfiguration *rc
+                = Utils::findOrDefault(existingConfigured,
+                                       [](RunConfiguration *rc) { return rc->isEnabled(); });
         if (!rc) {
             rc = Utils::findOr(newConfigured, newConfiguredDefault,
                                Utils::equal(&RunConfiguration::displayName, project()->displayName()));
@@ -805,18 +778,16 @@ void Target::updateDefaultRunConfigurations()
     }
 
     // Remove the RCs that are no longer needed:
-    for (RunConfiguration *rc : std::as_const(removalList))
+    for (RunConfiguration *rc : qAsConst(removalList))
         removeRunConfiguration(rc);
-
-    emit runConfigurationsUpdated();
 }
 
-QVariant Target::namedSettings(const Key &name) const
+QVariant Target::namedSettings(const QString &name) const
 {
     return d->m_pluginSettings.value(name);
 }
 
-void Target::setNamedSettings(const Key &name, const QVariant &value)
+void Target::setNamedSettings(const QString &name, const QVariant &value)
 {
     if (value.isNull())
         d->m_pluginSettings.remove(name);
@@ -858,7 +829,7 @@ void Target::updateDeviceState()
 
     QIcon overlay;
     static const QIcon disconnected = Icons::DEVICE_DISCONNECTED_INDICATOR_OVERLAY.icon();
-    if (!current) {
+    if (current.isNull()) {
         overlay = disconnected;
     } else {
         switch (current->deviceState()) {
@@ -886,36 +857,25 @@ void Target::updateDeviceState()
     setOverlayIcon(overlay);
 }
 
-bool Target::fromMap(const Store &map)
+bool Target::fromMap(const QVariantMap &map)
 {
     QTC_ASSERT(d->m_kit == KitManager::kit(id()), return false);
 
-    if (!addConfigurationsFromMap(map, /*setActiveConfigurations=*/true))
-        return false;
-
-    if (map.contains(PLUGIN_SETTINGS_KEY))
-        d->m_pluginSettings = storeFromVariant(map.value(PLUGIN_SETTINGS_KEY));
-
-    return true;
-}
-
-bool Target::addConfigurationsFromMap(const Utils::Store &map, bool setActiveConfigurations)
-{
     bool ok;
-    int bcCount = map.value(BC_COUNT_KEY, 0).toInt(&ok);
+    int bcCount = map.value(QLatin1String(BC_COUNT_KEY), 0).toInt(&ok);
     if (!ok || bcCount < 0)
         bcCount = 0;
-    int activeConfiguration = map.value(ACTIVE_BC_KEY, 0).toInt(&ok);
-    if (!ok || 0 > activeConfiguration || bcCount < activeConfiguration)
+    int activeConfiguration = map.value(QLatin1String(ACTIVE_BC_KEY), 0).toInt(&ok);
+    if (!ok || activeConfiguration < 0)
         activeConfiguration = 0;
-    if (!setActiveConfigurations)
-        activeConfiguration = -1;
+    if (0 > activeConfiguration || bcCount < activeConfiguration)
+        activeConfiguration = 0;
 
     for (int i = 0; i < bcCount; ++i) {
-        const Key key = numberedKey(BC_KEY_PREFIX, i);
+        const QString key = QString::fromLatin1(BC_KEY_PREFIX) + QString::number(i);
         if (!map.contains(key))
             return false;
-        const Store valueMap = storeFromVariant(map.value(key));
+        const QVariantMap valueMap = map.value(key).toMap();
         BuildConfiguration *bc = BuildConfigurationFactory::restore(this, valueMap);
         if (!bc) {
             qWarning("No factory found to restore build configuration!");
@@ -929,20 +889,20 @@ bool Target::addConfigurationsFromMap(const Utils::Store &map, bool setActiveCon
     if (buildConfigurations().isEmpty() && BuildConfigurationFactory::find(this))
         return false;
 
-    int dcCount = map.value(DC_COUNT_KEY, 0).toInt(&ok);
+    int dcCount = map.value(QLatin1String(DC_COUNT_KEY), 0).toInt(&ok);
     if (!ok || dcCount < 0)
         dcCount = 0;
-    activeConfiguration = map.value(ACTIVE_DC_KEY, 0).toInt(&ok);
-    if (!ok || 0 > activeConfiguration || dcCount < activeConfiguration)
+    activeConfiguration = map.value(QLatin1String(ACTIVE_DC_KEY), 0).toInt(&ok);
+    if (!ok || activeConfiguration < 0)
         activeConfiguration = 0;
-    if (!setActiveConfigurations)
-        activeConfiguration = -1;
+    if (0 > activeConfiguration || dcCount < activeConfiguration)
+        activeConfiguration = 0;
 
     for (int i = 0; i < dcCount; ++i) {
-        const Key key = numberedKey(DC_KEY_PREFIX, i);
+        const QString key = QString::fromLatin1(DC_KEY_PREFIX) + QString::number(i);
         if (!map.contains(key))
             return false;
-        Store valueMap = storeFromVariant(map.value(key));
+        QVariantMap valueMap = map.value(key).toMap();
         DeployConfiguration *dc = DeployConfigurationFactory::restore(this, valueMap);
         if (!dc) {
             Utils::Id id = idFromMap(valueMap);
@@ -956,33 +916,36 @@ bool Target::addConfigurationsFromMap(const Utils::Store &map, bool setActiveCon
             setActiveDeployConfiguration(dc);
     }
 
-    int rcCount = map.value(RC_COUNT_KEY, 0).toInt(&ok);
+    int rcCount = map.value(QLatin1String(RC_COUNT_KEY), 0).toInt(&ok);
     if (!ok || rcCount < 0)
         rcCount = 0;
-    activeConfiguration = map.value(ACTIVE_RC_KEY, 0).toInt(&ok);
-    if (!ok || 0 > activeConfiguration || rcCount < activeConfiguration)
+    activeConfiguration = map.value(QLatin1String(ACTIVE_RC_KEY), 0).toInt(&ok);
+    if (!ok || activeConfiguration < 0)
         activeConfiguration = 0;
-    if (!setActiveConfigurations)
-        activeConfiguration = -1;
+    if (0 > activeConfiguration || rcCount < activeConfiguration)
+        activeConfiguration = 0;
 
     for (int i = 0; i < rcCount; ++i) {
-        const Key key = numberedKey(RC_KEY_PREFIX, i);
+        const QString key = QString::fromLatin1(RC_KEY_PREFIX) + QString::number(i);
         if (!map.contains(key))
             return false;
 
         // Ignore missing RCs: We will just populate them using the default ones.
-        Store valueMap = storeFromVariant(map.value(key));
+        QVariantMap valueMap = map.value(key).toMap();
         RunConfiguration *rc = RunConfigurationFactory::restore(this, valueMap);
         if (!rc)
             continue;
         const Utils::Id theIdFromMap = ProjectExplorer::idFromMap(valueMap);
-        if (!theIdFromMap.name().contains("///::///")) { // Hack for cmake 4.10 -> 4.11
+        if (!theIdFromMap.toString().contains("///::///")) { // Hack for cmake 4.10 -> 4.11
             QTC_CHECK(rc->id().withSuffix(rc->buildKey()) == theIdFromMap);
         }
         addRunConfiguration(rc);
         if (i == activeConfiguration)
             setActiveRunConfiguration(rc);
     }
+
+    if (map.contains(QLatin1String(PLUGIN_SETTINGS_KEY)))
+        d->m_pluginSettings = map.value(QLatin1String(PLUGIN_SETTINGS_KEY)).toMap();
 
     return true;
 }

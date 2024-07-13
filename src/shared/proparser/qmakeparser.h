@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -67,8 +89,8 @@ public:
 
     enum SubGrammar { FullGrammar, TestGrammar, ValueGrammar };
     // fileName is expected to be absolute and cleanPath()ed.
-    ProFile *parsedProFile(const QString &device, const QString &fileName, ParseFlags flags = ParseDefault);
-    ProFile *parsedProBlock(const QString &device, QStringView contents, int id, const QString &name, int line = 0,
+    ProFile *parsedProFile(const QString &fileName, ParseFlags flags = ParseDefault);
+    ProFile *parsedProBlock(Utils::StringView contents, int id, const QString &name, int line = 0,
                             SubGrammar grammar = FullGrammar);
 
     void discardFileFromCache(int id);
@@ -110,7 +132,7 @@ private:
     };
 
     bool readFile(int id, QMakeParser::ParseFlags flags, QString *contents);
-    void read(ProFile *pro, QStringView content, int line, SubGrammar grammar);
+    void read(ProFile *pro, Utils::StringView content, int line, SubGrammar grammar);
 
     ALWAYS_INLINE void putTok(ushort *&tokPtr, ushort tok);
     ALWAYS_INLINE void putBlockLen(ushort *&tokPtr, uint len);
@@ -121,7 +143,7 @@ private:
     ALWAYS_INLINE bool resolveVariable(ushort *xprPtr, int tlen, int needSep, ushort **ptr,
                                        ushort **buf, QString *xprBuff,
                                        ushort **tokPtr, QString *tokBuff,
-                                       const ushort *cur, QStringView in);
+                                       const ushort *cur, Utils::StringView in);
     void finalizeCond(ushort *&tokPtr, ushort *uc, ushort *ptr, int wordCount);
     void finalizeCall(ushort *&tokPtr, ushort *uc, ushort *ptr, int argc);
     void warnOperator(const char *msg);
@@ -179,8 +201,8 @@ public:
     ~ProFileCache();
 
     void discardFile(int id);
-    void discardFile(const QString &device, const QString &fileName, QMakeVfs *vfs);
-    void discardFiles(const QString &device, const QString &prefix, QMakeVfs *vfs);
+    void discardFile(const QString &fileName, QMakeVfs *vfs);
+    void discardFiles(const QString &prefix, QMakeVfs *vfs);
 
 private:
     struct Entry {

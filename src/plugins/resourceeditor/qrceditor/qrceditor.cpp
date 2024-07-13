@@ -1,25 +1,42 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qrceditor.h"
-
-#include "../resourceeditortr.h"
 #include "undocommands_p.h"
 
 #include <aggregation/aggregate.h>
 #include <coreplugin/find/itemviewfind.h>
-#include <utils/layoutbuilder.h>
 
 #include <QDebug>
-#include <QFileDialog>
-#include <QLabel>
-#include <QLineEdit>
-#include <QMenu>
-#include <QMessageBox>
-#include <QPushButton>
 #include <QScopedPointer>
+#include <QMenu>
+#include <QFileDialog>
+#include <QMessageBox>
 
-namespace ResourceEditor::Internal {
+using namespace ResourceEditor;
+using namespace ResourceEditor::Internal;
 
 QrcEditor::QrcEditor(RelativeResourceModel *model, QWidget *parent)
   : Core::MiniSplitter(Qt::Vertical, parent),
@@ -27,46 +44,14 @@ QrcEditor::QrcEditor(RelativeResourceModel *model, QWidget *parent)
 {
     addWidget(m_treeview);
     auto widget = new QWidget;
+    m_ui.setupUi(widget);
     addWidget(widget);
     m_treeview->setFrameStyle(QFrame::NoFrame);
-    m_treeview->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Minimum);
 
-    auto addPrefixButton = new QPushButton(Tr::tr("Add Prefix"));
-    m_addFilesButton = new QPushButton(Tr::tr("Add Files"));
-    m_removeButton = new QPushButton(Tr::tr("Remove"));
-    m_removeNonExistingButton = new QPushButton(Tr::tr("Remove Missing Files"));
-
-    m_aliasLabel = new QLabel(Tr::tr("Alias:"));
-    m_aliasText = new QLineEdit;
-    m_prefixLabel = new QLabel(Tr::tr("Prefix:"));
-    m_prefixText = new QLineEdit;
-    m_languageLabel = new QLabel(Tr::tr("Language:"));
-    m_languageText = new QLineEdit;
-
-    using namespace Layouting;
-    Column {
-        Row {
-            addPrefixButton,
-            m_addFilesButton,
-            m_removeButton,
-            m_removeNonExistingButton,
-            st,
-        },
-        Group {
-            title(Tr::tr("Properties")),
-            Form {
-                m_aliasLabel, m_aliasText, br,
-                m_prefixLabel, m_prefixText, br,
-                m_languageLabel, m_languageText, br,
-            }
-        },
-        st,
-    }.attachTo(widget);
-
-    connect(addPrefixButton, &QAbstractButton::clicked, this, &QrcEditor::onAddPrefix);
-    connect(m_addFilesButton, &QAbstractButton::clicked, this, &QrcEditor::onAddFiles);
-    connect(m_removeButton, &QAbstractButton::clicked, this, &QrcEditor::onRemove);
-    connect(m_removeNonExistingButton, &QPushButton::clicked,
+    connect(m_ui.addPrefixButton, &QAbstractButton::clicked, this, &QrcEditor::onAddPrefix);
+    connect(m_ui.addFilesButton, &QAbstractButton::clicked, this, &QrcEditor::onAddFiles);
+    connect(m_ui.removeButton, &QAbstractButton::clicked, this, &QrcEditor::onRemove);
+    connect(m_ui.removeNonExistingButton, &QPushButton::clicked,
             this, &QrcEditor::onRemoveNonExisting);
 
     connect(m_treeview, &ResourceView::removeItem, this, &QrcEditor::onRemove);
@@ -76,9 +61,9 @@ QrcEditor::QrcEditor(RelativeResourceModel *model, QWidget *parent)
     connect(m_treeview, &ResourceView::contextMenuShown, this, &QrcEditor::showContextMenu);
     m_treeview->setFocus();
 
-    connect(m_aliasText, &QLineEdit::textEdited, this, &QrcEditor::onAliasChanged);
-    connect(m_prefixText, &QLineEdit::textEdited, this, &QrcEditor::onPrefixChanged);
-    connect(m_languageText, &QLineEdit::textEdited, this, &QrcEditor::onLanguageChanged);
+    connect(m_ui.aliasText, &QLineEdit::textEdited, this, &QrcEditor::onAliasChanged);
+    connect(m_ui.prefixText, &QLineEdit::textEdited, this, &QrcEditor::onPrefixChanged);
+    connect(m_ui.languageText, &QLineEdit::textEdited, this, &QrcEditor::onLanguageChanged);
 
     // Prevent undo command merging after a switch of focus:
     // (0) The initial text is "Green".
@@ -88,11 +73,11 @@ QrcEditor::QrcEditor(RelativeResourceModel *model, QWidget *parent)
     //     --> text now is "Red is a color."
     // (4) The user hits undo --> text now is "Green is a color."
     //     Without calling advanceMergeId() it would have been "Green", instead.
-    connect(m_aliasText, &QLineEdit::editingFinished,
+    connect(m_ui.aliasText, &QLineEdit::editingFinished,
             m_treeview, &ResourceView::advanceMergeId);
-    connect(m_prefixText, &QLineEdit::editingFinished,
+    connect(m_ui.prefixText, &QLineEdit::editingFinished,
             m_treeview, &ResourceView::advanceMergeId);
-    connect(m_languageText, &QLineEdit::editingFinished,
+    connect(m_ui.languageText, &QLineEdit::editingFinished,
             m_treeview, &ResourceView::advanceMergeId);
 
     connect(&m_history, &QUndoStack::canRedoChanged, this, &QrcEditor::updateHistoryControls);
@@ -131,23 +116,23 @@ void QrcEditor::updateCurrent()
     const bool isPrefix = m_treeview->isPrefix(m_treeview->currentIndex()) && isValid;
     const bool isFile = !isPrefix && isValid;
 
-    m_aliasLabel->setEnabled(isFile);
-    m_aliasText->setEnabled(isFile);
+    m_ui.aliasLabel->setEnabled(isFile);
+    m_ui.aliasText->setEnabled(isFile);
     m_currentAlias = m_treeview->currentAlias();
-    m_aliasText->setText(m_currentAlias);
+    m_ui.aliasText->setText(m_currentAlias);
 
-    m_prefixLabel->setEnabled(isPrefix);
-    m_prefixText->setEnabled(isPrefix);
+    m_ui.prefixLabel->setEnabled(isPrefix);
+    m_ui.prefixText->setEnabled(isPrefix);
     m_currentPrefix = m_treeview->currentPrefix();
-    m_prefixText->setText(m_currentPrefix);
+    m_ui.prefixText->setText(m_currentPrefix);
 
-    m_languageLabel->setEnabled(isPrefix);
-    m_languageText->setEnabled(isPrefix);
+    m_ui.languageLabel->setEnabled(isPrefix);
+    m_ui.languageText->setEnabled(isPrefix);
     m_currentLanguage = m_treeview->currentLanguage();
-    m_languageText->setText(m_currentLanguage);
+    m_ui.languageText->setText(m_currentLanguage);
 
-    m_addFilesButton->setEnabled(isValid);
-    m_removeButton->setEnabled(isValid);
+    m_ui.addFilesButton->setEnabled(isValid);
+    m_ui.removeButton->setEnabled(isValid);
 }
 
 void QrcEditor::updateHistoryControls()
@@ -185,18 +170,17 @@ QAbstractButton *ResolveLocationContext::execLocationMessageBox(QWidget *parent,
 {
     if (messageBox.isNull()) {
         messageBox.reset(new QMessageBox(QMessageBox::Warning,
-                                         Tr::tr("Invalid file location"),
+                                         QrcEditor::tr("Invalid file location"),
                                          QString(), QMessageBox::NoButton, parent));
-        copyButton = messageBox->addButton(Tr::tr("Copy"), QMessageBox::ActionRole);
-        abortButton = messageBox->addButton(Tr::tr("Abort"), QMessageBox::RejectRole);
+        copyButton = messageBox->addButton(QrcEditor::tr("Copy"), QMessageBox::ActionRole);
+        abortButton = messageBox->addButton(QrcEditor::tr("Abort"), QMessageBox::RejectRole);
         messageBox->setDefaultButton(copyButton);
     }
     if (wantSkipButton && !skipButton) {
-        skipButton = messageBox->addButton(Tr::tr("Skip"), QMessageBox::DestructiveRole);
+        skipButton = messageBox->addButton(QrcEditor::tr("Skip"), QMessageBox::DestructiveRole);
         messageBox->setEscapeButton(skipButton);
     }
-    messageBox->setText(Tr::tr("The file %1 is not in a subdirectory of the resource file. "
-                               "You now have the option to copy this file to a valid location.")
+    messageBox->setText(QrcEditor::tr("The file %1 is not in a subdirectory of the resource file. You now have the option to copy this file to a valid location.")
                     .arg(QDir::toNativeSeparators(file)));
     messageBox->exec();
     return messageBox->clickedButton();
@@ -206,7 +190,7 @@ QString ResolveLocationContext::execCopyFileDialog(QWidget *parent, const QDir &
 {
     // Delayed creation of file dialog.
     if (copyFileDialog.isNull()) {
-        copyFileDialog.reset(new QFileDialog(parent, Tr::tr("Choose Copy Location")));
+        copyFileDialog.reset(new QFileDialog(parent, QrcEditor::tr("Choose Copy Location")));
         copyFileDialog->setFileMode(QFileDialog::AnyFile);
         copyFileDialog->setAcceptMode(QFileDialog::AcceptSave);
     }
@@ -229,17 +213,17 @@ QString ResolveLocationContext::execCopyFileDialog(QWidget *parent, const QDir &
 // Helper to copy a file with message boxes
 static inline bool copyFile(const QString &file, const QString &copyName, QWidget *parent)
 {
-    if (QFileInfo::exists(copyName)) {
+    if (QFile::exists(copyName)) {
         if (!QFile::remove(copyName)) {
-            QMessageBox::critical(parent, Tr::tr("Overwriting Failed"),
-                                  Tr::tr("Could not overwrite file %1.")
+            QMessageBox::critical(parent, QrcEditor::tr("Overwriting Failed"),
+                                  QrcEditor::tr("Could not overwrite file %1.")
                                   .arg(QDir::toNativeSeparators(copyName)));
             return false;
         }
     }
     if (!QFile::copy(file, copyName)) {
-        QMessageBox::critical(parent, Tr::tr("Copying Failed"),
-                              Tr::tr("Could not copy the file to %1.")
+        QMessageBox::critical(parent, QrcEditor::tr("Copying Failed"),
+                              QrcEditor::tr("Could not copy the file to %1.")
                               .arg(QDir::toNativeSeparators(copyName)));
         return false;
     }
@@ -407,8 +391,8 @@ void QrcEditor::onAddPrefix()
     QUndoCommand * const addEmptyPrefixCommand = new AddEmptyPrefixCommand(m_treeview);
     m_history.push(addEmptyPrefixCommand);
     updateHistoryControls();
-    m_prefixText->selectAll();
-    m_prefixText->setFocus();
+    m_ui.prefixText->selectAll();
+    m_ui.prefixText->setFocus();
 }
 
 // Slot for 'Undo' button
@@ -426,5 +410,3 @@ void QrcEditor::onRedo()
     updateCurrent();
     updateHistoryControls();
 }
-
-} // ResourceEditor::Internal

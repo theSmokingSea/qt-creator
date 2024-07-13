@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -9,29 +31,36 @@
 #include <utils/filepath.h>
 
 #include <QList>
+#include <QObject>
+#include <QString>
+#include <QCoreApplication>
 
 namespace Debugger {
 
 class DebuggerItem;
 
-namespace DebuggerItemManager {
+class DEBUGGER_EXPORT DebuggerItemManager : public QObject
+{
+    Q_DECLARE_TR_FUNCTIONS(Debugger::DebuggerItemManager)
 
-DEBUGGER_EXPORT void restoreDebuggers();
+public:
+    DebuggerItemManager();
+    ~DebuggerItemManager() override;
 
-DEBUGGER_EXPORT const QList<DebuggerItem> debuggers();
+    static const QList<DebuggerItem> debuggers();
 
-DEBUGGER_EXPORT QVariant registerDebugger(const DebuggerItem &item);
-DEBUGGER_EXPORT void deregisterDebugger(const QVariant &id);
+    static QVariant registerDebugger(const DebuggerItem &item);
+    static void deregisterDebugger(const QVariant &id);
 
-DEBUGGER_EXPORT void autoDetectDebuggersForDevice(const Utils::FilePaths &searchPaths,
-                                         const QString &detectionSource,
-                                         QString *logMessage);
-DEBUGGER_EXPORT void removeDetectedDebuggers(const QString &detectionSource, QString *logMessage);
-DEBUGGER_EXPORT void listDetectedDebuggers(const QString &detectionSource, QString *logMessage);
+    static void autoDetectDebuggersForDevice(const Utils::FilePaths &searchPaths,
+                                             const QString &detectionSource,
+                                             QString *logMessage);
+    static void removeDetectedDebuggers(const QString &detectionSource, QString *logMessage);
+    static void listDetectedDebuggers(const QString &detectionSource, QString *logMessage);
 
-DEBUGGER_EXPORT const DebuggerItem *findByCommand(const Utils::FilePath &command);
-DEBUGGER_EXPORT const DebuggerItem *findById(const QVariant &id);
-DEBUGGER_EXPORT const DebuggerItem *findByEngineType(DebuggerEngineType engineType);
+    static const DebuggerItem *findByCommand(const Utils::FilePath &command);
+    static const DebuggerItem *findById(const QVariant &id);
+    static const DebuggerItem *findByEngineType(DebuggerEngineType engineType);
+};
 
-} // DebuggerItemManager
-} // Debugger
+} // namespace Debugger

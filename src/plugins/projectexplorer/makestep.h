@@ -1,10 +1,31 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "abstractprocessstep.h"
-#include "runconfigurationaspects.h"
 
 #include <utils/aspects.h>
 #include <utils/fileutils.h>
@@ -46,6 +67,7 @@ public:
     static Task makeCommandMissingTask();
 
     virtual bool isJobCountSupported() const;
+    int jobCount() const;
     bool jobCountOverridesMakeflags() const;
     bool makeflagsContainsJobCount() const;
     bool userArgsContainsJobCount() const;
@@ -56,23 +78,36 @@ public:
 
     Utils::Environment makeEnvironment() const;
 
+    // FIXME: All unused, remove in 4.15.
+    void setBuildTarget(const QString &buildTarget) { setSelectedBuildTarget(buildTarget); }
+    bool buildsTarget(const QString &target) const;
+    void setBuildTarget(const QString &target, bool on);
+
 protected:
     void supportDisablingForSubdirs() { m_disablingForSubDirsSupported = true; }
     virtual QStringList displayArguments() const;
 
-    Utils::FilePathAspect m_makeCommandAspect{this};
-    Utils::MultiSelectionAspect m_buildTargetsAspect{this};
-    Utils::StringAspect m_userArgumentsAspect{this};
-    Utils::BoolAspect m_overrideMakeflagsAspect{this};
-    Utils::TextDisplay m_nonOverrideWarning{this};
-    Utils::IntegerAspect m_jobCountAspect{this};
-    Utils::BoolAspect m_disabledForSubdirsAspect{this};
-    RunAsRootAspect m_runAsRootAspect{this};
+    Utils::StringAspect *makeCommandAspect() const { return m_makeCommandAspect; }
+    Utils::MultiSelectionAspect *buildTargetsAspect() const { return m_buildTargetsAspect; }
+    Utils::StringAspect *userArgumentsAspect() const { return m_userArgumentsAspect; }
+    Utils::BoolAspect *overrideMakeflagsAspect() const { return m_overrideMakeflagsAspect; }
+    Utils::TextDisplay *nonOverrideWarning() const { return m_nonOverrideWarning; }
+    Utils::IntegerAspect *jobCountAspect() const { return m_userJobCountAspect; }
+    Utils::BoolAspect *disabledForSubdirsAspect() const { return m_disabledForSubdirsAspect; }
+
 
 private:
     static int defaultJobCount();
     QStringList jobArguments() const;
 
+    Utils::MultiSelectionAspect *m_buildTargetsAspect = nullptr;
+    QStringList m_availableTargets; // FIXME: Unused, remove in 4.15.
+    Utils::StringAspect *m_makeCommandAspect = nullptr;
+    Utils::StringAspect *m_userArgumentsAspect = nullptr;
+    Utils::IntegerAspect *m_userJobCountAspect = nullptr;
+    Utils::BoolAspect *m_overrideMakeflagsAspect = nullptr;
+    Utils::BoolAspect *m_disabledForSubdirsAspect = nullptr;
+    Utils::TextDisplay *m_nonOverrideWarning = nullptr;
     bool m_disablingForSubDirsSupported = false;
 };
 

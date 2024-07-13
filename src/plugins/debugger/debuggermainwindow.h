@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -7,7 +29,6 @@
 
 #include <utils/fancymainwindow.h>
 #include <utils/statuslabel.h>
-#include <utils/storekey.h>
 
 #include <QAction>
 #include <QPointer>
@@ -38,33 +59,13 @@ class PerspectiveState
 public:
     static const char *savesHeaderKey();
 
-    bool hasWindowState() const;
-
-    bool restoreWindowState(FancyMainWindow *mainWindow);
-
-    Store mainWindowState;
+    QByteArray mainWindowState;
     QVariantHash headerViewStates;
 
-    Store toSettings() const;
-    static PerspectiveState fromSettings(const Store &settings);
-
-    // legacy for up to QtC 12, operators for direct QVariant conversion
     friend QDataStream &operator>>(QDataStream &ds, PerspectiveState &state)
-    {
-        QByteArray mainWindowStateLegacy;
-        ds >> mainWindowStateLegacy >> state.headerViewStates;
-        // the "legacy" state is just the QMainWindow::saveState(), which is
-        // saved under "State" in the FancyMainWindow state
-        state.mainWindowState.clear();
-        state.mainWindowState.insert("State", mainWindowStateLegacy);
-        return ds;
-    }
+        { return ds >> state.mainWindowState >> state.headerViewStates; }
     friend QDataStream &operator<<(QDataStream &ds, const PerspectiveState &state)
-    {
-        // the "legacy" state is just the QMainWindow::saveState(), which is
-        // saved under "State" in the FancyMainWindow state
-        return ds << state.mainWindowState.value("State") << state.headerViewStates;
-    }
+        { return ds << state.mainWindowState << state.headerViewStates; }
 };
 
 class DEBUGGER_EXPORT Perspective : public QObject
@@ -97,7 +98,6 @@ public:
     void setShouldPersistChecker(const ShouldPersistChecker &checker);
 
     QString id() const; // Currently used by GammaRay plugin.
-    QString parentPerspectiveId() const;
     QString name() const;
     QWidget *centralWidget() const;
 
@@ -142,7 +142,7 @@ public:
 
     static QWidget *centralWidgetStack();
     void addSubPerspectiveSwitcher(QWidget *widget);
-    static void addPerspectiveMenu(QMenu *menu);
+    static QMenu *perspectiveMenu();
 
     static Perspective *currentPerspective();
 

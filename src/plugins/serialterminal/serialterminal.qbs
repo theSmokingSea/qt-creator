@@ -20,8 +20,8 @@ QtcPlugin {
         "serialoutputpane.h",
         "serialterminalconstants.h",
         "serialterminalplugin.cpp",
+        "serialterminalplugin.h",
         "serialterminalsettings.cpp",
         "serialterminalsettings.h",
-        "serialterminaltr.h",
     ]
 }

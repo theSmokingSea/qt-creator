@@ -1,13 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "enginemanager.h"
 
-#include "debuggerengine.h"
+#include "analyzer/analyzermanager.h"
+#include "debuggeractions.h"
 #include "debuggerinternalconstants.h"
 #include "debuggericons.h"
-#include "debuggermainwindow.h"
-#include "debuggertr.h"
+#include "debuggercore.h"
+#include "debuggerruncontrol.h"
+#include "stackhandler.h"
 
 #include <coreplugin/icontext.h>
 #include <coreplugin/icore.h>
@@ -17,20 +41,17 @@
 #include <utils/treemodel.h>
 #include <utils/qtcassert.h>
 
-#include <QAbstractProxyModel>
-#include <QComboBox>
 #include <QDebug>
 #include <QMenu>
-#include <QSortFilterProxyModel>
 #include <QTimer>
 
 using namespace Core;
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 const bool hideSwitcherUnlessNeeded = false;
-const char INDEX_ID[] = "Debugger/Debugger.SelectedEngineIndex";
 
 #if 0
 SnapshotData::SnapshotData()
@@ -55,9 +76,9 @@ QString SnapshotData::toString() const
 {
     QString res;
     QTextStream str(&res);
-/*    str << Tr::tr("Function:") << ' ' << function() << ' '
-        << Tr::tr("File:") << ' ' << m_location << ' '
-        << Tr::tr("Date:") << ' ' << m_date.toString(); */
+/*    str << SnapshotHandler::tr("Function:") << ' ' << function() << ' '
+        << SnapshotHandler::tr("File:") << ' ' << m_location << ' '
+        << SnapshotHandler::tr("Date:") << ' ' << m_date.toString(); */
     return res;
 }
 
@@ -67,9 +88,9 @@ QString SnapshotData::toToolTip() const
     QTextStream str(&res);
     str << "<html><body><table>"
 /*
-        << "<tr><td>" << Tr::tr("Function:")
+        << "<tr><td>" << SnapshotHandler::tr("Function:")
             << "</td><td>" << function() << "</td></tr>"
-        << "<tr><td>" << Tr::tr("File:")
+        << "<tr><td>" << SnapshotHandler::tr("File:")
             << "</td><td>" << QDir::toNativeSeparators(m_location) << "</td></tr>"
         << "</table></body></html>"; */
     return res;
@@ -96,125 +117,6 @@ QDebug operator<<(QDebug d, const  SnapshotData &f)
 }
 #endif
 
-class EngineTypeFilterProxyModel : public QSortFilterProxyModel
-{
-public:
-    explicit EngineTypeFilterProxyModel(const QString &type, QObject *parent = nullptr)
-        : QSortFilterProxyModel(parent)
-        , m_type(type)
-    {
-    }
-
-protected:
-    bool filterAcceptsRow(int sourceRow, const QModelIndex &sourceParent) const override
-    {
-        QModelIndex index = sourceModel()->index(sourceRow, 0, sourceParent);
-        if (index.isValid()) {
-            QVariant data = sourceModel()->data(index, Qt::UserRole);
-            if (data.isValid() && data.toString() == m_type) {
-                return true; // Display only DapEngines
-            }
-        }
-        return false;
-    }
-private:
-    QString m_type;
-};
-
-class ModelChooser : public QObject
-{
-    Q_OBJECT
-public:
-    ModelChooser(QAbstractItemModel *sourceModel,
-                 const QString &engineType,
-                 QObject *parent = nullptr)
-        : QObject(parent)
-        , m_engineChooser(new QComboBox())
-        , m_proxyModel(new EngineTypeFilterProxyModel(engineType))
-        , m_sourceModel(sourceModel)
-        , m_enginType(engineType)
-        , m_key(engineType.isEmpty() ? Utils::Key(INDEX_ID) + "." + engineType.toUtf8()
-                                     : Utils::Key(INDEX_ID))
-    {
-        m_proxyModel->setSourceModel(sourceModel);
-
-        m_engineChooser->setModel(m_proxyModel);
-        m_engineChooser->setIconSize(QSize(0, 0));
-        if (hideSwitcherUnlessNeeded)
-            m_engineChooser->hide();
-
-        connect(m_engineChooser, &QComboBox::activated, this, [this](int index) {
-            QModelIndex sourceIndex = m_proxyModel->mapToSource(m_proxyModel->index(index, 0));
-            emit activated(sourceIndex.row());
-            m_lastActivatedIndex = sourceIndex.row();
-            ICore::settings()->setValue(m_key, m_lastActivatedIndex);
-        });
-
-        connect(m_proxyModel, &QAbstractItemModel::rowsRemoved, this, [this] {
-            setCurrentIndex(m_lastActivatedIndex);
-        });
-    }
-
-    ~ModelChooser()
-    {
-        delete m_engineChooser;
-        delete m_proxyModel;
-    }
-
-    QComboBox *comboBox() const { return m_engineChooser; }
-    QAbstractItemModel *model() const { return m_proxyModel; }
-    const QString &engineType() const { return m_enginType; }
-
-    void restoreIndex()
-    {
-        m_lastActivatedIndex = ICore::settings()->value(m_key, 0).toInt();
-        if (m_lastActivatedIndex <= m_engineChooser->count())
-            setCurrentIndex(m_lastActivatedIndex);
-    }
-
-    void setCurrentIndex(int index)
-    {
-        const QModelIndex sourceIndex = m_proxyModel->mapFromSource(m_sourceModel->index(index, 0));
-        if (sourceIndex.isValid())
-            m_engineChooser->setCurrentIndex(sourceIndex.row());
-        else
-            m_engineChooser->setCurrentIndex(0);
-    }
-
-    void adjustUiForEngine(int row)
-    {
-        setCurrentIndex(row);
-
-        const int contentWidth = m_engineChooser->fontMetrics().horizontalAdvance(
-            m_engineChooser->currentText() + "xx");
-        QStyleOptionComboBox option;
-        option.initFrom(m_engineChooser);
-        const QSize sz(contentWidth, 1);
-        const int width = m_engineChooser->style()
-                              ->sizeFromContents(QStyle::CT_ComboBox, &option, sz)
-                              .width();
-        m_engineChooser->setFixedWidth(width);
-    }
-
-signals:
-    void activated(int index);
-
-private:
-    QPointer<QComboBox> m_engineChooser;
-    QPointer<EngineTypeFilterProxyModel> m_proxyModel;
-    QAbstractItemModel *m_sourceModel;
-    QString m_enginType;
-    const Utils::Key m_key;
-    int m_lastActivatedIndex = -1;
-};
-
-struct PerspectiveItem
-{
-    QString name;
-    QString type;
-    QString id;
-};
-
 class EngineItem : public QObject, public TreeItem
 {
 public:
@@ -223,8 +125,6 @@ public:
 
     const bool m_isPreset = false;
     QPointer<DebuggerEngine> m_engine;
-
-    PerspectiveItem m_perspective;
 };
 
 class EngineManagerPrivate : public QObject
@@ -232,21 +132,27 @@ class EngineManagerPrivate : public QObject
 public:
     EngineManagerPrivate()
     {
-        m_engineModel.setHeader({Tr::tr("Perspective"), Tr::tr("Debugged Application")});
+        m_engineModel.setHeader({EngineManager::tr("Perspective"),
+                                 EngineManager::tr("Debugged Application")});
+        // The preset case:
+        auto preset = new EngineItem;
+        m_engineModel.rootItem()->appendChild(preset);
+        m_currentItem = preset;
 
-        m_engineChooser = new ModelChooser(&m_engineModel, "", this);
-        m_engineDAPChooser = new ModelChooser(&m_engineModel, "DAP", this);
+        m_engineChooser = new QComboBox;
+        m_engineChooser->setModel(&m_engineModel);
+        m_engineChooser->setIconSize(QSize(0, 0));
+        if (hideSwitcherUnlessNeeded)
+            m_engineChooser->hide();
 
-        connect(m_engineChooser, &ModelChooser::activated, this, [this](int index) {
-            activateEngineByIndex(index);
-        });
-
-        connect(m_engineDAPChooser, &ModelChooser::activated, this, [this](int index) {
-            activateEngineByIndex(index);
-        });
+        connect(m_engineChooser, QOverload<int>::of(&QComboBox::activated),
+                this, &EngineManagerPrivate::activateEngineByIndex);
     }
 
-    ~EngineManagerPrivate() = default;
+    ~EngineManagerPrivate()
+    {
+        delete m_engineChooser;
+    }
 
     EngineItem *findEngineItem(DebuggerEngine *engine);
     void activateEngineItem(EngineItem *engineItem);
@@ -258,11 +164,7 @@ public:
     TreeModel<TypedTreeItem<EngineItem>, EngineItem> m_engineModel;
     QPointer<EngineItem> m_currentItem; // The primary information is DebuggerMainWindow::d->m_currentPerspective
     Utils::Id m_previousMode;
-
-    QPointer<ModelChooser> m_engineChooser;
-    QPointer<ModelChooser> m_engineDAPChooser;
-
-    QList<PerspectiveItem> m_perspectives;
+    QPointer<QComboBox> m_engineChooser;
     bool m_shuttingDown = false;
 
     // This contains the contexts that need to be removed when switching
@@ -295,12 +197,7 @@ EngineManager::EngineManager()
 
 QWidget *EngineManager::engineChooser()
 {
-    return d->m_engineChooser->comboBox();
-}
-
-QWidget *EngineManager::dapEngineChooser()
-{
-    return d->m_engineDAPChooser->comboBox();
+    return d->m_engineChooser;
 }
 
 void EngineManager::updatePerspectives()
@@ -321,12 +218,7 @@ EngineManager *EngineManager::instance()
 
 QAbstractItemModel *EngineManager::model()
 {
-    return d->m_engineChooser->model();
-}
-
-QAbstractItemModel *EngineManager::dapModel()
-{
-    return d->m_engineDAPChooser->model();
+    return &d->m_engineModel;
 }
 
 QVariant EngineItem::data(int column, int role) const
@@ -364,9 +256,7 @@ QVariant EngineItem::data(int column, int role) const
             // Return icon that indicates whether this is the active engine
             if (column == 0)
                 return d->m_currentItem == this ? Icons::LOCATION.icon() : Icons::EMPTY.icon();
-            break;
-        case Qt::UserRole:
-            return QVariant::fromValue(m_engine->debuggerType());
+
         default:
             break;
         }
@@ -374,10 +264,8 @@ QVariant EngineItem::data(int column, int role) const
         switch (role) {
         case Qt::DisplayRole:
             if (column == 0)
-                return m_perspective.name;
+                return EngineManager::tr("Debugger Preset");
             return QString("-");
-        case Qt::UserRole:
-            return m_perspective.type;
         default:
             break;
         }
@@ -404,11 +292,11 @@ bool EngineItem::setData(int row, const QVariant &value, int role)
 
             auto menu = new QMenu(ev.view());
 
-            QAction *actCreate = menu->addAction(Tr::tr("Create Snapshot"));
+            QAction *actCreate = menu->addAction(EngineManager::tr("Create Snapshot"));
             actCreate->setEnabled(m_engine->hasCapability(SnapshotCapabilityRole));
             menu->addSeparator();
 
-            QAction *actRemove = menu->addAction(Tr::tr("Abort Debugger"));
+            QAction *actRemove = menu->addAction(EngineManager::tr("Abort Debugger"));
             actRemove->setEnabled(true);
 
             QAction *act = menu->exec(cmev->globalPos());
@@ -438,11 +326,10 @@ void EngineManagerPrivate::activateEngineByIndex(int index)
 {
     // The actual activation is triggered indirectly via the perspective change.
     Perspective *perspective = nullptr;
-    EngineItem *engineItem = m_engineModel.rootItem()->childAt(index);
-
-    if (engineItem && !engineItem->m_engine) {
-        perspective = Perspective::findPerspective(engineItem->m_perspective.id);
+    if (index == 0) {
+        perspective = Perspective::findPerspective(Debugger::Constants::PRESET_PERSPECTIVE_ID);
     } else {
+        EngineItem *engineItem = m_engineModel.rootItem()->childAt(index);
         QTC_ASSERT(engineItem, return);
         QTC_ASSERT(engineItem->m_engine, return);
         perspective = engineItem->m_engine->perspective();
@@ -475,14 +362,7 @@ void EngineManagerPrivate::activateEngineItem(EngineItem *engineItem)
 
     // In case this was triggered externally by some Perspective::select() call.
     const int idx = engineItem->indexInParent();
-
-    if ((engineItem->m_engine
-         && engineItem->m_engine->debuggerType() == m_engineDAPChooser->engineType())
-        || (engineItem->m_engine
-            && engineItem->m_perspective.type == m_engineDAPChooser->engineType()))
-        m_engineDAPChooser->setCurrentIndex(idx);
-    else
-        m_engineChooser->setCurrentIndex(idx);
+    m_engineChooser->setCurrentIndex(idx);
 
     selectUiForCurrentEngine();
 }
@@ -496,13 +376,15 @@ void EngineManagerPrivate::selectUiForCurrentEngine()
     if (m_currentItem)
         row = m_engineModel.rootItem()->indexOf(m_currentItem);
 
-    if ((m_currentItem->m_engine
-         && m_currentItem->m_engine->debuggerType() == m_engineDAPChooser->engineType())
-        || (m_currentItem->m_engine
-            && m_currentItem->m_perspective.type == m_engineDAPChooser->engineType()))
-        m_engineDAPChooser->adjustUiForEngine(row);
-    else
-        m_engineChooser->adjustUiForEngine(row);
+    m_engineChooser->setCurrentIndex(row);
+    const int contentWidth =
+        m_engineChooser->fontMetrics().horizontalAdvance(m_engineChooser->currentText() + "xx");
+    QStyleOptionComboBox option;
+    option.initFrom(m_engineChooser);
+    const QSize sz(contentWidth, 1);
+    const int width = m_engineChooser->style()->sizeFromContents(
+                QStyle::CT_ComboBox, &option, sz).width();
+    m_engineChooser->setFixedWidth(width);
 
     m_engineModel.rootItem()->forFirstLevelChildren([this](EngineItem *engineItem) {
         if (engineItem && engineItem->m_engine)
@@ -524,8 +406,7 @@ void EngineManagerPrivate::updateEngineChooserVisibility()
     // Show it if there's more than one option (i.e. not the preset engine only)
     if (hideSwitcherUnlessNeeded) {
         const int count = m_engineModel.rootItem()->childCount();
-        m_engineChooser->comboBox()->setVisible(count >= 2);
-        m_engineDAPChooser->comboBox()->setVisible(count >= 2);
+        m_engineChooser->setVisible(count >= 2);
     }
 }
 
@@ -573,31 +454,12 @@ void EngineManager::unregisterEngine(DebuggerEngine *engine)
     d->updateEngineChooserVisibility();
 }
 
-QString EngineManager::registerDefaultPerspective(const QString &name,
-                                                  const QString &type,
-                                                  const QString &id)
-{
-    auto engineItem = new EngineItem;
-    engineItem->m_perspective.name = name;
-    engineItem->m_perspective.type = type;
-    engineItem->m_perspective.id = id;
-    d->m_engineModel.rootItem()->appendChild(engineItem);
-    d->m_engineDAPChooser->restoreIndex();
-    d->m_engineChooser->restoreIndex();
-    return QString::number(d->m_engineModel.rootItem()->childCount());
-}
-
 void EngineManager::activateDebugMode()
 {
     if (ModeManager::currentModeId() != Constants::MODE_DEBUG) {
         d->m_previousMode = ModeManager::currentModeId();
         ModeManager::activateMode(Constants::MODE_DEBUG);
     }
-}
-
-void EngineManager::activateByIndex(int index)
-{
-    d->activateEngineByIndex(index);
 }
 
 void EngineManager::deactivateDebugMode()
@@ -607,7 +469,7 @@ void EngineManager::deactivateDebugMode()
         // "previously active application"), doing the switch synchronously
         // leads to funny effects with floating dock widgets
         const Utils::Id mode = d->m_previousMode;
-        QTimer::singleShot(0, d, [mode] { ModeManager::activateMode(mode); });
+        QTimer::singleShot(0, d, [mode]() { ModeManager::activateMode(mode); });
         d->m_previousMode = Id();
     }
 }
@@ -640,6 +502,5 @@ bool EngineManager::shutDown()
     return anyEngineAborting;
 }
 
-} // Debugger::Internal
-
-#include "enginemanager.moc"
+} // namespace Internal
+} // namespace Debugger

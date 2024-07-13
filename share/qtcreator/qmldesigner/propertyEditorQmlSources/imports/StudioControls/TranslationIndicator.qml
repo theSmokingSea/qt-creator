@@ -1,33 +1,53 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Templates as T
+import QtQuick 2.15
+import QtQuick.Templates 2.15 as T
 import StudioTheme 1.0 as StudioTheme
 
 Item {
-    id: control
+    id: translationIndicator
 
-    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
+    property Item myControl
 
-    property Item __parentControl
-
-    property bool hover: mouseArea.containsMouse && control.enabled
-    property bool pressed: mouseArea.pressed
+    property bool hover: translationIndicatorMouseArea.containsMouse && translationIndicator.enabled
+    property bool pressed: translationIndicatorMouseArea.pressed
     property bool checked: false
 
     signal clicked
 
     Rectangle {
-        id: background
-        color: control.style.background.idle
-        border.color: control.style.border.idle
-        border.width: control.style.borderWidth
+        id: translationIndicatorBackground
+        color: StudioTheme.Values.themeControlBackground
+        border.color: StudioTheme.Values.themeControlOutline
+        border.width: StudioTheme.Values.border
 
         anchors.centerIn: parent
 
-        width: background.matchParity(control.height, control.style.smallControlSize.width)
-        height: background.matchParity(control.height, control.style.smallControlSize.height)
+        width: matchParity(translationIndicator.height, StudioTheme.Values.smallRectWidth)
+        height: matchParity(translationIndicator.height, StudioTheme.Values.smallRectWidth)
 
         function matchParity(root, value) {
             var v = Math.round(value)
@@ -39,23 +59,23 @@ Item {
         }
 
         MouseArea {
-            id: mouseArea
+            id: translationIndicatorMouseArea
             anchors.fill: parent
             hoverEnabled: true
             onPressed: function(mouse) { mouse.accepted = true }
             onClicked: {
-                control.checked = !control.checked
-                control.clicked()
+                translationIndicator.checked = !translationIndicator.checked
+                translationIndicator.clicked()
             }
         }
     }
 
     T.Label {
-        id: icon
+        id: translationIndicatorIcon
         text: "tr"
-        color: control.style.icon.idle
+        color: StudioTheme.Values.themeTextColor
         font.family: StudioTheme.Constants.font.family
-        font.pixelSize: control.style.baseIconFontSize
+        font.pixelSize: StudioTheme.Values.myIconFontSize
         font.italic: true
         verticalAlignment: Text.AlignVCenter
         horizontalAlignment: Text.AlignHCenter
@@ -64,35 +84,36 @@ Item {
         states: [
             State {
                 name: "default"
-                when: control.enabled && !control.pressed && !control.checked
+                when: translationIndicator.enabled && !translationIndicator.pressed
+                      && !translationIndicator.checked
                 PropertyChanges {
-                    target: icon
-                    color: control.style.icon.idle
+                    target: translationIndicatorIcon
+                    color: StudioTheme.Values.themeIconColor
                 }
             },
             State {
                 name: "press"
-                when: control.enabled && control.pressed
+                when: translationIndicator.enabled && translationIndicator.pressed
                 PropertyChanges {
-                    target: icon
-                    color: control.style.icon.interaction
+                    target: translationIndicatorIcon
+                    color: StudioTheme.Values.themeIconColorInteraction
                 }
             },
             State {
                 name: "check"
-                when: control.enabled && !control.pressed
-                      && control.checked
+                when: translationIndicator.enabled && !translationIndicator.pressed
+                      && translationIndicator.checked
                 PropertyChanges {
-                    target: icon
-                    color: control.style.icon.selected
+                    target: translationIndicatorIcon
+                    color: StudioTheme.Values.themeIconColorSelected
                 }
             },
             State {
                 name: "disable"
-                when: !control.__parentControl.enabled
+                when: !myControl.enabled
                 PropertyChanges {
-                    target: icon
-                    color: control.style.icon.disabled
+                    target: translationIndicatorIcon
+                    color: StudioTheme.Values.themeTextColorDisabled
                 }
             }
         ]
@@ -101,49 +122,49 @@ Item {
     states: [
         State {
             name: "default"
-            when: control.__parentControl.enabled && !control.hover && !control.pressed
-                  && !control.__parentControl.hover && !control.__parentControl.edit
-                  && !control.checked
+            when: myControl.enabled && !translationIndicator.hover
+                  && !translationIndicator.pressed && !myControl.hover
+                  && !myControl.edit && !translationIndicator.checked
             PropertyChanges {
-                target: background
-                color: control.style.background.idle
-                border.color: control.style.border.idle
+                target: translationIndicatorBackground
+                color: StudioTheme.Values.themeControlBackground
+                border.color: StudioTheme.Values.themeControlOutline
             }
         },
         State {
             name: "globalHover"
-            when: control.__parentControl.hover && !control.hover
+            when: myControl.hover && !translationIndicator.hover
             PropertyChanges {
-                target: background
-                color: control.style.background.globalHover
-                border.color: control.style.border.idle
+                target: translationIndicatorBackground
+                color: StudioTheme.Values.themeControlBackgroundGlobalHover
+                border.color: StudioTheme.Values.themeControlOutline
             }
         },
         State {
             name: "hover"
-            when: control.hover && !control.pressed
+            when: translationIndicator.hover && !translationIndicator.pressed
             PropertyChanges {
-                target: background
-                color: control.style.background.hover
-                border.color: control.style.border.idle
+                target: translationIndicatorBackground
+                color: StudioTheme.Values.themeControlBackgroundHover
+                border.color: StudioTheme.Values.themeControlOutline
             }
         },
         State {
             name: "press"
-            when: control.hover && control.pressed
+            when: translationIndicator.hover && translationIndicator.pressed
             PropertyChanges {
-                target: background
-                color: control.style.background.interaction
-                border.color: control.style.border.interaction
+                target: translationIndicatorBackground
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
         },
         State {
             name: "disable"
-            when: !control.__parentControl.enabled
+            when: !myControl.enabled
             PropertyChanges {
-                target: background
-                color: control.style.background.disabled
-                border.color: control.style.border.disabled
+                target: translationIndicatorBackground
+                color: StudioTheme.Values.themeControlBackgroundDisabled
+                border.color: StudioTheme.Values.themeControlOutlineDisabled
             }
         }
     ]

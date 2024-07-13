@@ -1,12 +1,31 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sanitizerparser.h"
 
-#include "ioutputparser.h"
 #include "projectexplorerconstants.h"
-#include "runcontrol.h"
-#include "task.h"
 
 #include <QRegularExpression>
 
@@ -21,20 +40,6 @@
 using namespace Utils;
 
 namespace ProjectExplorer::Internal {
-
-class SanitizerParser final : public OutputTaskParser
-{
-private:
-    Result handleLine(const QString &line, OutputFormat format) final;
-    void flush() final;
-
-    Result handleContinuation(const QString &line);
-    void addLinkSpecs(const LinkSpecs &linkSpecs);
-
-    Task m_task;
-    LinkSpecs m_linkSpecs;
-    quint64 m_id = 0;
-};
 
 OutputLineParser::Result SanitizerParser::handleLine(const QString &line, OutputFormat format)
 {
@@ -93,8 +98,7 @@ OutputLineParser::Result SanitizerParser::handleContinuation(const QString &line
                 m_task.file = file;
                 m_task.line = summaryMatch.captured("line").toInt();
                 m_task.column = summaryMatch.captured("column").toInt();
-                addLinkSpecForAbsoluteFilePath(
-                    linkSpecs, file, m_task.line, m_task.column, summaryMatch, "file");
+                addLinkSpecForAbsoluteFilePath(linkSpecs, file, m_task.line, summaryMatch, "file");
                 addLinkSpecs(linkSpecs);
             }
         } else {
@@ -108,7 +112,7 @@ OutputLineParser::Result SanitizerParser::handleContinuation(const QString &line
         const FilePath file = absoluteFilePath(FilePath::fromUserInput(fileMatch.captured("file")));
         if (fileExists(file)) {
             addLinkSpecForAbsoluteFilePath(linkSpecs, file, fileMatch.captured("line").toInt(),
-                                           fileMatch.captured("column").toInt(), fileMatch, "file");
+                                           fileMatch, "file");
             addLinkSpecs(linkSpecs);
         }
     }
@@ -143,22 +147,7 @@ void SanitizerParser::flush()
     m_id = 0;
 }
 
-OutputLineParser *createSanitizerOutputParser()
-{
-    return new SanitizerParser;
-}
-
-void setupSanitizerOutputParser()
-{
-    addOutputParserFactory([](Target *) { return new SanitizerParser; });
-}
-
-} // namespace ProjectExplorer::Internal
-
 #ifdef WITH_TESTS
-
-namespace ProjectExplorer::Internal {
-
 class SanitizerParserTest : public QObject
 {
     Q_OBJECT
@@ -247,14 +236,23 @@ SUMMARY: AddressSanitizer: 19 byte(s) leaked in 1 allocation(s).)";
         testbench.testParsing(input, OutputParserTester::STDERR, tasks, {}, childStdErrLines, {});
     }
 };
+#endif
 
-QObject *createSanitizerOutputParserTest()
+QVector<QObject *> SanitizerParser::createTestObjects()
 {
-    return new SanitizerParserTest;
+#ifdef WITH_TESTS
+    return {new SanitizerParserTest};
+#endif
+    return {};
 }
 
-} // ProjectExplorer::Internal
+SanitizerOutputFormatterFactory::SanitizerOutputFormatterFactory()
+{
+    setFormatterCreator([](Target *) -> QList<OutputLineParser *> {return {new SanitizerParser}; });
+}
 
+} // namespace ProjectExplorer::Internal
+
+#ifdef WITH_TESTS
 #include <sanitizerparser.moc>
-
-#endif // WITH_TESTS
+#endif

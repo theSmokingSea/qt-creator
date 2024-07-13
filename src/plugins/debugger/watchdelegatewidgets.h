@@ -1,13 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include <QLineEdit>
 #include <QComboBox>
 
-namespace Debugger::Internal {
-
+namespace Debugger {
+namespace Internal {
 class IntegerValidator;
 
 /* Watch edit widgets. The logic is based on the QVariant 'modelData' property,
@@ -27,7 +49,7 @@ public:
     virtual QVariant modelData() const;
     virtual void setModelData(const QVariant &);
 
-    static WatchLineEdit *create(QMetaType::Type typeId, QWidget *parent = nullptr);
+    static WatchLineEdit *create(QVariant::Type t, QWidget *parent = nullptr);
 };
 
 /* Watch delegate line edit for integer numbers based on quint64/qint64.
@@ -83,4 +105,5 @@ public:
     virtual void setModelData(const QVariant &);
 };
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

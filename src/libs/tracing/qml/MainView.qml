@@ -1,10 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Controls
+import QtQuick 2.1
+import QtQuick.Controls 2.0
 
-import QtCreator.Tracing
+import QtCreator.Tracing 1.0
 
 Rectangle {
     id: root
@@ -129,7 +151,7 @@ Rectangle {
         color: Theme.color(Theme.PanelStatusBarBackgroundColor)
         modelProxy: timelineModelAggregator
         zoomer: zoomControl
-        reverseSelect: root.shiftPressed
+        reverseSelect: shiftPressed
 
         onMoveCategories: (sourceIndex, targetIndex) => {
             content.moveCategories(sourceIndex, targetIndex)
@@ -156,7 +178,7 @@ Rectangle {
         anchors.top: parent.top
         anchors.left: parent.left
         width: 150
-        height: Theme.toolBarHeight()
+        height: 24
         onZoomControlChanged: zoomSliderToolBar.visible = !zoomSliderToolBar.visible
         onJumpToNext: {
             var next = timelineModelAggregator.nextItem(root.selectedModel, root.selectedItem,
@@ -228,7 +250,7 @@ Rectangle {
 
     MouseArea {
         id: selectionRangeControl
-        enabled: root.selectionRangeMode &&
+        enabled: selectionRangeMode &&
                  selectionRange.creationState !== selectionRange.creationFinished
         anchors.right: content.right
         anchors.left: buttonsBar.right
@@ -269,7 +291,7 @@ Rectangle {
         interactive: false
         x: content.x
         y: content.y
-        height: (root.selectionRangeMode &&
+        height: (selectionRangeMode &&
                  selectionRange.creationState !== selectionRange.creationInactive) ?
                     content.height : 0
         width: content.width
@@ -328,7 +350,7 @@ Rectangle {
         endTime: zoomControl.selectionEnd
         referenceDuration: zoomControl.rangeDuration
         showDuration: selectionRange.rangeWidth > 1
-        hasContents: root.selectionRangeMode &&
+        hasContents: selectionRangeMode &&
                      selectionRange.creationState !== selectionRange.creationInactive
 
         onRecenter: {
@@ -356,19 +378,22 @@ Rectangle {
         locked: content.selectionLocked
 
         onRecenterOnItem: {
-            content.select(root.selectedModel, root.selectedItem)
+            content.select(selectedModel, selectedItem)
         }
 
         onLockedChanged: {
             content.selectionLocked = locked;
         }
 
+        onClearSelection: {
+            content.propagateSelection(-1, -1);
+        }
+
         onUpdateNote: (text) => {
-            if (timelineModelAggregator.notes && root.selectedModel != -1
-                && root.selectedItem != -1) {
+            if (timelineModelAggregator.notes && selectedModel != -1 && selectedItem != -1) {
                 timelineModelAggregator.notes.setText(
-                            timelineModelAggregator.models[root.selectedModel].modelId,
-                            root.selectedItem, text);
+                            timelineModelAggregator.models[selectedModel].modelId,
+                            selectedItem, text);
             }
         }
 

@@ -1,13 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "projectconfiguration.h"
 
+#include "kitinformation.h"
 #include "target.h"
 
+#include <projectexplorer/devicesupport/idevice.h>
 #include <utils/algorithm.h>
-#include <utils/macroexpander.h>
 #include <utils/qtcassert.h>
+
+#include <QFormLayout>
+#include <QWidget>
 
 using namespace ProjectExplorer;
 using namespace Utils;
@@ -17,13 +43,22 @@ const char DISPLAY_NAME_KEY[] = "ProjectExplorer.ProjectConfiguration.DisplayNam
 
 // ProjectConfiguration
 
-ProjectConfiguration::ProjectConfiguration(Target *target, Id id)
-    : m_target(target)
+ProjectConfiguration::ProjectConfiguration(QObject *parent, Utils::Id id)
+    : QObject(parent)
     , m_id(id)
 {
-    QTC_CHECK(target);
+    m_aspects.setOwnsSubAspects(true);
+
+    QTC_CHECK(parent);
     QTC_CHECK(id.isValid());
     setObjectName(id.toString());
+
+    for (QObject *obj = this; obj; obj = obj->parent()) {
+        m_target = qobject_cast<Target *>(obj);
+        if (m_target)
+            break;
+    }
+    QTC_CHECK(m_target);
 }
 
 ProjectConfiguration::~ProjectConfiguration() = default;
@@ -38,14 +73,14 @@ Kit *ProjectConfiguration::kit() const
     return m_target->kit();
 }
 
-Id ProjectConfiguration::id() const
+Utils::Id ProjectConfiguration::id() const
 {
     return m_id;
 }
 
-Key ProjectConfiguration::settingsIdKey()
+QString ProjectConfiguration::settingsIdKey()
 {
-    return CONFIGURATION_ID_KEY;
+    return QString(CONFIGURATION_ID_KEY);
 }
 
 void ProjectConfiguration::setDisplayName(const QString &name)
@@ -73,12 +108,14 @@ QString ProjectConfiguration::toolTip() const
     return m_toolTip;
 }
 
-void ProjectConfiguration::toMap(Store &map) const
+QVariantMap ProjectConfiguration::toMap() const
 {
     QTC_CHECK(m_id.isValid());
-    map.insert(CONFIGURATION_ID_KEY, m_id.toSetting());
+    QVariantMap map;
+    map.insert(QLatin1String(CONFIGURATION_ID_KEY), m_id.toSetting());
     m_displayName.toMap(map, DISPLAY_NAME_KEY);
-    AspectContainer::toMap(map);
+    m_aspects.toMap(map);
+    return map;
 }
 
 Target *ProjectConfiguration::target() const
@@ -86,20 +123,33 @@ Target *ProjectConfiguration::target() const
     return m_target;
 }
 
-void ProjectConfiguration::fromMap(const Store &map)
+bool ProjectConfiguration::fromMap(const QVariantMap &map)
 {
-    Id id = Id::fromSetting(map.value(CONFIGURATION_ID_KEY));
+    Utils::Id id = Utils::Id::fromSetting(map.value(QLatin1String(CONFIGURATION_ID_KEY)));
     // Note: This is only "startsWith", not ==, as RunConfigurations currently still
     // mangle in their build keys.
-    QTC_ASSERT(id.name().startsWith(m_id.name()), reportError(); return);
+    QTC_ASSERT(id.toString().startsWith(m_id.toString()), return false);
 
     m_displayName.fromMap(map, DISPLAY_NAME_KEY);
-    AspectContainer::fromMap(map);
+    m_aspects.fromMap(map);
+    return true;
 }
 
-Id ProjectExplorer::idFromMap(const Store &map)
+BaseAspect *ProjectConfiguration::aspect(Id id) const
 {
-    return Id::fromSetting(map.value(CONFIGURATION_ID_KEY));
+    return m_aspects.aspect(id);
+}
+
+FilePath ProjectConfiguration::mapFromBuildDeviceToGlobalPath(const FilePath &path) const
+{
+    IDevice::ConstPtr dev = BuildDeviceKitAspect::device(kit());
+    QTC_ASSERT(dev, return path);
+    return dev->mapToGlobalPath(path);
+}
+
+Id ProjectExplorer::idFromMap(const QVariantMap &map)
+{
+    return Id::fromSetting(map.value(QLatin1String(CONFIGURATION_ID_KEY)));
 }
 
 QString ProjectConfiguration::expandedDisplayName() const

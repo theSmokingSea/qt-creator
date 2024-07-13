@@ -1,14 +1,8 @@
-add_library(KF6SyntaxHighlighting)
+add_library(KF5SyntaxHighlighting)
 
-set_target_properties(KF6SyntaxHighlighting PROPERTIES
-    VERSION     ${KSYNTAXHIGHLIGHTING_VERSION}
-    SOVERSION   ${KSYNTAXHIGHLIGHTING_SOVERSION}
-    EXPORT_NAME SyntaxHighlighting
-)
+ecm_create_qm_loader(syntax_highlighting_QM_LOADER syntaxhighlighting5_qt)
 
-ecm_create_qm_loader(syntax_highlighting_QM_LOADER syntaxhighlighting6_qt)
-
-target_sources(KF6SyntaxHighlighting PRIVATE
+target_sources(KF5SyntaxHighlighting PRIVATE
     abstracthighlighter.cpp
     context.cpp
     contextswitch.cpp
@@ -31,7 +25,7 @@ target_sources(KF6SyntaxHighlighting PRIVATE
     ${syntax_highlighting_QM_LOADER}
     $<TARGET_OBJECTS:SyntaxHighlightingData>
 )
-ecm_qt_declare_logging_category(KF6SyntaxHighlighting
+ecm_qt_declare_logging_category(KF5SyntaxHighlighting
     HEADER ksyntaxhighlighting_logging.h
     IDENTIFIER KSyntaxHighlighting::Log
     CATEGORY_NAME kf.syntaxhighlighting
@@ -40,21 +34,26 @@ ecm_qt_declare_logging_category(KF6SyntaxHighlighting
     EXPORT KSYNTAXHIGHLIGHTING
 )
 
-ecm_generate_export_header(KF6SyntaxHighlighting
+ecm_generate_export_header(KF5SyntaxHighlighting
     BASE_NAME KSyntaxHighlighting
     GROUP_BASE_NAME KF
     VERSION ${KF_VERSION}
-    USE_VERSION_HEADER
     DEPRECATED_BASE_VERSION 0
-    DEPRECATION_VERSIONS
+    DEPRECATION_VERSIONS 5.87
     EXCLUDE_DEPRECATED_BEFORE_AND_AT ${EXCLUDE_DEPRECATED_BEFORE_AND_AT}
 )
-
-target_link_libraries(KF6SyntaxHighlighting
+set_target_properties(KF5SyntaxHighlighting PROPERTIES
+    VERSION ${SyntaxHighlighting_VERSION}
+    SOVERSION ${SyntaxHighlighting_SOVERSION}
+    EXPORT_NAME SyntaxHighlighting
+)
+target_include_directories(KF5SyntaxHighlighting INTERFACE "$<INSTALL_INTERFACE:${KDE_INSTALL_INCLUDEDIR_KF}/KSyntaxHighlighting>")
+target_include_directories(KF5SyntaxHighlighting PUBLIC "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR};${CMAKE_CURRENT_BINARY_DIR};>")
+target_link_libraries(KF5SyntaxHighlighting
     PUBLIC
-        Qt6::Gui
+        Qt${QT_MAJOR_VERSION}::Gui
     PRIVATE
-        Qt6::Network
+        Qt${QT_MAJOR_VERSION}::Network
 )
 
 set(Forwarding_Header_Names
@@ -73,15 +72,15 @@ set(Forwarding_Header_Names
 ecm_generate_headers(CamelCase_HEADERS
     HEADER_NAMES ${Forwarding_Header_Names}
     REQUIRED_HEADERS SyntaxHighlighting_HEADERS
-    OUTPUT_DIR ${CMAKE_BINARY_DIR}/KSyntaxHighlighting/KSyntaxHighlighting
+    # Avoid unprefixed headers in build dir (which is part of library's build interface include directories)
+    # and thus visible to anything linking it in the same build, incl. when used with CMake's FetchContent.
+    # E.g. there can be look-up clashes on case-insensitive filesystems with C++20's <format> file and
+    # the library's generated "Format" file.
+    # See BUG: 453759
+    OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/camelcaseheaders
 )
 
-target_include_directories(KF6SyntaxHighlighting
-    INTERFACE "$<INSTALL_INTERFACE:${KDE_INSTALL_INCLUDEDIR_KF}/KSyntaxHighlighting>"
-    PUBLIC "$<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/KSyntaxHighlighting;>"
-)
-
-install(TARGETS KF6SyntaxHighlighting EXPORT KF6SyntaxHighlightingTargets ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
+install(TARGETS KF5SyntaxHighlighting EXPORT KF5SyntaxHighlightingTargets ${KDE_INSTALL_TARGETS_DEFAULT_ARGS})
 
 install(FILES
     ${CamelCase_HEADERS}
@@ -92,17 +91,17 @@ install(FILES
 
 if(BUILD_QCH)
     ecm_add_qch(
-        KF6SyntaxHighlighting_QCH
+        KF5SyntaxHighlighting_QCH
         NAME KSyntaxHighlighting
-        BASE_NAME KF6SyntaxHighlighting
+        BASE_NAME KF5SyntaxHighlighting
         VERSION ${KF_VERSION}
         ORG_DOMAIN org.kde
         SOURCES # using only public headers, to cover only public API
             ${SyntaxHighlighting_HEADERS}
         MD_MAINPAGE "${CMAKE_SOURCE_DIR}/README.md"
         LINK_QCHS
-            Qt6Core_QCH
-            Qt6Gui_QCH
+            Qt5Core_QCH
+            Qt5Gui_QCH
         INCLUDE_DIRS
             ${CMAKE_CURRENT_BINARY_DIR}
         BLANK_MACROS
@@ -113,3 +112,11 @@ if(BUILD_QCH)
         COMPONENT Devel
     )
 endif()
+ecm_generate_pri_file(
+    BASE_NAME KSyntaxHighlighting LIB_NAME
+    KF5SyntaxHighlighting
+    DEPS "gui"
+    FILENAME_VAR PRI_FILENAME
+    INCLUDE_INSTALL_DIR ${KDE_INSTALL_INCLUDEDIR_KF}/KSyntaxHighlighting
+)
+install(FILES ${PRI_FILENAME} DESTINATION ${ECM_MKSPECS_INSTALL_DIR})

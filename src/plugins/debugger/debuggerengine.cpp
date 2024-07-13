@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "debuggerengine.h"
 
@@ -10,19 +32,17 @@
 #include "debuggericons.h"
 #include "debuggerruncontrol.h"
 #include "debuggertooltipmanager.h"
-#include "debuggertr.h"
 
 #include "breakhandler.h"
-#include "debuggermainwindow.h"
 #include "disassembleragent.h"
-#include "enginemanager.h"
 #include "localsandexpressionswindow.h"
 #include "logwindow.h"
+#include "debuggermainwindow.h"
+#include "enginemanager.h"
 #include "memoryagent.h"
 #include "moduleshandler.h"
 #include "registerhandler.h"
 #include "peripheralregisterhandler.h"
-#include "shared/peutils.h"
 #include "sourcefileshandler.h"
 #include "sourceutils.h"
 #include "stackhandler.h"
@@ -32,6 +52,7 @@
 #include "watchhandler.h"
 #include "watchutils.h"
 #include "watchwindow.h"
+#include "debugger/shared/peutils.h"
 
 #include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/editormanager/editormanager.h>
@@ -45,6 +66,7 @@
 
 #include <projectexplorer/devicesupport/devicemanager.h>
 #include <projectexplorer/projectexplorer.h>
+#include <projectexplorer/taskhub.h>
 
 #include <texteditor/texteditor.h>
 #include <texteditor/texteditorsettings.h>
@@ -54,10 +76,10 @@
 #include <utils/basetreeview.h>
 #include <utils/checkablemessagebox.h>
 #include <utils/macroexpander.h>
-#include <utils/qtcprocess.h>
 #include <utils/processhandle.h>
 #include <utils/processinterface.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 #include <utils/styledbar.h>
 #include <utils/utilsicons.h>
 
@@ -142,7 +164,7 @@ static bool debuggerActionsEnabledHelper(DebuggerState state)
 Location::Location(const StackFrame &frame, bool marker)
 {
     m_fileName = frame.file;
-    m_textPosition = {frame.line, -1};
+    m_lineNumber = frame.line;
     m_needsMarker = marker;
     m_functionName = frame.function;
     m_hasDebugInfo = frame.isUsable();
@@ -150,12 +172,11 @@ Location::Location(const StackFrame &frame, bool marker)
     m_from = frame.module;
 }
 
+
 LocationMark::LocationMark(DebuggerEngine *engine, const FilePath &file, int line)
-    : TextMark(file, line, {Tr::tr("Debugger Location"), Constants::TEXT_MARK_CATEGORY_LOCATION})
-    , m_engine(engine)
+    : TextMark(file, line, Constants::TEXT_MARK_CATEGORY_LOCATION), m_engine(engine)
 {
     setPriority(TextMark::HighPriority);
-    setIsLocationMarker(true);
     updateIcon();
 }
 
@@ -207,8 +228,8 @@ public:
         } else {
             delete agent;
             AsynchronousMessageBox::warning(
-                        Tr::tr("No Memory Viewer Available"),
-                        Tr::tr("The memory contents cannot be shown as no viewer plugin "
+                        DebuggerEngine::tr("No Memory Viewer Available"),
+                        DebuggerEngine::tr("The memory contents cannot be shown as no viewer plugin "
                                            "for binary data has been loaded."));
         }
     }
@@ -260,15 +281,15 @@ public:
           m_disassemblerAgent(engine),
           m_toolTipManager(engine)
     {
-        m_debuggerName = Tr::tr("Debugger");
+        m_debuggerName = DebuggerEngine::tr("Debugger");
 
         m_logWindow = new LogWindow(m_engine); // Needed before start()
         m_logWindow->setObjectName("Debugger.Dock.Output");
 
-        connect(&settings().enableReverseDebugging, &BaseAspect::changed, this, [this] {
+        connect(&debuggerSettings()->enableReverseDebugging, &BaseAspect::changed, this, [this] {
             updateState();
-            for (const QPointer<DebuggerEngine> &companion : std::as_const(m_companionEngines))
-                companion->d->updateState();
+            if (m_companionEngine)
+                m_companionEngine->d->updateState();
         });
         static int contextCount = 0;
         m_context = Context(Id("Debugger.Engine.").withSuffix(++contextCount));
@@ -345,8 +366,8 @@ public:
     {
         // update tooltips that are visible on the button in the mode selector
         const QString displayName = m_engine->displayName();
-        m_continueAction.setToolTip(Tr::tr("Continue %1").arg(displayName));
-        m_interruptAction.setToolTip(Tr::tr("Interrupt %1").arg(displayName));
+        m_continueAction.setToolTip(tr("Continue %1").arg(displayName));
+        m_interruptAction.setToolTip(tr("Interrupt %1").arg(displayName));
     }
 
     void setupViews();
@@ -404,9 +425,9 @@ public:
         m_stackHandler.removeAll();
         m_threadsHandler.removeAll();
         m_watchHandler.cleanup();
-        m_engine->showMessage(Tr::tr("Debugger finished."), StatusBar);
+        m_engine->showMessage(tr("Debugger finished."), StatusBar);
         m_engine->setState(DebuggerFinished); // Also destroys views.
-        if (settings().switchModeOnExit())
+        if (debuggerSettings()->switchModeOnExit.value())
             EngineManager::deactivateDebugMode();
     }
 
@@ -440,12 +461,11 @@ public:
     DebuggerEngine *m_engine = nullptr; // Not owned.
     QString m_runId;
     QString m_debuggerName;
-    QString m_debuggerType;
     QPointer<Perspective> m_perspective;
     DebuggerRunParameters m_runParameters;
     IDevice::ConstPtr m_device;
 
-    QList<QPointer<DebuggerEngine>> m_companionEngines;
+    QPointer<DebuggerEngine> m_companionEngine;
     bool m_isPrimaryEngine = true;
 
     // The current state.
@@ -472,7 +492,7 @@ public:
     QString m_qtNamespace;
 
     // Safety net to avoid infinite lookups.
-    QHash<QString, int> m_lookupRequests; // FIXME: Integrate properly.
+    QSet<QString> m_lookupRequests; // FIXME: Integrate properly.
     QPointer<QWidget> m_alertBox;
 
     QPointer<BaseTreeView> m_breakView;
@@ -506,29 +526,32 @@ public:
     bool m_isDying = false;
 
     QAction m_detachAction;
-    OptionalAction m_continueAction{Tr::tr("Continue")};
-    QAction m_exitAction{Tr::tr("Stop Debugger")}; // On application output button if "Stop" is possible
-    OptionalAction m_interruptAction{Tr::tr("Interrupt")}; // On the fat debug button if "Pause" is possible
-    QAction m_abortAction{Tr::tr("Abort Debugging")};
-    QAction m_stepIntoAction{Tr::tr("Step Into")};
-    QAction m_stepOutAction{Tr::tr("Step Out")};
-    QAction m_runToLineAction{Tr::tr("Run to Line")}; // In the debug menu
-    QAction m_runToSelectedFunctionAction{Tr::tr("Run to Selected Function")};
-    QAction m_jumpToLineAction{Tr::tr("Jump to Line")};
-    QAction m_frameUpAction{Tr::tr("Move to Calling Frame")};
-    QAction m_frameDownAction{Tr::tr("Move to Called Frame")};
-    QAction m_openMemoryEditorAction{Tr::tr("Memory...")};
+    OptionalAction m_continueAction{tr("Continue")};
+    QAction m_exitAction{tr("Stop Debugger")}; // On application output button if "Stop" is possible
+    OptionalAction m_interruptAction{tr("Interrupt")}; // On the fat debug button if "Pause" is possible
+    QAction m_abortAction{tr("Abort Debugging")};
+    QAction m_stepIntoAction{tr("Step Into")};
+    QAction m_stepOutAction{tr("Step Out")};
+    QAction m_runToLineAction{tr("Run to Line")}; // In the debug menu
+    QAction m_runToSelectedFunctionAction{tr("Run to Selected Function")};
+    QAction m_jumpToLineAction{tr("Jump to Line")};
+    QAction m_frameUpAction{QCoreApplication::translate("Debugger::Internal::DebuggerPluginPrivate",
+                                                        "Move to Calling Frame")};
+    QAction m_frameDownAction{QCoreApplication::translate("Debugger::Internal::DebuggerPluginPrivate",
+                                                          "Move to Called Frame")};
+    QAction m_openMemoryEditorAction{QCoreApplication::translate("Debugger::Internal::DebuggerPluginPrivate",
+                                                                 "Memory...")};
     // In the Debug menu.
-    QAction m_returnFromFunctionAction{Tr::tr("Immediately Return From Inner Function")};
-    QAction m_stepOverAction{Tr::tr("Step Over")};
-    QAction m_watchAction{Tr::tr("Add Expression Evaluator")};
-    QAction m_setOrRemoveBreakpointAction{Tr::tr("Set or Remove Breakpoint")};
-    QAction m_enableOrDisableBreakpointAction{Tr::tr("Enable or Disable Breakpoint")};
-    QAction m_resetAction{Tr::tr("Restart Debugging")};
-    OptionalAction m_operateByInstructionAction{Tr::tr("Operate by Instruction")};
-    QAction m_recordForReverseOperationAction{Tr::tr("Record Information to Allow Reversal of Direction")};
-    OptionalAction m_operateInReverseDirectionAction{Tr::tr("Reverse Direction")};
-    OptionalAction m_snapshotAction{Tr::tr("Take Snapshot of Process State")};
+    QAction m_returnFromFunctionAction{tr("Immediately Return From Inner Function")};
+    QAction m_stepOverAction{tr("Step Over")};
+    QAction m_watchAction{tr("Add Expression Evaluator")};
+    QAction m_setOrRemoveBreakpointAction{tr("Set or Remove Breakpoint")};
+    QAction m_enableOrDisableBreakpointAction{tr("Enable or Disable Breakpoint")};
+    QAction m_resetAction{tr("Restart Debugging")};
+    OptionalAction m_operateByInstructionAction{tr("Operate by Instruction")};
+    QAction m_recordForReverseOperationAction{tr("Record Information to Allow Reversal of Direction")};
+    OptionalAction m_operateInReverseDirectionAction{tr("Reverse Direction")};
+    OptionalAction m_snapshotAction{tr("Take Snapshot of Process State")};
 
     QPointer<TerminalRunner> m_terminalRunner;
     DebuggerToolTipManager m_toolTipManager;
@@ -542,22 +565,19 @@ void DebuggerEnginePrivate::setupViews()
 
     QTC_CHECK(!m_perspective);
 
-    Perspective *currentPerspective = DebuggerMainWindow::instance()->currentPerspective();
-
     const QString perspectiveId = "Debugger.Perspective." + m_runId + '.' + m_debuggerName;
     const QString settingsId = "Debugger.Perspective." + m_debuggerName;
-    const QString parentPerspectiveId = currentPerspective ? currentPerspective->id()
-                                                           : Constants::PRESET_PERSPECTIVE_ID;
 
-    m_perspective
-        = new Perspective(perspectiveId, m_engine->displayName(), parentPerspectiveId, settingsId);
+    m_perspective = new Perspective(perspectiveId,
+                                    m_engine->displayName(),
+                                    Debugger::Constants::PRESET_PERSPECTIVE_ID,
+                                    settingsId);
 
     m_progress.setProgressRange(0, 1000);
-    const QString msg = m_companionEngines.isEmpty()
-            ? Tr::tr("Launching Debugger")
-            : Tr::tr("Launching %1 Debugger").arg(m_debuggerName);
-    FutureProgress *fp = ProgressManager::addTask(m_progress.future(), msg, "Debugger.Launcher");
+    FutureProgress *fp = ProgressManager::addTask(m_progress.future(),
+        tr("Launching Debugger"), "Debugger.Launcher");
     connect(fp, &FutureProgress::canceled, m_engine, &DebuggerEngine::quitDebugger);
+    fp->setKeepOnFinish(FutureProgress::HideOnFinish);
     m_progress.reportStarted();
 
     m_inferiorPid = rp.attachPID.isValid() ? rp.attachPID : ProcessHandle();
@@ -569,7 +589,7 @@ void DebuggerEnginePrivate::setupViews()
     m_operateByInstructionAction.setIcon(Debugger::Icons::SINGLE_INSTRUCTION_MODE.icon());
     m_operateByInstructionAction.setCheckable(true);
     m_operateByInstructionAction.setChecked(false);
-    m_operateByInstructionAction.setToolTip("<p>" + Tr::tr("Switches the debugger to instruction-wise "
+    m_operateByInstructionAction.setToolTip("<p>" + tr("Switches the debugger to instruction-wise "
         "operation mode. In this mode, stepping operates on single "
         "instructions and the source location view also shows the "
         "disassembled instructions."));
@@ -609,7 +629,7 @@ void DebuggerEnginePrivate::setupViews()
     connect(&m_locationTimer, &QTimer::timeout,
             this, &DebuggerEnginePrivate::resetLocation);
 
-    QtcSettings *settings = ICore::settings();
+    QSettings *settings = ICore::settings();
 
     m_modulesView = new BaseTreeView;
     m_modulesView->setModel(m_modulesHandler.model());
@@ -621,7 +641,7 @@ void DebuggerEnginePrivate::setupViews()
             Qt::QueuedConnection);
     m_modulesWindow = addSearch(m_modulesView);
     m_modulesWindow->setObjectName("Debugger.Dock.Modules." + engineId);
-    m_modulesWindow->setWindowTitle(Tr::tr("&Modules"));
+    m_modulesWindow->setWindowTitle(tr("&Modules"));
 
     m_registerView = new BaseTreeView;
     m_registerView->setModel(m_registerHandler.model());
@@ -633,7 +653,7 @@ void DebuggerEnginePrivate::setupViews()
             Qt::QueuedConnection);
     m_registerWindow = addSearch(m_registerView);
     m_registerWindow->setObjectName("Debugger.Dock.Register." + engineId);
-    m_registerWindow->setWindowTitle(Tr::tr("Reg&isters"));
+    m_registerWindow->setWindowTitle(tr("Reg&isters"));
 
     m_peripheralRegisterView = new BaseTreeView;
     m_peripheralRegisterView->setModel(m_peripheralRegisterHandler.model());
@@ -645,7 +665,7 @@ void DebuggerEnginePrivate::setupViews()
             Qt::QueuedConnection);
     m_peripheralRegisterWindow = addSearch(m_peripheralRegisterView);
     m_peripheralRegisterWindow->setObjectName("Debugger.Dock.PeripheralRegister." + engineId);
-    m_peripheralRegisterWindow->setWindowTitle(Tr::tr("Peripheral Reg&isters"));
+    m_peripheralRegisterWindow->setWindowTitle(tr("Peripheral Reg&isters"));
 
     m_stackView = new StackTreeView;
     m_stackView->setModel(m_stackHandler.model());
@@ -654,7 +674,7 @@ void DebuggerEnginePrivate::setupViews()
     m_stackView->enableColumnHiding();
     m_stackWindow = addSearch(m_stackView);
     m_stackWindow->setObjectName("Debugger.Dock.Stack." + engineId);
-    m_stackWindow->setWindowTitle(Tr::tr("&Stack"));
+    m_stackWindow->setWindowTitle(tr("&Stack"));
 
     m_sourceFilesView = new BaseTreeView;
     m_sourceFilesView->setModel(m_sourceFilesHandler.model());
@@ -666,7 +686,7 @@ void DebuggerEnginePrivate::setupViews()
             Qt::QueuedConnection);
     m_sourceFilesWindow = addSearch(m_sourceFilesView);
     m_sourceFilesWindow->setObjectName("Debugger.Dock.SourceFiles." + engineId);
-    m_sourceFilesWindow->setWindowTitle(Tr::tr("Source Files"));
+    m_sourceFilesWindow->setWindowTitle(tr("Source Files"));
 
     m_threadsView = new BaseTreeView;
     m_threadsView->setModel(m_threadsHandler.model());
@@ -677,13 +697,13 @@ void DebuggerEnginePrivate::setupViews()
     m_threadsView->enableColumnHiding();
     m_threadsWindow = addSearch(m_threadsView);
     m_threadsWindow->setObjectName("Debugger.Dock.Threads." + engineId);
-    m_threadsWindow->setWindowTitle(Tr::tr("&Threads"));
+    m_threadsWindow->setWindowTitle(tr("&Threads"));
 
     m_returnView = new WatchTreeView{ReturnType};
     m_returnView->setModel(m_watchHandler.model());
     m_returnWindow = addSearch(m_returnView);
     m_returnWindow->setObjectName("CppDebugReturn");
-    m_returnWindow->setWindowTitle(Tr::tr("Locals"));
+    m_returnWindow->setWindowTitle(tr("Locals"));
     m_returnWindow->setVisible(false);
 
     m_localsView = new WatchTreeView{LocalsType};
@@ -691,21 +711,21 @@ void DebuggerEnginePrivate::setupViews()
     m_localsView->setSettings(settings, "Debugger.LocalsView");
     m_localsWindow = addSearch(m_localsView);
     m_localsWindow->setObjectName("Debugger.Dock.Locals." + engineId);
-    m_localsWindow->setWindowTitle(Tr::tr("Locals"));
+    m_localsWindow->setWindowTitle(tr("Locals"));
 
     m_inspectorView = new WatchTreeView{InspectType};
     m_inspectorView->setModel(m_watchHandler.model());
     m_inspectorView->setSettings(settings, "Debugger.LocalsView"); // sic! same as locals view.
     m_inspectorWindow = addSearch(m_inspectorView);
     m_inspectorWindow->setObjectName("Debugger.Dock.Inspector." + engineId);
-    m_inspectorWindow->setWindowTitle(Tr::tr("Locals"));
+    m_inspectorWindow->setWindowTitle(tr("Locals"));
 
     m_watchersView = new WatchTreeView{WatchersType};
     m_watchersView->setModel(m_watchHandler.model());
     m_watchersView->setSettings(settings, "Debugger.WatchersView");
     m_watchersWindow = addSearch(m_watchersView);
     m_watchersWindow->setObjectName("Debugger.Dock.Watchers." + engineId);
-    m_watchersWindow->setWindowTitle(Tr::tr("&Expressions"));
+    m_watchersWindow->setWindowTitle(tr("&Expressions"));
 
     m_localsAndInspectorWindow = new LocalsAndInspectorWindow(
                 m_localsWindow, m_inspectorWindow, m_returnWindow);
@@ -727,12 +747,9 @@ void DebuggerEnginePrivate::setupViews()
     m_breakView->enableColumnHiding();
     m_breakWindow = addSearch(m_breakView);
     m_breakWindow->setObjectName("Debugger.Dock.Break." + engineId);
-    m_breakWindow->setWindowTitle(Tr::tr("&Breakpoints"));
+    m_breakWindow->setWindowTitle(tr("&Breakpoints"));
 
-    if (currentPerspective && currentPerspective->id() == Constants::DAP_PERSPECTIVE_ID)
-        m_perspective->useSubPerspectiveSwitcher(EngineManager::dapEngineChooser());
-    else
-        m_perspective->useSubPerspectiveSwitcher(EngineManager::engineChooser());
+    m_perspective->useSubPerspectiveSwitcher(EngineManager::engineChooser());
 
     m_perspective->addToolBarAction(&m_continueAction);
     m_perspective->addToolBarAction(&m_interruptAction);
@@ -758,11 +775,11 @@ void DebuggerEnginePrivate::setupViews()
     connect(&m_interruptAction, &QAction::triggered,
             m_engine, &DebuggerEngine::handleExecInterrupt);
 
-    m_abortAction.setToolTip(Tr::tr("Aborts debugging and resets the debugger to the initial state."));
+    m_abortAction.setToolTip(tr("Aborts debugging and resets the debugger to the initial state."));
     connect(&m_abortAction, &QAction::triggered,
             m_engine, &DebuggerEngine::abortDebugger);
 
-    m_resetAction.setToolTip(Tr::tr("Restarts the debugging session."));
+    m_resetAction.setToolTip(tr("Restarts the debugging session."));
     m_resetAction.setIcon(Icons::RESTART_TOOLBAR.icon());
     connect(&m_resetAction, &QAction::triggered,
             m_engine, &DebuggerEngine::handleReset);
@@ -808,15 +825,15 @@ void DebuggerEnginePrivate::setupViews()
 
     m_perspective->addToolbarSeparator();
 
-    m_threadLabel = new QLabel(Tr::tr("Threads:"));
+    m_threadLabel = new QLabel(tr("Threads:"));
     m_perspective->addToolBarWidget(m_threadLabel);
     m_perspective->addToolBarWidget(m_threadsHandler.threadSwitcher());
 
     connect(TextEditorSettings::instance(), &TextEditorSettings::fontSettingsChanged,
-            this, [this](const FontSettings &fs) {
-        if (!Internal::settings().fontSizeFollowsEditor())
+            this, [this](const FontSettings &settings) {
+        if (!debuggerSettings()->fontSizeFollowsEditor.value())
             return;
-        const qreal size = fs.fontZoom() * fs.fontSize() / 100.;
+        const qreal size = settings.fontZoom() * settings.fontSize() / 100.;
         QFont font = m_breakWindow->font();
         font.setPointSizeF(size);
         m_breakWindow->setFont(font);
@@ -875,16 +892,6 @@ void DebuggerEngine::setDebuggerName(const QString &name)
 QString DebuggerEngine::debuggerName() const
 {
     return d->m_debuggerName;
-}
-
-void DebuggerEngine::setDebuggerType(const QString &type)
-{
-    d->m_debuggerType = type;
-}
-
-QString DebuggerEngine::debuggerType() const
-{
-    return d->m_debuggerType;
 }
 
 QString DebuggerEngine::stateName(int s)
@@ -1054,6 +1061,11 @@ void DebuggerEngine::setRunTool(DebuggerRunTool *runTool)
 {
     d->m_device = runTool->device();
 
+    IDevice::ConstPtr debuggerDevice =
+        DeviceManager::deviceForPath(d->m_runParameters.debugger.command.executable());
+    if (QTC_GUARD(debuggerDevice))
+        d->m_runParameters.dumperPath = debuggerDevice->debugDumperPath();
+
     d->m_terminalRunner = runTool->terminalRunner();
 
     validateRunParameters(d->m_runParameters);
@@ -1093,7 +1105,7 @@ void DebuggerEngine::gotoLocation(const Location &loc)
         return;
     }
     const FilePath file = loc.fileName();
-    const int line = loc.textPosition().line;
+    const int line = loc.lineNumber();
     bool newEditor = false;
     IEditor *editor = EditorManager::openEditor(file,
                                                 Id(),
@@ -1103,14 +1115,14 @@ void DebuggerEngine::gotoLocation(const Location &loc)
                                                 &newEditor);
     QTC_ASSERT(editor, return); // Unreadable file?
 
-    editor->gotoLine(line, 0, !settings().stationaryEditorWhileStepping());
+    editor->gotoLine(line, 0, !debuggerSettings()->stationaryEditorWhileStepping.value());
 
     if (newEditor)
         editor->document()->setProperty(Constants::OPENED_BY_DEBUGGER, true);
 
     if (loc.needsMarker()) {
         d->m_locationMark.reset(new LocationMark(this, loc.fileName(), line));
-        d->m_locationMark->setToolTip(Tr::tr("Current debugger location of %1").arg(displayName()));
+        d->m_locationMark->setToolTip(tr("Current debugger location of %1").arg(displayName()));
     }
 
     d->m_breakHandler.setLocation(loc);
@@ -1136,9 +1148,9 @@ IDevice::ConstPtr DebuggerEngine::device() const
     return d->m_device;
 }
 
-QList<DebuggerEngine *> DebuggerEngine::companionEngines() const
+DebuggerEngine *DebuggerEngine::companionEngine() const
 {
-    return Utils::transform(d->m_companionEngines, &QPointer<DebuggerEngine>::get);
+    return d->m_companionEngine;
 }
 
 DebuggerState DebuggerEngine::state() const
@@ -1239,7 +1251,7 @@ void DebuggerEngine::notifyEngineSetupFailed()
     QTC_ASSERT(state() == EngineSetupRequested, qDebug() << this << state());
     setState(EngineSetupFailed);
     if (d->m_isPrimaryEngine) {
-        showMessage(Tr::tr("Debugging has failed."), NormalMessageFormat);
+        showMessage(tr("Debugging has failed."), NormalMessageFormat);
         d->m_progress.setProgressValue(900);
         d->m_progress.reportCanceled();
         d->m_progress.reportFinished();
@@ -1266,7 +1278,7 @@ void DebuggerEngine::notifyEngineRunOkAndInferiorUnrunnable()
     d->m_progress.setProgressValue(1000);
     d->m_progress.reportFinished();
     QTC_ASSERT(state() == EngineRunRequested, qDebug() << this << state());
-    showStatusMessage(Tr::tr("Loading finished."));
+    showStatusMessage(tr("Loading finished."));
     setState(InferiorUnrunnable);
 }
 
@@ -1277,7 +1289,7 @@ void DebuggerEngine::notifyEngineRunFailed()
     d->m_progress.setProgressValue(900);
     d->m_progress.reportCanceled();
     d->m_progress.reportFinished();
-    showStatusMessage(Tr::tr("Run failed."));
+    showStatusMessage(tr("Run failed."));
     setState(EngineRunFailed);
     d->doShutdownEngine();
 }
@@ -1288,7 +1300,7 @@ void DebuggerEngine::notifyEngineRunAndInferiorRunOk()
     d->m_progress.setProgressValue(1000);
     d->m_progress.reportFinished();
     QTC_ASSERT(state() == EngineRunRequested, qDebug() << this << state());
-    showStatusMessage(Tr::tr("Running."));
+    showStatusMessage(tr("Running."));
     setState(InferiorRunOk);
 }
 
@@ -1298,7 +1310,7 @@ void DebuggerEngine::notifyEngineRunAndInferiorStopOk()
     d->m_progress.setProgressValue(1000);
     d->m_progress.reportFinished();
     QTC_ASSERT(state() == EngineRunRequested, qDebug() << this << state());
-    showStatusMessage(Tr::tr("Stopped."));
+    showStatusMessage(tr("Stopped."));
     setState(InferiorStopOk);
 }
 
@@ -1306,7 +1318,7 @@ void DebuggerEngine::notifyInferiorRunRequested()
 {
     showMessage("NOTE: INFERIOR RUN REQUESTED");
     QTC_ASSERT(state() == InferiorStopOk, qDebug() << this << state());
-    showStatusMessage(Tr::tr("Run requested..."));
+    showStatusMessage(tr("Run requested..."));
     setState(InferiorRunRequested);
 }
 
@@ -1317,7 +1329,7 @@ void DebuggerEngine::notifyInferiorRunOk()
         return;
     }
     showMessage("NOTE: INFERIOR RUN OK");
-    showStatusMessage(Tr::tr("Running."));
+    showStatusMessage(tr("Running."));
     // Transition from StopRequested can happen in remotegdbadapter.
     QTC_ASSERT(state() == InferiorRunRequested
         || state() == InferiorStopOk
@@ -1354,7 +1366,7 @@ void DebuggerEngine::notifyInferiorStopOk()
         return;
     }
     QTC_ASSERT(state() == InferiorStopRequested, qDebug() << this << state());
-    showMessage(Tr::tr("Stopped."), StatusBar);
+    showMessage(tr("Stopped."), StatusBar);
     setState(InferiorStopOk);
 }
 
@@ -1364,9 +1376,9 @@ void DebuggerEngine::notifyInferiorSpontaneousStop()
     QTC_ASSERT(state() == InferiorRunOk, qDebug() << this << state());
     if (QTC_GUARD(d->m_perspective))
         d->m_perspective->select();
-    showMessage(Tr::tr("Stopped."), StatusBar);
+    showMessage(tr("Stopped."), StatusBar);
     setState(InferiorStopOk);
-    if (settings().raiseOnInterrupt())
+    if (debuggerSettings()->raiseOnInterrupt.value())
         ICore::raiseWindow(DebuggerMainWindow::instance());
 }
 
@@ -1380,8 +1392,7 @@ void DebuggerEngine::notifyInferiorStopFailed()
 
 void DebuggerEnginePrivate::setInitialActionStates()
 {
-    if (m_returnWindow)
-        m_returnWindow->setVisible(false);
+    m_returnWindow->setVisible(false);
     setBusyCursor(false);
 
     m_recordForReverseOperationAction.setCheckable(true);
@@ -1389,9 +1400,9 @@ void DebuggerEnginePrivate::setInitialActionStates()
     m_recordForReverseOperationAction.setIcon(Icons::RECORD_OFF.icon());
     m_recordForReverseOperationAction.setToolTip(QString("<html><head/><body><p>%1</p><p>"
                                                          "<b>%2</b>%3</p></body></html>").arg(
-                         Tr::tr("Record information to enable stepping backwards."),
-                         Tr::tr("Note: "),
-                         Tr::tr("This feature is very slow and unstable on the GDB side. "
+                         tr("Record information to enable stepping backwards."),
+                         tr("Note: "),
+                         tr("This feature is very slow and unstable on the GDB side. "
                             "It exhibits unpredictable behavior when going backwards over system "
                             "calls and is very likely to destroy your debugging session.")));
 
@@ -1426,11 +1437,10 @@ void DebuggerEnginePrivate::setInitialActionStates()
     m_jumpToLineAction.setVisible(false);
     m_stepOverAction.setEnabled(true);
 
-    settings().autoDerefPointers.setEnabled(true);
-    settings().expandStack.setEnabled(false);
+    debuggerSettings()->autoDerefPointers.setEnabled(true);
+    debuggerSettings()->expandStack.setEnabled(false);
 
-    if (m_threadLabel)
-        m_threadLabel->setEnabled(false);
+    m_threadLabel->setEnabled(false);
 }
 
 void DebuggerEnginePrivate::updateState()
@@ -1440,13 +1450,10 @@ void DebuggerEnginePrivate::updateState()
         return;
     QTC_ASSERT(m_threadLabel, return);
 
-    if (m_isDying)
-        return;
-
     const DebuggerState state = m_state;
     const bool companionPreventsAction = m_engine->companionPreventsActions();
 
-    // Fixme: hint Tr::tr("Debugger is Busy");
+    // Fixme: hint tr("Debugger is Busy");
     // Exactly one of m_interuptAction and m_continueAction should be
     // visible, possibly disabled.
     if (state == DebuggerNotReady) {
@@ -1570,9 +1577,9 @@ void DebuggerEnginePrivate::updateState()
 
     const bool actionsEnabled = m_engine->debuggerActionsEnabled();
     const bool canDeref = actionsEnabled && m_engine->hasCapability(AutoDerefPointersCapability);
-    settings().autoDerefPointers.setEnabled(canDeref);
-    settings().autoDerefPointers.setEnabled(true);
-    settings().expandStack.setEnabled(actionsEnabled);
+    debuggerSettings()->autoDerefPointers.setEnabled(canDeref);
+    debuggerSettings()->autoDerefPointers.setEnabled(true);
+    debuggerSettings()->expandStack.setEnabled(actionsEnabled);
 
     const bool notbusy = state == InferiorStopOk
         || state == DebuggerNotReady
@@ -1584,7 +1591,7 @@ void DebuggerEnginePrivate::updateState()
 void DebuggerEnginePrivate::updateReverseActions()
 {
     const bool stopped = m_state == InferiorStopOk;
-    const bool reverseEnabled = settings().enableReverseDebugging();
+    const bool reverseEnabled = debuggerSettings()->enableReverseDebugging.value();
     const bool canReverse = reverseEnabled && m_engine->hasCapability(ReverseSteppingCapability);
     const bool doesRecord = m_recordForReverseOperationAction.isChecked();
 
@@ -1597,13 +1604,13 @@ void DebuggerEnginePrivate::updateReverseActions()
     m_operateInReverseDirectionAction.setVisible(canReverse);
     m_operateInReverseDirectionAction.setEnabled(canReverse && stopped && doesRecord);
     m_operateInReverseDirectionAction.setIcon(Icons::DIRECTION_BACKWARD.icon());
-    m_operateInReverseDirectionAction.setText(Tr::tr("Operate in Reverse Direction"));
+    m_operateInReverseDirectionAction.setText(DebuggerEngine::tr("Operate in Reverse Direction"));
 }
 
 void DebuggerEnginePrivate::cleanupViews()
 {
-    const bool closeSource = settings().closeSourceBuffersOnExit();
-    const bool closeMemory = settings().closeMemoryBuffersOnExit();
+    const bool closeSource = debuggerSettings()->closeSourceBuffersOnExit.value();
+    const bool closeMemory = debuggerSettings()->closeMemoryBuffersOnExit.value();
 
     QList<IDocument *> toClose;
     const QList<IDocument *> documents = DocumentModel::openedDocuments();
@@ -1767,10 +1774,6 @@ void DebuggerEngine::showMessage(const QString &msg, int channel, int timeout) c
             d->m_logWindow->showInput(LogInput, msg);
             d->m_logWindow->showOutput(LogInput, msg);
             break;
-        case LogOutput:
-        case LogWarning:
-            d->m_logWindow->showOutput(channel, msg);
-            break;
         case LogError:
             d->m_logWindow->showInput(LogError, "ERROR: " + msg);
             d->m_logWindow->showOutput(LogError, "ERROR: " + msg);
@@ -1785,7 +1788,7 @@ void DebuggerEngine::showMessage(const QString &msg, int channel, int timeout) c
             emit appendMessageRequested(msg, StdErrFormat, false);
             break;
         default:
-            d->m_logWindow->showOutput(channel, QString("[%1] %2").arg(debuggerName(), msg));
+            d->m_logWindow->showOutput(channel, msg);
             break;
     }
 }
@@ -1803,9 +1806,6 @@ void DebuggerEngine::notifyDebuggerProcessFinished(const ProcessResultData &resu
     case DebuggerFinished:
         // Nothing to do.
         break;
-    case EngineSetupRequested:
-        notifyEngineSetupFailed();
-        break;
     case EngineShutdownRequested:
     case InferiorShutdownRequested:
         notifyEngineShutdownFinished();
@@ -1821,9 +1821,9 @@ void DebuggerEngine::notifyDebuggerProcessFinished(const ProcessResultData &resu
         // Initiate shutdown sequence
         notifyInferiorIll();
         const QString msg = result.m_exitStatus == QProcess::CrashExit ?
-                Tr::tr("The %1 process terminated.") :
-                Tr::tr("The %2 process terminated unexpectedly (exit code %1).").arg(result.m_exitCode);
-        AsynchronousMessageBox::critical(Tr::tr("Unexpected %1 Exit").arg(backendName),
+                tr("The %1 process terminated.") :
+                tr("The %2 process terminated unexpectedly (exit code %1).").arg(result.m_exitCode);
+        AsynchronousMessageBox::critical(tr("Unexpected %1 Exit").arg(backendName),
                                          msg.arg(backendName));
         break;
     }
@@ -1861,8 +1861,8 @@ void DebuggerEngine::setState(DebuggerState state, bool forced)
     showMessage(msg, LogDebug);
 
     d->updateState();
-    for (const QPointer<DebuggerEngine> &companion : std::as_const(d->m_companionEngines))
-        companion->d->updateState();
+    if (d->m_companionEngine)
+        d->m_companionEngine->d->updateState();
 
     if (oldState != d->m_state)
         emit EngineManager::instance()->engineStateChanged(this);
@@ -1897,7 +1897,7 @@ QString DebuggerEngine::expand(const QString &string) const
 
 QString DebuggerEngine::nativeStartupCommands() const
 {
-    QStringList lines = settings().gdbStartupCommands().split('\n');
+    QStringList lines = debuggerSettings()->gdbStartupCommands.value().split('\n');
     lines += runParameters().additionalStartupCommands.split('\n');
 
     lines = Utils::filtered(lines, [](const QString line) {
@@ -1905,7 +1905,7 @@ QString DebuggerEngine::nativeStartupCommands() const
         return !trimmed.isEmpty() && !trimmed.startsWith('#');
     });
 
-    return lines.join('\n');
+    return expand(lines.join('\n'));
 }
 
 Perspective *DebuggerEngine::perspective() const
@@ -1965,7 +1965,7 @@ void DebuggerEngine::notifyInferiorPid(const ProcessHandle &pid)
         return;
     d->m_inferiorPid = pid;
     if (pid.isValid()) {
-        showMessage(Tr::tr("Taking notice of pid %1").arg(pid.pid()));
+        showMessage(tr("Taking notice of pid %1").arg(pid.pid()));
         DebuggerStartMode sm = runParameters().startMode;
         if (sm == StartInternal || sm == StartExternal || sm == AttachToLocalProcess)
             d->m_inferiorPid.activate();
@@ -1984,14 +1984,14 @@ bool DebuggerEngine::isReverseDebugging() const
 
 void DebuggerEngine::handleBeginOfRecordingReached()
 {
-    showStatusMessage(Tr::tr("Reverse-execution history exhausted. Going forward again."));
+    showStatusMessage(tr("Reverse-execution history exhausted. Going forward again."));
     d->m_operateInReverseDirectionAction.setChecked(false);
     d->updateReverseActions();
 }
 
 void DebuggerEngine::handleRecordingFailed()
 {
-    showStatusMessage(Tr::tr("Reverse-execution recording failed."));
+    showStatusMessage(tr("Reverse-execution recording failed."));
     d->m_operateInReverseDirectionAction.setChecked(false);
     d->m_recordForReverseOperationAction.setChecked(false);
     d->updateReverseActions();
@@ -2011,7 +2011,7 @@ void DebuggerEngine::quitDebugger()
         break;
     case InferiorRunOk:
         setState(InferiorStopRequested);
-        showMessage(Tr::tr("Attempting to interrupt."), StatusBar);
+        showMessage(tr("Attempting to interrupt."), StatusBar);
         interruptInferior();
         break;
     case EngineSetupRequested:
@@ -2023,16 +2023,11 @@ void DebuggerEngine::quitDebugger()
     case EngineShutdownRequested:
     case InferiorShutdownRequested:
         break;
-    case DebuggerNotReady:
-    case EngineSetupFailed:
-    case InferiorShutdownFinished:
     case EngineRunFailed:
-    case EngineShutdownFinished:
     case DebuggerFinished:
+    case InferiorShutdownFinished:
         break;
-    case InferiorRunRequested:
-    case InferiorRunFailed:
-    case InferiorStopRequested:
+    default:
         // FIXME: We should disable the actions connected to that.
         notifyInferiorIll();
         break;
@@ -2044,7 +2039,7 @@ void DebuggerEngine::requestInterruptInferior()
     QTC_ASSERT(state() == InferiorRunOk, qDebug() << this << state());
     setState(InferiorStopRequested);
     showMessage("CALL: INTERRUPT INFERIOR");
-    showMessage(Tr::tr("Attempting to interrupt."), StatusBar);
+    showMessage(tr("Attempting to interrupt."), StatusBar);
     interruptInferior();
 }
 
@@ -2054,9 +2049,9 @@ void DebuggerEngine::progressPing()
     d->m_progress.setProgressValue(progress);
 }
 
-void DebuggerEngine::addCompanionEngine(DebuggerEngine *engine)
+void DebuggerEngine::setCompanionEngine(DebuggerEngine *engine)
 {
-    d->m_companionEngines << engine;
+    d->m_companionEngine = engine;
 }
 
 void DebuggerEngine::setSecondaryEngine()
@@ -2081,7 +2076,7 @@ void DebuggerEngine::watchPoint(const QPoint &pnt)
     cmd.callback = [this](const DebuggerResponse &response) {
         qulonglong addr = response.data["selected"].toAddress();
         if (addr == 0)
-            showMessage(Tr::tr("Could not find a widget."), StatusBar);
+            showMessage(tr("Could not find a widget."), StatusBar);
         // Add the watcher entry nevertheless, as that's the place where
         // the user expects visual feedback.
         watchHandler()->watchExpression(response.data["expr"].data(), QString(), true);
@@ -2111,7 +2106,7 @@ void DebuggerEngine::examineModules()
 {
 }
 
-void DebuggerEngine::loadSymbols(const FilePath &)
+void DebuggerEngine::loadSymbols(const QString &)
 {
 }
 
@@ -2123,11 +2118,11 @@ void DebuggerEngine::loadSymbolsForStack()
 {
 }
 
-void DebuggerEngine::requestModuleSymbols(const FilePath &)
+void DebuggerEngine::requestModuleSymbols(const QString &)
 {
 }
 
-void DebuggerEngine::requestModuleSections(const FilePath &)
+void DebuggerEngine::requestModuleSections(const QString &)
 {
 }
 
@@ -2195,7 +2190,7 @@ void DebuggerEngine::updateAll()
 QString DebuggerEngine::displayName() const
 {
     //: e.g. LLDB for "myproject", shows up i
-    return Tr::tr("%1 for \"%2\"").arg(d->m_debuggerName, runParameters().displayName);
+    return tr("%1 for \"%2\"").arg(d->m_debuggerName, runParameters().displayName);
 }
 
 void DebuggerEngine::insertBreakpoint(const Breakpoint &bp)
@@ -2251,7 +2246,7 @@ void DebuggerEngine::handleReverseDirection(bool reverse)
 
 void DebuggerEngine::executeDebuggerCommand(const QString &)
 {
-    showMessage(Tr::tr("This debugger cannot handle user input."), StatusBar);
+    showMessage(tr("This debugger cannot handle user input."), StatusBar);
 }
 
 bool DebuggerEngine::isDying() const
@@ -2261,24 +2256,24 @@ bool DebuggerEngine::isDying() const
 
 QString DebuggerEngine::msgStopped(const QString &reason)
 {
-    return reason.isEmpty() ? Tr::tr("Stopped.") : Tr::tr("Stopped: \"%1\".").arg(reason);
+    return reason.isEmpty() ? tr("Stopped.") : tr("Stopped: \"%1\".").arg(reason);
 }
 
 QString DebuggerEngine::msgStoppedBySignal(const QString &meaning,
     const QString &name)
 {
-    return Tr::tr("Stopped: %1 (Signal %2).").arg(meaning, name);
+    return tr("Stopped: %1 (Signal %2).").arg(meaning, name);
 }
 
 QString DebuggerEngine::msgStoppedByException(const QString &description,
     const QString &threadId)
 {
-    return Tr::tr("Stopped in thread %1 by: %2.").arg(threadId, description);
+    return tr("Stopped in thread %1 by: %2.").arg(threadId, description);
 }
 
 QString DebuggerEngine::msgInterrupted()
 {
-    return Tr::tr("Interrupted.");
+    return tr("Interrupted.");
 }
 
 bool DebuggerEngine::showStoppedBySignalMessageBox(QString meaning, QString name)
@@ -2287,25 +2282,25 @@ bool DebuggerEngine::showStoppedBySignalMessageBox(QString meaning, QString name
         return false;
 
     if (name.isEmpty())
-        name = ' ' + Tr::tr("<Unknown>", "name") + ' ';
+        name = ' ' + tr("<Unknown>", "name") + ' ';
     if (meaning.isEmpty())
-        meaning = ' ' + Tr::tr("<Unknown>", "meaning") + ' ';
-    const QString msg = Tr::tr("<p>The inferior stopped because it received a "
+        meaning = ' ' + tr("<Unknown>", "meaning") + ' ';
+    const QString msg = tr("<p>The inferior stopped because it received a "
                            "signal from the operating system.<p>"
                            "<table><tr><td>Signal name : </td><td>%1</td></tr>"
                            "<tr><td>Signal meaning : </td><td>%2</td></tr></table>")
             .arg(name, meaning);
 
-    d->m_alertBox = AsynchronousMessageBox::information(Tr::tr("Signal Received"), msg);
+    d->m_alertBox = AsynchronousMessageBox::information(tr("Signal Received"), msg);
     return true;
 }
 
 void DebuggerEngine::showStoppedByExceptionMessageBox(const QString &description)
 {
     const QString msg =
-        Tr::tr("<p>The inferior stopped because it triggered an exception.<p>%1").
+        tr("<p>The inferior stopped because it triggered an exception.<p>%1").
                          arg(description);
-    AsynchronousMessageBox::information(Tr::tr("Exception Triggered"), msg);
+    AsynchronousMessageBox::information(tr("Exception Triggered"), msg);
 }
 
 void DebuggerEngine::openMemoryView(const MemoryViewSetupData &data)
@@ -2372,7 +2367,7 @@ void DebuggerEngine::updateLocalsView(const GdbMi &all)
     static int count = 0;
     showMessage(QString("<Rebuild Watchmodel %1 @ %2 >")
                 .arg(++count).arg(LogWindow::logTimeStamp()), LogMiscInput);
-    showMessage(Tr::tr("Finished retrieving data."), 400, StatusBar);
+    showMessage(tr("Finished retrieving data."), 400, StatusBar);
 
     d->m_toolTipManager.updateToolTips();
 
@@ -2388,10 +2383,9 @@ bool DebuggerEngine::canHandleToolTip(const DebuggerToolTipContext &context) con
 
 void DebuggerEngine::updateItem(const QString &iname)
 {
-    WatchHandler *handler = watchHandler();
-    const int maxArrayCount = handler->maxArrayCount(iname);
-    if (d->m_lookupRequests.value(iname, -1) == maxArrayCount) {
+    if (d->m_lookupRequests.contains(iname)) {
         showMessage(QString("IGNORING REPEATED REQUEST TO EXPAND " + iname));
+        WatchHandler *handler = watchHandler();
         WatchItem *item = handler->findItem(iname);
         QTC_CHECK(item);
         WatchModelBase *model = handler->model();
@@ -2411,15 +2405,11 @@ void DebuggerEngine::updateItem(const QString &iname)
         }
         // We could legitimately end up here after expanding + closing + re-expaning an item.
     }
-    d->m_lookupRequests[iname] = maxArrayCount;
+    d->m_lookupRequests.insert(iname);
 
     UpdateParameters params;
     params.partialVariable = iname;
     doUpdateLocals(params);
-}
-
-void DebuggerEngine::reexpandItems(const QSet<QString> &)
-{
 }
 
 void DebuggerEngine::updateWatchData(const QString &iname)
@@ -2428,7 +2418,6 @@ void DebuggerEngine::updateWatchData(const QString &iname)
     // e.g. when changing the expression in a watcher.
     UpdateParameters params;
     params.partialVariable = iname;
-    params.qmlFocusOnFrame = false;
     doUpdateLocals(params);
 }
 
@@ -2531,9 +2520,9 @@ void DebuggerEngine::handleExecRunToSelectedFunction()
     }
 
     if (functionName.isEmpty()) {
-        showMessage(Tr::tr("No function selected."), StatusBar);
+        showMessage(tr("No function selected."), StatusBar);
     } else {
-        showMessage(Tr::tr("Running to function \"%1\".").arg(functionName), StatusBar);
+        showMessage(tr("Running to function \"%1\".").arg(functionName), StatusBar);
         resetLocation();
         executeRunToFunction(functionName);
     }
@@ -2560,8 +2549,8 @@ void DebuggerEngine::handleAddToWatchWindow()
     exp = exp.trimmed();
     if (exp.isEmpty()) {
         // Happens e.g. when trying to evaluate 'char' or 'return'.
-        AsynchronousMessageBox::warning(Tr::tr("Warning"),
-                                        Tr::tr("Select a valid expression to evaluate."));
+        AsynchronousMessageBox::warning(tr("Warning"),
+                                        tr("Select a valid expression to evaluate."));
         return;
     }
     watchHandler()->watchVariable(exp);
@@ -2625,8 +2614,6 @@ bool DebuggerRunParameters::isCppDebugging() const
     return cppEngineType == GdbEngineType
         || cppEngineType == LldbEngineType
         || cppEngineType == CdbEngineType
-        || cppEngineType == GdbDapEngineType
-        || cppEngineType == LldbDapEngineType
         || cppEngineType == UvscEngineType;
 }
 
@@ -2687,7 +2674,7 @@ static void createNewDock(QWidget *widget)
     dockWidget->show();
 }
 
-void DebuggerEngine::showModuleSymbols(const FilePath &moduleName, const Symbols &symbols)
+void DebuggerEngine::showModuleSymbols(const QString &moduleName, const Symbols &symbols)
 {
     auto w = new QTreeWidget;
     w->setUniformRowHeights(true);
@@ -2695,15 +2682,15 @@ void DebuggerEngine::showModuleSymbols(const FilePath &moduleName, const Symbols
     w->setRootIsDecorated(false);
     w->setAlternatingRowColors(true);
     w->setSortingEnabled(true);
-    w->setObjectName("Symbols." + moduleName.toFSPathString());
+    w->setObjectName("Symbols." + moduleName);
     QStringList header;
-    header.append(Tr::tr("Symbol"));
-    header.append(Tr::tr("Address"));
-    header.append(Tr::tr("Code"));
-    header.append(Tr::tr("Section"));
-    header.append(Tr::tr("Name"));
+    header.append(tr("Symbol"));
+    header.append(tr("Address"));
+    header.append(tr("Code"));
+    header.append(tr("Section"));
+    header.append(tr("Name"));
     w->setHeaderLabels(header);
-    w->setWindowTitle(Tr::tr("Symbols in \"%1\"").arg(moduleName.toUserOutput()));
+    w->setWindowTitle(tr("Symbols in \"%1\"").arg(moduleName));
     for (const Symbol &s : symbols) {
         auto it = new QTreeWidgetItem;
         it->setData(0, Qt::DisplayRole, s.name);
@@ -2716,7 +2703,7 @@ void DebuggerEngine::showModuleSymbols(const FilePath &moduleName, const Symbols
     createNewDock(w);
 }
 
-void DebuggerEngine::showModuleSections(const FilePath &moduleName, const Sections &sections)
+void DebuggerEngine::showModuleSections(const QString &moduleName, const Sections &sections)
 {
     auto w = new QTreeWidget;
     w->setUniformRowHeights(true);
@@ -2724,15 +2711,15 @@ void DebuggerEngine::showModuleSections(const FilePath &moduleName, const Sectio
     w->setRootIsDecorated(false);
     w->setAlternatingRowColors(true);
     w->setSortingEnabled(true);
-    w->setObjectName("Sections." + moduleName.toFSPathString());
+    w->setObjectName("Sections." + moduleName);
     QStringList header;
-    header.append(Tr::tr("Name"));
-    header.append(Tr::tr("From"));
-    header.append(Tr::tr("To"));
-    header.append(Tr::tr("Address"));
-    header.append(Tr::tr("Flags"));
+    header.append(tr("Name"));
+    header.append(tr("From"));
+    header.append(tr("To"));
+    header.append(tr("Address"));
+    header.append(tr("Flags"));
     w->setHeaderLabels(header);
-    w->setWindowTitle(Tr::tr("Sections in \"%1\"").arg(moduleName.toUserOutput()));
+    w->setWindowTitle(tr("Sections in \"%1\"").arg(moduleName));
     for (const Section &s : sections) {
         auto it = new QTreeWidgetItem;
         it->setData(0, Qt::DisplayRole, s.name);
@@ -2754,15 +2741,16 @@ Context CppDebuggerEngine::languageContext() const
 
 void CppDebuggerEngine::validateRunParameters(DebuggerRunParameters &rp)
 {
-    static const Key warnOnInappropriateDebuggerKey = "DebuggerWarnOnInappropriateDebugger";
+    static const QString warnOnInappropriateDebuggerKey = "DebuggerWarnOnInappropriateDebugger";
+    QtcSettings *coreSettings = Core::ICore::settings();
 
-    const bool warnOnRelease = settings().warnOnReleaseBuilds()
+    const bool warnOnRelease = debuggerSettings()->warnOnReleaseBuilds.value()
                                && rp.toolChainAbi.osFlavor() != Abi::AndroidLinuxFlavor;
     bool warnOnInappropriateDebugger = false;
     QString detailedWarning;
     switch (rp.toolChainAbi.binaryFormat()) {
     case Abi::PEFormat: {
-        if (CheckableDecider(warnOnInappropriateDebuggerKey).shouldAskAgain()) {
+        if (CheckableMessageBox::shouldAskAgain(coreSettings, warnOnInappropriateDebuggerKey)) {
             QString preferredDebugger;
             if (rp.toolChainAbi.osFlavor() == Abi::WindowsMSysFlavor) {
                 if (rp.cppEngineType == CdbEngineType)
@@ -2774,7 +2762,7 @@ void CppDebuggerEngine::validateRunParameters(DebuggerRunParameters &rp)
             }
             if (!preferredDebugger.isEmpty()) {
                 warnOnInappropriateDebugger = true;
-                detailedWarning = Tr::tr(
+                detailedWarning = DebuggerEngine::tr(
                                       "The inferior is in the Portable Executable format.\n"
                                       "Selecting %1 as debugger would improve the debugging "
                                       "experience for this binary format.")
@@ -2802,10 +2790,10 @@ void CppDebuggerEngine::validateRunParameters(DebuggerRunParameters &rp)
         break;
     }
     case Abi::ElfFormat: {
-        if (CheckableDecider(warnOnInappropriateDebuggerKey).shouldAskAgain()) {
+        if (CheckableMessageBox::shouldAskAgain(coreSettings, warnOnInappropriateDebuggerKey)) {
             if (rp.cppEngineType == CdbEngineType) {
                 warnOnInappropriateDebugger = true;
-                detailedWarning = Tr::tr(
+                detailedWarning = DebuggerEngine::tr(
                     "The inferior is in the ELF format.\n"
                     "Selecting GDB or LLDB as debugger would improve the debugging "
                     "experience for this binary format.");
@@ -2857,25 +2845,26 @@ void CppDebuggerEngine::validateRunParameters(DebuggerRunParameters &rp)
         bool hasEmbeddedInfo = elfData.indexOf(".debug_info") >= 0;
         bool hasLink = elfData.indexOf(".gnu_debuglink") >= 0;
         if (hasEmbeddedInfo) {
-            const QMap<QString, QString> sourcePathMap = settings().sourcePathMap();
+            const SourcePathMap sourcePathMap = debuggerSettings()->sourcePathMap.value();
             QList<QPair<QRegularExpression, QString>> globalRegExpSourceMap;
             globalRegExpSourceMap.reserve(sourcePathMap.size());
             for (auto it = sourcePathMap.begin(), end = sourcePathMap.end(); it != end; ++it) {
                 if (it.key().startsWith('(')) {
                     const QString expanded = rp.macroExpander->expand(it.value());
                     if (!expanded.isEmpty())
-                        globalRegExpSourceMap.push_back({QRegularExpression(it.key()), expanded});
+                        globalRegExpSourceMap.push_back(
+                            qMakePair(QRegularExpression(it.key()), expanded));
                 }
             }
             if (globalRegExpSourceMap.isEmpty())
                 return;
-            if (std::shared_ptr<ElfMapper> mapper = reader.readSection(".debug_str")) {
+            if (QSharedPointer<Utils::ElfMapper> mapper = reader.readSection(".debug_str")) {
                 const char *str = mapper->start;
                 const char *limit = str + mapper->fdlen;
                 bool found = false;
                 while (str < limit) {
                     const QString string = QString::fromUtf8(str);
-                    for (auto pair : std::as_const(globalRegExpSourceMap)) {
+                    for (auto pair : qAsConst(globalRegExpSourceMap)) {
                         const QRegularExpressionMatch match = pair.first.match(string);
                         if (match.hasMatch()) {
                             rp.sourcePathMap.insert(string.left(match.capturedStart()) + match.captured(1),
@@ -2897,10 +2886,10 @@ void CppDebuggerEngine::validateRunParameters(DebuggerRunParameters &rp)
         if (hasEmbeddedInfo || hasLink)
             return;
 
-        for (const QByteArray &name : std::as_const(interesting)) {
-            const QString found = seen.contains(name) ? Tr::tr("Found.")
-                                                      : Tr::tr("Not found.");
-            detailedWarning.append('\n' + Tr::tr("Section %1: %2").arg(QString::fromUtf8(name)).arg(found));
+        for (const QByteArray &name : qAsConst(interesting)) {
+            const QString found = seen.contains(name) ? DebuggerEngine::tr("Found.")
+                                                      : DebuggerEngine::tr("Not found.");
+            detailedWarning.append('\n' + DebuggerEngine::tr("Section %1: %2").arg(QString::fromUtf8(name)).arg(found));
         }
         break;
     }
@@ -2908,17 +2897,19 @@ void CppDebuggerEngine::validateRunParameters(DebuggerRunParameters &rp)
         return;
     }
     if (warnOnInappropriateDebugger) {
-        CheckableMessageBox::information(
+        CheckableMessageBox::doNotShowAgainInformation(
             Core::ICore::dialogParent(),
-            Tr::tr("Warning"),
-            Tr::tr("The selected debugger may be inappropriate for the inferior.\n"
-                   "Examining symbols and setting breakpoints by file name and line number "
-                   "may fail.\n")
+            DebuggerEngine::tr("Warning"),
+            DebuggerEngine::tr(
+                "The selected debugger may be inappropriate for the inferior.\n"
+                "Examining symbols and setting breakpoints by file name and line number "
+                "may fail.\n")
                 + '\n' + detailedWarning,
+            Core::ICore::settings(),
             warnOnInappropriateDebuggerKey);
     } else if (warnOnRelease) {
-        AsynchronousMessageBox::information(Tr::tr("Warning"),
-               Tr::tr("This does not seem to be a \"Debug\" build.\n"
+        AsynchronousMessageBox::information(DebuggerEngine::tr("Warning"),
+               DebuggerEngine::tr("This does not seem to be a \"Debug\" build.\n"
                   "Setting breakpoints by file name and line number may fail.")
                + '\n' + detailedWarning);
     }

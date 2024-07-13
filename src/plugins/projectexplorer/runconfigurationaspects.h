@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -27,9 +49,9 @@ class PROJECTEXPLORER_EXPORT TerminalAspect : public Utils::BaseAspect
     Q_OBJECT
 
 public:
-    explicit TerminalAspect(Utils::AspectContainer *container = nullptr);
+    TerminalAspect();
 
-    void addToLayoutImpl(Layouting::Layout &parent) override;
+    void addToLayout(Utils::LayoutBuilder &builder) override;
 
     bool useTerminal() const;
     void setUseTerminalHint(bool useTerminal);
@@ -43,8 +65,8 @@ public:
     };
 
 private:
-    void fromMap(const Utils::Store &map) override;
-    void toMap(Utils::Store &map) const override;
+    void fromMap(const QVariantMap &map) override;
+    void toMap(QVariantMap &map) const override;
 
     void calculateUseTerminal();
 
@@ -59,22 +81,20 @@ class PROJECTEXPLORER_EXPORT WorkingDirectoryAspect : public Utils::BaseAspect
     Q_OBJECT
 
 public:
-    explicit WorkingDirectoryAspect(Utils::AspectContainer *container = nullptr);
+    explicit WorkingDirectoryAspect(const Utils::MacroExpander *expander,
+                                    EnvironmentAspect *envAspect);
 
-    void addToLayoutImpl(Layouting::Layout &parent) override;
+    void addToLayout(Utils::LayoutBuilder &builder) override;
 
-    Utils::FilePath operator()() const { return workingDirectory(); }
     Utils::FilePath workingDirectory() const;
     Utils::FilePath defaultWorkingDirectory() const;
     Utils::FilePath unexpandedWorkingDirectory() const;
     void setDefaultWorkingDirectory(const Utils::FilePath &defaultWorkingDirectory);
     Utils::PathChooser *pathChooser() const;
-    void setMacroExpander(const Utils::MacroExpander *expander);
-    void setEnvironment(EnvironmentAspect *envAspect);
 
 private:
-    void fromMap(const Utils::Store &map) override;
-    void toMap(Utils::Store &map) const override;
+    void fromMap(const QVariantMap &map) override;
+    void toMap(QVariantMap &map) const override;
 
     void resetPath();
 
@@ -91,11 +111,10 @@ class PROJECTEXPLORER_EXPORT ArgumentsAspect : public Utils::BaseAspect
     Q_OBJECT
 
 public:
-    explicit ArgumentsAspect(Utils::AspectContainer *container = nullptr);
+    explicit ArgumentsAspect(const Utils::MacroExpander *macroExpander);
 
-    void addToLayoutImpl(Layouting::Layout &parent) override;
+    void addToLayout(Utils::LayoutBuilder &builder) override;
 
-    QString operator()() const { return arguments(); }
     QString arguments() const;
     QString unexpandedArguments() const;
 
@@ -103,7 +122,6 @@ public:
     void setLabelText(const QString &labelText);
     void setResetter(const std::function<QString()> &resetter);
     void resetArguments();
-    void setMacroExpander(const Utils::MacroExpander *macroExpander);
 
     struct Data : BaseAspect::Data
     {
@@ -111,8 +129,8 @@ public:
     };
 
 private:
-    void fromMap(const Utils::Store &map) override;
-    void toMap(Utils::Store &map) const override;
+    void fromMap(const QVariantMap &map) override;
+    void toMap(QVariantMap &map) const override;
 
     QWidget *setupChooser();
 
@@ -133,9 +151,7 @@ class PROJECTEXPLORER_EXPORT UseLibraryPathsAspect : public Utils::BoolAspect
     Q_OBJECT
 
 public:
-    UseLibraryPathsAspect(Utils::AspectContainer *container = nullptr);
-
-    bool operator()() const { return isEnabled() && Utils::BoolAspect::operator()(); }
+    UseLibraryPathsAspect();
 };
 
 class PROJECTEXPLORER_EXPORT UseDyldSuffixAspect : public Utils::BoolAspect
@@ -143,7 +159,7 @@ class PROJECTEXPLORER_EXPORT UseDyldSuffixAspect : public Utils::BoolAspect
     Q_OBJECT
 
 public:
-    UseDyldSuffixAspect(Utils::AspectContainer *container = nullptr);
+    UseDyldSuffixAspect();
 };
 
 class PROJECTEXPLORER_EXPORT RunAsRootAspect : public Utils::BoolAspect
@@ -151,7 +167,7 @@ class PROJECTEXPLORER_EXPORT RunAsRootAspect : public Utils::BoolAspect
     Q_OBJECT
 
 public:
-    RunAsRootAspect(Utils::AspectContainer *container = nullptr);
+    RunAsRootAspect();
 };
 
 class PROJECTEXPLORER_EXPORT ExecutableAspect : public Utils::BaseAspect
@@ -161,23 +177,21 @@ class PROJECTEXPLORER_EXPORT ExecutableAspect : public Utils::BaseAspect
 public:
     enum ExecutionDeviceSelector { HostDevice, BuildDevice, RunDevice };
 
-    explicit ExecutableAspect(Utils::AspectContainer *container = nullptr);
+    explicit ExecutableAspect(Target *target, ExecutionDeviceSelector selector);
     ~ExecutableAspect() override;
 
-    Utils::FilePath operator()() const { return executable(); }
     Utils::FilePath executable() const;
     void setExecutable(const Utils::FilePath &executable);
 
-    void setDeviceSelector(Target *target, ExecutionDeviceSelector selector);
-    void setSettingsKey(const Utils::Key &key);
-    void makeOverridable(const Utils::Key &overridingKey, const Utils::Key &useOverridableKey);
-    void addToLayoutImpl(Layouting::Layout &parent) override;
+    void setSettingsKey(const QString &key);
+    void makeOverridable(const QString &overridingKey, const QString &useOverridableKey);
+    void addToLayout(Utils::LayoutBuilder &builder) override;
     void setLabelText(const QString &labelText);
     void setPlaceHolderText(const QString &placeHolderText);
-    void setHistoryCompleter(const Utils::Key &historyCompleterKey);
+    void setHistoryCompleter(const QString &historyCompleterKey);
     void setExpectedKind(const Utils::PathChooser::Kind expectedKind);
-    void setEnvironment(const Utils::Environment &env);
-    void setReadOnly(bool readOnly);
+    void setEnvironmentChange(const Utils::EnvironmentChange &change);
+    void setDisplayStyle(Utils::StringAspect::DisplayStyle style);
 
     struct Data : BaseAspect::Data
     {
@@ -185,24 +199,25 @@ public:
     };
 
 protected:
-    void fromMap(const Utils::Store &map) override;
-    void toMap(Utils::Store &map) const override;
+    void fromMap(const QVariantMap &map) override;
+    void toMap(QVariantMap &map) const override;
 
 private:
     QString executableText() const;
+    void updateDevice();
 
-    Utils::FilePathAspect m_executable;
-    Utils::FilePathAspect *m_alternativeExecutable = nullptr;
+    Utils::StringAspect m_executable;
+    Utils::StringAspect *m_alternativeExecutable = nullptr;
     Target *m_target = nullptr;
     ExecutionDeviceSelector m_selector = RunDevice;
 };
 
-class PROJECTEXPLORER_EXPORT SymbolFileAspect : public Utils::FilePathAspect
+class PROJECTEXPLORER_EXPORT SymbolFileAspect : public Utils::StringAspect
 {
     Q_OBJECT
 
 public:
-     SymbolFileAspect(Utils::AspectContainer *container = nullptr);
+     SymbolFileAspect() = default;
 };
 
 class PROJECTEXPLORER_EXPORT Interpreter
@@ -216,70 +231,50 @@ public:
 
     inline bool operator==(const Interpreter &other) const
     {
-        return id == other.id && name == other.name && command == other.command
-               && detectionSource == other.detectionSource;
+        return id == other.id && name == other.name && command == other.command;
     }
 
     QString id;
     QString name;
     Utils::FilePath command;
     bool autoDetected = true;
-    QString detectionSource;
 };
 
-class PROJECTEXPLORER_EXPORT LauncherAspect : public Utils::BaseAspect
+class PROJECTEXPLORER_EXPORT InterpreterAspect : public Utils::BaseAspect
 {
     Q_OBJECT
 
 public:
-    LauncherAspect(Utils::AspectContainer *container = nullptr);
+    InterpreterAspect();
 
-    Launcher currentLauncher() const;
-    void updateLaunchers(const QList<Launcher> &launchers);
-    void setDefaultLauncher(const Launcher &launcher);
-    void setCurrentLauncher(const Launcher &launcher);
+    Interpreter currentInterpreter() const;
+    void updateInterpreters(const QList<Interpreter> &interpreters);
+    void setDefaultInterpreter(const Interpreter &interpreter);
+    void setCurrentInterpreter(const Interpreter &interpreter);
     void setSettingsDialogId(Utils::Id id) { m_settingsDialogId = id; }
 
-    void fromMap(const Utils::Store &) override;
-    void toMap(Utils::Store &) const override;
-    void addToLayoutImpl(Layouting::Layout &parent) override;
+    void fromMap(const QVariantMap &) override;
+    void toMap(QVariantMap &) const override;
+    void addToLayout(Utils::LayoutBuilder &builder) override;
 
-    struct Data : Utils::BaseAspect::Data { Launcher launcher; };
+    struct Data : Utils::BaseAspect::Data { Interpreter interpreter; };
 
 private:
-    void setCurrentLauncherId(const QString &id);
-    void updateCurrentLauncher();
+    void updateCurrentInterpreter();
     void updateComboBox();
-    QList<Launcher> m_launchers;
+    QList<Interpreter> m_interpreters;
     QPointer<QComboBox> m_comboBox;
     QString m_defaultId;
     QString m_currentId;
     Utils::Id m_settingsDialogId;
 };
 
-class PROJECTEXPLORER_EXPORT MainScriptAspect : public Utils::FilePathAspect
+class PROJECTEXPLORER_EXPORT MainScriptAspect : public Utils::StringAspect
 {
     Q_OBJECT
 
 public:
-    MainScriptAspect(Utils::AspectContainer *container = nullptr);
-};
-
-class PROJECTEXPLORER_EXPORT X11ForwardingAspect : public Utils::StringAspect
-{
-    Q_OBJECT
-
-public:
-    X11ForwardingAspect(Utils::AspectContainer *container = nullptr);
-
-    void setMacroExpander(const Utils::MacroExpander *macroExpander);
-
-    struct Data : StringAspect::Data { QString display; };
-
-    QString display() const;
-
-private:
-    const Utils::MacroExpander *m_macroExpander;
+    MainScriptAspect() = default;
 };
 
 } // namespace ProjectExplorer

@@ -1,66 +1,108 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "customexecutablerunconfiguration.h"
 
+#include "localenvironmentaspect.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
-#include "runconfigurationaspects.h"
 #include "target.h"
-
-#include <utils/processinterface.h>
 
 using namespace Utils;
 
 namespace ProjectExplorer {
 
+const char CUSTOM_EXECUTABLE_RUNCONFIG_ID[] = "ProjectExplorer.CustomExecutableRunConfiguration";
+
 // CustomExecutableRunConfiguration
 
 CustomExecutableRunConfiguration::CustomExecutableRunConfiguration(Target *target)
-    : CustomExecutableRunConfiguration(target, Constants::CUSTOM_EXECUTABLE_RUNCONFIG_ID)
+    : CustomExecutableRunConfiguration(target, CUSTOM_EXECUTABLE_RUNCONFIG_ID)
 {}
 
 CustomExecutableRunConfiguration::CustomExecutableRunConfiguration(Target *target, Id id)
     : RunConfiguration(target, id)
 {
-    environment.setSupportForBuildEnvironment(target);
+    auto envAspect = addAspect<LocalEnvironmentAspect>(target);
 
-    executable.setDeviceSelector(target, ExecutableAspect::HostDevice);
-    executable.setSettingsKey("ProjectExplorer.CustomExecutableRunConfiguration.Executable");
-    executable.setReadOnly(false);
-    executable.setHistoryCompleter("Qt.CustomExecutable.History");
-    executable.setExpectedKind(PathChooser::ExistingCommand);
-    executable.setEnvironment(environment.environment());
+    auto exeAspect = addAspect<ExecutableAspect>(target, ExecutableAspect::HostDevice);
+    exeAspect->setSettingsKey("ProjectExplorer.CustomExecutableRunConfiguration.Executable");
+    exeAspect->setDisplayStyle(StringAspect::PathChooserDisplay);
+    exeAspect->setHistoryCompleter("Qt.CustomExecutable.History");
+    exeAspect->setExpectedKind(PathChooser::ExistingCommand);
+    exeAspect->setEnvironmentChange(EnvironmentChange::fromFixedEnvironment(envAspect->environment()));
 
-    arguments.setMacroExpander(macroExpander());
+    addAspect<ArgumentsAspect>(macroExpander());
+    addAspect<WorkingDirectoryAspect>(macroExpander(), envAspect);
+    addAspect<TerminalAspect>();
 
-    workingDir.setMacroExpander(macroExpander());
-    workingDir.setEnvironment(&environment);
-
-    connect(&environment, &EnvironmentAspect::environmentChanged, this, [this]  {
-         executable.setEnvironment(environment.environment());
+    connect(envAspect, &EnvironmentAspect::environmentChanged, this, [exeAspect, envAspect]  {
+         exeAspect->setEnvironmentChange(EnvironmentChange::fromFixedEnvironment(envAspect->environment()));
     });
 
     setDefaultDisplayName(defaultDisplayName());
 }
 
-bool CustomExecutableRunConfiguration::isEnabled(Id) const
+FilePath CustomExecutableRunConfiguration::executable() const
+{
+    return aspect<ExecutableAspect>()->executable();
+}
+
+bool CustomExecutableRunConfiguration::isEnabled() const
 {
     return true;
+}
+
+Runnable CustomExecutableRunConfiguration::runnable() const
+{
+    const FilePath workingDirectory = aspect<WorkingDirectoryAspect>()->workingDirectory();
+
+    Runnable r;
+    r.command = commandLine();
+    r.environment = aspect<EnvironmentAspect>()->environment();
+    r.workingDirectory = workingDirectory;
+
+    if (!r.command.isEmpty()) {
+        const FilePath expanded = macroExpander()->expand(r.command.executable());
+        r.command.setExecutable(r.environment.searchInPath(expanded.toString(), {workingDirectory}));
+    }
+
+    return r;
 }
 
 QString CustomExecutableRunConfiguration::defaultDisplayName() const
 {
     if (executable().isEmpty())
-        return Tr::tr("Custom Executable");
-    return Tr::tr("Run %1").arg(executable().toUserOutput());
+        return tr("Custom Executable");
+    return tr("Run %1").arg(executable().toUserOutput());
 }
 
 Tasks CustomExecutableRunConfiguration::checkForIssues() const
 {
     Tasks tasks;
     if (executable().isEmpty()) {
-        tasks << createConfigurationIssue(Tr::tr("You need to set an executable in the custom run "
+        tasks << createConfigurationIssue(tr("You need to set an executable in the custom run "
                                              "configuration."));
     }
     return tasks;
@@ -69,17 +111,16 @@ Tasks CustomExecutableRunConfiguration::checkForIssues() const
 // Factories
 
 CustomExecutableRunConfigurationFactory::CustomExecutableRunConfigurationFactory() :
-    FixedRunConfigurationFactory(Tr::tr("Custom Executable"))
+    FixedRunConfigurationFactory(CustomExecutableRunConfiguration::tr("Custom Executable"))
 {
-    registerRunConfiguration<CustomExecutableRunConfiguration>(
-        Constants::CUSTOM_EXECUTABLE_RUNCONFIG_ID);
+    registerRunConfiguration<CustomExecutableRunConfiguration>(CUSTOM_EXECUTABLE_RUNCONFIG_ID);
 }
 
 CustomExecutableRunWorkerFactory::CustomExecutableRunWorkerFactory()
 {
     setProduct<SimpleTargetRunner>();
     addSupportedRunMode(Constants::NORMAL_RUN_MODE);
-    addSupportedRunConfig(Constants::CUSTOM_EXECUTABLE_RUNCONFIG_ID);
+    addSupportedRunConfig(CUSTOM_EXECUTABLE_RUNCONFIG_ID);
 }
 
 } // namespace ProjectExplorer

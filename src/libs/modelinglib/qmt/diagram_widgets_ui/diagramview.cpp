@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "diagramview.h"
 
@@ -14,13 +36,8 @@
 #include <QDragLeaveEvent>
 #include <QDropEvent>
 #include <QMimeData>
-#include <QScrollBar>
 
 namespace qmt {
-
-namespace {
-const qreal ADJUSTMENT = 80;
-};
 
 DiagramView::DiagramView(QWidget *parent)
     : QGraphicsView(parent)
@@ -30,9 +47,6 @@ DiagramView::DiagramView(QWidget *parent)
     setDragMode(QGraphicsView::RubberBandDrag);
     setFrameShape(QFrame::NoFrame);
     setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
-    m_panTimer.setInterval(200);
-    m_panTimer.setSingleShot(false);
-    connect(&m_panTimer, &QTimer::timeout, this, &DiagramView::onPanTimeout);
 }
 
 DiagramView::~DiagramView()
@@ -112,7 +126,7 @@ void DiagramView::dropEvent(QDropEvent *event)
                 if (diagramSceneController->isAddingAllowed(Uid(QUuid(key)),
                                                             m_diagramSceneModel->diagram())) {
                     diagramSceneController->addExistingModelElement(Uid(QUuid(key)),
-                                                                    mapToScene(event->position().toPoint()),
+                                                                    mapToScene(event->pos()),
                                                                     m_diagramSceneModel->diagram());
                 }
             }
@@ -126,10 +140,10 @@ void DiagramView::dropEvent(QDropEvent *event)
             QString stereotype;
             dataStream >> newElementId >> name >> stereotype;
             if (!newElementId.isEmpty()) {
-                QPointF pos = mapToScene(event->position().toPoint());
+                QPointF pos = mapToScene(event->pos());
                 diagramSceneController->dropNewElement(
                             newElementId, name, stereotype, m_diagramSceneModel->findTopmostElement(pos),
-                            pos, m_diagramSceneModel->diagram(), event->position().toPoint(), size());
+                            pos, m_diagramSceneModel->diagram(), event->pos(), size());
             }
         }
         event->accept();
@@ -138,41 +152,12 @@ void DiagramView::dropEvent(QDropEvent *event)
     }
 }
 
-void DiagramView::mousePressEvent(QMouseEvent *event)
-{
-    m_panTimer.start();
-    QGraphicsView::mousePressEvent(event);
-}
-
-void DiagramView::mouseReleaseEvent(QMouseEvent *event)
-{
-    m_panTimer.stop();
-    QGraphicsView::mouseReleaseEvent(event);
-}
-
-void DiagramView::mouseMoveEvent(QMouseEvent *event)
-{
-    QGraphicsView::mouseMoveEvent(event);
-    m_lastMouse = event->pos();
-}
-
 void DiagramView::onSceneRectChanged(const QRectF &sceneRect)
 {
     // add some adjustment to all 4 sides
+    static const qreal ADJUSTMENT = 80;
     QRectF rect = sceneRect.adjusted(-ADJUSTMENT, -ADJUSTMENT, ADJUSTMENT, ADJUSTMENT);
     setSceneRect(rect);
-}
-
-void DiagramView::onPanTimeout()
-{
-    if (m_lastMouse.x() < ADJUSTMENT)
-        horizontalScrollBar()->triggerAction(QScrollBar::SliderSingleStepSub);
-    else if (m_lastMouse.x() > viewport()->size().width() - ADJUSTMENT)
-        horizontalScrollBar()->triggerAction(QScrollBar::SliderSingleStepAdd);
-    if (m_lastMouse.y() < ADJUSTMENT)
-        verticalScrollBar()->triggerAction(QScrollBar::SliderSingleStepSub);
-    else if (m_lastMouse.y() > viewport()->size().height() - ADJUSTMENT)
-        verticalScrollBar()->triggerAction(QScrollBar::SliderSingleStepAdd);
 }
 
 } // namespace qmt

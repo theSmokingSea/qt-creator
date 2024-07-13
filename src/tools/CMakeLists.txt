@@ -1,13 +1,14 @@
 add_subdirectory(3rdparty)
 add_subdirectory(buildoutputparser)
 
+option(BUILD_CPLUSPLUS_TOOLS "Build CPlusPlus tools" OFF)
+
 function(add_qtc_cpp_tool name)
   add_qtc_executable(${name}
-    SKIP_INSTALL
     DEFINES
       PATH_PREPROCESSOR_CONFIG=\"${CMAKE_CURRENT_SOURCE_DIR}/cplusplus-shared/pp-configuration.inc\"
       ${ARGN}
-    DEPENDS CPlusPlus Utils Qt::Widgets
+    DEPENDS CPlusPlus Utils Qt5::Widgets
     INCLUDES "${CMAKE_CURRENT_SOURCE_DIR}/cplusplus-shared"
       "${CMAKE_CURRENT_SOURCE_DIR}/${name}"
     SOURCES
@@ -16,10 +17,12 @@ function(add_qtc_cpp_tool name)
   )
 endfunction()
 
-add_qtc_cpp_tool(cplusplus-ast2png "")
-add_qtc_cpp_tool(cplusplus-frontend "")
-add_qtc_cpp_tool(cplusplus-mkvisitor PATH_AST_H=\"${CMAKE_CURRENT_SOURCE_DIR}/../libs/3rdparty/cplusplus/AST.h\")
-add_qtc_cpp_tool(cplusplus-update-frontend PATH_CPP_FRONTEND=\"${CMAKE_CURRENT_SOURCE_DIR}/../libs/3rdparty/cplusplus\" PATH_DUMPERS_FILE=\"${CMAKE_CURRENT_SOURCE_DIR}/cplusplus-ast2png/dumpers.inc\")
+if (BUILD_CPLUSPLUS_TOOLS)
+  add_qtc_cpp_tool(cplusplus-ast2png "")
+  add_qtc_cpp_tool(cplusplus-frontend "")
+  add_qtc_cpp_tool(cplusplus-mkvisitor PATH_AST_H=\"${CMAKE_CURRENT_SOURCE_DIR}/../libs/3rdparty/cplusplus/AST.h\")
+  add_qtc_cpp_tool(cplusplus-update-frontend PATH_CPP_FRONTEND=\"${CMAKE_CURRENT_SOURCE_DIR}/../libs/3rdparty/cplusplus\" PATH_DUMPERS_FILE=\"${CMAKE_CURRENT_SOURCE_DIR}/cplusplus-ast2png/dumpers.inc\")
+endif()
 
 if (APPLE)
   add_subdirectory(disclaim)
@@ -27,9 +30,7 @@ if (APPLE)
 endif()
 
 add_subdirectory(processlauncher)
-if (WITH_QMLDESIGNER)
-#  add_subdirectory(qml2puppet)
-endif()
+add_subdirectory(qml2puppet)
 add_subdirectory(qtcdebugger) ## windows only
 # add_subdirectory(qtcrashhandler)
 add_subdirectory(qtc-askpass)
@@ -43,5 +44,3 @@ add_subdirectory(wininterrupt) ## windows only
 if (EXISTS ${CMAKE_CURRENT_LIST_DIR}/perfparser/CMakeLists.txt)
   add_subdirectory(perfparser)
 endif()
-
-add_subdirectory(process_stub)

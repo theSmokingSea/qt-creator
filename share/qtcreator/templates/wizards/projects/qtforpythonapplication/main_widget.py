@@ -1,4 +1,6 @@
 # This Python file uses the following encoding: utf-8
+import os
+from pathlib import Path
 import sys
 
 @if '%{BaseCB}' === 'QWidget'
@@ -10,12 +12,9 @@ from %{PySideVersion}.QtWidgets import QApplication, QMainWindow
 @if '%{BaseCB}' === 'QDialog'
 from %{PySideVersion}.QtWidgets import QApplication, QDialog
 @endif
+from %{PySideVersion}.QtCore import QFile
+from %{PySideVersion}.QtUiTools import QUiLoader
 
-# Important:
-# You need to run the following command to generate the ui_form.py file
-#     pyside6-uic form.ui -o ui_form.py, or
-#     pyside2-uic form.ui -o ui_form.py
-from ui_form import Ui_%{Class}
 
 @if '%{BaseCB}'
 class %{Class}(%{BaseCB}):
@@ -24,8 +23,19 @@ class %{Class}:
 @endif
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.ui = Ui_%{Class}()
-        self.ui.setupUi(self)
+        self.load_ui()
+
+    def load_ui(self):
+        loader = QUiLoader()
+        path = Path(__file__).resolve().parent / "form.ui"
+@if '%{PySideVersion}' === 'PySide6'
+        ui_file = QFile(path)
+@else
+        ui_file = QFile(str(path))
+@endif
+        ui_file.open(QFile.ReadOnly)
+        loader.load(ui_file, self)
+        ui_file.close()
 
 
 if __name__ == "__main__":

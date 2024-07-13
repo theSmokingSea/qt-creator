@@ -1,5 +1,5 @@
 add_qtc_library(GLSL
-  DEPENDS Qt::Core
+  DEPENDS Qt5::Core
   SOURCES
     glsl.h
     glslast.cpp glslast.h

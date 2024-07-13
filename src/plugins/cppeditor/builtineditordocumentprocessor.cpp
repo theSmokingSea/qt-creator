@@ -1,17 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "builtineditordocumentprocessor.h"
 
 #include "builtincursorinfo.h"
 #include "cppchecksymbols.h"
 #include "cppcodemodelsettings.h"
-#include "cppeditordocument.h"
+#include "cppeditorplugin.h"
 #include "cppmodelmanager.h"
 #include "cpptoolsreuse.h"
 #include "cppworkingcopy.h"
-
-#include <coreplugin/editormanager/documentmodel.h>
 
 #include <texteditor/fontsettings.h>
 #include <texteditor/refactoroverlay.h>
@@ -20,9 +40,9 @@
 #include <cplusplus/CppDocument.h>
 #include <cplusplus/SimpleLexer.h>
 
-#include <utils/async.h>
-#include <utils/qtcassert.h>
 #include <utils/textutils.h>
+#include <utils/qtcassert.h>
+#include <utils/runextensions.h>
 
 #include <QLoggingCategory>
 #include <QTextBlock>
@@ -88,20 +108,20 @@ CheckSymbols *createHighlighter(const CPlusPlus::Document::Ptr &doc,
     using Utils::Text::convertPosition;
 
     // Get macro definitions
-    for (const CPlusPlus::Macro &macro : doc->definedMacros()) {
+    const QList<CPlusPlus::Macro> definedMacros = doc->definedMacros();
+    for (const CPlusPlus::Macro &macro : definedMacros) {
         int line, column;
         convertPosition(textDocument, macro.utf16CharOffset(), &line, &column);
-        QTC_ASSERT(line > 0 && column >= 0, qDebug() << doc->filePath() << macro.toString();
-                   continue);
 
-        Result use(line, column + 1, macro.nameToQString().size(), SemanticHighlighter::MacroUse);
+        Result use(line, column, macro.nameToQString().size(), SemanticHighlighter::MacroUse);
         macroUses.append(use);
     }
 
     const LanguageFeatures features = doc->languageFeatures();
 
     // Get macro uses
-    for (const Document::MacroUse &macro : doc->macroUses()) {
+    const QList<Document::MacroUse> macroUseList = doc->macroUses();
+    for (const Document::MacroUse &macro : macroUseList) {
         const QString name = macro.macro().nameToQString();
 
         //Filter out QtKeywords
@@ -118,15 +138,13 @@ CheckSymbols *createHighlighter(const CPlusPlus::Document::Ptr &doc,
 
         int line, column;
         convertPosition(textDocument, macro.utf16charsBegin(), &line, &column);
-        QTC_ASSERT(line > 0 && column >= 0, qDebug() << doc->filePath()
-                                                      << macro.macro().toString(); continue);
 
-        Result use(line, column + 1, name.size(), SemanticHighlighter::MacroUse);
+        Result use(line, column, name.size(), SemanticHighlighter::MacroUse);
         macroUses.append(use);
     }
 
     LookupContext context(doc, snapshot);
-    return CheckSymbols::create(doc, textDocument->toPlainText(), context, macroUses);
+    return CheckSymbols::create(doc, context, macroUses);
 }
 
 QList<TextEditor::BlockRange> toTextEditorBlocks(
@@ -142,16 +160,18 @@ QList<TextEditor::BlockRange> toTextEditorBlocks(
 } // anonymous namespace
 
 BuiltinEditorDocumentProcessor::BuiltinEditorDocumentProcessor(TextEditor::TextDocument *document)
-    : BaseEditorDocumentProcessor(document->document(), document->filePath())
-    , m_parser(new BuiltinEditorDocumentParser(document->filePath(),
-                                               settings().effectiveIndexerFileSizeLimitInMb()))
+    : BaseEditorDocumentProcessor(document->document(), document->filePath().toString())
+    , m_parser(new BuiltinEditorDocumentParser(document->filePath().toString(),
+                                               indexerFileSizeLimitInMb()))
     , m_codeWarningsUpdated(false)
     , m_semanticHighlighter(new SemanticHighlighter(document))
 {
     using namespace Internal;
 
+    const CppCodeModelSettings *cms = CppEditorPlugin::instance()->codeModelSettings();
+
     BaseEditorDocumentParser::Configuration config = m_parser->configuration();
-    config.usePrecompiledHeaders = settings().pchUsage != CppCodeModelSettings::PchUse_None;
+    config.usePrecompiledHeaders = cms->pchUsage() != CppCodeModelSettings::PchUse_None;
     m_parser->setConfiguration(config);
 
     m_semanticHighlighter->setHighlightingRunner(
@@ -181,8 +201,10 @@ BuiltinEditorDocumentProcessor::~BuiltinEditorDocumentProcessor()
 void BuiltinEditorDocumentProcessor::runImpl(
         const BaseEditorDocumentParser::UpdateParams &updateParams)
 {
-    m_parserFuture = Utils::asyncRun(CppModelManager::sharedThreadPool(),
-                                     runParser, parser(), updateParams);
+    m_parserFuture = Utils::runAsync(CppModelManager::instance()->sharedThreadPool(),
+                                     runParser,
+                                     parser(),
+                                     updateParams);
 }
 
 BaseEditorDocumentParser::Ptr BuiltinEditorDocumentProcessor::parser()
@@ -243,19 +265,17 @@ void BuiltinEditorDocumentProcessor::onParserFinished(CPlusPlus::Document::Ptr d
     if (document.isNull())
         return;
 
-    if (document->filePath() != filePath())
+    if (document->fileName() != filePath())
         return; // some other document got updated
 
     if (document->editorRevision() != revision())
         return; // outdated content, wait for a new document to be parsed
 
-    qCDebug(log) << "document parsed" << document->filePath() << document->editorRevision();
+    qCDebug(log) << "document parsed" << document->fileName() << document->editorRevision();
 
     // Emit ifdefed out blocks
-    if (!m_semanticHighlightingChecker || m_semanticHighlightingChecker()) {
-        const auto ifdefoutBlocks = toTextEditorBlocks(document->skippedBlocks());
-        emit ifdefedOutBlocksUpdated(revision(), ifdefoutBlocks);
-    }
+    const auto ifdefoutBlocks = toTextEditorBlocks(document->skippedBlocks());
+    emit ifdefedOutBlocksUpdated(revision(), ifdefoutBlocks);
 
     // Store parser warnings
     m_codeWarnings = toTextEditorSelections(document->diagnosticMessages(), textDocument());
@@ -265,30 +285,14 @@ void BuiltinEditorDocumentProcessor::onParserFinished(CPlusPlus::Document::Ptr d
 
     m_documentSnapshot = snapshot;
     const auto source = createSemanticInfoSource(false);
-    QTC_CHECK(source.snapshot.contains(document->filePath()));
+    QTC_CHECK(source.snapshot.contains(document->fileName()));
     m_semanticInfoUpdater.updateDetached(source);
-
-    const QList<Core::IDocument *> openDocuments = Core::DocumentModel::openedDocuments();
-    for (Core::IDocument * const openDocument : openDocuments) {
-        const auto cppEditorDoc = qobject_cast<Internal::CppEditorDocument *>(openDocument);
-        if (!cppEditorDoc)
-            continue;
-        if (cppEditorDoc->filePath() == document->filePath())
-            continue;
-        CPlusPlus::Document::Ptr cppDoc = CppModelManager::document(cppEditorDoc->filePath());
-        if (!cppDoc)
-            continue;
-        if (!cppDoc->includedFiles().contains(document->filePath()))
-            continue;
-        cppEditorDoc->scheduleProcessDocument();
-        forceUpdate(cppEditorDoc);
-    }
 }
 
 void BuiltinEditorDocumentProcessor::onSemanticInfoUpdated(const SemanticInfo semanticInfo)
 {
     qCDebug(log) << "semantic info updated"
-                 << semanticInfo.doc->filePath() << semanticInfo.revision << semanticInfo.complete;
+                 << semanticInfo.doc->fileName() << semanticInfo.revision << semanticInfo.complete;
 
     emit semanticInfoUpdated(semanticInfo);
 
@@ -303,7 +307,7 @@ void BuiltinEditorDocumentProcessor::onCodeWarningsUpdated(
     if (document.isNull())
         return;
 
-    if (document->filePath() != filePath())
+    if (document->fileName() != filePath())
         return; // some other document got updated
 
     if (document->editorRevision() != revision())
@@ -321,13 +325,13 @@ void BuiltinEditorDocumentProcessor::onCodeWarningsUpdated(
 
 SemanticInfo::Source BuiltinEditorDocumentProcessor::createSemanticInfoSource(bool force) const
 {
-    QByteArray source;
-    int revision = 0;
-    if (const auto entry = CppModelManager::workingCopy().get(filePath())) {
-        source = entry->first;
-        revision = entry->second;
-    }
-    return SemanticInfo::Source(filePath().toString(), source, revision, m_documentSnapshot, force);
+    const WorkingCopy workingCopy = CppModelManager::instance()->workingCopy();
+    const QString path = filePath();
+    return SemanticInfo::Source(path,
+                                workingCopy.source(path),
+                                workingCopy.revision(path),
+                                m_documentSnapshot,
+                                force);
 }
 
 } // namespace CppEditor

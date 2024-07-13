@@ -1,27 +1,42 @@
-// Copyright (C) 2020 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2020 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmlmultilanguageaspect.h"
-
-#include "qmlprojectmanagertr.h"
 
 #include <extensionsystem/pluginmanager.h>
 #include <extensionsystem/pluginspec.h>
 
 #include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
-#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/runcontrol.h>
+#include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
-
-using namespace ProjectExplorer;
-using namespace Utils;
-
-namespace QmlProjectManager {
 
 static bool isMultilanguagePresent()
 {
-    const ExtensionSystem::PluginSpecs &specs = ExtensionSystem::PluginManager::plugins();
+    const QVector<ExtensionSystem::PluginSpec *> &specs = ExtensionSystem::PluginManager::plugins();
     return std::find_if(specs.cbegin(), specs.cend(),
                         [](ExtensionSystem::PluginSpec *spec) {
                             return spec->name() == "MultiLanguage";
@@ -29,7 +44,7 @@ static bool isMultilanguagePresent()
            != specs.cend();
 }
 
-static FilePath getMultilanguageDatabaseFilePath(ProjectExplorer::Target *target)
+static Utils::FilePath getMultilanguageDatabaseFilePath(ProjectExplorer::Target *target)
 {
     if (target) {
         auto filePath = target->project()->projectDirectory().pathAppended("translations.db");
@@ -41,7 +56,7 @@ static FilePath getMultilanguageDatabaseFilePath(ProjectExplorer::Target *target
 
 static QObject *getPreviewPlugin()
 {
-    const ExtensionSystem::PluginSpecs &specs = ExtensionSystem::PluginManager::plugins();
+    const QVector<ExtensionSystem::PluginSpec *> &specs = ExtensionSystem::PluginManager::plugins();
     const auto pluginIt = std::find_if(specs.cbegin(), specs.cend(),
                                  [](const ExtensionSystem::PluginSpec *p) {
                                      return p->name() == "QmlPreview";
@@ -53,37 +68,34 @@ static QObject *getPreviewPlugin()
     return nullptr;
 }
 
-QmlMultiLanguageAspect::QmlMultiLanguageAspect(AspectContainer *container)
-    : BoolAspect(container)
+
+namespace QmlProjectManager {
+
+QmlMultiLanguageAspect::QmlMultiLanguageAspect(ProjectExplorer::Target *target)
+    : m_target(target)
 {
     setVisible(isMultilanguagePresent());
     setSettingsKey(Constants::USE_MULTILANGUAGE_KEY);
-    setLabel(Tr::tr("Use MultiLanguage in 2D view"), BoolAspect::LabelPlacement::AtCheckBox);
-    setToolTip(Tr::tr("Reads translations from MultiLanguage plugin."));
+    setLabel(tr("Use MultiLanguage in Form Editor."), BoolAspect::LabelPlacement::AtCheckBox);
+    setToolTip(tr("Reads translations from MultiLanguage plugin."));
 
     setDefaultValue(!databaseFilePath().isEmpty());
-    Store getDefaultValues;
+    QVariantMap getDefaultValues;
     fromMap(getDefaultValues);
 
     addDataExtractor(this, &QmlMultiLanguageAspect::origin, &Data::origin);
 
     connect(this, &BoolAspect::changed, this, [this] {
-        for (RunControl *runControl : ProjectExplorerPlugin::allRunControls()) {
-            if (auto aspect = runControl->aspectData<QmlMultiLanguageAspect>()) {
-                if (auto origin = aspect->origin; origin == this)
-                    runControl->initiateStop();
-            }
+        for (ProjectExplorer::RunControl *runControl :
+                ProjectExplorer::ProjectExplorerPlugin::allRunControls()) {
+            if (runControl->aspect<QmlMultiLanguageAspect>()->origin == this)
+                runControl->initiateStop();
         }
     });
 }
 
 QmlMultiLanguageAspect::~QmlMultiLanguageAspect()
 {
-}
-
-void QmlMultiLanguageAspect::setTarget(Target *target)
-{
-    m_target = target;
 }
 
 void QmlMultiLanguageAspect::setCurrentLocale(const QString &locale)
@@ -107,14 +119,14 @@ Utils::FilePath QmlMultiLanguageAspect::databaseFilePath() const
     return m_databaseFilePath;
 }
 
-void QmlMultiLanguageAspect::toMap(Store &map) const
+void QmlMultiLanguageAspect::toMap(QVariantMap &map) const
 {
     BoolAspect::toMap(map);
     if (!m_currentLocale.isEmpty())
         map.insert(Constants::LAST_USED_LANGUAGE, m_currentLocale);
 }
 
-void QmlMultiLanguageAspect::fromMap(const Store &map)
+void QmlMultiLanguageAspect::fromMap(const QVariantMap &map)
 {
     BoolAspect::fromMap(map);
     setCurrentLocale(map.value(Constants::LAST_USED_LANGUAGE, "en").toString());
@@ -122,19 +134,19 @@ void QmlMultiLanguageAspect::fromMap(const Store &map)
 
 QmlMultiLanguageAspect *QmlMultiLanguageAspect::current()
 {
-    if (auto project = ProjectManager::startupProject())
+    if (auto project = ProjectExplorer::SessionManager::startupProject())
         return current(project);
     return {};
 }
 
-QmlMultiLanguageAspect *QmlMultiLanguageAspect::current(Project *project)
+QmlMultiLanguageAspect *QmlMultiLanguageAspect::current(ProjectExplorer::Project *project)
 {
     if (auto target = project->activeTarget())
         return current(target);
     return {};
 }
 
-QmlMultiLanguageAspect *QmlMultiLanguageAspect::current(Target *target)
+QmlMultiLanguageAspect *QmlMultiLanguageAspect::current(ProjectExplorer::Target *target)
 {
     if (!target)
         return {};

@@ -1,11 +1,34 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "debuggericons.h"
 
 using namespace Utils;
 
-namespace Debugger::Icons {
+namespace Debugger {
+namespace Icons {
 
 const Icon BREAKPOINT({
         {":/utils/images/filledcircle.png", Theme::IconsErrorColor}}, Icon::Tint);
@@ -34,13 +57,13 @@ const Icon CONTINUE_FLAT({
         {":/debugger/images/debugger_continue_2_mask.png", Theme::IconsRunToolBarColor},
         {":/projectexplorer/images/debugger_beetle_mask.png", Theme::IconsDebugColor}});
 const Icon DEBUG_CONTINUE_SMALL({
-        {":/utils/images/continue_1_small.png", Theme::IconsInterruptColor},
-        {":/utils/images/continue_2_small.png", Theme::IconsRunColor},
-        {":/utils/images/debugger_overlay_small.png", Theme::PanelTextColorMid}}, Icon::MenuTintedStyle);
+        {":/projectexplorer/images/continue_1_small.png", Theme::IconsInterruptColor},
+        {":/projectexplorer/images/continue_2_small.png", Theme::IconsRunColor},
+        {":/projectexplorer/images/debugger_overlay_small.png", Theme::PanelTextColorMid}}, Icon::MenuTintedStyle);
 const Icon DEBUG_CONTINUE_SMALL_TOOLBAR({
-        {":/utils/images/continue_1_small.png", Theme::IconsInterruptToolBarColor},
-        {":/utils/images/continue_2_small.png", Theme::IconsRunToolBarColor},
-        {":/utils/images/debugger_overlay_small.png", Theme::IconsDebugColor}});
+        {":/projectexplorer/images/continue_1_small.png", Theme::IconsInterruptToolBarColor},
+        {":/projectexplorer/images/continue_2_small.png", Theme::IconsRunToolBarColor},
+        {":/projectexplorer/images/debugger_overlay_small.png", Theme::IconsDebugColor}});
 const Icon INTERRUPT(
         ":/debugger/images/debugger_interrupt.png");
 const Icon INTERRUPT_FLAT({
@@ -53,16 +76,16 @@ const Icon STOP_FLAT({
         {":/projectexplorer/images/debugger_beetle_mask.png", Theme::IconsDebugColor}});
 const Icon DEBUG_INTERRUPT_SMALL({
         {":/utils/images/interrupt_small.png", Theme::IconsInterruptColor},
-        {":/utils/images/debugger_overlay_small.png", Theme::PanelTextColorMid}}, Icon::MenuTintedStyle);
+        {":/projectexplorer/images/debugger_overlay_small.png", Theme::PanelTextColorMid}}, Icon::MenuTintedStyle);
 const Icon DEBUG_INTERRUPT_SMALL_TOOLBAR({
         {":/utils/images/interrupt_small.png", Theme::IconsInterruptToolBarColor},
-        {":/utils/images/debugger_overlay_small.png", Theme::IconsDebugColor}});
+        {":/projectexplorer/images/debugger_overlay_small.png", Theme::IconsDebugColor}});
 const Icon DEBUG_EXIT_SMALL({
         {":/utils/images/stop_small.png", Theme::IconsStopColor},
-        {":/utils/images/debugger_overlay_small.png", Theme::PanelTextColorMid}}, Icon::MenuTintedStyle);
+        {":/projectexplorer/images/debugger_overlay_small.png", Theme::PanelTextColorMid}}, Icon::MenuTintedStyle);
 const Icon DEBUG_EXIT_SMALL_TOOLBAR({
         {":/utils/images/stop_small.png", Theme::IconsStopToolBarColor},
-        {":/utils/images/debugger_overlay_small.png", Theme::IconsDebugColor}});
+        {":/projectexplorer/images/debugger_overlay_small.png", Theme::IconsDebugColor}});
 const Icon LOCATION({
         {":/debugger/images/location_background.png", Theme::IconsCodeModelOverlayForegroundColor},
         {":/debugger/images/location.png", Theme::IconsWarningToolBarColor}}, Icon::Tint);
@@ -135,5 +158,5 @@ const Icon MACOS_TOUCHBAR_DEBUG_STEP_INTO(
         ":/debugger/images/macos_touchbar_debug_step_into.png");
 const Icon MACOS_TOUCHBAR_DEBUG_STEP_OUT(
         ":/debugger/images/macos_touchbar_debug_step_out.png");
-
-} // Debugger::Icons
+} // namespace Icons
+} // namespace Debugger

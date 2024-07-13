@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Przemyslaw Gorszkowski <pgorszkowski@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Przemyslaw Gorszkowski <pgorszkowski@gmail.com>
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -8,7 +30,8 @@
 
 #include <QSet>
 
-namespace CppEditor::Internal {
+namespace CppEditor {
+namespace Internal {
 
 class CppIncludeHierarchyItem;
 
@@ -24,8 +47,8 @@ public:
     QStringList mimeTypes() const override;
     QMimeData *mimeData(const QModelIndexList &indexes) const override;
 
-    void buildHierarchy(const Utils::FilePath &filePath);
-    const Utils::FilePath &editorFilePath() const { return m_editorFilePath; }
+    void buildHierarchy(const QString &filePath);
+    QString editorFilePath() const { return m_editorFilePath; }
     void setSearching(bool on);
     QString toString() const;
 
@@ -36,12 +59,22 @@ public:
 
 private:
     friend class CppIncludeHierarchyItem;
-    Utils::FilePath m_editorFilePath;
-    QSet<Utils::FilePath> m_seen;
+    QString m_editorFilePath;
+    QSet<QString> m_seen;
     bool m_searching = false;
 };
 
-void openCppIncludeHierarchy();
-void setupCppIncludeHierarchy();
+class CppIncludeHierarchyFactory : public Core::INavigationWidgetFactory
+{
+    Q_OBJECT
 
-} // CppEditor::Internal
+public:
+    CppIncludeHierarchyFactory();
+
+    Core::NavigationView createWidget() override;
+    void saveSettings(Utils::QtcSettings *settings, int position, QWidget *widget) override;
+    void restoreSettings(QSettings *settings, int position, QWidget *widget) override;
+};
+
+} // namespace Internal
+} // namespace CppEditor

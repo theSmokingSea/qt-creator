@@ -1,14 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "environmentaspect.h"
 
-#include "buildconfiguration.h"
 #include "environmentaspectwidget.h"
-#include "kit.h"
-#include "projectexplorer.h"
-#include "projectexplorersettings.h"
-#include "projectexplorertr.h"
 #include "target.h"
 
 #include <utils/algorithm.h>
@@ -16,31 +33,21 @@
 
 using namespace Utils;
 
+static const char BASE_KEY[] = "PE.EnvironmentAspect.Base";
+static const char CHANGES_KEY[] = "PE.EnvironmentAspect.Changes";
+
 namespace ProjectExplorer {
-const char PRINT_ON_RUN_KEY[] = "PE.EnvironmentAspect.PrintOnRun";
 
 // --------------------------------------------------------------------
 // EnvironmentAspect:
 // --------------------------------------------------------------------
 
-EnvironmentAspect::EnvironmentAspect(AspectContainer *container)
-    : BaseAspect(container)
+EnvironmentAspect::EnvironmentAspect()
 {
-    setDisplayName(Tr::tr("Environment"));
+    setDisplayName(tr("Environment"));
     setId("EnvironmentAspect");
     setConfigWidgetCreator([this] { return new EnvironmentAspectWidget(this); });
     addDataExtractor(this, &EnvironmentAspect::environment, &Data::environment);
-    if (qobject_cast<RunConfiguration *>(container)) {
-        addModifier([](Environment &env) { env.modify(projectExplorerSettings().appEnvChanges); });
-        connect(ProjectExplorerPlugin::instance(), &ProjectExplorerPlugin::settingsChanged,
-                this, &EnvironmentAspect::environmentChanged);
-    }
-}
-
-void EnvironmentAspect::setDeviceSelector(Target *target, DeviceSelector selector)
-{
-    m_target = target;
-    m_selector = selector;
 }
 
 int EnvironmentAspect::baseEnvironmentBase() const
@@ -69,7 +76,7 @@ void EnvironmentAspect::setUserEnvironmentChanges(const Utils::EnvironmentItems 
 Utils::Environment EnvironmentAspect::environment() const
 {
     Environment env = modifiedBaseEnvironment();
-    env.modify(userEnvironmentChanges());
+    env.modify(m_userChanges);
     return env;
 }
 
@@ -92,66 +99,37 @@ void EnvironmentAspect::addModifier(const EnvironmentAspect::EnvironmentModifier
     m_modifiers.append(modifier);
 }
 
-int EnvironmentAspect::addSupportedBaseEnvironment(const QString &displayName,
-                                                   const std::function<Environment()> &getter)
+void EnvironmentAspect::addSupportedBaseEnvironment(const QString &displayName,
+                                                    const std::function<Environment()> &getter)
 {
     BaseEnvironment baseEnv;
     baseEnv.displayName = displayName;
     baseEnv.getter = getter;
     m_baseEnvironments.append(baseEnv);
-    const int index = m_baseEnvironments.size() - 1;
     if (m_base == -1)
-        setBaseEnvironmentBase(index);
-
-    return index;
+        setBaseEnvironmentBase(m_baseEnvironments.size() - 1);
 }
 
-int EnvironmentAspect::addPreferredBaseEnvironment(const QString &displayName,
-                                                   const std::function<Environment()> &getter)
+void EnvironmentAspect::addPreferredBaseEnvironment(const QString &displayName,
+                                                    const std::function<Environment()> &getter)
 {
     BaseEnvironment baseEnv;
     baseEnv.displayName = displayName;
     baseEnv.getter = getter;
     m_baseEnvironments.append(baseEnv);
-    const int index = m_baseEnvironments.size() - 1;
-    setBaseEnvironmentBase(index);
-
-    return index;
+    setBaseEnvironmentBase(m_baseEnvironments.size() - 1);
 }
 
-void EnvironmentAspect::setSupportForBuildEnvironment(Target *target)
+void EnvironmentAspect::fromMap(const QVariantMap &map)
 {
-    setIsLocal(true);
-    addSupportedBaseEnvironment(Tr::tr("Clean Environment"), {});
-
-    addSupportedBaseEnvironment(Tr::tr("System Environment"), [] {
-        return Environment::systemEnvironment();
-    });
-    addPreferredBaseEnvironment(Tr::tr("Build Environment"), [target] {
-        if (BuildConfiguration *bc = target->activeBuildConfiguration())
-            return bc->environment();
-        // Fallback for targets without buildconfigurations:
-        return target->kit()->buildEnvironment();
-    });
-
-    connect(target, &Target::activeBuildConfigurationChanged,
-            this, &EnvironmentAspect::environmentChanged);
-    connect(target, &Target::buildEnvironmentChanged,
-            this, &EnvironmentAspect::environmentChanged);
+    m_base = map.value(QLatin1String(BASE_KEY), -1).toInt();
+    m_userChanges = Utils::EnvironmentItem::fromStringList(map.value(QLatin1String(CHANGES_KEY)).toStringList());
 }
 
-void EnvironmentAspect::fromMap(const Store &map)
+void EnvironmentAspect::toMap(QVariantMap &data) const
 {
-    m_base = map.value(BASE_KEY, -1).toInt();
-    m_userChanges = EnvironmentItem::fromStringList(map.value(CHANGES_KEY).toStringList());
-    m_printOnRun = map.value(PRINT_ON_RUN_KEY).toBool();
-}
-
-void EnvironmentAspect::toMap(Store &data) const
-{
-    data.insert(BASE_KEY, m_base);
-    data.insert(CHANGES_KEY, EnvironmentItem::toStringList(m_userChanges));
-    data.insert(PRINT_ON_RUN_KEY, m_printOnRun);
+    data.insert(QLatin1String(BASE_KEY), m_base);
+    data.insert(QLatin1String(CHANGES_KEY), Utils::EnvironmentItem::toStringList(m_userChanges));
 }
 
 QString EnvironmentAspect::currentDisplayName() const
@@ -165,9 +143,4 @@ Environment EnvironmentAspect::BaseEnvironment::unmodifiedBaseEnvironment() cons
     return getter ? getter() : Environment();
 }
 
-Utils::EnvironmentItems EnvironmentAspect::userEnvironmentChanges() const
-{
-    emit userChangesUpdateRequested();
-    return m_userChanges;
-}
 } // namespace ProjectExplorer

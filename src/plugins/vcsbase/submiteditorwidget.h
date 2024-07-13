@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -15,13 +37,19 @@ QT_END_NAMESPACE
 namespace Utils { class CompletingTextEdit; }
 namespace VcsBase {
 
-struct SubmitEditorWidgetPrivate;
 class SubmitFieldWidget;
+struct SubmitEditorWidgetPrivate;
 class SubmitFileModel;
 
 class VCSBASE_EXPORT SubmitEditorWidget : public QWidget
 {
     Q_OBJECT
+    Q_PROPERTY(QString descriptionText READ descriptionText WRITE setDescriptionText DESIGNABLE true)
+    Q_PROPERTY(QAbstractItemView::SelectionMode fileListSelectionMode READ fileListSelectionMode WRITE setFileListSelectionMode DESIGNABLE true)
+    Q_PROPERTY(bool lineWrap READ lineWrap WRITE setLineWrap DESIGNABLE true)
+    Q_PROPERTY(int lineWrapWidth READ lineWrapWidth WRITE setLineWrapWidth DESIGNABLE true)
+    Q_PROPERTY(bool descriptionMandatory READ isDescriptionMandatory WRITE setDescriptionMandatory DESIGNABLE false)
+    Q_PROPERTY(bool emptyFileListEnabled READ isEmptyFileListEnabled WRITE setEmptyFileListEnabled DESIGNABLE true)
 
 public:
     SubmitEditorWidget();
@@ -67,7 +95,6 @@ public:
     QList<SubmitFieldWidget *> submitFieldWidgets() const;
 
     virtual bool canSubmit(QString *whyNot = nullptr) const;
-    bool isEdited() const;
     void setUpdateInProgress(bool value);
     bool updateInProgress() const;
 
@@ -84,15 +111,16 @@ signals:
     void submitActionEnabledChanged(bool);
 
 protected:
-    void changeEvent(QEvent *event) override;
+    virtual void changeEvent(QEvent *event) override;
     virtual QString cleanupDescription(const QString &) const;
     virtual QString commitName() const;
     void insertTopWidget(QWidget *w);
     void insertLeftWidget(QWidget *w);
     void addSubmitButtonMenu(QMenu *menu);
     void hideDescription();
+
+protected slots:
     void descriptionTextChanged();
-    void verifyDescription();
 
 private:
     void updateCheckAllComboBox();
@@ -110,6 +138,7 @@ private:
     int checkedFilesCount() const;
     void wrapDescription();
     void trimDescription();
+    void verifyDescription();
 
     SubmitEditorWidgetPrivate *d;
 };

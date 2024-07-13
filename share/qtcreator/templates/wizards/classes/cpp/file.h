@@ -1,21 +1,22 @@
-%{JS: Cpp.licenseTemplate()}\
-@if '%{JS: Cpp.usePragmaOnce()}' === 'true'
+%{Cpp:LicenseTemplate}\
+@if '%{Cpp:PragmaOnce}'
 #pragma once
 @else
 #ifndef %{GUARD}
 #define %{GUARD}
 @endif
 
-%{JS: Cpp.includeStatement('%{Base}', Cpp.cxxHeaderSuffix(), ['QObject', 'QWidget', 'QMainWindow', 'QQuickItem', 'QSharedData'], '%{TargetPath}')}\
+%{JS: Cpp.includeStatement('%{Base}', Util.preferredSuffix('text/x-c++hdr'), ['QObject', 'QWidget', 'QMainWindow', 'QQuickItem', 'QSharedData'], '%{TargetPath}')}\
 %{JS: QtSupport.qtIncludes([ ( '%{IncludeQObject}' )          ? 'QtCore/%{IncludeQObject}'                 : '',
                              ( '%{IncludeQWidget}' )          ? 'QtGui/%{IncludeQWidget}'                  : '',
                              ( '%{IncludeQMainWindow}' )      ? 'QtGui/%{IncludeQMainWindow}'              : '',
+                             ( '%{IncludeQDeclarativeItem}' ) ? 'QtDeclarative/%{IncludeQDeclarativeItem}' : '',
                              ( '%{IncludeQSharedData}' )      ? 'QtCore/QSharedDataPointer'                : '' ],
                            [ ( '%{IncludeQObject}' )          ? 'QtCore/%{IncludeQObject}'                 : '',
                              ( '%{IncludeQWidget}' )          ? 'QtWidgets/%{IncludeQWidget}'              : '',
                              ( '%{IncludeQMainWindow}' )      ? 'QtWidgets/%{IncludeQMainWindow}'          : '',
+                             ( '%{IncludeQDeclarativeItem}' ) ? 'QtQuick1/%{IncludeQDeclarativeItem}'      : '',
                              ( '%{IncludeQQuickItem}' )       ? 'QtDeclarative/%{IncludeQQuickItem}'       : '',
-                             ( '%{AddQmlElementMacro}' && !'%{IncludeQQuickItem}' ) ? 'QtQml/QQmlEngine'   : '',
                              ( '%{IncludeQSharedData}' )      ? 'QtCore/QSharedDataPointer'                : '' ])}\
 %{JS: Cpp.openNamespaces('%{Class}')}
 @if '%{IncludeQSharedData}'
@@ -30,9 +31,6 @@ class %{CN}
 {
 @if '%{AddQObjectMacro}'
      Q_OBJECT
-@endif
-@if '%{AddQmlElementMacro}'
-     QML_ELEMENT
 @endif
 public:
 @if '%{Base}' === 'QObject' || %{JS: Cpp.hasQObjectParent('%{Base}')}
@@ -63,6 +61,6 @@ private:
 @endif
 };
 %{JS: Cpp.closeNamespaces('%{Class}')}
-@if '%{JS: Cpp.usePragmaOnce()}' === 'false'
+@if ! '%{Cpp:PragmaOnce}'
 #endif // %{GUARD}
 @endif

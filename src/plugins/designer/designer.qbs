@@ -27,20 +27,6 @@ QtcPlugin {
         sharedSources.prefix
     ])
 
-    pluginjson.replacements: ({"DESIGNER_PLUGIN_ARGUMENTS":
-    "\"Arguments\" : [\n\
-        {\n\
-            \"Name\" : \"-designer-qt-pluginpath\",\n\
-            \"Parameter\" : \"path\",\n\
-            \"Description\" : \"Override the default search path for Qt Widgets Designer plugins\"\n\
-        },\n\
-        {\n\
-            \"Name\" : \"-designer-pluginpath\",\n\
-            \"Parameter\" : \"path\",\n\
-            \"Description\" : \"Add a custom search path for Qt Widgets Designer plugins\"\n\
-        }\n\
-    ],"})
-
     Group {
         name: "General"
         files: [
@@ -48,13 +34,13 @@ QtcPlugin {
             "codemodelhelpers.cpp", "codemodelhelpers.h",
             "designer_export.h",
             "designerconstants.h",
-            "designerplugin.cpp",
-            "designertr.h",
+            "designercontext.cpp", "designercontext.h",
             "editordata.h",
             "editorwidget.cpp", "editorwidget.h",
             "formeditorfactory.cpp", "formeditorfactory.h",
+            "formeditorplugin.cpp", "formeditorplugin.h",
             "formeditorstack.cpp", "formeditorstack.h",
-            "formeditor.cpp", "formeditor.h",
+            "formeditorw.cpp", "formeditorw.h",
             "formtemplatewizardpage.cpp", "formtemplatewizardpage.h",
             "formwindoweditor.cpp", "formwindoweditor.h",
             "formwindowfile.cpp", "formwindowfile.h",
@@ -86,11 +72,13 @@ QtcPlugin {
             "formclasswizarddialog.cpp", "formclasswizarddialog.h",
             "formclasswizardpage.cpp", "formclasswizardpage.h",
             "formclasswizardparameters.cpp", "formclasswizardparameters.h",
-            "newclasswidget.cpp", "newclasswidget.h",
+            "newclasswidget.cpp", "newclasswidget.h", "newclasswidget.ui",
         ]
     }
 
-    QtcTestFiles {
+    Group {
+        name: "Tests"
+        condition: qtc.testsEnabled
         files: [ "gotoslot_test.cpp" ]
 
         cpp.defines: outer.concat(['SRCDIR="' + FileInfo.path(filePath) + '"'])

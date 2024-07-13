@@ -1,17 +1,38 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "jsonsummarypage.h"
 
 #include "jsonwizard.h"
-#include "../buildsystem.h"
 #include "../project.h"
 #include "../projectexplorerconstants.h"
-#include "../projectexplorertr.h"
 #include "../projectnodes.h"
-#include "../projectmanager.h"
 #include "../projecttree.h"
-#include "../target.h"
+#include "../session.h"
+
+#include "../projecttree.h"
 
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/iversioncontrol.h>
@@ -28,6 +49,7 @@ using namespace Utils;
 
 static char KEY_SELECTED_PROJECT[] = "SelectedProject";
 static char KEY_SELECTED_NODE[] = "SelectedFolderNode";
+static char KEY_IS_SUBPROJECT[] = "IsSubproject";
 static char KEY_VERSIONCONTROL[] = "VersionControl";
 static char KEY_QT_KEYWORDS_ENABLED[] = "QtKeywordsEnabled";
 
@@ -63,36 +85,18 @@ static IWizardFactory::WizardKind wizardKind(JsonWizard *wiz)
 // --------------------------------------------------------------------
 
 JsonSummaryPage::JsonSummaryPage(QWidget *parent) :
-    ProjectWizardPage(parent),
+    Internal::ProjectWizardPage(parent),
     m_wizard(nullptr)
 {
-    connect(this, &ProjectWizardPage::projectNodeChanged,
+    connect(this, &Internal::ProjectWizardPage::projectNodeChanged,
             this, &JsonSummaryPage::summarySettingsHaveChanged);
-    connect(this, &ProjectWizardPage::versionControlChanged,
+    connect(this, &Internal::ProjectWizardPage::versionControlChanged,
             this, &JsonSummaryPage::summarySettingsHaveChanged);
 }
 
 void JsonSummaryPage::setHideProjectUiValue(const QVariant &hideProjectUiValue)
 {
     m_hideProjectUiValue = hideProjectUiValue;
-}
-
-static Node *extractPreferredNode(const JsonWizard *wizard)
-{
-    // Use static cast from void * to avoid qobject_cast (which needs a valid object) in value()
-    // in the following code:
-    Node *preferred = nullptr;
-    QVariant variant = wizard->value(Constants::PREFERRED_PROJECT_NODE);
-    if (variant.isValid()) {
-        preferred = static_cast<Node *>(variant.value<void *>());
-    } else {
-        variant = wizard->value(Constants::PREFERRED_PROJECT_NODE_PATH);
-        if (variant.isValid()) {
-            const FilePath fp = FilePath::fromVariant(variant);
-            preferred = ProjectTree::instance()->nodeForFile(fp);
-        }
-    }
-    return preferred;
 }
 
 void JsonSummaryPage::initializePage()
@@ -102,6 +106,7 @@ void JsonSummaryPage::initializePage()
 
     m_wizard->setValue(QLatin1String(KEY_SELECTED_PROJECT), QVariant());
     m_wizard->setValue(QLatin1String(KEY_SELECTED_NODE), QVariant());
+    m_wizard->setValue(QLatin1String(KEY_IS_SUBPROJECT), false);
     m_wizard->setValue(QLatin1String(KEY_VERSIONCONTROL), QString());
     m_wizard->setValue(QLatin1String(KEY_QT_KEYWORDS_ENABLED), false);
 
@@ -127,46 +132,23 @@ void JsonSummaryPage::initializePage()
                                  });
     }
 
-    Node *preferredNode = extractPreferredNode(m_wizard);
-    const FilePath preferredNodePath = preferredNode ? preferredNode->filePath() : FilePath{};
-    auto contextNode = findWizardContextNode(preferredNode);
+    // Use static cast from void * to avoid qobject_cast (which needs a valid object) in value()
+    // in the following code:
+    auto contextNode = findWizardContextNode(static_cast<Node *>(m_wizard->value(Constants::PREFERRED_PROJECT_NODE).value<void *>()));
     const ProjectAction currentAction = isProject ? AddSubProject : AddNewFile;
-    const bool isSubproject = m_wizard->value(Constants::PROJECT_ISSUBPROJECT).toBool();
 
-    auto updateProjectTree = [this, files, kind, currentAction, preferredNodePath]() {
-        Node *node = currentNode();
-        if (!node) {
-            if (auto p = ProjectManager::projectWithProjectFilePath(preferredNodePath))
-                node = p->rootProjectNode();
-        }
-        initializeProjectTree(findWizardContextNode(node), files, kind, currentAction,
-                              m_wizard->value(Constants::PROJECT_ISSUBPROJECT).toBool());
-        if (m_bsConnection && sender() != ProjectTree::instance())
-            disconnect(m_bsConnection);
-    };
-
-    if (contextNode) {
-        if (auto p = contextNode->getProject()) {
-            if (auto targets = p->targets(); !targets.isEmpty()) {
-                if (auto bs = targets.first()->buildSystem()) {
-                    if (bs->isParsing()) {
-                        m_bsConnection = connect(bs, &BuildSystem::parsingFinished,
-                                                 this, updateProjectTree);
-                    }
-                }
-            }
-        }
-    }
-    initializeProjectTree(contextNode, files, kind, currentAction, isSubproject);
+    initializeProjectTree(contextNode, files, kind, currentAction);
 
     // Refresh combobox on project tree changes:
     connect(ProjectTree::instance(), &ProjectTree::treeChanged,
-            this, updateProjectTree);
+            this, [this, files, kind, currentAction]() {
+        initializeProjectTree(findWizardContextNode(currentNode()), files, kind, currentAction);
+    });
+
 
     bool hideProjectUi = JsonWizard::boolFromVariant(m_hideProjectUiValue, m_wizard->expander());
     setProjectUiVisible(!hideProjectUi);
 
-    setVersionControlUiElementsVisible(!isSubproject);
     initializeVersionControls();
 
     // Do a new try at initialization, now that we have real values set up:
@@ -192,8 +174,8 @@ void JsonSummaryPage::triggerCommit(const JsonWizard::GeneratorFiles &files)
 
     QString errorMessage;
     if (!runVersionControl(coreFiles, &errorMessage)) {
-        QMessageBox::critical(wizard(), Tr::tr("Failed to Commit to Version Control"),
-                              Tr::tr("Error message from Version Control System: \"%1\".")
+        QMessageBox::critical(wizard(), tr("Failed to Commit to Version Control"),
+                              tr("Error message from Version Control System: \"%1\".")
                               .arg(errorMessage));
     }
 }
@@ -209,8 +191,8 @@ void JsonSummaryPage::addToProject(const JsonWizard::GeneratorFiles &files)
         return;
     if (kind == IWizardFactory::ProjectWizard) {
         if (!static_cast<ProjectNode *>(folder)->addSubProject(generatedProject)) {
-            QMessageBox::critical(m_wizard, Tr::tr("Failed to Add to Project"),
-                                  Tr::tr("Failed to add subproject \"%1\"\nto project \"%2\".")
+            QMessageBox::critical(m_wizard, tr("Failed to Add to Project"),
+                                  tr("Failed to add subproject \"%1\"\nto project \"%2\".")
                                   .arg(generatedProject.toUserOutput())
                                   .arg(folder->filePath().toUserOutput()));
             return;
@@ -221,8 +203,8 @@ void JsonSummaryPage::addToProject(const JsonWizard::GeneratorFiles &files)
             return f.file.filePath();
         });
         if (!folder->addFiles(filePaths)) {
-            QMessageBox::critical(wizard(), Tr::tr("Failed to Add to Project"),
-                                  Tr::tr("Failed to add one or more files to project\n\"%1\" (%2).")
+            QMessageBox::critical(wizard(), tr("Failed to Add to Project"),
+                                  tr("Failed to add one or more files to project\n\"%1\" (%2).")
                                   .arg(folder->filePath().toUserOutput(),
                                        FilePath::formatFilePaths(filePaths, ", ")));
             return;
@@ -250,10 +232,10 @@ Node *JsonSummaryPage::findWizardContextNode(Node *contextNode) const
 
         // Static cast from void * to avoid qobject_cast (which needs a valid object) in value().
         auto project = static_cast<Project *>(m_wizard->value(Constants::PROJECT_POINTER).value<void *>());
-        if (ProjectManager::projects().contains(project) && project->rootProjectNode()) {
-            const FilePath path = FilePath::fromVariant(m_wizard->value(Constants::PREFERRED_PROJECT_NODE_PATH));
+        if (SessionManager::projects().contains(project) && project->rootProjectNode()) {
+            const QString path = m_wizard->value(Constants::PREFERRED_PROJECT_NODE_PATH).toString();
             contextNode = project->rootProjectNode()->findNode([path](const Node *n) {
-                return path == n->filePath();
+                return path == n->filePath().toString();
             });
         }
     }
@@ -263,9 +245,8 @@ Node *JsonSummaryPage::findWizardContextNode(Node *contextNode) const
 void JsonSummaryPage::updateFileList()
 {
     m_fileList = m_wizard->generateFileList();
-    const FilePaths filePaths =
-            Utils::transform(m_fileList,
-                             [](const JsonWizard::GeneratorFile &f) { return f.file.filePath(); });
+    QStringList filePaths
+            = Utils::transform(m_fileList, [](const JsonWizard::GeneratorFile &f) { return f.file.path(); });
     setFiles(filePaths);
 }
 
@@ -275,7 +256,7 @@ void JsonSummaryPage::updateProjectData(FolderNode *node)
 
     m_wizard->setValue(QLatin1String(KEY_SELECTED_PROJECT), QVariant::fromValue(project));
     m_wizard->setValue(QLatin1String(KEY_SELECTED_NODE), QVariant::fromValue(node));
-    m_wizard->setValue(QLatin1String(Constants::PROJECT_ISSUBPROJECT), node ? true : false);
+    m_wizard->setValue(QLatin1String(KEY_IS_SUBPROJECT), node ? true : false);
     bool qtKeyWordsEnabled = true;
     if (ProjectTree::hasNode(node)) {
         const ProjectNode *projectNode = node->asProjectNode();
@@ -295,19 +276,6 @@ void JsonSummaryPage::updateProjectData(FolderNode *node)
     m_wizard->setValue(QLatin1String(KEY_QT_KEYWORDS_ENABLED), qtKeyWordsEnabled);
 
     updateFileList();
-    setStatusVisible(false);
-    if (wizardKind(m_wizard) != IWizardFactory::ProjectWizard)
-        return;
-    if (node && !m_fileList.isEmpty()) {
-        const FilePath parentFolder = node->directory();
-        const FilePath subProjectFolder = m_fileList.first().file.filePath().parentDir();
-        if (!subProjectFolder.isChildOf(parentFolder)) {
-            setStatus(Tr::tr("Subproject \"%1\" outside of \"%2\".")
-                      .arg(subProjectFolder.toUserOutput()).arg(parentFolder.toUserOutput()),
-                      InfoLabel::Warning);
-            setStatusVisible(true);
-        }
-    }
 }
 
 } // namespace ProjectExplorer

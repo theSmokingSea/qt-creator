@@ -1,10 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "macwebkithelpviewer.h"
 
 #include "helpconstants.h"
-#include "helptr.h"
 #include "localhelpmanager.h"
 #include "openpagesmanager.h"
 
@@ -19,7 +40,6 @@
 #include <QToolTip>
 #include <QUrl>
 #include <QVBoxLayout>
-#include <QWindow>
 
 #include <QDebug>
 
@@ -327,16 +347,11 @@ static NSMenuItem *menuItem(NSURL *url, id target, SEL action, const QString &ti
             NSURL *url = [element objectForKey:WebElementLinkURLKey];
             if (QTC_GUARD(url)) {
                 if (widget->viewer()->isActionVisible(Help::Internal::HelpViewer::Action::NewPage))
-                    [ret
-                        addObject:menuItem(url,
-                                           self,
-                                           @selector(openAsNewPage:),
-                                           Help::Tr::tr(Help::Constants::TR_OPEN_LINK_AS_NEW_PAGE))];
+                    [ret addObject:menuItem(url, self, @selector(openAsNewPage:),
+                                            QCoreApplication::translate("HelpViewer", Help::Constants::TR_OPEN_LINK_AS_NEW_PAGE))];
                 if (widget->viewer()->isActionVisible(Help::Internal::HelpViewer::Action::ExternalWindow))
-                    [ret addObject:menuItem(url,
-                                            self,
-                                            @selector(openInWindow:),
-                                            Help::Tr::tr(Help::Constants::TR_OPEN_LINK_IN_WINDOW))];
+                    [ret addObject:menuItem(url, self, @selector(openInWindow:),
+                                            QCoreApplication::translate("HelpViewer", Help::Constants::TR_OPEN_LINK_IN_WINDOW))];
             }
             break;
         }
@@ -410,8 +425,8 @@ public:
 // #pragma mark -- MacWebKitHelpWidget
 
 MacWebKitHelpWidget::MacWebKitHelpWidget(MacWebKitHelpViewer *parent)
-    : QWidget(parent)
-    , d(new MacWebKitHelpWidgetPrivate(parent))
+    : QMacCocoaViewContainer(nullptr, parent),
+      d(new MacWebKitHelpWidgetPrivate(parent))
 {
     d->m_toolTipTimer.setSingleShot(true);
     connect(&d->m_toolTipTimer, &QTimer::timeout, this, &MacWebKitHelpWidget::showToolTip);
@@ -426,13 +441,9 @@ MacWebKitHelpWidget::MacWebKitHelpWidget(MacWebKitHelpViewer *parent)
         d->m_uiDelegate = [[UIDelegate alloc] initWithWidget:this];
         [d->m_webView setUIDelegate:d->m_uiDelegate];
 
-        auto window = QWindow::fromWinId(WId(d->m_webView));
-        auto container = QWidget::createWindowContainer(window);
-        auto layout = new QVBoxLayout;
-        layout->setContentsMargins(0, 0, 0, 0);
-        setLayout(layout);
-        layout->addWidget(container, 1);
+        setCocoaView(d->m_webView);
     }
+
 }
 
 MacWebKitHelpWidget::~MacWebKitHelpWidget()
@@ -492,8 +503,8 @@ static void responderHack(QWidget *old, QWidget *now)
         return;
     @autoreleasepool {
         NSView *view;
-        if (auto viewContainer = qobject_cast<MacWebKitHelpWidget *>(now))
-            view = viewContainer->webView();
+        if (QMacCocoaViewContainer *viewContainer = qobject_cast<QMacCocoaViewContainer *>(now))
+            view = viewContainer->cocoaView();
         else
             view = reinterpret_cast<NSView *>(now->effectiveWinId());
         [view.window makeFirstResponder:view];
@@ -700,7 +711,7 @@ DOMRange *MacWebKitHelpViewer::findText(NSString *text, bool forward, bool caseS
     return nil;
 }
 
-bool MacWebKitHelpViewer::findText(const QString &text, FindFlags flags, bool incremental,
+bool MacWebKitHelpViewer::findText(const QString &text, Core::FindFlags flags, bool incremental,
                                    bool fromSearch, bool *wrapped)
 {
     Q_UNUSED(incremental);
@@ -708,8 +719,8 @@ bool MacWebKitHelpViewer::findText(const QString &text, FindFlags flags, bool in
     @autoreleasepool {
         if (wrapped)
             *wrapped = false;
-        bool forward = !(flags & FindBackward);
-        bool caseSensitive = (flags & FindCaseSensitively);
+        bool forward = !(flags & Core::FindBackward);
+        bool caseSensitive = (flags & Core::FindCaseSensitively);
         WebView *webView = m_widget->webView();
 
         // WebView searchFor:.... grabs first responder, and when losing first responder afterwards,

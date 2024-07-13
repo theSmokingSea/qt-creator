@@ -1,10 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Controls
-import QtCreator.Tracing
-import QtQml.Models
+import QtQuick 2.0
+import QtQuick.Controls 2.2
+import QtCreator.Tracing 1.0
+import QtQml.Models 2.1
 
 Flickable {
     id: flick
@@ -96,11 +118,11 @@ Flickable {
 
         DelegateModel {
             id: timelineModel
-            model: flick.modelProxy.models
+            model: modelProxy.models
             delegate: TimelineRenderer {
                 id: renderer
                 model: modelData
-                notes: flick.modelProxy.notes
+                notes: modelProxy.notes
                 zoomer: flick.zoomer
                 selectionLocked: flick.selectionLocked
                 x: 0
@@ -124,29 +146,29 @@ Flickable {
                 }
 
                 function recenter() {
-                    if (modelData.endTime(renderer.selectedItem) < zoomer.rangeStart ||
-                            modelData.startTime(renderer.selectedItem) > zoomer.rangeEnd) {
+                    if (modelData.endTime(selectedItem) < zoomer.rangeStart ||
+                            modelData.startTime(selectedItem) > zoomer.rangeEnd) {
 
-                        var newStart = Math.max((modelData.startTime(renderer.selectedItem) +
-                                                 modelData.endTime(renderer.selectedItem) -
+                        var newStart = Math.max((modelData.startTime(selectedItem) +
+                                                 modelData.endTime(selectedItem) -
                                                  zoomer.rangeDuration) / 2, zoomer.traceStart);
                         zoomer.setRange(newStart,
                                         Math.min(newStart + zoomer.rangeDuration, zoomer.traceEnd));
                     }
 
-                    var row = renderer.model.row(renderer.selectedItem);
+                    var row = modelData.row(selectedItem);
                     var rowStart = modelData.rowOffset(row) + y;
                     var rowEnd = rowStart + modelData.rowHeight(row);
                     if (rowStart < flick.contentY || rowEnd - flick.height > flick.contentY)
                         flick.contentY = (rowStart + rowEnd - flick.height) / 2;
                 }
 
-                onSelectedItemChanged: flick.propagateSelection(index, renderer.selectedItem);
+                onSelectedItemChanged: flick.propagateSelection(index, selectedItem);
 
                 Connections {
-                    target: renderer.model
+                    target: model
                     function onDetailsChanged() {
-                        if (renderer.selectedItem != -1) {
+                        if (selectedItem != -1) {
                             flick.propagateSelection(-1, -1);
                             flick.propagateSelection(index, selectedItem);
                         }

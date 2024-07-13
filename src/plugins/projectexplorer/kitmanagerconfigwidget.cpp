@@ -1,13 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "kitmanagerconfigwidget.h"
+#include "projectconfiguration.h"
 
 #include "devicesupport/idevicefactory.h"
 #include "kit.h"
-#include "kitaspects.h"
+#include "kitinformation.h"
 #include "kitmanager.h"
-#include "projectexplorertr.h"
+#include "projectexplorerconstants.h"
 #include "task.h"
 
 #include <utils/algorithm.h>
@@ -23,35 +46,33 @@
 #include <QRegularExpression>
 #include <QRegularExpressionValidator>
 #include <QFileDialog>
-#include <QGridLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
 #include <QToolButton>
 #include <QSizePolicy>
 
-const char WORKING_COPY_KIT_ID[] = "modified kit";
+static const char WORKING_COPY_KIT_ID[] = "modified kit";
 
 using namespace Utils;
 
-namespace ProjectExplorer::Internal {
+namespace ProjectExplorer {
+namespace Internal {
 
-KitManagerConfigWidget::KitManagerConfigWidget(Kit *k, bool &isDefaultKit, bool &hasUniqueName) :
+KitManagerConfigWidget::KitManagerConfigWidget(Kit *k) :
     m_iconButton(new QToolButton),
     m_nameEdit(new QLineEdit),
     m_fileSystemFriendlyNameLineEdit(new QLineEdit),
     m_kit(k),
-    m_modifiedKit(std::make_unique<Kit>(Id(WORKING_COPY_KIT_ID))),
-    m_isDefaultKit(isDefaultKit),
-    m_hasUniqueName(hasUniqueName)
+    m_modifiedKit(std::make_unique<Kit>(Utils::Id(WORKING_COPY_KIT_ID)))
 {
     setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Preferred);
 
-    auto label = new QLabel(Tr::tr("Name:"));
-    label->setToolTip(Tr::tr("Kit name and icon."));
+    auto label = new QLabel(tr("Name:"));
+    label->setToolTip(tr("Kit name and icon."));
 
     QString toolTip =
-        Tr::tr("<html><head/><body><p>The name of the kit suitable for generating "
+        tr("<html><head/><body><p>The name of the kit suitable for generating "
            "directory names. This value is used for the variable <i>%1</i>, "
            "which for example determines the name of the shadow build directory."
            "</p></body></html>").arg(QLatin1String("Kit:FileSystemName"));
@@ -60,24 +81,21 @@ KitManagerConfigWidget::KitManagerConfigWidget(Kit *k, bool &isDefaultKit, bool 
     Q_ASSERT(fileSystemFriendlyNameRegexp.isValid());
     m_fileSystemFriendlyNameLineEdit->setValidator(new QRegularExpressionValidator(fileSystemFriendlyNameRegexp, m_fileSystemFriendlyNameLineEdit));
 
-    auto fsLabel = new QLabel(Tr::tr("File system name:"));
+    auto fsLabel = new QLabel(tr("File system name:"));
     fsLabel->setToolTip(toolTip);
     connect(m_fileSystemFriendlyNameLineEdit, &QLineEdit::textChanged,
             this, &KitManagerConfigWidget::setFileSystemFriendlyName);
 
     using namespace Layouting;
-    Grid page {
-        withFormAlignment,
-        columnStretch(1, 2),
-        label, m_nameEdit, m_iconButton, br,
-        fsLabel, m_fileSystemFriendlyNameLineEdit, br,
-        noMargin
-    };
+    Grid {
+        AlignAsFormLabel(label), m_nameEdit, m_iconButton, Break(),
+        AlignAsFormLabel(fsLabel), m_fileSystemFriendlyNameLineEdit
+    }.attachTo(this);
 
-    m_iconButton->setToolTip(Tr::tr("Kit icon."));
-    auto setIconAction = new QAction(Tr::tr("Select Icon..."), this);
+    m_iconButton->setToolTip(tr("Kit icon."));
+    auto setIconAction = new QAction(tr("Select Icon..."), this);
     m_iconButton->addAction(setIconAction);
-    auto resetIconAction = new QAction(Tr::tr("Reset to Device Default Icon"), this);
+    auto resetIconAction = new QAction(tr("Reset to Device Default Icon"), this);
     m_iconButton->addAction(resetIconAction);
 
     discard();
@@ -99,12 +117,10 @@ KitManagerConfigWidget::KitManagerConfigWidget(Kit *k, bool &isDefaultKit, bool 
 
     auto chooser = new VariableChooser(this);
     chooser->addSupportedWidget(m_nameEdit);
-    chooser->addMacroExpanderProvider([this] { return m_modifiedKit->macroExpander(); });
+    chooser->addMacroExpanderProvider([this]() { return m_modifiedKit->macroExpander(); });
 
-    for (KitAspectFactory *factory : KitManager::kitAspectFactories())
-        addAspectToWorkingCopy(page, factory);
-
-    page.attachTo(this);
+    for (KitAspect *aspect : KitManager::kitAspects())
+        addAspectToWorkingCopy(aspect);
 
     updateVisibility();
 
@@ -115,8 +131,8 @@ KitManagerConfigWidget::KitManagerConfigWidget(Kit *k, bool &isDefaultKit, bool 
 
 KitManagerConfigWidget::~KitManagerConfigWidget()
 {
-    qDeleteAll(m_kitAspects);
-    m_kitAspects.clear();
+    qDeleteAll(m_widgets);
+    m_widgets.clear();
 
     // Make sure our workingCopy did not get registered somehow:
     QTC_CHECK(!Utils::contains(KitManager::kits(),
@@ -134,17 +150,11 @@ QIcon KitManagerConfigWidget::displayIcon() const
 {
     // Special case: Extra warning if there are no errors but name is not unique.
     if (m_modifiedKit->isValid() && !m_hasUniqueName) {
-        static const QIcon warningIcon(Icons::WARNING.icon());
+        static const QIcon warningIcon(Utils::Icons::WARNING.icon());
         return warningIcon;
     }
 
     return m_modifiedKit->displayIcon();
-}
-
-void KitManagerConfigWidget::setFocusToName()
-{
-    m_nameEdit->selectAll();
-    m_nameEdit->setFocus();
 }
 
 void KitManagerConfigWidget::apply()
@@ -195,35 +205,48 @@ QString KitManagerConfigWidget::validityMessage() const
 {
     Tasks tmp;
     if (!m_hasUniqueName)
-        tmp.append(CompileTask(Task::Warning, Tr::tr("Display name is not unique.")));
+        tmp.append(CompileTask(Task::Warning, tr("Display name is not unique.")));
 
     return m_modifiedKit->toHtml(tmp);
 }
 
-void KitManagerConfigWidget::addAspectToWorkingCopy(Layouting::Layout &parent, KitAspectFactory *factory)
+void KitManagerConfigWidget::addAspectToWorkingCopy(KitAspect *aspect)
 {
-    QTC_ASSERT(factory, return);
-    KitAspect *aspect = factory->createKitAspect(workingCopy());
     QTC_ASSERT(aspect, return);
-    QTC_ASSERT(!m_kitAspects.contains(aspect), return);
+    KitAspectWidget *widget = aspect->createConfigWidget(workingCopy());
+    QTC_ASSERT(widget, return);
+    QTC_ASSERT(!m_widgets.contains(widget), return);
 
-    aspect->addToLayout(parent);
-    m_kitAspects.append(aspect);
+    widget->addToLayoutWithLabel(this);
+    m_widgets.append(widget);
 
-    connect(aspect->mutableAction(), &QAction::toggled,
+    connect(widget->mutableAction(), &QAction::toggled,
             this, &KitManagerConfigWidget::dirty);
 }
 
 void KitManagerConfigWidget::updateVisibility()
 {
-    for (KitAspect *aspect : std::as_const(m_kitAspects))
-        aspect->setVisible(m_modifiedKit->isAspectRelevant(aspect->factory()->id()));
+    int count = m_widgets.count();
+    for (int i = 0; i < count; ++i) {
+        KitAspectWidget *widget = m_widgets.at(i);
+        const KitAspect *ki = widget->kitInformation();
+        const bool visibleInKit = ki->isApplicableToKit(m_modifiedKit.get());
+        const bool irrelevant = m_modifiedKit->irrelevantAspects().contains(ki->id());
+        widget->setVisible(visibleInKit && !irrelevant);
+    }
+}
+
+void KitManagerConfigWidget::setHasUniqueName(bool unique)
+{
+    m_hasUniqueName = unique;
 }
 
 void KitManagerConfigWidget::makeStickySubWidgetsReadOnly()
 {
-    for (KitAspect *aspect : std::as_const(m_kitAspects))
-        aspect->makeStickySubWidgetsReadOnly();
+    for (KitAspectWidget *w : qAsConst(m_widgets)) {
+        if (w->kit()->isSticky(w->kitInformation()->id()))
+            w->makeReadOnly();
+    }
 }
 
 Kit *KitManagerConfigWidget::workingCopy() const
@@ -231,14 +254,34 @@ Kit *KitManagerConfigWidget::workingCopy() const
     return m_modifiedKit.get();
 }
 
+bool KitManagerConfigWidget::configures(Kit *k) const
+{
+    return m_kit == k;
+}
+
+void KitManagerConfigWidget::setIsDefaultKit(bool d)
+{
+    if (m_isDefaultKit == d)
+        return;
+    m_isDefaultKit = d;
+    emit dirty();
+}
+
 bool KitManagerConfigWidget::isDefaultKit() const
 {
     return m_isDefaultKit;
 }
 
+void KitManagerConfigWidget::removeKit()
+{
+    if (!m_kit)
+        return;
+    KitManager::deregisterKit(m_kit);
+}
+
 void KitManagerConfigWidget::setIcon()
 {
-    const Id deviceType = DeviceTypeKitAspect::deviceTypeId(m_modifiedKit.get());
+    const Utils::Id deviceType = DeviceTypeKitAspect::deviceTypeId(m_modifiedKit.get());
     QList<IDeviceFactory *> allDeviceFactories = IDeviceFactory::allDeviceFactories();
     if (deviceType.isValid()) {
         const auto less = [deviceType](const IDeviceFactory *f1, const IDeviceFactory *f2) {
@@ -251,11 +294,11 @@ void KitManagerConfigWidget::setIcon()
         Utils::sort(allDeviceFactories, less);
     }
     QMenu iconMenu;
-    for (const IDeviceFactory * const factory : std::as_const(allDeviceFactories)) {
+    for (const IDeviceFactory * const factory : qAsConst(allDeviceFactories)) {
         if (factory->icon().isNull())
             continue;
         QAction *action = iconMenu.addAction(factory->icon(),
-                                             Tr::tr("Default for %1").arg(factory->displayName()),
+                                             tr("Default for %1").arg(factory->displayName()),
                                              [this, factory] {
                                                  m_iconButton->setIcon(factory->icon());
                                                  m_modifiedKit->setDeviceTypeForIcon(
@@ -266,9 +309,9 @@ void KitManagerConfigWidget::setIcon()
     }
     iconMenu.addSeparator();
     iconMenu.addAction(PathChooser::browseButtonLabel(), [this] {
-        const FilePath path = FileUtils::getOpenFilePath(this, Tr::tr("Select Icon"),
+        const FilePath path = FileUtils::getOpenFilePath(this, tr("Select Icon"),
                                                          m_modifiedKit->iconPath(),
-                                                         Tr::tr("Images (*.png *.xpm *.jpg)"));
+                                                         tr("Images (*.png *.xpm *.jpg)"));
         if (path.isEmpty())
             return;
         const QIcon icon(path.toString());
@@ -283,7 +326,7 @@ void KitManagerConfigWidget::setIcon()
 
 void KitManagerConfigWidget::resetIcon()
 {
-    m_modifiedKit->setIconPath({});
+    m_modifiedKit->setIconPath(Utils::FilePath());
     emit dirty();
 }
 
@@ -311,7 +354,7 @@ void KitManagerConfigWidget::workingCopyWasUpdated(Kit *k)
     k->fix();
     m_fixingKit = false;
 
-    for (KitAspect *w : std::as_const(m_kitAspects))
+    for (KitAspectWidget *w : qAsConst(m_widgets))
         w->refresh();
 
     m_cachedDisplayName.clear();
@@ -339,8 +382,9 @@ void KitManagerConfigWidget::kitWasUpdated(Kit *k)
 void KitManagerConfigWidget::showEvent(QShowEvent *event)
 {
     Q_UNUSED(event)
-    for (KitAspect *aspect : std::as_const(m_kitAspects))
-        aspect->refresh();
+    for (KitAspectWidget *widget : qAsConst(m_widgets))
+        widget->refresh();
 }
 
-} // ProjectExplorer::Internal
+} // namespace Internal
+} // namespace ProjectExplorer

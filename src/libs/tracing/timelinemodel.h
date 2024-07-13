@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -17,22 +39,24 @@ class TimelineModelAggregator;
 class TRACING_EXPORT TimelineModel : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(int modelId READ modelId CONSTANT FINAL)
-    Q_PROPERTY(QString displayName READ displayName WRITE setDisplayName NOTIFY displayNameChanged FINAL)
-    Q_PROPERTY(QString tooltip READ tooltip NOTIFY tooltipChanged FINAL)
-    Q_PROPERTY(QColor categoryColor READ categoryColor NOTIFY categoryColorChanged FINAL)
-    Q_PROPERTY(bool hasMixedTypesInExpandedState READ hasMixedTypesInExpandedState NOTIFY hasMixedTypesInExpandedStateChanged FINAL)
-    Q_PROPERTY(bool empty READ isEmpty NOTIFY contentChanged FINAL)
-    Q_PROPERTY(bool hidden READ hidden WRITE setHidden NOTIFY hiddenChanged FINAL)
-    Q_PROPERTY(bool expanded READ expanded WRITE setExpanded NOTIFY expandedChanged FINAL)
-    Q_PROPERTY(int height READ height NOTIFY heightChanged FINAL)
-    Q_PROPERTY(int expandedRowCount READ expandedRowCount NOTIFY contentChanged FINAL)
-    Q_PROPERTY(int collapsedRowCount READ collapsedRowCount NOTIFY contentChanged FINAL)
-    Q_PROPERTY(int rowCount READ rowCount NOTIFY rowCountChanged FINAL)
-    Q_PROPERTY(QVariantList labels READ labels NOTIFY labelsChanged FINAL)
-    Q_PROPERTY(int count READ count NOTIFY contentChanged FINAL)
-    Q_PROPERTY(int defaultRowHeight READ defaultRowHeight CONSTANT FINAL)
-    QML_ELEMENT
+    Q_PROPERTY(int modelId READ modelId CONSTANT)
+    Q_PROPERTY(QString displayName READ displayName WRITE setDisplayName NOTIFY displayNameChanged)
+    Q_PROPERTY(QString tooltip READ tooltip NOTIFY tooltipChanged)
+    Q_PROPERTY(QColor categoryColor READ categoryColor NOTIFY categoryColorChanged)
+    Q_PROPERTY(bool hasMixedTypesInExpandedState READ hasMixedTypesInExpandedState NOTIFY hasMixedTypesInExpandedStateChanged)
+    Q_PROPERTY(bool empty READ isEmpty NOTIFY contentChanged)
+    Q_PROPERTY(bool hidden READ hidden WRITE setHidden NOTIFY hiddenChanged)
+    Q_PROPERTY(bool expanded READ expanded WRITE setExpanded NOTIFY expandedChanged)
+    Q_PROPERTY(int height READ height NOTIFY heightChanged)
+    Q_PROPERTY(int expandedRowCount READ expandedRowCount NOTIFY contentChanged)
+    Q_PROPERTY(int collapsedRowCount READ collapsedRowCount NOTIFY contentChanged)
+    Q_PROPERTY(int rowCount READ rowCount NOTIFY rowCountChanged)
+    Q_PROPERTY(QVariantList labels READ labels NOTIFY labelsChanged)
+    Q_PROPERTY(int count READ count NOTIFY contentChanged)
+    Q_PROPERTY(int defaultRowHeight READ defaultRowHeight CONSTANT)
+#if QT_VERSION >= QT_VERSION_CHECK(6, 2, 0)
+    QML_ANONYMOUS
+#endif // Qt >= 6.2
 
 public:
     class TimelineModelPrivate;
@@ -133,7 +157,6 @@ protected:
     int insertStart(qint64 startTime, int selectionId);
     void insertEnd(int index, qint64 duration);
     void computeNesting();
-    QList<int> computeRows(int *maxlevel) const;
 
     void setCollapsedRowCount(int rows);
     void setExpandedRowCount(int rows);

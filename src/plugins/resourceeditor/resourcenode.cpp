@@ -1,17 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "resourcenode.h"
-
-#include "resourceeditortr.h"
+#include "resourceeditorconstants.h"
 #include "qrceditor/resourcefile_p.h"
 
 #include <coreplugin/documentmanager.h>
+#include <coreplugin/fileiconprovider.h>
+
+// #include <qmljstools/qmljstoolsconstants.h>
 
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
-#include <utils/fsengine/fileiconprovider.h>
-#include <utils/mimeconstants.h>
 #include <utils/mimeutils.h>
 #include <utils/qtcassert.h>
 #include <utils/threadutils.h>
@@ -38,7 +60,7 @@ public:
         : IDocument(nullptr), m_node(node)
     {
         setId("ResourceNodeWatcher");
-        setMimeType(Utils::Constants::RESOURCE_MIMETYPE);
+        setMimeType(ResourceEditor::Constants::C_RESOURCE_MIMETYPE);
         setFilePath(node->filePath());
     }
 
@@ -104,9 +126,10 @@ static bool hasPriority(const FilePaths &files)
         return false;
     QString type = Utils::mimeTypeForFile(files.at(0)).name();
     if (type.startsWith(QLatin1String("image/"))
-            || type == QLatin1String(Utils::Constants::QML_MIMETYPE)
-            || type == QLatin1String(Utils::Constants::QMLUI_MIMETYPE)
-            || type == QLatin1String(Utils::Constants::JS_MIMETYPE))
+            // || type == QLatin1String(QmlJSTools::Constants::QML_MIMETYPE)
+            // || type == QLatin1String(QmlJSTools::Constants::QMLUI_MIMETYPE)
+            // || type == QLatin1String(QmlJSTools::Constants::JS_MIMETYPE)
+            )
         return true;
     return false;
 }
@@ -266,7 +289,9 @@ static void compressTree(FolderNode *n)
         compressable->compress();
         return;
     }
-    n->forEachFolderNode([](FolderNode *c) { compressTree(c); });
+    const QList<FolderNode *> childFolders = n->folderNodes();
+    for (FolderNode * const c : childFolders)
+        compressTree(c);
 }
 
 void ResourceTopLevelNode::addInternalNodes()
@@ -319,7 +344,7 @@ void ResourceTopLevelNode::addInternalNodes()
             QString parentFolderName;
             PrefixFolderLang folderId(prefix, QString(), lang);
             QStringList currentPathList;
-            for (const QString &pathElement : std::as_const(pathList)) {
+            foreach (const QString &pathElement, pathList) {
                 currentPathList << pathElement;
                 const QString folderName = currentPathList.join(QLatin1Char('/'));
                 folderId = PrefixFolderLang(prefix, folderName, lang);
@@ -431,7 +456,9 @@ bool ResourceTopLevelNode::removeNonExistingFiles()
 
 FolderNode::AddNewInformation ResourceTopLevelNode::addNewInformation(const FilePaths &files, Node *context) const
 {
-    const QString name = Tr::tr("%1 Prefix: %2").arg(filePath().fileName()).arg(QLatin1Char('/'));
+    QString name = QCoreApplication::translate("ResourceTopLevelNode", "%1 Prefix: %2")
+            .arg(filePath().fileName())
+            .arg(QLatin1Char('/'));
 
     int p = getPriorityFromContextNode(this, context);
     if (p == -1 && hasPriority(files)) { // images/* and qml/js mimetypes
@@ -570,7 +597,8 @@ bool ResourceFolderNode::renamePrefix(const QString &prefix, const QString &lang
 
 FolderNode::AddNewInformation ResourceFolderNode::addNewInformation(const FilePaths &files, Node *context) const
 {
-    const QString name = Tr::tr("%1 Prefix: %2").arg(m_topLevelNode->filePath().fileName())
+    QString name = QCoreApplication::translate("ResourceTopLevelNode", "%1 Prefix: %2")
+            .arg(m_topLevelNode->filePath().fileName())
             .arg(displayName());
 
     int p = getPriorityFromContextNode(this, context);

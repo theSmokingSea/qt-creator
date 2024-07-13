@@ -1,16 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "formclasswizardpage.h"
 
 #include "formclasswizardparameters.h"
 #include "newclasswidget.h"
-#include "../designertr.h"
 
 #include <coreplugin/icore.h>
+
 #include <cppeditor/cppeditorconstants.h>
-#include <cppeditor/cpptoolsreuse.h>
-#include <projectexplorer/projecttree.h>
+
 #include <utils/mimeutils.h>
 #include <utils/wizard.h>
 
@@ -25,22 +46,22 @@ namespace Internal {
 
 FormClassWizardPage::FormClassWizardPage()
 {
-    setTitle(Tr::tr("Choose a Class Name"));
+    setTitle(tr("Choose a Class Name"));
 
     auto classGroupBox = new QGroupBox(this);
-    classGroupBox->setTitle(Tr::tr("Class"));
+    classGroupBox->setTitle(tr("Class"));
 
     m_newClassWidget = new NewClassWidget(classGroupBox);
     m_newClassWidget->setHeaderExtension(
-            CppEditor::preferredCxxHeaderSuffix(ProjectExplorer::ProjectTree::currentProject()));
+            Utils::mimeTypeForName(CppEditor::Constants::CPP_HEADER_MIMETYPE).preferredSuffix());
     m_newClassWidget->setSourceExtension(
-            CppEditor::preferredCxxSourceSuffix(ProjectExplorer::ProjectTree::currentProject()));
+            Utils::mimeTypeForName(CppEditor::Constants::CPP_SOURCE_MIMETYPE).preferredSuffix());
     m_newClassWidget->setLowerCaseFiles(lowercaseHeaderFiles());
 
     connect(m_newClassWidget, &NewClassWidget::validChanged,
             this, &FormClassWizardPage::slotValidChanged);
 
-    setProperty(Utils::SHORT_TITLE_PROPERTY, Tr::tr("Class Details"));
+    setProperty(Utils::SHORT_TITLE_PROPERTY, tr("Class Details"));
 
     auto verticalLayout = new QVBoxLayout(classGroupBox);
     verticalLayout->addWidget(m_newClassWidget);
@@ -54,7 +75,11 @@ FormClassWizardPage::~FormClassWizardPage() = default;
 // Retrieve settings of CppEditor plugin.
 bool FormClassWizardPage::lowercaseHeaderFiles()
 {
-    return CppEditor::preferLowerCaseFileNames(ProjectExplorer::ProjectTree::currentProject());
+    QString lowerCaseSettingsKey = CppEditor::Constants::CPPEDITOR_SETTINGSGROUP;
+    lowerCaseSettingsKey += '/';
+    lowerCaseSettingsKey += CppEditor::Constants::LOWERCASE_CPPFILES_KEY;
+    const bool lowerCaseDefault = CppEditor::Constants::LOWERCASE_CPPFILES_DEFAULT;
+    return Core::ICore::settings()->value(lowerCaseSettingsKey, QVariant(lowerCaseDefault)).toBool();
 }
 
 void FormClassWizardPage::setClassName(const QString &suggestedClassName)
@@ -102,7 +127,7 @@ bool FormClassWizardPage::validatePage()
     QString errorMessage;
     const bool rc = m_newClassWidget->isValid(&errorMessage);
     if (!rc)
-        QMessageBox::warning(this, Tr::tr("%1 - Error").arg(title()), errorMessage);
+        QMessageBox::warning(this, tr("%1 - Error").arg(title()), errorMessage);
     return rc;
 }
 

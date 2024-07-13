@@ -1,12 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "cppeditor_global.h"
 #include "cpprefactoringchanges.h"
-
-#include <utils/filepath.h>
 
 namespace CPlusPlus {
 class Namespace;
@@ -20,27 +40,33 @@ class CPPEDITOR_EXPORT InsertionLocation
 {
 public:
     InsertionLocation();
-    InsertionLocation(const Utils::FilePath &filePath, const QString &prefix,
+    InsertionLocation(const QString &fileName, const QString &prefix,
                       const QString &suffix, int line, int column);
 
-    const Utils::FilePath &filePath() const { return m_filePath; }
+    QString fileName() const
+    { return m_fileName; }
 
-    /// Returns the prefix to insert before any other text.
-    QString prefix() const { return m_prefix; }
+    /// \returns The prefix to insert before any other text.
+    QString prefix() const
+    { return m_prefix; }
 
-    /// Returns the suffix to insert after the other inserted text.
-    QString suffix() const { return m_suffix; }
+    /// \returns The suffix to insert after the other inserted text.
+    QString suffix() const
+    { return m_suffix; }
 
-    /// Returns the line where to insert. The line number is 1-based.
-    int line() const { return m_line; }
+    /// \returns The line where to insert. The line number is 1-based.
+    int line() const
+    { return m_line; }
 
-    /// Returns the column where to insert. The column number is 1-based.
-    int column() const { return m_column; }
+    /// \returns The column where to insert. The column number is 1-based.
+    int column() const
+    { return m_column; }
 
-    bool isValid() const { return !m_filePath.isEmpty() && m_line > 0 && m_column > 0; }
+    bool isValid() const
+    { return !m_fileName.isEmpty() && m_line > 0 && m_column > 0; }
 
 private:
-    Utils::FilePath m_filePath;
+    QString m_fileName;
     QString m_prefix;
     QString m_suffix;
     int m_line = 0;
@@ -76,7 +102,8 @@ public:
 public:
     explicit InsertionPointLocator(const CppRefactoringChanges &refactoringChanges);
 
-    InsertionLocation methodDeclarationInClass(const Utils::FilePath &fileName,
+    InsertionLocation methodDeclarationInClass(
+            const QString &fileName,
             const CPlusPlus::Class *clazz,
             AccessSpec xsSpec,
             ForceAccessSpec forceAccessSpec = ForceAccessSpec::No
@@ -95,9 +122,10 @@ public:
                                                     AccessSpec xsSpec,
                                                     int constructorArgumentCount) const;
 
-    const QList<InsertionLocation> methodDefinition(CPlusPlus::Symbol *declaration,
+    const QList<InsertionLocation> methodDefinition(
+            CPlusPlus::Symbol *declaration,
             bool useSymbolFinder = true,
-            const Utils::FilePath &destinationFile = {}) const;
+            const QString &destinationFile = QString()) const;
 
 private:
     CppRefactoringChanges m_refactoringChanges;
@@ -110,70 +138,7 @@ insertLocationForMethodDefinition(CPlusPlus::Symbol *symbol,
                                   const bool useSymbolFinder,
                                   NamespaceHandling namespaceHandling,
                                   const CppRefactoringChanges &refactoring,
-                                  const Utils::FilePath &fileName,
+                                  const QString &fileName,
                                   QStringList *insertedNamespaces = nullptr);
 
-namespace Internal {
-class NSVisitor : public CPlusPlus::ASTVisitor
-{
-public:
-    NSVisitor(const CppRefactoringFile *file, const QStringList &namespaces, int symbolPos);
-
-    const QStringList remainingNamespaces() const { return m_remainingNamespaces; }
-    const CPlusPlus::NamespaceAST *firstNamespace() const { return m_firstNamespace; }
-    const CPlusPlus::AST *firstToken() const { return m_firstToken; }
-    const CPlusPlus::NamespaceAST *enclosingNamespace() const { return m_enclosingNamespace; }
-
-private:
-    bool preVisit(CPlusPlus::AST *ast) override;
-    bool visit(CPlusPlus::NamespaceAST *ns) override;
-    void postVisit(CPlusPlus::AST *ast) override;
-
-    const CppRefactoringFile * const m_file;
-    const CPlusPlus::NamespaceAST *m_enclosingNamespace = nullptr;
-    const CPlusPlus::NamespaceAST *m_firstNamespace = nullptr;
-    const CPlusPlus::AST *m_firstToken = nullptr;
-    QStringList m_remainingNamespaces;
-    const int m_symbolPos;
-    bool m_done = false;
-};
-
-class NSCheckerVisitor : public CPlusPlus::ASTVisitor
-{
-public:
-    NSCheckerVisitor(const CppRefactoringFile *file, const QStringList &namespaces, int symbolPos);
-
-    /**
-     * @brief returns the names of the namespaces that are additionally needed at the symbolPos
-     * @return A list of namespace names, the outermost namespace at index 0 and the innermost
-     * at the last index
-     */
-    const QStringList remainingNamespaces() const { return m_remainingNamespaces; }
-
-private:
-    bool preVisit(CPlusPlus::AST *ast) override;
-    void postVisit(CPlusPlus::AST *ast) override;
-    bool visit(CPlusPlus::NamespaceAST *ns) override;
-    bool visit(CPlusPlus::UsingDirectiveAST *usingNS) override;
-    void endVisit(CPlusPlus::NamespaceAST *ns) override;
-    void endVisit(CPlusPlus::TranslationUnitAST *) override;
-
-    QString getName(CPlusPlus::NamespaceAST *ns);
-    CPlusPlus::NamespaceAST *currentNamespace();
-
-    const CppRefactoringFile *const m_file;
-    QStringList m_remainingNamespaces;
-    const int m_symbolPos;
-    std::vector<CPlusPlus::NamespaceAST *> m_enteredNamespaces;
-
-    // track 'using namespace ...' statements
-    std::unordered_map<CPlusPlus::NamespaceAST *, QStringList> m_usingsPerNamespace;
-
-    bool m_done = false;
-};
-
-QStringList getNamespaceNames(const CPlusPlus::Namespace *firstNamespace);
-QStringList getNamespaceNames(const CPlusPlus::Symbol *symbol);
-
-} // namespace Internal
 } // namespace CppEditor

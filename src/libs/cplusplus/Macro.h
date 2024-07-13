@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 /*
   Copyright 2005 Roberto Raggi <roberto@kdevelop.org>
@@ -26,8 +48,6 @@
 #include "PPToken.h"
 
 #include <cplusplus/CPlusPlusForwardDeclarations.h>
-
-#include <utils/filepath.h>
 
 #include <QByteArray>
 #include <QVector>
@@ -68,10 +88,10 @@ public:
     void addFormal(const QByteArray &formal)
     { _formals.append(formal); }
 
-    const Utils::FilePath &filePath() const
+    QString fileName() const
     { return _fileName; }
 
-    void setFilePath(const Utils::FilePath &fileName)
+    void setFileName(const QString &fileName)
     { _fileName = fileName; }
 
     unsigned fileRevision() const
@@ -142,7 +162,7 @@ private:
     QByteArray _definitionText;
     QVector<PPToken> _definitionTokens;
     QVector<QByteArray> _formals;
-    Utils::FilePath _fileName;
+    QString _fileName;
     unsigned _hashcode;
     unsigned _fileRevision;
     int _line;
@@ -157,11 +177,4 @@ private:
     };
 };
 
-class CPLUSPLUS_EXPORT Pragma
-{
-public:
-    QByteArrayList tokens;
-    int line;
-};
-
-} // CPlusPlus
+} // namespace CPlusPlus

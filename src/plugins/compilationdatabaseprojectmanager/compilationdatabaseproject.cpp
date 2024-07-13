@@ -1,36 +1,55 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "compilationdatabaseproject.h"
 
 #include "compilationdatabaseconstants.h"
 #include "compilationdbparser.h"
 
-#include <coreplugin/coreplugintr.h>
 #include <coreplugin/icontext.h>
-
+#include <cppeditor/cppprojectupdater.h>
 #include <cppeditor/projectinfo.h>
-
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/buildtargetinfo.h>
 #include <projectexplorer/deploymentdata.h>
 #include <projectexplorer/gcctoolchain.h>
 #include <projectexplorer/headerpath.h>
-#include <projectexplorer/kitaspects.h>
+#include <projectexplorer/kitinformation.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/namedwidget.h>
 #include <projectexplorer/projectexplorerconstants.h>
 #include <projectexplorer/projectnodes.h>
-#include <projectexplorer/projectupdater.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchainmanager.h>
-
 #include <texteditor/textdocument.h>
 
 #include <utils/algorithm.h>
 #include <utils/filesystemwatcher.h>
 #include <utils/qtcassert.h>
+#include <utils/runextensions.h>
 
 #include <QFileDialog>
 
@@ -41,9 +60,11 @@
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace CompilationDatabaseProjectManager::Internal {
+namespace CompilationDatabaseProjectManager {
+namespace Internal {
 
 namespace {
+
 
 bool isGccCompiler(const QString &compilerName)
 {
@@ -74,9 +95,9 @@ Utils::Id getCompilerId(QString compilerName)
     return ProjectExplorer::Constants::CLANG_TOOLCHAIN_TYPEID;
 }
 
-Toolchain *toolchainFromCompilerId(const Utils::Id &compilerId, const Utils::Id &language)
+ToolChain *toolchainFromCompilerId(const Utils::Id &compilerId, const Utils::Id &language)
 {
-    return ToolchainManager::toolchain([&compilerId, &language](const Toolchain *tc) {
+    return ToolChainManager::toolChain([&compilerId, &language](const ToolChain *tc) {
         if (!tc->isValid() || tc->language() != language)
             return false;
         return tc->typeId() == compilerId;
@@ -104,24 +125,20 @@ QString compilerPath(QString pathFlag)
     return QDir::fromNativeSeparators(pathFlag);
 }
 
-Toolchain *toolchainFromFlags(const Kit *kit, const QStringList &flags, const Utils::Id &language)
+ToolChain *toolchainFromFlags(const Kit *kit, const QStringList &flags, const Utils::Id &language)
 {
-    Toolchain * const kitToolchain = ToolchainKitAspect::toolchain(kit, language);
-
     if (flags.empty())
-        return kitToolchain;
+        return ToolChainKitAspect::toolChain(kit, language);
 
     // Try exact compiler match.
-    const Utils::FilePath compiler = Utils::FilePath::fromUserInput(compilerPath(flags.front()));
-    Toolchain *toolchain = ToolchainManager::toolchain([&compiler, &language](const Toolchain *tc) {
+    const Utils::FilePath compiler = Utils::FilePath::fromString(compilerPath(flags.front()));
+    ToolChain *toolchain = ToolChainManager::toolChain([&compiler, &language](const ToolChain *tc) {
         return tc->isValid() && tc->language() == language && tc->compilerCommand() == compiler;
     });
     if (toolchain)
         return toolchain;
 
     Utils::Id compilerId = getCompilerId(compiler.fileName());
-    if (kitToolchain->isValid() && kitToolchain->typeId() == compilerId)
-        return kitToolchain;
     if ((toolchain = toolchainFromCompilerId(compilerId, language)))
         return toolchain;
 
@@ -130,17 +147,16 @@ Toolchain *toolchainFromFlags(const Kit *kit, const QStringList &flags, const Ut
         compilerId = Utils::HostOsInfo::isWindowsHost()
                 ? ProjectExplorer::Constants::CLANG_CL_TOOLCHAIN_TYPEID
                 : ProjectExplorer::Constants::CLANG_TOOLCHAIN_TYPEID;
-        if (kitToolchain->isValid() && kitToolchain->typeId() == compilerId)
-            return kitToolchain;
         if ((toolchain = toolchainFromCompilerId(compilerId, language)))
             return toolchain;
     }
 
+    toolchain = ToolChainKitAspect::toolChain(kit, language);
     qWarning() << "No matching toolchain found, use the default.";
-    return kitToolchain;
+    return toolchain;
 }
 
-void addDriverModeFlagIfNeeded(const Toolchain *toolchain,
+void addDriverModeFlagIfNeeded(const ToolChain *toolchain,
                                QStringList &flags,
                                const QStringList &originalFlags)
 {
@@ -154,8 +170,8 @@ void addDriverModeFlagIfNeeded(const Toolchain *toolchain,
 RawProjectPart makeRawProjectPart(const Utils::FilePath &projectFile,
                                   Kit *kit,
                                   ProjectExplorer::KitInfo &kitInfo,
-                                  const FilePath &workingDir,
-                                  const FilePath &filePath,
+                                  const QString &workingDir,
+                                  const Utils::FilePath &fileName,
                                   QStringList flags)
 {
     HeaderPaths headerPaths;
@@ -163,7 +179,7 @@ RawProjectPart makeRawProjectPart(const Utils::FilePath &projectFile,
     CppEditor::ProjectFile::Kind fileKind = CppEditor::ProjectFile::Unclassified;
 
     const QStringList originalFlags = flags;
-    filteredFlags(filePath,
+    filteredFlags(fileName.fileName(),
                   workingDir,
                   flags,
                   headerPaths,
@@ -172,32 +188,30 @@ RawProjectPart makeRawProjectPart(const Utils::FilePath &projectFile,
                   kitInfo.sysRootPath);
 
     RawProjectPart rpp;
-
     rpp.setProjectFileLocation(projectFile.toString());
-    rpp.setBuildSystemTarget(workingDir.path());
-    rpp.setDisplayName(filePath.fileName());
-    rpp.setFiles({filePath.toFSPathString()});
-
+    rpp.setBuildSystemTarget(workingDir);
+    rpp.setDisplayName(fileName.fileName());
+    rpp.setFiles({fileName.toString()});
     rpp.setHeaderPaths(headerPaths);
     rpp.setMacros(macros);
 
     if (fileKind == CppEditor::ProjectFile::Kind::CHeader
             || fileKind == CppEditor::ProjectFile::Kind::CSource) {
-        if (!kitInfo.cToolchain) {
-            kitInfo.cToolchain = toolchainFromFlags(kit,
+        if (!kitInfo.cToolChain) {
+            kitInfo.cToolChain = toolchainFromFlags(kit,
                                                     originalFlags,
                                                     ProjectExplorer::Constants::C_LANGUAGE_ID);
         }
-        addDriverModeFlagIfNeeded(kitInfo.cToolchain, flags, originalFlags);
-        rpp.setFlagsForC({kitInfo.cToolchain, flags, workingDir});
+        addDriverModeFlagIfNeeded(kitInfo.cToolChain, flags, originalFlags);
+        rpp.setFlagsForC({kitInfo.cToolChain, flags, workingDir});
     } else {
-        if (!kitInfo.cxxToolchain) {
-            kitInfo.cxxToolchain = toolchainFromFlags(kit,
+        if (!kitInfo.cxxToolChain) {
+            kitInfo.cxxToolChain = toolchainFromFlags(kit,
                                                       originalFlags,
                                                       ProjectExplorer::Constants::CXX_LANGUAGE_ID);
         }
-        addDriverModeFlagIfNeeded(kitInfo.cxxToolchain, flags, originalFlags);
-        rpp.setFlagsForCxx({kitInfo.cxxToolchain, flags, workingDir});
+        addDriverModeFlagIfNeeded(kitInfo.cxxToolChain, flags, originalFlags);
+        rpp.setFlagsForCxx({kitInfo.cxxToolChain, flags, workingDir});
     }
 
     return rpp;
@@ -229,10 +243,13 @@ FolderNode *addChildFolderNode(FolderNode *parent, const QString &childName)
 
 FolderNode *addOrGetChildFolderNode(FolderNode *parent, const QString &childName)
 {
-    FolderNode *fn = parent->findChildFolderNode([&](FolderNode *folder) {
-        return folder->filePath().fileName() == childName;
-    });
-    return fn ? fn : addChildFolderNode(parent, childName);
+    for (FolderNode *folder : parent->folderNodes()) {
+        if (folder->filePath().fileName() == childName) {
+            return folder;
+        }
+    }
+
+    return addChildFolderNode(parent, childName);
 }
 
     // Return the node for folderPath.
@@ -318,7 +335,7 @@ void createTree(std::unique_ptr<ProjectNode> &root,
 
 CompilationDatabaseBuildSystem::CompilationDatabaseBuildSystem(Target *target)
     : BuildSystem(target)
-    , m_cppCodeModelUpdater(ProjectUpdaterFactory::createCppProjectUpdater())
+    , m_cppCodeModelUpdater(std::make_unique<CppEditor::CppProjectUpdater>())
     , m_deployFileWatcher(new FileSystemWatcher(this))
 {
     connect(target->project(), &CompilationDatabaseProject::rootProjectDirectoryChanged,
@@ -339,8 +356,8 @@ CompilationDatabaseBuildSystem::CompilationDatabaseBuildSystem(Target *target)
 
 CompilationDatabaseBuildSystem::~CompilationDatabaseBuildSystem()
 {
-    if (m_parser)
-        delete m_parser;
+    m_parserWatcher.cancel();
+    m_parserWatcher.waitForFinished();
 }
 
 void CompilationDatabaseBuildSystem::triggerParsing()
@@ -354,8 +371,8 @@ void CompilationDatabaseBuildSystem::buildTreeAndProjectParts()
     ProjectExplorer::KitInfo kitInfo(k);
     QTC_ASSERT(kitInfo.isValid(), return);
     // Reset toolchains to pick them based on the database entries.
-    kitInfo.cToolchain = nullptr;
-    kitInfo.cxxToolchain = nullptr;
+    kitInfo.cToolChain = nullptr;
+    kitInfo.cxxToolChain = nullptr;
     RawProjectParts rpps;
 
     QTC_ASSERT(m_parser, return);
@@ -397,7 +414,7 @@ void CompilationDatabaseBuildSystem::buildTreeAndProjectParts()
 
     root->addNode(std::make_unique<FileNode>(projectFilePath(), FileType::Project));
 
-    if (QFileInfo::exists(dbContents.extraFileName))
+    if (QFile::exists(dbContents.extraFileName))
         root->addNode(std::make_unique<FileNode>(Utils::FilePath::fromString(dbContents.extraFileName),
                                                  FileType::Project));
 
@@ -466,7 +483,8 @@ void CompilationDatabaseBuildSystem::updateDeploymentData()
     const Utils::FilePath deploymentFilePath = projectDirectory()
             .pathAppended("QtCreatorDeployment.txt");
     DeploymentData deploymentData;
-    deploymentData.addFilesFromDeploymentFile(deploymentFilePath, projectDirectory());
+    deploymentData.addFilesFromDeploymentFile(deploymentFilePath.toString(),
+                                              projectDirectory().toString());
     setDeploymentData(deploymentData);
     if (m_deployFileWatcher->files() != QStringList(deploymentFilePath.toString())) {
         m_deployFileWatcher->clear();
@@ -485,65 +503,48 @@ static TextEditor::TextDocument *createCompilationDatabaseDocument()
     return doc;
 }
 
-class CompilationDatabaseEditorFactory final : public TextEditor::TextEditorFactory
+CompilationDatabaseEditorFactory::CompilationDatabaseEditorFactory()
 {
-public:
-    CompilationDatabaseEditorFactory()
-    {
-        setId(Constants::COMPILATIONDATABASEPROJECT_ID);
-        setDisplayName(::Core::Tr::tr("Compilation Database"));
-        addMimeType(Constants::COMPILATIONDATABASEMIMETYPE);
+    setId(Constants::COMPILATIONDATABASEPROJECT_ID);
+    setDisplayName(QCoreApplication::translate("OpenWith::Editors", "Compilation Database"));
+    addMimeType(Constants::COMPILATIONDATABASEMIMETYPE);
 
-        setEditorCreator([] { return new TextEditor::BaseTextEditor; });
-        setEditorWidgetCreator([] { return new TextEditor::TextEditorWidget; });
-        setDocumentCreator(createCompilationDatabaseDocument);
-        setUseGenericHighlighter(true);
-        setCommentDefinition(Utils::CommentDefinition::HashStyle);
-        setCodeFoldingSupported(true);
-    }
-};
-
-void setupCompilationDatabaseEditor()
-{
-    static CompilationDatabaseEditorFactory theCompilationDatabaseEditorFactory;
+    setEditorCreator([]() { return new TextEditor::BaseTextEditor; });
+    setEditorWidgetCreator([]() { return new TextEditor::TextEditorWidget; });
+    setDocumentCreator(createCompilationDatabaseDocument);
+    setUseGenericHighlighter(true);
+    setCommentDefinition(Utils::CommentDefinition::HashStyle);
+    setCodeFoldingSupported(true);
 }
 
-// CompilationDatabaseBuildConfigurationFactory
-
-class CompilationDatabaseBuildConfiguration final : public BuildConfiguration
+class CompilationDatabaseBuildConfiguration : public BuildConfiguration
 {
 public:
-    CompilationDatabaseBuildConfiguration(Target *target, Id id)
+    CompilationDatabaseBuildConfiguration(Target *target, Utils::Id id)
         : BuildConfiguration(target, id)
-    {}
-};
-
-class CompilationDatabaseBuildConfigurationFactory final : public BuildConfigurationFactory
-{
-public:
-    CompilationDatabaseBuildConfigurationFactory()
     {
-        registerBuildConfiguration<CompilationDatabaseBuildConfiguration>(
-            "CompilationDatabase.CompilationDatabaseBuildConfiguration");
-
-        setSupportedProjectType(Constants::COMPILATIONDATABASEPROJECT_ID);
-        setSupportedProjectMimeTypeName(Constants::COMPILATIONDATABASEMIMETYPE);
-
-        setBuildGenerator([](const Kit *, const FilePath &projectPath, bool) {
-            const QString name = QCoreApplication::translate("QtC::ProjectExplorer", "Release");
-            ProjectExplorer::BuildInfo info;
-            info.typeName = name;
-            info.displayName = name;
-            info.buildType = BuildConfiguration::Release;
-            info.buildDirectory = projectPath.parentDir();
-            return QList<BuildInfo>{info};
-        });
     }
 };
 
-void setupCompilationDatabaseBuildConfiguration()
+
+CompilationDatabaseBuildConfigurationFactory::CompilationDatabaseBuildConfigurationFactory()
 {
-    static CompilationDatabaseBuildConfigurationFactory theCDBuildConfigurationFactory;
+    registerBuildConfiguration<CompilationDatabaseBuildConfiguration>(
+        "CompilationDatabase.CompilationDatabaseBuildConfiguration");
+
+    setSupportedProjectType(Constants::COMPILATIONDATABASEPROJECT_ID);
+    setSupportedProjectMimeTypeName(Constants::COMPILATIONDATABASEMIMETYPE);
+
+    setBuildGenerator([](const Kit *, const FilePath &projectPath, bool) {
+        const QString name = BuildConfiguration::tr("Release");
+        ProjectExplorer::BuildInfo info;
+        info.typeName = name;
+        info.displayName = name;
+        info.buildType = BuildConfiguration::Release;
+        info.buildDirectory = projectPath.parentDir();
+        return QList<BuildInfo>{info};
+    });
 }
 
-} // CompilationDatabaseProjectManager::Internal
+} // namespace Internal
+} // namespace CompilationDatabaseProjectManager

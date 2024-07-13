@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -7,6 +29,7 @@
 
 #include <coreplugin/basefilewizardfactory.h>
 
+#include <QSharedPointer>
 #include <QList>
 #include <QMap>
 
@@ -27,11 +50,13 @@ class CustomWizardParameters;
 }
 
 // Documentation inside.
-class PROJECTEXPLORER_EXPORT ICustomWizardMetaFactory
+class PROJECTEXPLORER_EXPORT ICustomWizardMetaFactory : public QObject
 {
+    Q_OBJECT
+
 public:
     ICustomWizardMetaFactory(const QString &klass, Core::IWizardFactory::WizardKind kind);
-    virtual ~ICustomWizardMetaFactory();
+    ~ICustomWizardMetaFactory() override;
 
     virtual CustomWizard *create() const = 0;
     QString klass() const { return m_klass; }
@@ -70,14 +95,14 @@ public:
 
     // Create all wizards. As other plugins might register factories for derived
     // classes, call it in extensionsInitialized().
-    static void createWizards();
+    static QList<IWizardFactory *> createWizards();
 
     static void setVerbose(int);
     static int verbose();
 
 protected:
-    using CustomWizardParametersPtr = std::shared_ptr<Internal::CustomWizardParameters>;
-    using CustomWizardContextPtr = std::shared_ptr<Internal::CustomWizardContext>;
+    using CustomWizardParametersPtr = QSharedPointer<Internal::CustomWizardParameters>;
+    using CustomWizardContextPtr = QSharedPointer<Internal::CustomWizardContext>;
 
     // generate files in path
     Core::GeneratedFiles generateWizardFiles(QString *errorMessage) const;
@@ -107,7 +132,7 @@ public:
     static bool postGenerateOpen(const Core::GeneratedFiles &l, QString *errorMessage = nullptr);
 
 signals:
-    void projectLocationChanged(const Utils::FilePath &path);
+    void projectLocationChanged(const QString &path);
 
 protected:
     Core::BaseFileWizard *create(QWidget *parent, const Core::WizardDialogParameters &parameters) const override;
@@ -120,7 +145,7 @@ protected:
                                  const QList<QWizardPage *> &extensionPages) const;
 
 private:
-    void handleProjectParametersChanged(const QString &project, const Utils::FilePath &path);
+    void projectParametersChanged(const QString &project, const QString &path);
 };
 
 } // namespace ProjectExplorer

@@ -1,38 +1,58 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Templates as T
+import QtQuick 2.15
+import QtQuick.Templates 2.15 as T
 import StudioTheme 1.0 as StudioTheme
 
 TextInput {
-    id: control
+    id: textInput
 
-    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
+    property T.Control myControl
 
-    property T.Control __parentControl
-
-    property bool edit: control.activeFocus
+    property bool edit: textInput.activeFocus
     property bool drag: false
-    property bool hover: mouseArea.containsMouse && control.enabled
+    property bool hover: mouseArea.containsMouse && textInput.enabled
 
     property int devicePixelRatio: 1
     property int pixelsPerUnit: 10
 
     z: 2
-    font: control.__parentControl.font
-    color: control.style.text.idle
-    selectionColor: control.style.text.selection
-    selectedTextColor: control.style.text.selectedText
+    font: myControl.font
+    color: StudioTheme.Values.themeTextColor
+    selectionColor: StudioTheme.Values.themeTextSelectionColor
+    selectedTextColor: StudioTheme.Values.themeTextSelectedTextColor
 
     horizontalAlignment: Qt.AlignRight
     verticalAlignment: Qt.AlignVCenter
-    leftPadding: control.style.inputHorizontalPadding
-    rightPadding: control.style.inputHorizontalPadding
+    leftPadding: StudioTheme.Values.inputHorizontalPadding
+    rightPadding: StudioTheme.Values.inputHorizontalPadding
 
-    readOnly: !control.__parentControl.editable
-    validator: control.__parentControl.validator
-    inputMethodHints: control.__parentControl.inputMethodHints
+    readOnly: !myControl.editable
+    validator: myControl.validator
+    inputMethodHints: myControl.inputMethodHints
     selectByMouse: false
     activeFocusOnPress: false
     clip: true
@@ -40,16 +60,16 @@ TextInput {
     // TextInput focus needs to be set to activeFocus whenever it changes,
     // otherwise TextInput will get activeFocus whenever the parent SpinBox gets
     // activeFocus. This will lead to weird side effects.
-    onActiveFocusChanged: control.focus = control.activeFocus
+    onActiveFocusChanged: textInput.focus = textInput.activeFocus
 
     Rectangle {
         id: textInputBackground
         x: 0
-        y: control.style.borderWidth
+        y: StudioTheme.Values.border
         z: -1
-        width: control.width
-        height: control.style.controlSize.height - (control.style.borderWidth * 2)
-        color: control.style.background.idle
+        width: textInput.width
+        height: StudioTheme.Values.height - (StudioTheme.Values.border * 2)
+        color: StudioTheme.Values.themeControlBackground
         border.width: 0
     }
 
@@ -59,22 +79,22 @@ TextInput {
             event.accepted = true
 
             if (event.modifiers & Qt.ControlModifier) {
-                mouseArea.stepSize = control.__parentControl.minStepSize
+                mouseArea.stepSize = myControl.minStepSize
                 mouseArea.calcValue()
-                control.__parentControl.realValueModified()
+                myControl.realValueModified()
             }
 
             if (event.modifiers & Qt.ShiftModifier) {
-                mouseArea.stepSize = control.__parentControl.maxStepSize
+                mouseArea.stepSize = myControl.maxStepSize
                 mouseArea.calcValue()
-                control.__parentControl.realValueModified()
+                myControl.realValueModified()
             }
         }
         Keys.onReleased: function(event) {
             event.accepted = true
-            mouseArea.stepSize = control.__parentControl.realStepSize
+            mouseArea.stepSize = myControl.realStepSize
             mouseArea.calcValue()
-            control.__parentControl.realValueModified()
+            myControl.realValueModified()
         }
     }
 
@@ -86,14 +106,14 @@ TextInput {
     MouseArea {
         id: mouseArea
 
-        property real stepSize: control.__parentControl.realStepSize
+        property real stepSize: myControl.realStepSize
 
         // Properties to store the state of a drag operation
         property bool dragging: false
         property bool hasDragged: false
         property bool potentialDragStart: false
 
-        property real initialValue: control.__parentControl.realValue // value on drag operation starts
+        property real initialValue: myControl.realValue // value on drag operation starts
 
         property real pressStartX: 0.0
         property real dragStartX: 0.0
@@ -103,7 +123,7 @@ TextInput {
         property real totalUnits: 0.0 // total number of units dragged
         property real units: 0.0
 
-        property real __pixelsPerUnit: control.devicePixelRatio * control.pixelsPerUnit
+        property real __pixelsPerUnit: textInput.devicePixelRatio * textInput.pixelsPerUnit
 
         anchors.fill: parent
         enabled: true
@@ -115,21 +135,21 @@ TextInput {
 
         onPositionChanged: function(mouse) {
             if (!mouseArea.dragging
-                    && !control.__parentControl.edit
+                    && !myControl.edit
                     && Math.abs(mouseArea.pressStartX - mouse.x) > StudioTheme.Values.dragThreshold
                     && mouse.buttons === Qt.LeftButton
                     && mouseArea.potentialDragStart) {
                 mouseArea.dragging = true
                 mouseArea.potentialDragStart = false
-                mouseArea.initialValue = control.__parentControl.realValue
+                mouseArea.initialValue = myControl.realValue
                 mouseArea.cursorShape = Qt.ClosedHandCursor
                 mouseArea.dragStartX = mouse.x
 
-                control.__parentControl.drag = true
-                control.__parentControl.dragStarted()
+                myControl.drag = true
+                myControl.dragStarted()
                 // Force focus on the non visible component to receive key events
                 dragModifierWorkaround.forceActiveFocus()
-                control.deselect()
+                textInput.deselect()
             }
 
             if (!mouseArea.dragging)
@@ -154,11 +174,11 @@ TextInput {
 
             mouseArea.translationX += translationX
             mouseArea.calcValue()
-            control.__parentControl.realValueModified()
+            myControl.realValueModified()
         }
 
         onClicked: function(mouse) {
-            if (control.edit)
+            if (textInput.edit)
                 mouse.accepted = false
 
             if (mouseArea.hasDragged) {
@@ -166,12 +186,12 @@ TextInput {
                 return
             }
 
-            control.forceActiveFocus()
-            control.deselect() // QTBUG-75862
+            textInput.forceActiveFocus()
+            textInput.deselect() // QTBUG-75862
         }
 
         onPressed: function(mouse) {
-            if (control.edit)
+            if (textInput.edit)
                 mouse.accepted = false
 
             mouseArea.potentialDragStart = true
@@ -179,7 +199,7 @@ TextInput {
         }
 
         onReleased: function(mouse) {
-            if (control.edit)
+            if (textInput.edit)
                 mouse.accepted = false
 
             mouseArea.endDrag()
@@ -192,18 +212,18 @@ TextInput {
             mouseArea.dragging = false
             mouseArea.hasDragged = true
 
-            if (control.__parentControl.compressedValueTimer.running) {
-                control.__parentControl.compressedValueTimer.stop()
+            if (myControl.compressedValueTimer.running) {
+                myControl.compressedValueTimer.stop()
                 mouseArea.calcValue()
-                control.__parentControl.compressedRealValueModified()
+                myControl.compressedRealValueModified()
             }
             mouseArea.cursorShape = Qt.PointingHandCursor
-            control.__parentControl.drag = false
-            control.__parentControl.dragEnded()
+            myControl.drag = false
+            myControl.dragEnded()
             // Avoid active focus on the component after dragging
             dragModifierWorkaround.focus = false
-            control.focus = false
-            control.__parentControl.focus = false
+            textInput.focus = false
+            myControl.focus = false
 
             mouseArea.translationX = 0.0
             mouseArea.units = 0.0
@@ -211,48 +231,47 @@ TextInput {
         }
 
         function calcValue() {
-            var minUnit = (control.__parentControl.realFrom - mouseArea.initialValue) / mouseArea.stepSize
-            var maxUnit = (control.__parentControl.realTo - mouseArea.initialValue) / mouseArea.stepSize
+            var minUnit = (myControl.realFrom - mouseArea.initialValue) / mouseArea.stepSize
+            var maxUnit = (myControl.realTo - mouseArea.initialValue) / mouseArea.stepSize
 
             var units = Math.trunc(mouseArea.translationX / mouseArea.__pixelsPerUnit)
             mouseArea.units = Math.min(Math.max(mouseArea.totalUnits + units, minUnit), maxUnit)
-            control.__parentControl.setRealValue(mouseArea.initialValue + (mouseArea.units * mouseArea.stepSize))
+            myControl.setRealValue(mouseArea.initialValue + (mouseArea.units * mouseArea.stepSize))
 
             if (mouseArea.dragging)
-                control.__parentControl.dragging()
+                myControl.dragging()
         }
 
         onWheel: function(wheel) {
-            if (!control.__parentControl.__wheelEnabled) {
+            if (!myControl.__wheelEnabled) {
                 wheel.accepted = false
                 return
             }
 
             // Set stepSize according to used modifier key
             if (wheel.modifiers & Qt.ControlModifier)
-                mouseArea.stepSize = control.__parentControl.minStepSize
+                mouseArea.stepSize = myControl.minStepSize
 
             if (wheel.modifiers & Qt.ShiftModifier)
-                mouseArea.stepSize = control.__parentControl.maxStepSize
+                mouseArea.stepSize = myControl.maxStepSize
 
-            control.__parentControl.valueFromText(control.text, control.__parentControl.locale)
-            control.__parentControl.setRealValue(__parentControl.realValue + (wheel.angleDelta.y / 120.0 * mouseArea.stepSize))
-            control.__parentControl.realValueModified()
+            myControl.valueFromText(textInput.text, myControl.locale)
+            myControl.setRealValue(myControl.realValue + (wheel.angleDelta.y / 120.0 * mouseArea.stepSize))
+            myControl.realValueModified()
 
             // Reset stepSize
-            mouseArea.stepSize = control.__parentControl.realStepSize
+            mouseArea.stepSize = myControl.realStepSize
         }
     }
 
     states: [
         State {
             name: "default"
-            when: control.__parentControl.enabled && !control.edit && !control.hover
-                  && !control.__parentControl.hover && !control.__parentControl.drag
-                  && !control.__parentControl.sliderDrag
+            when: myControl.enabled && !textInput.edit && !textInput.hover && !myControl.hover
+                  && !myControl.drag && !myControl.sliderDrag
             PropertyChanges {
                 target: textInputBackground
-                color: control.style.background.idle
+                color: StudioTheme.Values.themeControlBackground
             }
             PropertyChanges {
                 target: mouseArea
@@ -261,28 +280,27 @@ TextInput {
         },
         State {
             name: "globalHover"
-            when: control.__parentControl.hover && !control.hover
-                  && !control.edit && !control.__parentControl.drag
+            when: myControl.hover && !textInput.hover
+                  && !textInput.edit && !myControl.drag
             PropertyChanges {
                 target: textInputBackground
-                color: control.style.background.globalHover
+                color: StudioTheme.Values.themeControlBackgroundGlobalHover
             }
         },
         State {
             name: "hover"
-            when: control.hover && control.__parentControl.hover && !control.edit
-                  && !control.__parentControl.drag
+            when: textInput.hover && myControl.hover && !textInput.edit && !myControl.drag
             PropertyChanges {
                 target: textInputBackground
-                color: control.style.background.hover
+                color: StudioTheme.Values.themeControlBackgroundHover
             }
         },
         State {
             name: "edit"
-            when: control.edit && !control.__parentControl.drag
+            when: textInput.edit && !myControl.drag
             PropertyChanges {
                 target: textInputBackground
-                color: control.style.background.interaction
+                color: StudioTheme.Values.themeControlBackgroundInteraction
             }
             PropertyChanges {
                 target: mouseArea
@@ -291,38 +309,38 @@ TextInput {
         },
         State {
             name: "drag"
-            when: control.__parentControl.drag
+            when: myControl.drag
             PropertyChanges {
                 target: textInputBackground
-                color: control.style.background.interaction
+                color: StudioTheme.Values.themeControlBackgroundInteraction
             }
             PropertyChanges {
-                target: control
-                color: control.style.interaction
+                target: textInput
+                color: StudioTheme.Values.themeInteraction
             }
         },
         State {
             name: "sliderDrag"
-            when: control.__parentControl.sliderDrag
+            when: myControl.sliderDrag
             PropertyChanges {
                 target: textInputBackground
-                color: control.style.background.idle
+                color: StudioTheme.Values.themeControlBackground
             }
             PropertyChanges {
-                target: control
-                color: control.style.interaction
+                target: textInput
+                color: StudioTheme.Values.themeInteraction
             }
         },
         State {
             name: "disable"
-            when: !control.__parentControl.enabled
+            when: !myControl.enabled
             PropertyChanges {
                 target: textInputBackground
-                color: control.style.background.disabled
+                color: StudioTheme.Values.themeControlBackgroundDisabled
             }
             PropertyChanges {
-                target: control
-                color: control.style.text.disabled
+                target: textInput
+                color: StudioTheme.Values.themeTextColorDisabled
             }
         }
     ]

@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -17,9 +39,8 @@
 
 namespace TextEditor {
 
-class TEXTEDITOR_EXPORT Parenthesis
+struct TEXTEDITOR_EXPORT Parenthesis
 {
-public:
     enum Type : char { Opened, Closed };
 
     Parenthesis() = default;
@@ -41,28 +62,6 @@ class TEXTEDITOR_EXPORT CodeFormatterData
 {
 public:
     virtual ~CodeFormatterData();
-};
-
-class TEXTEDITOR_EXPORT TextSuggestion
-{
-public:
-    TextSuggestion();
-    virtual ~TextSuggestion();
-    // Returns true if the suggestion was applied completely, false if it was only partially applied.
-    virtual bool apply() = 0;
-    // Returns true if the suggestion was applied completely, false if it was only partially applied.
-    virtual bool applyWord(TextEditorWidget *widget) = 0;
-    virtual void reset() = 0;
-    virtual int position() = 0;
-
-    int currentPosition() const { return m_currentPosition; }
-    void setCurrentPosition(int position) { m_currentPosition = position; }
-
-    QTextDocument *document() { return &m_replacementDocument; }
-
-private:
-    QTextDocument m_replacementDocument;
-    int m_currentPosition = -1;
 };
 
 class TEXTEDITOR_EXPORT TextBlockUserData : public QTextBlockUserData
@@ -149,10 +148,6 @@ public:
     QByteArray expectedRawStringSuffix() { return m_expectedRawStringSuffix; }
     void setExpectedRawStringSuffix(const QByteArray &suffix) { m_expectedRawStringSuffix = suffix; }
 
-    void insertSuggestion(std::unique_ptr<TextSuggestion> &&suggestion);
-    TextSuggestion *suggestion() const;
-    void clearSuggestion();
-
 private:
     TextMarks m_marks;
     int m_foldingIndent : 16;
@@ -166,9 +161,8 @@ private:
     CodeFormatterData *m_codeFormatterData;
     KSyntaxHighlighting::State m_syntaxState;
     QByteArray m_expectedRawStringSuffix; // A bit C++-specific, but let's be pragmatic.
-    std::unique_ptr<QTextDocument> m_replacement;
-    std::unique_ptr<TextSuggestion> m_suggestion;
 };
+
 
 class TEXTEDITOR_EXPORT TextDocumentLayout : public QPlainTextDocumentLayout
 {
@@ -200,12 +194,6 @@ public:
     static void setFolded(const QTextBlock &block, bool folded);
     static void setExpectedRawStringSuffix(const QTextBlock &block, const QByteArray &suffix);
     static QByteArray expectedRawStringSuffix(const QTextBlock &block);
-    static TextSuggestion *suggestion(const QTextBlock &block);
-    static void updateSuggestionFormats(const QTextBlock &block,
-                                        const FontSettings &fontSettings);
-    static bool updateSuggestion(const QTextBlock &block,
-                                 int position,
-                                 const FontSettings &fontSettings);
 
     class TEXTEDITOR_EXPORT FoldValidator
     {
@@ -237,7 +225,7 @@ public:
 
     int lastSaveRevision = 0;
     bool hasMarks = false;
-    bool hasLocationMarker = false;
+    double maxMarkWidthFactor = 1.0;
     int m_requiredWidth = 0;
 
     void setRequiredWidth(int width);
@@ -246,8 +234,7 @@ public:
     QRectF blockBoundingRect(const QTextBlock &block) const override;
 
     TextMarks documentClosing();
-    void documentAboutToReload(TextDocument *baseTextDocument);
-    void documentReloaded(TextDocument *baseextDocument);
+    void documentReloaded(TextMarks marks, TextDocument *baseextDocument);
     void updateMarksLineNumber();
     void updateMarksBlock(const QTextBlock &block);
     void scheduleUpdate();
@@ -255,8 +242,6 @@ public:
 
 private:
     bool m_updateScheduled = false;
-    TextMarks m_reloadMarks;
-    void resetReloadMarks();
 
 signals:
     void updateExtraArea();

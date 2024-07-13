@@ -1,4 +1,0 @@
-class SomeClass
-{
-    void func();
-};

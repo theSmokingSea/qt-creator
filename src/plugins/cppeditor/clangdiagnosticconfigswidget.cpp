@@ -1,34 +1,44 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "clangdiagnosticconfigswidget.h"
 
 #include "clangdiagnosticconfigsmodel.h"
-#include "cppeditortr.h"
-#include "wrappablelineedit.h"
+#include "ui_clangdiagnosticconfigswidget.h"
+#include "ui_clangbasechecks.h"
 
-#include <utils/environment.h>
-#include <utils/infolabel.h>
-#include <utils/layoutbuilder.h>
+#include <utils/executeondestruction.h>
 #include <utils/stringutils.h>
 #include <utils/treemodel.h>
 
-#include <QApplication>
-#include <QCheckBox>
-#include <QHeaderView>
 #include <QInputDialog>
-#include <QLabel>
 #include <QPushButton>
-#include <QPushButton>
-#include <QScopeGuard>
-#include <QTabWidget>
-#include <QTreeView>
-
-using namespace Utils;
 
 namespace CppEditor {
 
-class ConfigNode : public TreeItem
+class ConfigNode : public Utils::TreeItem
 {
 public:
     ConfigNode(const ClangDiagnosticConfig &config)
@@ -45,11 +55,11 @@ public:
     ClangDiagnosticConfig config;
 };
 
-class GroupNode : public StaticTreeItem
+class GroupNode : public Utils::StaticTreeItem
 {
 public:
     GroupNode(const QString &text)
-        : StaticTreeItem(text)
+        : Utils::StaticTreeItem(text)
     {}
 
     Qt::ItemFlags flags(int) const final { return {}; }
@@ -60,22 +70,24 @@ public:
             return QApplication::palette().color(QPalette::ColorGroup::Normal,
                                                  QPalette::ColorRole::Text);
         }
-        return StaticTreeItem::data(column, role);
+        return Utils::StaticTreeItem::data(column, role);
     }
 };
 
-class ConfigsModel : public TreeModel<TreeItem, GroupNode, ConfigNode>
+class ConfigsModel : public Utils::TreeModel<Utils::TreeItem, GroupNode, ConfigNode>
 {
+    Q_OBJECT
+
 public:
     ConfigsModel(const ClangDiagnosticConfigs &configs)
     {
-        m_builtinRoot = new GroupNode(Tr::tr("Built-in"));
-        m_customRoot = new GroupNode(Tr::tr("Custom"));
+        m_builtinRoot = new GroupNode(tr("Built-in"));
+        m_customRoot = new GroupNode(tr("Custom"));
         rootItem()->appendChild(m_builtinRoot);
         rootItem()->appendChild(m_customRoot);
 
         for (const ClangDiagnosticConfig &config : configs) {
-            TreeItem *parent = config.isReadOnly() ? m_builtinRoot : m_customRoot;
+            Utils::TreeItem *parent = config.isReadOnly() ? m_builtinRoot : m_customRoot;
             parent->appendChild(new ConfigNode(config));
         }
     }
@@ -97,13 +109,13 @@ public:
         m_customRoot->appendChild(new ConfigNode(config));
     }
 
-    void removeConfig(const Id &id)
+    void removeConfig(const Utils::Id &id)
     {
        ConfigNode *node = itemForConfigId(id);
        node->parent()->removeChildAt(node->indexInParent());
     }
 
-    ConfigNode *itemForConfigId(const Id &id) const
+    ConfigNode *itemForConfigId(const Utils::Id &id) const
     {
         return findItemAtLevel<2>([id](const ConfigNode *node) {
             return node->config.id() == id;
@@ -111,111 +123,67 @@ public:
     }
 
 private:
-    TreeItem *m_builtinRoot = nullptr;
-    TreeItem *m_customRoot = nullptr;
-};
-
-class ClangBaseChecksWidget : public QWidget
-{
-public:
-    ClangBaseChecksWidget()
-    {
-        auto label = new QLabel;
-        label->setTextFormat(Qt::MarkdownText);
-        label->setText(Tr::tr("For appropriate options, consult the GCC or Clang manual "
-                              "pages or the [GCC online documentation](%1).")
-                           .arg("https://gcc.gnu.org/onlinedocs/gcc/Warning-Options.html"));
-        label->setOpenExternalLinks(true);
-
-        useFlagsFromBuildSystemCheckBox = new QCheckBox(Tr::tr("Use diagnostic flags from build system"));
-
-        diagnosticOptionsTextEdit = new WrappableLineEdit;
-
-        using namespace Layouting;
-
-        Column {
-            label,
-            useFlagsFromBuildSystemCheckBox,
-            diagnosticOptionsTextEdit
-        }.attachTo(this);
-    }
-
-    QCheckBox *useFlagsFromBuildSystemCheckBox;
-    WrappableLineEdit *diagnosticOptionsTextEdit;
+    Utils::TreeItem *m_builtinRoot = nullptr;
+    Utils::TreeItem *m_customRoot = nullptr;
 };
 
 ClangDiagnosticConfigsWidget::ClangDiagnosticConfigsWidget(const ClangDiagnosticConfigs &configs,
-                                                           const Id &configToSelect,
+                                                           const Utils::Id &configToSelect,
                                                            QWidget *parent)
     : QWidget(parent)
+    , m_ui(new Ui::ClangDiagnosticConfigsWidget)
     , m_configsModel(new ConfigsModel(configs))
 {
-    auto copyButton = new QPushButton(Tr::tr("Copy..."));
-    m_renameButton = new QPushButton(Tr::tr("Rename..."));
-    m_removeButton = new QPushButton(Tr::tr("Remove"));
+    m_ui->setupUi(this);
+    m_ui->configsView->setHeaderHidden(true);
+    m_ui->configsView->setUniformRowHeights(true);
+    m_ui->configsView->setRootIsDecorated(false);
+    m_ui->configsView->setModel(m_configsModel);
+    m_ui->configsView->setCurrentIndex(m_configsModel->itemForConfigId(configToSelect)->index());
+    m_ui->configsView->setItemsExpandable(false);
+    m_ui->configsView->expandAll();
+    connect(m_ui->configsView->selectionModel(),
+            &QItemSelectionModel::currentChanged,
+            this,
+            &ClangDiagnosticConfigsWidget::sync);
 
-    m_infoLabel = new InfoLabel;
+    m_clangBaseChecks = std::make_unique<CppEditor::Ui::ClangBaseChecks>();
+    m_clangBaseChecksWidget = new QWidget();
+    m_clangBaseChecks->setupUi(m_clangBaseChecksWidget);
 
-    m_configsView = new QTreeView;
-    m_configsView->setHeaderHidden(true);
-    m_configsView->setUniformRowHeights(true);
-    m_configsView->setRootIsDecorated(false);
-    m_configsView->setModel(m_configsModel);
-    m_configsView->setCurrentIndex(m_configsModel->itemForConfigId(configToSelect)->index());
-    m_configsView->setItemsExpandable(false);
-    m_configsView->expandAll();
+    m_ui->tabWidget->addTab(m_clangBaseChecksWidget, tr("Clang Warnings"));
+    m_ui->tabWidget->setCurrentIndex(0);
 
-    m_clangBaseChecks = new ClangBaseChecksWidget;
-
-    m_tabWidget = new QTabWidget;
-    m_tabWidget->addTab(m_clangBaseChecks, Tr::tr("Clang Warnings"));
-
-    using namespace Layouting;
-
-    Column {
-        Row {
-            m_configsView,
-            Column {
-                copyButton,
-                m_renameButton,
-                m_removeButton,
-                st
-            }
-        },
-        m_infoLabel,
-        m_tabWidget
-    }.attachTo(this);
-
-    connect(copyButton, &QPushButton::clicked,
+    connect(m_ui->copyButton, &QPushButton::clicked,
             this, &ClangDiagnosticConfigsWidget::onCopyButtonClicked);
-    connect(m_renameButton, &QPushButton::clicked,
+    connect(m_ui->renameButton, &QPushButton::clicked,
             this, &ClangDiagnosticConfigsWidget::onRenameButtonClicked);
-    connect(m_removeButton, &QPushButton::clicked,
+    connect(m_ui->removeButton, &QPushButton::clicked,
             this, &ClangDiagnosticConfigsWidget::onRemoveButtonClicked);
-    connect(m_configsView->selectionModel(), &QItemSelectionModel::currentChanged,
-            this, &ClangDiagnosticConfigsWidget::sync);
-
     connectClangOnlyOptionsChanged();
 }
 
-ClangDiagnosticConfigsWidget::~ClangDiagnosticConfigsWidget() = default;
+ClangDiagnosticConfigsWidget::~ClangDiagnosticConfigsWidget()
+{
+    delete m_ui;
+}
 
 void ClangDiagnosticConfigsWidget::onCopyButtonClicked()
 {
     const ClangDiagnosticConfig &config = currentConfig();
     bool dialogAccepted = false;
     const QString newName = QInputDialog::getText(this,
-                                                  Tr::tr("Copy Diagnostic Configuration"),
-                                                  Tr::tr("Diagnostic configuration name:"),
+                                                  tr("Copy Diagnostic Configuration"),
+                                                  tr("Diagnostic configuration name:"),
                                                   QLineEdit::Normal,
-                                                  Tr::tr("%1 (Copy)").arg(config.displayName()),
+                                                  tr("%1 (Copy)").arg(config.displayName()),
                                                   &dialogAccepted);
     if (dialogAccepted) {
         const ClangDiagnosticConfig customConfig
             = ClangDiagnosticConfigsModel::createCustomConfig(config, newName);
 
         m_configsModel->appendCustomConfig(customConfig);
-        m_configsView->setCurrentIndex(
+        m_ui->configsView->setCurrentIndex(
             m_configsModel->itemForConfigId(customConfig.id())->index());
         sync();
         m_clangBaseChecks->diagnosticOptionsTextEdit->setFocus();
@@ -228,8 +196,8 @@ void ClangDiagnosticConfigsWidget::onRenameButtonClicked()
 
     bool dialogAccepted = false;
     const QString newName = QInputDialog::getText(this,
-                                                  Tr::tr("Rename Diagnostic Configuration"),
-                                                  Tr::tr("New name:"),
+                                                  tr("Rename Diagnostic Configuration"),
+                                                  tr("New name:"),
                                                   QLineEdit::Normal,
                                                   config.displayName(),
                                                   &dialogAccepted);
@@ -241,15 +209,15 @@ void ClangDiagnosticConfigsWidget::onRenameButtonClicked()
 
 const ClangDiagnosticConfig ClangDiagnosticConfigsWidget::currentConfig() const
 {
-    TreeItem *item = m_configsModel->itemForIndex(m_configsView->currentIndex());
+    Utils::TreeItem *item = m_configsModel->itemForIndex(m_ui->configsView->currentIndex());
     return static_cast<ConfigNode *>(item)->config;
 }
 
 void ClangDiagnosticConfigsWidget::onRemoveButtonClicked()
 {
-    const Id configToRemove = currentConfig().id();
+    const Utils::Id configToRemove = currentConfig().id();
     if (m_configsModel->customConfigsCount() == 1)
-        m_configsView->setCurrentIndex(m_configsModel->fallbackConfigIndex());
+        m_ui->configsView->setCurrentIndex(m_configsModel->fallbackConfigIndex());
     m_configsModel->removeConfig(configToRemove);
     sync();
 }
@@ -274,12 +242,12 @@ static bool isValidOption(const QString &option)
 static QString validateDiagnosticOptions(const QStringList &options)
 {
     // This is handy for testing, allow disabling validation.
-    if (Utils::qtcEnvironmentVariableIntValue("QTC_CLANG_NO_DIAGNOSTIC_CHECK"))
+    if (qEnvironmentVariableIntValue("QTC_CLANG_NO_DIAGNOSTIC_CHECK"))
         return QString();
 
     for (const QString &option : options) {
         if (!isValidOption(option))
-            return Tr::tr("Option \"%1\" is invalid.").arg(option);
+            return ClangDiagnosticConfigsWidget::tr("Option \"%1\" is invalid.").arg(option);
     }
 
     return QString();
@@ -319,16 +287,16 @@ void ClangDiagnosticConfigsWidget::onClangOnlyOptionsChanged()
 
 void ClangDiagnosticConfigsWidget::sync()
 {
-    if (!m_configsView->currentIndex().isValid())
+    if (!m_ui->configsView->currentIndex().isValid())
         return;
 
     disconnectClangOnlyOptionsChanged();
-    const QScopeGuard cleanup([this] { connectClangOnlyOptionsChanged(); });
+    Utils::ExecuteOnDestruction e([this]() { connectClangOnlyOptionsChanged(); });
 
     // Update main button row
     const ClangDiagnosticConfig &config = currentConfig();
-    m_removeButton->setEnabled(!config.isReadOnly());
-    m_renameButton->setEnabled(!config.isReadOnly());
+    m_ui->removeButton->setEnabled(!config.isReadOnly());
+    m_ui->renameButton->setEnabled(!config.isReadOnly());
 
     // Update check box
     m_clangBaseChecks->useFlagsFromBuildSystemCheckBox->setChecked(config.useBuildSystemWarnings());
@@ -338,12 +306,12 @@ void ClangDiagnosticConfigsWidget::sync()
             ? m_notAcceptedOptions.value(config.id())
             : config.clangOptions().join(QLatin1Char(' '));
     setDiagnosticOptions(options);
-    m_clangBaseChecks->setEnabled(!config.isReadOnly());
+    m_clangBaseChecksWidget->setEnabled(!config.isReadOnly());
 
     if (config.isReadOnly()) {
-        m_infoLabel->setType(InfoLabel::Information);
-        m_infoLabel->setText(Tr::tr("Copy this configuration to customize it."));
-        m_infoLabel->setFilled(false);
+        m_ui->infoLabel->setType(Utils::InfoLabel::Information);
+        m_ui->infoLabel->setText(tr("Copy this configuration to customize it."));
+        m_ui->infoLabel->setFilled(false);
     }
 
     syncExtraWidgets(config);
@@ -367,13 +335,13 @@ void ClangDiagnosticConfigsWidget::setDiagnosticOptions(const QString &options)
 void ClangDiagnosticConfigsWidget::updateValidityWidgets(const QString &errorMessage)
 {
     if (errorMessage.isEmpty()) {
-        m_infoLabel->setType(InfoLabel::Information);
-        m_infoLabel->setText(Tr::tr("Configuration passes sanity checks."));
-        m_infoLabel->setFilled(false);
+        m_ui->infoLabel->setType(Utils::InfoLabel::Information);
+        m_ui->infoLabel->setText(tr("Configuration passes sanity checks."));
+        m_ui->infoLabel->setFilled(false);
     } else {
-        m_infoLabel->setType(InfoLabel::Error);
-        m_infoLabel->setText(errorMessage);
-        m_infoLabel->setFilled(true);
+        m_ui->infoLabel->setType(Utils::InfoLabel::Error);
+        m_ui->infoLabel->setText(tr("%1").arg(errorMessage));
+        m_ui->infoLabel->setFilled(true);
     }
 }
 
@@ -391,7 +359,8 @@ void ClangDiagnosticConfigsWidget::connectClangOnlyOptionsChanged()
 
 void ClangDiagnosticConfigsWidget::disconnectClangOnlyOptionsChanged()
 {
-    disconnect(m_clangBaseChecks->useFlagsFromBuildSystemCheckBox, &QCheckBox::stateChanged,
+    disconnect(m_clangBaseChecks->useFlagsFromBuildSystemCheckBox,
+               &QCheckBox::stateChanged,
                this,
                &ClangDiagnosticConfigsWidget::onClangOnlyOptionsChanged);
     disconnect(m_clangBaseChecks->diagnosticOptionsTextEdit->document(),
@@ -407,7 +376,9 @@ ClangDiagnosticConfigs ClangDiagnosticConfigsWidget::configs() const
 
 QTabWidget *ClangDiagnosticConfigsWidget::tabWidget() const
 {
-    return m_tabWidget;
+    return m_ui->tabWidget;
 }
 
-} // CppEditor
+} // CppEditor namespace
+
+#include "clangdiagnosticconfigswidget.moc"

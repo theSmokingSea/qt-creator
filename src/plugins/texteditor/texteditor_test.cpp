@@ -1,16 +1,46 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #ifdef WITH_TESTS
 
-#include "tabsettings.h"
-
-#include <QTextDocument>
+#include <QGuiApplication>
+#include <QClipboard>
+#include <QString>
 #include <QtTest/QtTest>
 
-namespace TextEditor::Internal {
+#include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/coreconstants.h>
 
-static QString tabPolicyToString(TabSettings::TabPolicy policy)
+#include "texteditor.h"
+#include "texteditorplugin.h"
+#include "textdocument.h"
+#include "tabsettings.h"
+
+using namespace TextEditor;
+
+QString tabPolicyToString(TabSettings::TabPolicy policy)
 {
     switch (policy) {
     case TabSettings::SpacesOnlyTabPolicy:
@@ -23,7 +53,7 @@ static QString tabPolicyToString(TabSettings::TabPolicy policy)
     return QString();
 }
 
-static QString continuationAlignBehaviorToString(TabSettings::ContinuationAlignBehavior behavior)
+QString continuationAlignBehaviorToString(TabSettings::ContinuationAlignBehavior behavior)
 {
     switch (behavior) {
     case TabSettings::NoContinuationAlign:
@@ -36,15 +66,13 @@ static QString continuationAlignBehaviorToString(TabSettings::ContinuationAlignB
     return QString();
 }
 
-struct TabSettingsFlags
-{
+struct TabSettingsFlags{
     TabSettings::TabPolicy policy;
     TabSettings::ContinuationAlignBehavior behavior;
 };
 
 using IsClean = std::function<bool (TabSettingsFlags)>;
-
-static void generateTestRows(const QLatin1String &name, const QString &text, IsClean isClean)
+void generateTestRows(const QLatin1String &name, const QString &text, IsClean isClean)
 {
     const QVector<TabSettings::TabPolicy> allPolicies = {
         TabSettings::SpacesOnlyTabPolicy,
@@ -75,16 +103,7 @@ static void generateTestRows(const QLatin1String &name, const QString &text, IsC
     }
 }
 
-class TextEditorTest final : public QObject
-{
-    Q_OBJECT
-
-private slots:
-    void testIndentationClean_data();
-    void testIndentationClean();
-};
-
-void TextEditorTest::testIndentationClean_data()
+void Internal::TextEditorPlugin::testIndentationClean_data()
 {
     QTest::addColumn<TabSettings::TabPolicy>("policy");
     QTest::addColumn<TabSettings::ContinuationAlignBehavior>("behavior");
@@ -136,7 +155,7 @@ void TextEditorTest::testIndentationClean_data()
     });
 }
 
-void TextEditorTest::testIndentationClean()
+void Internal::TextEditorPlugin::testIndentationClean()
 {
     // fetch test data
     QFETCH(TabSettings::TabPolicy, policy);
@@ -152,13 +171,4 @@ void TextEditorTest::testIndentationClean()
     QCOMPARE(settings.isIndentationClean(block, indentSize), clean);
 }
 
-QObject *createTextEditorTest()
-{
-    return new TextEditorTest;
-}
-
-} // TextEditor::Internal
-
-#include "texteditor_test.moc"
-
-#endif // WITH_TESTS
+#endif // ifdef WITH_TESTS

@@ -1,15 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qtoutputformatter.h"
 
-#include "qtkitaspect.h"
+#include "qtkitinformation.h"
 #include "qtsupportconstants.h"
 #include "qttestparser.h"
 
 #include <coreplugin/editormanager/editormanager.h>
-
-#include <projectexplorer/runcontrol.h>
 #include <projectexplorer/project.h>
 #include <projectexplorer/target.h>
 
@@ -18,7 +38,6 @@
 #include <utils/fileinprojectfinder.h>
 #include <utils/hostosinfo.h>
 #include <utils/outputformatter.h>
-#include <utils/stylehelper.h>
 #include <utils/theme/theme.h>
 
 #include <QPlainTextEdit>
@@ -32,7 +51,8 @@
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace QtSupport::Internal {
+namespace QtSupport {
+namespace Internal {
 
 class QtOutputFormatterPrivate
 {
@@ -67,17 +87,17 @@ public:
     ~QtOutputLineParser() override;
 
 protected:
-    virtual void openEditor(const FilePath &filePath, int line, int column = -1);
+    virtual void openEditor(const QString &fileName, int line, int column = -1);
 
 private:
-    Result handleLine(const QString &text, OutputFormat format) override;
+    Result handleLine(const QString &text, Utils::OutputFormat format) override;
     bool handleLink(const QString &href) override;
 
     void updateProjectFileList();
     LinkSpec matchLine(const QString &line) const;
 
     QtOutputFormatterPrivate *d;
-    friend class QtOutputFormatterTest; // for testing
+    friend class QtSupportPlugin; // for testing
 };
 
 QtOutputLineParser::QtOutputLineParser(Target *target)
@@ -150,7 +170,7 @@ bool QtOutputLineParser::handleLink(const QString &href)
     const QRegularExpressionMatch qmlLineColumnMatch = qmlLineColumnLink.match(href);
 
     const auto getFileToOpen = [this](const QUrl &fileUrl) {
-        return chooseFileFromList(d->projectFinder.findFile(fileUrl));
+        return chooseFileFromList(d->projectFinder.findFile(fileUrl)).toString();
     };
     if (qmlLineColumnMatch.hasMatch()) {
         const QUrl fileUrl = QUrl(qmlLineColumnMatch.captured(1));
@@ -200,16 +220,16 @@ bool QtOutputLineParser::handleLink(const QString &href)
     }
 
     if (!fileName.isEmpty()) {
-        const FilePath filePath = getFileToOpen(QUrl::fromLocalFile(fileName));
-        openEditor(filePath, line);
+        fileName = getFileToOpen(QUrl::fromLocalFile(fileName));
+        openEditor(fileName, line);
         return true;
     }
     return false;
 }
 
-void QtOutputLineParser::openEditor(const FilePath &filePath, int line, int column)
+void QtOutputLineParser::openEditor(const QString &fileName, int line, int column)
 {
-    Core::EditorManager::openEditorAt({filePath, line, column});
+    Core::EditorManager::openEditorAt({FilePath::fromString(fileName), line, column});
 }
 
 void QtOutputLineParser::updateProjectFileList()
@@ -218,30 +238,33 @@ void QtOutputLineParser::updateProjectFileList()
         d->projectFinder.setProjectFiles(d->project->files(Project::SourceFiles));
 }
 
-void setupQtOutputFormatter()
+// QtOutputFormatterFactory
+
+QtOutputFormatterFactory::QtOutputFormatterFactory()
 {
-    addOutputParserFactory([](Target *t) -> OutputLineParser * {
+    setFormatterCreator([](Target *t) -> QList<OutputLineParser *> {
         if (QtKitAspect::qtVersion(t ? t->kit() : nullptr))
-            return new QtTestParser;
-        return nullptr;
-    });
-    addOutputParserFactory([](Target *t) -> OutputLineParser * {
-        if (QtKitAspect::qtVersion(t ? t->kit() : nullptr))
-            return new QtOutputLineParser(t);
-        return nullptr;
+            return {new QtTestParser, new QtOutputLineParser(t)};
+        return {};
     });
 }
 
-} // QtSupport::Internal
+} // namespace Internal
+} // namespace QtSupport
 
+// Unit tests:
 
 #ifdef WITH_TESTS
 
-#include <QTest>
+#   include <QTest>
+
+#   include "qtsupportplugin.h"
 
 Q_DECLARE_METATYPE(QTextCharFormat)
 
-namespace QtSupport::Internal {
+namespace QtSupport {
+
+using namespace QtSupport::Internal;
 
 class TestQtOutputLineParser : public QtOutputLineParser
 {
@@ -251,9 +274,9 @@ public:
     {
     }
 
-    void openEditor(const FilePath &filePath, int line, int column = -1) override
+    void openEditor(const QString &fileName, int line, int column = -1)
     {
-        this->fileName = filePath.toString();
+        this->fileName = fileName;
         this->line = line;
         this->column = column;
     }
@@ -270,19 +293,7 @@ public:
     TestQtOutputFormatter() { setLineParsers({new TestQtOutputLineParser}); }
 };
 
-class QtOutputFormatterTest final : public QObject
-{
-    Q_OBJECT
-
-private slots:
-    void testQtOutputFormatter_data();
-    void testQtOutputFormatter();
-    void testQtOutputFormatter_appendMessage_data();
-    void testQtOutputFormatter_appendMessage();
-    void testQtOutputFormatter_appendMixedAssertAndAnsi();
-};
-
-void QtOutputFormatterTest::testQtOutputFormatter_data()
+void QtSupportPlugin::testQtOutputFormatter_data()
 {
     QTest::addColumn<QString>("input");
 
@@ -392,7 +403,7 @@ void QtOutputFormatterTest::testQtOutputFormatter_data()
     }
 }
 
-void QtOutputFormatterTest::testQtOutputFormatter()
+void QtSupportPlugin::testQtOutputFormatter()
 {
     QFETCH(QString, input);
 
@@ -425,16 +436,6 @@ static QTextCharFormat blueFormat()
     return result;
 }
 
-static QTextCharFormat tweakedBlueFormat()
-{
-    // foreground gets tweaked when passing doAppendMessage()
-    QTextCharFormat tweakedBlue = blueFormat();
-    QColor foreground = tweakedBlue.foreground().color();
-    foreground = StyleHelper::ensureReadableOn(tweakedBlue.background().color(), foreground);
-    tweakedBlue.setForeground(foreground);
-    return tweakedBlue;
-}
-
 static QTextCharFormat greenFormat()
 {
     QTextCharFormat result;
@@ -442,7 +443,7 @@ static QTextCharFormat greenFormat()
     return result;
 }
 
-void QtOutputFormatterTest::testQtOutputFormatter_appendMessage_data()
+void QtSupportPlugin::testQtOutputFormatter_appendMessage_data()
 {
     QTest::addColumn<QString>("inputText");
     QTest::addColumn<QString>("outputText");
@@ -463,15 +464,15 @@ void QtOutputFormatterTest::testQtOutputFormatter_appendMessage_data()
             << "blue da ba dee"
             << "blue da ba dee"
             << blueFormat()
-            << tweakedBlueFormat();
+            << blueFormat();
     QTest::newRow("ANSI color change")
             << "\x1b[38;2;0;0;127mHello"
             << "Hello"
             << QTextCharFormat()
-            << tweakedBlueFormat();
+            << blueFormat();
 }
 
-void QtOutputFormatterTest::testQtOutputFormatter_appendMessage()
+void QtSupportPlugin::testQtOutputFormatter_appendMessage()
 {
     QPlainTextEdit edit;
     TestQtOutputFormatter formatter;
@@ -493,7 +494,7 @@ void QtOutputFormatterTest::testQtOutputFormatter_appendMessage()
     QCOMPARE(edit.currentCharFormat(), outputFormat);
 }
 
-void QtOutputFormatterTest::testQtOutputFormatter_appendMixedAssertAndAnsi()
+void QtSupportPlugin::testQtOutputFormatter_appendMixedAssertAndAnsi()
 {
     QPlainTextEdit edit;
 
@@ -523,16 +524,9 @@ void QtOutputFormatterTest::testQtOutputFormatter_appendMixedAssertAndAnsi()
              OutputFormatter::linkFormat(QTextCharFormat(), "file://test.cpp:123"));
 
     edit.moveCursor(QTextCursor::End);
-    QCOMPARE(edit.currentCharFormat(), tweakedBlueFormat());
+    QCOMPARE(edit.currentCharFormat(), blueFormat());
 }
 
-QObject *createQtOutputFormatterTest()
-{
-    return new QtOutputFormatterTest;
-}
-
-} // QtSupport::Internal
-
-#include "qtoutputformatter.moc"
+} // namespace QtSupport
 
 #endif // WITH_TESTS

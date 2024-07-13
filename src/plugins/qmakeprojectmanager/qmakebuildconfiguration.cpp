@@ -1,18 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmakebuildconfiguration.h"
 
-#include "makefileparse.h"
-#include "qmakebuildconfiguration.h"
 #include "qmakebuildinfo.h"
-#include "qmakekitaspect.h"
-#include "qmakenodes.h"
+#include "qmakekitinformation.h"
 #include "qmakeproject.h"
 #include "qmakeprojectmanagerconstants.h"
-#include "qmakeprojectmanagertr.h"
+#include "qmakenodes.h"
 #include "qmakesettings.h"
 #include "qmakestep.h"
+#include "makefileparse.h"
+#include "qmakebuildconfiguration.h"
 
 // #include <android/androidconstants.h>
 
@@ -26,19 +47,17 @@
 #include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/kit.h>
 #include <projectexplorer/makestep.h>
+#include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/projectexplorertr.h>
-#include <projectexplorer/runconfiguration.h>
 #include <projectexplorer/target.h>
 #include <projectexplorer/toolchain.h>
 
 #include <qtsupport/qtbuildaspects.h>
-#include <qtsupport/qtkitaspect.h>
+#include <qtsupport/qtkitinformation.h>
 #include <qtsupport/qtversionmanager.h>
 
-#include <utils/qtcprocess.h>
-#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 
 #include <QDebug>
 #include <QInputDialog>
@@ -53,12 +72,23 @@ using namespace QmakeProjectManager::Internal;
 
 namespace QmakeProjectManager {
 
+class RunSystemAspect : public TriStateAspect
+{
+    Q_OBJECT
+public:
+    RunSystemAspect() : TriStateAspect(tr("Run"), tr("Ignore"), tr("Use global setting"))
+    {
+        setSettingsKey("RunSystemFunction");
+        setDisplayName(tr("qmake system() behavior when parsing:"));
+    }
+};
+
 QmakeExtraBuildInfo::QmakeExtraBuildInfo()
 {
-    const BuildPropertiesSettings &settings = buildPropertiesSettings();
-    config.separateDebugInfo = settings.separateDebugInfo();
-    config.linkQmlDebuggingQQ2 = settings.qmlDebugging();
-    config.useQtQuickCompiler = settings.qtQuickCompiler();
+    const BuildPropertiesSettings &settings = ProjectExplorerPlugin::buildPropertiesSettings();
+    config.separateDebugInfo = settings.separateDebugInfo.value();
+    config.linkQmlDebuggingQQ2 = settings.qmlDebugging.value();
+    config.useQtQuickCompiler = settings.qtQuickCompiler.value();
 }
 
 // --------------------------------------------------------------------
@@ -73,16 +103,16 @@ FilePath QmakeBuildConfiguration::shadowBuildDirectory(const FilePath &proFilePa
         return {};
 
     const QString projectName = proFilePath.completeBaseName();
-    return buildDirectoryFromTemplate(proFilePath.absolutePath(), proFilePath,
+    return buildDirectoryFromTemplate(Project::projectDirectory(proFilePath), proFilePath,
                                       projectName, k, suffix, buildType, "qmake");
 }
 
 const char BUILD_CONFIGURATION_KEY[] = "Qt4ProjectManager.Qt4BuildConfiguration.BuildConfiguration";
 
-QmakeBuildConfiguration::QmakeBuildConfiguration(Target *target, Id id)
+QmakeBuildConfiguration::QmakeBuildConfiguration(Target *target, Utils::Id id)
     : BuildConfiguration(target, id)
 {
-    setConfigWidgetDisplayName(Tr::tr("General"));
+    setConfigWidgetDisplayName(tr("General"));
     setConfigWidgetHasFrame(true);
 
     m_buildSystem = new QmakeBuildSystem(this);
@@ -92,7 +122,7 @@ QmakeBuildConfiguration::QmakeBuildConfiguration(Target *target, Id id)
     appendInitialCleanStep(Constants::MAKESTEP_BS_ID);
 
     setInitializer([this, target](const BuildInfo &info) {
-        QMakeStep *qmakeStep = buildSteps()->firstOfType<QMakeStep>();
+        auto qmakeStep = buildSteps()->firstOfType<QMakeStep>();
         QTC_ASSERT(qmakeStep, return);
 
         const QmakeExtraBuildInfo qmakeExtra = info.extraInfo.value<QmakeExtraBuildInfo>();
@@ -106,11 +136,11 @@ QmakeBuildConfiguration::QmakeBuildConfiguration(Target *target, Id id)
 
         QString additionalArguments = qmakeExtra.additionalArguments;
         if (!additionalArguments.isEmpty())
-            qmakeStep->userArguments.setArguments(additionalArguments);
+            qmakeStep->setUserArguments(additionalArguments);
 
-        separateDebugInfo.setValue(qmakeExtra.config.separateDebugInfo);
-        qmlDebugging.setValue(qmakeExtra.config.linkQmlDebuggingQQ2);
-        useQtQuickCompiler.setValue(qmakeExtra.config.useQtQuickCompiler);
+        aspect<SeparateDebugInfoAspect>()->setValue(qmakeExtra.config.separateDebugInfo);
+        aspect<QmlDebuggingAspect>()->setValue(qmakeExtra.config.linkQmlDebuggingQQ2);
+        aspect<QtQuickCompilerAspect>()->setValue(qmakeExtra.config.useQtQuickCompiler);
 
         setQMakeBuildConfiguration(config);
 
@@ -143,44 +173,37 @@ QmakeBuildConfiguration::QmakeBuildConfiguration(Target *target, Id id)
     });
 
     buildDirectoryAspect()->allowInSourceBuilds(target->project()->projectDirectory());
-    connect(this, &BuildConfiguration::buildDirectoryInitialized,
-            this, &QmakeBuildConfiguration::updateProblemLabel);
     connect(this, &BuildConfiguration::buildDirectoryChanged,
             this, &QmakeBuildConfiguration::updateProblemLabel);
     connect(this, &QmakeBuildConfiguration::qmakeBuildConfigurationChanged,
             this, &QmakeBuildConfiguration::updateProblemLabel);
-    connect(&settings(), &AspectContainer::changed,
+    connect(&QmakeSettings::instance(), &QmakeSettings::settingsChanged,
             this, &QmakeBuildConfiguration::updateProblemLabel);
     connect(target, &Target::parsingFinished, this, &QmakeBuildConfiguration::updateProblemLabel);
     connect(target, &Target::kitChanged, this, &QmakeBuildConfiguration::updateProblemLabel);
 
-    connect(&separateDebugInfo, &BaseAspect::changed, this, [this] {
+    const auto separateDebugInfoAspect = addAspect<SeparateDebugInfoAspect>();
+    connect(separateDebugInfoAspect, &SeparateDebugInfoAspect::changed, this, [this] {
         emit separateDebugInfoChanged();
         emit qmakeBuildConfigurationChanged();
         qmakeBuildSystem()->scheduleUpdateAllNowOrLater();
     });
 
-    qmlDebugging.setBuildConfiguration(this);
-    connect(&qmlDebugging, &BaseAspect::changed, this, [this] {
+    const auto qmlDebuggingAspect = addAspect<QmlDebuggingAspect>(this);
+    connect(qmlDebuggingAspect, &QmlDebuggingAspect::changed, this, [this] {
         emit qmlDebuggingChanged();
         emit qmakeBuildConfigurationChanged();
         qmakeBuildSystem()->scheduleUpdateAllNowOrLater();
     });
 
-    useQtQuickCompiler.setBuildConfiguration(this);
-    connect(&useQtQuickCompiler, &QtQuickCompilerAspect::changed, this, [this] {
+    const auto qtQuickCompilerAspect = addAspect<QtQuickCompilerAspect>(this);
+    connect(qtQuickCompilerAspect, &QtQuickCompilerAspect::changed, this, [this] {
         emit useQtQuickCompilerChanged();
         emit qmakeBuildConfigurationChanged();
         qmakeBuildSystem()->scheduleUpdateAllNowOrLater();
     });
 
-    runSystemFunctions.setSettingsKey("RunSystemFunction");
-    runSystemFunctions.setDisplayStyle(SelectionAspect::DisplayStyle::ComboBox);
-    runSystemFunctions.setDisplayName(Tr::tr("qmake system() behavior when parsing:"));
-    runSystemFunctions.addOption(Tr::tr("Run"));
-    runSystemFunctions.addOption(Tr::tr("Ignore"));
-    runSystemFunctions.addOption(Tr::tr("Use global setting"));
-    runSystemFunctions.setDefaultValue(2);
+    addAspect<RunSystemAspect>();
 }
 
 QmakeBuildConfiguration::~QmakeBuildConfiguration()
@@ -188,21 +211,22 @@ QmakeBuildConfiguration::~QmakeBuildConfiguration()
     delete m_buildSystem;
 }
 
-void QmakeBuildConfiguration::toMap(Store &map) const
+QVariantMap QmakeBuildConfiguration::toMap() const
 {
-    BuildConfiguration::toMap(map);
-    map.insert(BUILD_CONFIGURATION_KEY, int(m_qmakeBuildConfiguration));
+    QVariantMap map(BuildConfiguration::toMap());
+    map.insert(QLatin1String(BUILD_CONFIGURATION_KEY), int(m_qmakeBuildConfiguration));
+    return map;
 }
 
-void QmakeBuildConfiguration::fromMap(const Store &map)
+bool QmakeBuildConfiguration::fromMap(const QVariantMap &map)
 {
-    BuildConfiguration::fromMap(map);
-    if (hasError())
-        return;
+    if (!BuildConfiguration::fromMap(map))
+        return false;
 
-    m_qmakeBuildConfiguration = QtVersion::QmakeBuildConfigs(map.value(BUILD_CONFIGURATION_KEY).toInt());
+    m_qmakeBuildConfiguration = QtVersion::QmakeBuildConfigs(map.value(QLatin1String(BUILD_CONFIGURATION_KEY)).toInt());
 
     m_lastKitState = LastKitState(kit());
+    return true;
 }
 
 void QmakeBuildConfiguration::kitChanged()
@@ -220,12 +244,13 @@ void QmakeBuildConfiguration::kitChanged()
 void QmakeBuildConfiguration::updateProblemLabel()
 {
     ProjectExplorer::Kit * const k = kit();
+    const QString proFileName = project()->projectFilePath().toString();
 
     // Check for Qt version:
     QtSupport::QtVersion *version = QtSupport::QtKitAspect::qtVersion(k);
     if (!version) {
-        buildDirectoryAspect()->setProblem(Tr::tr("This kit cannot build this project since it "
-                                                  "does not define a Qt version."));
+        buildDirectoryAspect()->setProblem(tr("This kit cannot build this project since it "
+                                              "does not define a Qt version."));
         return;
     }
 
@@ -260,25 +285,27 @@ void QmakeBuildConfiguration::updateProblemLabel()
         }
     }
 
-    const bool unalignedBuildDir = settings().warnAgainstUnalignedBuildDir()
+    const bool unalignedBuildDir = QmakeSettings::warnAgainstUnalignedBuildDir()
             && !isBuildDirAtSafeLocation();
     if (unalignedBuildDir)
         allGood = false;
 
     if (allGood) {
-        const Tasks issues = Utils::sorted(
-            version->reportIssues(project()->projectFilePath(), buildDirectory()));
+        Tasks issues;
+        issues = version->reportIssues(proFileName, buildDirectory().toString());
+        Utils::sort(issues);
+
         if (!issues.isEmpty()) {
             QString text = QLatin1String("<nobr>");
-            for (const ProjectExplorer::Task &task : issues) {
+            foreach (const ProjectExplorer::Task &task, issues) {
                 QString type;
                 switch (task.type) {
                 case ProjectExplorer::Task::Error:
-                    type = Tr::tr("Error:");
+                    type = tr("Error:");
                     type += QLatin1Char(' ');
                     break;
                 case ProjectExplorer::Task::Warning:
-                    type = Tr::tr("Warning:");
+                    type = tr("Warning:");
                     type += QLatin1Char(' ');
                     break;
                 case ProjectExplorer::Task::Unknown:
@@ -293,12 +320,12 @@ void QmakeBuildConfiguration::updateProblemLabel()
             return;
         }
     } else if (targetMismatch) {
-        buildDirectoryAspect()->setProblem(Tr::tr("The build directory contains a build for "
-                                                  "a different project, which will be overwritten."));
+        buildDirectoryAspect()->setProblem(tr("The build directory contains a build for "
+                                              "a different project, which will be overwritten."));
         return;
     } else if (incompatibleBuild) {
-        buildDirectoryAspect()->setProblem(Tr::tr("%1 The build will be overwritten.",
-                                                  "%1 error message")
+        buildDirectoryAspect()->setProblem(tr("%1 The build will be overwritten.",
+                                              "%1 error message")
                                            .arg(errorString));
         return;
     } else if (unalignedBuildDir) {
@@ -366,44 +393,61 @@ void QmakeBuildConfiguration::setQMakeBuildConfiguration(QtVersion::QmakeBuildCo
 
 QString QmakeBuildConfiguration::unalignedBuildDirWarning()
 {
-    return Tr::tr("The build directory should be at the same level as the source directory.");
+    return tr("The build directory should be at the same level as the source directory.");
 }
 
-bool QmakeBuildConfiguration::isBuildDirAtSafeLocation(const FilePath &sourceDir,
-                                                       const FilePath &buildDir)
+bool QmakeBuildConfiguration::isBuildDirAtSafeLocation(const QString &sourceDir,
+                                                       const QString &buildDir)
 {
-    return buildDir.path().count('/') == sourceDir.path().count('/')
-           || buildDir.isChildOf(sourceDir);
+    return buildDir.count('/') == sourceDir.count('/');
 }
 
 bool QmakeBuildConfiguration::isBuildDirAtSafeLocation() const
 {
-    return isBuildDirAtSafeLocation(project()->projectDirectory(), buildDirectory());
+    return isBuildDirAtSafeLocation(project()->projectDirectory().toString(),
+                                    buildDirectory().toString());
+}
+
+TriState QmakeBuildConfiguration::separateDebugInfo() const
+{
+    return aspect<SeparateDebugInfoAspect>()->value();
 }
 
 void QmakeBuildConfiguration::forceSeparateDebugInfo(bool sepDebugInfo)
 {
-    separateDebugInfo.setValue(sepDebugInfo ? TriState::Enabled : TriState::Disabled);
+    aspect<SeparateDebugInfoAspect>()->setValue(sepDebugInfo
+                                                ? TriState::Enabled
+                                                : TriState::Disabled);
+}
+
+TriState QmakeBuildConfiguration::qmlDebugging() const
+{
+    return aspect<QmlDebuggingAspect>()->value();
 }
 
 void QmakeBuildConfiguration::forceQmlDebugging(bool enable)
 {
-    qmlDebugging.setValue(enable ? TriState::Enabled : TriState::Disabled);
+    aspect<QmlDebuggingAspect>()->setValue(enable ? TriState::Enabled : TriState::Disabled);
+}
+
+TriState QmakeBuildConfiguration::useQtQuickCompiler() const
+{
+    return aspect<QtQuickCompilerAspect>()->value();
 }
 
 void QmakeBuildConfiguration::forceQtQuickCompiler(bool enable)
 {
-    useQtQuickCompiler.setValue(enable ? TriState::Enabled : TriState::Disabled);
+    aspect<QtQuickCompilerAspect>()->setValue(enable ? TriState::Enabled : TriState::Disabled);
 }
 
-bool QmakeBuildConfiguration::runQmakeSystemFunctions() const
+bool QmakeBuildConfiguration::runSystemFunction() const
 {
-    const int sel = runSystemFunctions();
-    if (sel == 0)
+    const TriState runSystem = aspect<RunSystemAspect>()->value();
+    if (runSystem == TriState::Enabled)
         return true;
-    if (sel == 1)
+    if (runSystem == TriState::Disabled)
         return false;
-    return settings().runSystemFunction();
+    return QmakeSettings::runSystemFunction();
 }
 
 QStringList QmakeBuildConfiguration::configCommandLineArguments() const
@@ -466,7 +510,7 @@ QmakeBuildConfiguration::MakefileState QmakeBuildConfiguration::compareToImportF
     if (parse.makeFileState() == MakeFileParse::CouldNotParse) {
         qCDebug(logs) << "**Makefile incompatible";
         if (errorString)
-            *errorString = Tr::tr("Could not parse Makefile.");
+            *errorString = tr("Could not parse Makefile.");
         return MakefileIncompatible;
     }
 
@@ -487,13 +531,11 @@ QmakeBuildConfiguration::MakefileState QmakeBuildConfiguration::compareToImportF
         qCDebug(logs) << "**Different profile used to generate the Makefile:"
                       << parse.srcProFile() << " expected profile:" << projectPath;
         if (errorString)
-            *errorString = Tr::tr("The Makefile is for a different project.");
+            *errorString = tr("The Makefile is for a different project.");
         return MakefileIncompatible;
     }
 
-    if (version->qmakeFilePath() != parse.qmakePath()
-        && (parse.qtConfPath().isEmpty() // QTCREATORBUG-30354
-            || version->qmakeFilePath().parentDir() != parse.qtConfPath().parentDir())) {
+    if (version->qmakeFilePath() != parse.qmakePath()) {
         qCDebug(logs) << "**Different Qt versions, buildconfiguration:" << version->qmakeFilePath()
                       << " Makefile:" << parse.qmakePath();
         return MakefileForWrongProject;
@@ -505,7 +547,7 @@ QmakeBuildConfiguration::MakefileState QmakeBuildConfiguration::compareToImportF
         qCDebug(logs) << "**Different qmake buildconfigurations buildconfiguration:"
                       << qmakeBuildConfiguration() << " Makefile:" << buildConfig;
         if (errorString)
-            *errorString = Tr::tr("The build type has changed.");
+            *errorString = tr("The build type has changed.");
         return MakefileIncompatible;
     }
 
@@ -554,14 +596,14 @@ QmakeBuildConfiguration::MakefileState QmakeBuildConfiguration::compareToImportF
     if (actualArgs != parsedArgs) {
         qCDebug(logs) << "**Mismatched args";
         if (errorString)
-            *errorString = Tr::tr("The qmake arguments have changed.");
+            *errorString = tr("The qmake arguments have changed.");
         return MakefileIncompatible;
     }
 
     if (parse.config() != qs->deducedArguments()) {
         qCDebug(logs) << "**Mismatched config";
         if (errorString)
-            *errorString = Tr::tr("The qmake arguments have changed.");
+            *errorString = tr("The qmake arguments have changed.");
         return MakefileIncompatible;
     }
 
@@ -580,7 +622,7 @@ QmakeBuildConfiguration::MakefileState QmakeBuildConfiguration::compareToImportF
 
     qCDebug(logs) << "**Incompatible specs";
     if (errorString)
-        *errorString = Tr::tr("The mkspec has changed.");
+        *errorString = tr("The mkspec has changed.");
     return MakefileIncompatible;
 }
 
@@ -621,29 +663,33 @@ QString QmakeBuildConfiguration::extractSpecFromArguments(QString *args,
     if (parsedSpec.isEmpty())
         return {};
 
-    const FilePath baseMkspecDir = version->hostDataPath().pathAppended("mkspecs")
-        .canonicalPath();
+    FilePath baseMkspecDir = FilePath::fromUserInput(version->hostDataPath().toString()
+                                                     + "/mkspecs");
+    baseMkspecDir = FilePath::fromString(baseMkspecDir.toFileInfo().canonicalFilePath());
 
     // if the path is relative it can be
     // relative to the working directory (as found in the Makefiles)
     // or relatively to the mkspec directory
     // if it is the former we need to get the canonical form
     // for the other one we don't need to do anything
-    if (parsedSpec.isRelativePath()) {
-        FilePath mkspecs = directory.pathAppended(parsedSpec.path());
-        if (mkspecs.exists())
-            parsedSpec = mkspecs;
+    if (parsedSpec.toFileInfo().isRelative()) {
+        if (QFileInfo::exists(directory.path() + QLatin1Char('/') + parsedSpec.toString()))
+            parsedSpec = FilePath::fromUserInput(directory.path() + QLatin1Char('/') + parsedSpec.toString());
         else
-            parsedSpec = baseMkspecDir.pathAppended(parsedSpec.path());
+            parsedSpec = FilePath::fromUserInput(baseMkspecDir.toString() + QLatin1Char('/') + parsedSpec.toString());
     }
 
-    for (int i = 0; i < 5 && parsedSpec.isSymLink(); ++i)
-        parsedSpec = parsedSpec.symLinkTarget();
+    QFileInfo f2 = parsedSpec.toFileInfo();
+    while (f2.isSymLink()) {
+        parsedSpec = FilePath::fromString(f2.symLinkTarget());
+        f2.setFile(parsedSpec.toString());
+    }
 
     if (parsedSpec.isChildOf(baseMkspecDir)) {
         parsedSpec = parsedSpec.relativeChildPath(baseMkspecDir);
     } else {
-        FilePath sourceMkSpecPath = version->sourcePath().pathAppended("mkspecs");
+        FilePath sourceMkSpecPath = FilePath::fromString(version->sourcePath().toString()
+                                                         + QLatin1String("/mkspecs"));
         if (parsedSpec.isChildOf(sourceMkSpecPath))
             parsedSpec = parsedSpec.relativeChildPath(sourceMkSpecPath);
     }
@@ -657,7 +703,7 @@ QString QmakeBuildConfiguration::extractSpecFromArguments(QString *args,
 static BuildInfo createBuildInfo(const Kit *k, const FilePath &projectPath,
                  BuildConfiguration::BuildType type)
 {
-    const BuildPropertiesSettings &settings = buildPropertiesSettings();
+    const BuildPropertiesSettings &settings = ProjectExplorerPlugin::buildPropertiesSettings();
     QtVersion *version = QtKitAspect::qtVersion(k);
     QmakeExtraBuildInfo extraInfo;
     BuildInfo info;
@@ -665,33 +711,33 @@ static BuildInfo createBuildInfo(const Kit *k, const FilePath &projectPath,
 
     if (type == BuildConfiguration::Release) {
         //: The name of the release build configuration created by default for a qmake project.
-        info.displayName = ::ProjectExplorer::Tr::tr("Release");
+        info.displayName = BuildConfiguration::tr("Release");
         //: Non-ASCII characters in directory suffix may cause build issues.
-        suffix = Tr::tr("Release", "Shadow build directory suffix");
-        if (settings.qtQuickCompiler() == TriState::Default) {
+        suffix = QmakeBuildConfiguration::tr("Release", "Shadow build directory suffix");
+        if (settings.qtQuickCompiler.value() == TriState::Default) {
             if (version && version->isQtQuickCompilerSupported())
                 extraInfo.config.useQtQuickCompiler = TriState::Enabled;
         }
     } else {
         if (type == BuildConfiguration::Debug) {
             //: The name of the debug build configuration created by default for a qmake project.
-            info.displayName = ::ProjectExplorer::Tr::tr("Debug");
+            info.displayName = BuildConfiguration::tr("Debug");
             //: Non-ASCII characters in directory suffix may cause build issues.
-            suffix = Tr::tr("Debug", "Shadow build directory suffix");
+            suffix = QmakeBuildConfiguration::tr("Debug", "Shadow build directory suffix");
         } else if (type == BuildConfiguration::Profile) {
             //: The name of the profile build configuration created by default for a qmake project.
-            info.displayName = ::ProjectExplorer::Tr::tr("Profile");
+            info.displayName = BuildConfiguration::tr("Profile");
             //: Non-ASCII characters in directory suffix may cause build issues.
-            suffix = Tr::tr("Profile", "Shadow build directory suffix");
-            if (settings.separateDebugInfo() == TriState::Default)
+            suffix = QmakeBuildConfiguration::tr("Profile", "Shadow build directory suffix");
+            if (settings.separateDebugInfo.value() == TriState::Default)
                 extraInfo.config.separateDebugInfo = TriState::Enabled;
 
-            if (settings.qtQuickCompiler() == TriState::Default) {
+            if (settings.qtQuickCompiler.value() == TriState::Default) {
                 if (version && version->isQtQuickCompilerSupported())
                     extraInfo.config.useQtQuickCompiler = TriState::Enabled;
             }
         }
-        if (settings.qmlDebugging() == TriState::Default) {
+        if (settings.qmlDebugging.value() == TriState::Default) {
             if (version && version->isQmlDebuggingSupported())
                 extraInfo.config.linkQmlDebuggingQQ2 = TriState::Enabled;
         }
@@ -722,15 +768,15 @@ QmakeBuildConfigurationFactory::QmakeBuildConfigurationFactory()
 {
     registerBuildConfiguration<QmakeBuildConfiguration>(Constants::QMAKE_BC_ID);
     setSupportedProjectType(Constants::QMAKEPROJECT_ID);
-    setSupportedProjectMimeTypeName(Utils::Constants::PROFILE_MIMETYPE);
-    setIssueReporter([](Kit *k, const FilePath &projectPath, const FilePath &buildDir) {
+    setSupportedProjectMimeTypeName(Constants::PROFILE_MIMETYPE);
+    setIssueReporter([](Kit *k, const QString &projectPath, const QString &buildDir) {
         QtSupport::QtVersion *version = QtSupport::QtKitAspect::qtVersion(k);
         Tasks issues;
         if (version)
             issues << version->reportIssues(projectPath, buildDir);
-        if (settings().warnAgainstUnalignedBuildDir()
+        if (QmakeSettings::warnAgainstUnalignedBuildDir()
                 && !QmakeBuildConfiguration::isBuildDirAtSafeLocation(
-                    projectPath.absolutePath(), buildDir.absoluteFilePath())) {
+                    QFileInfo(projectPath).absoluteDir().path(), QDir(buildDir).absolutePath())) {
             issues.append(BuildSystemTask(Task::Warning,
                                           QmakeBuildConfiguration::unalignedBuildDirWarning()));
         }
@@ -756,7 +802,7 @@ QmakeBuildConfigurationFactory::QmakeBuildConfigurationFactory()
 
         addBuild(BuildConfiguration::Debug);
         addBuild(BuildConfiguration::Release);
-        if (qtVersion && qtVersion->qtVersion().majorVersion() > 4)
+        if (qtVersion && qtVersion->qtVersion().majorVersion > 4)
             addBuild(BuildConfiguration::Profile);
 
         return result;
@@ -784,7 +830,7 @@ QmakeBuildConfiguration::LastKitState::LastKitState(Kit *k)
       m_sysroot(SysRootKitAspect::sysRoot(k).toString()),
       m_mkspec(QmakeKitAspect::mkspec(k))
 {
-    Toolchain *tc = ToolchainKitAspect::cxxToolchain(k);
+    ToolChain *tc = ToolChainKitAspect::cxxToolChain(k);
     m_toolchain = tc ? tc->id() : QByteArray();
 }
 
@@ -833,3 +879,5 @@ void QmakeBuildConfiguration::restrictNextBuild(const RunConfiguration *rc)
 }
 
 } // namespace QmakeProjectManager
+
+#include <qmakebuildconfiguration.moc>

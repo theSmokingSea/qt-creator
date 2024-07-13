@@ -1,20 +1,43 @@
-// Copyright (C) 2016 Denis Mingulov
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Denis Mingulov
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "classviewnavigationwidgetfactory.h"
-
 #include "classviewnavigationwidget.h"
-#include "classviewtr.h"
+#include "classviewconstants.h"
 
-#include <coreplugin/inavigationwidgetfactory.h>
-
+#include <coreplugin/icore.h>
+#include <extensionsystem/pluginmanager.h>
 #include <utils/qtcassert.h>
-#include <utils/qtcsettings.h>
-#include <utils/store.h>
 
-using namespace Utils;
+#include <QKeySequence>
+#include <QSettings>
 
-namespace ClassView::Internal {
+namespace ClassView {
+namespace Internal {
+
+///////////////////////////////// NavigationWidgetFactory //////////////////////////////////
 
 /*!
     \class NavigationWidgetFactory
@@ -25,19 +48,9 @@ namespace ClassView::Internal {
     removing it from \c ExtensionSystem::PluginManager.
 */
 
-class NavigationWidgetFactory final : public Core::INavigationWidgetFactory
-{
-public:
-    NavigationWidgetFactory();
-
-    Core::NavigationView createWidget() final;
-    void saveSettings(Utils::QtcSettings *settings, int position, QWidget *widget) final;
-    void restoreSettings(Utils::QtcSettings *settings, int position, QWidget *widget) final;
-};
-
 NavigationWidgetFactory::NavigationWidgetFactory()
 {
-    setDisplayName(Tr::tr("Class View"));
+    setDisplayName(tr("Class View"));
     setPriority(500);
     setId("Class View");
 }
@@ -52,36 +65,34 @@ Core::NavigationView NavigationWidgetFactory::createWidget()
 /*!
    Returns a settings prefix for \a position.
 */
-static Key settingsPrefix(int position)
+static QString settingsPrefix(int position)
 {
-    return numberedKey("ClassView.Treewidget.", position) + ".FlatMode";
+    return QString::fromLatin1("ClassView.Treewidget.%1.FlatMode").arg(position);
 }
 
 //! Flat mode settings
 
-void NavigationWidgetFactory::saveSettings(QtcSettings *settings, int position, QWidget *widget)
+void NavigationWidgetFactory::saveSettings(Utils::QtcSettings *settings,
+                                           int position,
+                                           QWidget *widget)
 {
     auto pw = qobject_cast<NavigationWidget *>(widget);
     QTC_ASSERT(pw, return);
 
     // .beginGroup is not used - to prevent simultaneous access
-    Key settingsGroup = settingsPrefix(position);
+    QString settingsGroup = settingsPrefix(position);
     settings->setValue(settingsGroup, pw->flatMode());
 }
 
-void NavigationWidgetFactory::restoreSettings(QtcSettings *settings, int position, QWidget *widget)
+void NavigationWidgetFactory::restoreSettings(QSettings *settings, int position, QWidget *widget)
 {
     auto pw = qobject_cast<NavigationWidget *>(widget);
     QTC_ASSERT(pw, return);
 
     // .beginGroup is not used - to prevent simultaneous access
-    Key settingsGroup = settingsPrefix(position);
+    QString settingsGroup = settingsPrefix(position);
     pw->setFlatMode(settings->value(settingsGroup, false).toBool());
 }
 
-void setupClassViewNavigationWidgetFactory()
-{
-    static NavigationWidgetFactory theNavigationWidgetFactory;
-}
-
-} // ClassView::Internal
+} // namespace Internal
+} // namespace ClassView

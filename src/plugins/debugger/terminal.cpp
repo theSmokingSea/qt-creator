@@ -1,20 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "terminal.h"
-
-#include "debuggertr.h"
 
 #include <coreplugin/icore.h>
 
 #include <projectexplorer/runconfiguration.h>
-#include <projectexplorer/runconfigurationaspects.h>
 
-#include <utils/environment.h>
 #include <utils/hostosinfo.h>
-#include <utils/qtcprocess.h>
-#include <utils/processinterface.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 
 #include <QDebug>
 #include <QIODevice>
@@ -38,7 +55,14 @@ using namespace Core;
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
+
+static QString currentError()
+{
+    int err = errno;
+    return QString::fromLatin1(strerror(err));
+}
 
 Terminal::Terminal(QObject *parent)
    : QObject(parent)
@@ -48,22 +72,18 @@ Terminal::Terminal(QObject *parent)
 void Terminal::setup()
 {
 #ifdef DEBUGGER_USE_TERMINAL
-    const auto currentError = [] {
-        int err = errno;
-        return QString::fromLatin1(strerror(err));
-    };
-    if (!qtcEnvironmentVariableIsSet("QTC_USE_PTY"))
+    if (!qEnvironmentVariableIsSet("QTC_USE_PTY"))
         return;
 
     m_masterFd = ::open("/dev/ptmx", O_RDWR);
     if (m_masterFd < 0) {
-        error(Tr::tr("Terminal: Cannot open /dev/ptmx: %1").arg(currentError()));
+        error(tr("Terminal: Cannot open /dev/ptmx: %1").arg(currentError()));
         return;
     }
 
     const char *sName = ptsname(m_masterFd);
     if (!sName) {
-        error(Tr::tr("Terminal: ptsname failed: %1").arg(currentError()));
+        error(tr("Terminal: ptsname failed: %1").arg(currentError()));
         return;
     }
     m_slaveName = sName;
@@ -71,11 +91,11 @@ void Terminal::setup()
     struct stat s;
     int r = ::stat(m_slaveName.constData(), &s);
     if (r != 0) {
-        error(Tr::tr("Terminal: Error: %1").arg(currentError()));
+        error(tr("Terminal: Error: %1").arg(currentError()));
         return;
     }
     if (!S_ISCHR(s.st_mode)) {
-        error(Tr::tr("Terminal: Slave is no character device."));
+        error(tr("Terminal: Slave is no character device."));
         return;
     }
 
@@ -85,13 +105,13 @@ void Terminal::setup()
 
     r = grantpt(m_masterFd);
     if (r != 0) {
-        error(Tr::tr("Terminal: grantpt failed: %1").arg(currentError()));
+        error(tr("Terminal: grantpt failed: %1").arg(currentError()));
         return;
     }
 
     r = unlockpt(m_masterFd);
     if (r != 0) {
-        error(Tr::tr("Terminal: unlock failed: %1").arg(currentError()));
+        error(tr("Terminal: unlock failed: %1").arg(currentError()));
         return;
     }
 
@@ -138,7 +158,7 @@ void Terminal::onSlaveReaderActivated(int fd)
     ssize_t got = ::read(fd, buffer.data(), available);
     int err = errno;
     if (got < 0) {
-        error(Tr::tr("Terminal: Read failed: %1").arg(QString::fromLatin1(strerror(err))));
+        error(tr("Terminal: Read failed: %1").arg(QString::fromLatin1(strerror(err))));
         return;
     }
     buffer.resize(got);
@@ -150,7 +170,7 @@ void Terminal::onSlaveReaderActivated(int fd)
 }
 
 TerminalRunner::TerminalRunner(RunControl *runControl,
-                               const std::function<ProcessRunData()> &stubRunnable)
+                               const std::function<Runnable()> &stubRunnable)
     : RunWorker(runControl), m_stubRunnable(stubRunnable)
 {
     setId("TerminalRunner");
@@ -172,23 +192,15 @@ void TerminalRunner::start()
 {
     QTC_ASSERT(m_stubRunnable, reportFailure({}); return);
     QTC_ASSERT(!m_stubProc, reportFailure({}); return);
-    ProcessRunData stub = m_stubRunnable();
+    Runnable stub = m_stubRunnable();
 
-    bool runAsRoot = false;
-    if (auto runAsRootAspect = runControl()->aspectData<RunAsRootAspect>())
-        runAsRoot = runAsRootAspect->value;
+    m_stubProc = new QtcProcess(this);
+    m_stubProc->setTerminalMode(HostOsInfo::isWindowsHost()
+            ? TerminalMode::Suspend : TerminalMode::Debug);
 
-    m_stubProc = new Process(this);
-    m_stubProc->setTerminalMode(TerminalMode::Debug);
-
-    if (runAsRoot) {
-        m_stubProc->setRunAsRoot(runAsRoot);
-        RunControl::provideAskPassEntry(stub.environment);
-    }
-
-    connect(m_stubProc, &Process::started,
+    connect(m_stubProc, &QtcProcess::started,
             this, &TerminalRunner::stubStarted);
-    connect(m_stubProc, &Process::done,
+    connect(m_stubProc, &QtcProcess::done,
             this, &TerminalRunner::stubDone);
 
     m_stubProc->setEnvironment(stub.environment);
@@ -201,8 +213,11 @@ void TerminalRunner::start()
 
 void TerminalRunner::stop()
 {
-    if (m_stubProc && m_stubProc->isRunning())
+    if (m_stubProc && m_stubProc->isRunning()) {
         m_stubProc->stop();
+        m_stubProc->waitForFinished();
+    }
+    reportStopped();
 }
 
 void TerminalRunner::stubStarted()
@@ -220,5 +235,6 @@ void TerminalRunner::stubDone()
         reportDone();
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger
 

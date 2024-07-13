@@ -1,10 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "projectpanelfactory.h"
 
 #include "project.h"
-#include "projectsettingswidget.h"
 #include "projectwindow.h"
 
 #include <utils/layoutbuilder.h>
@@ -15,14 +36,10 @@ using namespace Utils;
 namespace ProjectExplorer {
 
 static QList<ProjectPanelFactory *> s_factories;
-bool s_sorted = false;
 
 ProjectPanelFactory::ProjectPanelFactory()
     : m_supportsFunction([] (Project *) { return true; })
-{
-    s_factories.append(this);
-    s_sorted = false;
-}
+{ }
 
 int ProjectPanelFactory::priority() const
 {
@@ -44,24 +61,33 @@ void ProjectPanelFactory::setDisplayName(const QString &name)
     m_displayName = name;
 }
 
-QList<ProjectPanelFactory *> ProjectPanelFactory::factories()
+void ProjectPanelFactory::registerFactory(ProjectPanelFactory *factory)
 {
-    if (!s_sorted) {
-        s_sorted = true;
-        std::sort(s_factories.begin(), s_factories.end(),
-                  [](ProjectPanelFactory *a, ProjectPanelFactory *b)  {
+    auto it = std::lower_bound(s_factories.begin(), s_factories.end(), factory,
+        [](ProjectPanelFactory *a, ProjectPanelFactory *b)  {
             return (a->priority() == b->priority() && a < b) || a->priority() < b->priority();
         });
-    }
+
+    s_factories.insert(it, factory);
+}
+
+QList<ProjectPanelFactory *> ProjectPanelFactory::factories()
+{
     return s_factories;
 }
 
-Id ProjectPanelFactory::id() const
+void ProjectPanelFactory::destroyFactories()
+{
+    qDeleteAll(s_factories);
+    s_factories.clear();
+}
+
+Utils::Id ProjectPanelFactory::id() const
 {
     return m_id;
 }
 
-void ProjectPanelFactory::setId(Id id)
+void ProjectPanelFactory::setId(Utils::Id id)
 {
     m_id = id;
 }

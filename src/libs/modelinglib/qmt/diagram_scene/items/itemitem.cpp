@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "itemitem.h"
 
@@ -52,10 +74,22 @@ void ItemItem::update()
 
     const Style *style = adaptedStyle(shapeIconId());
 
-    updateCustomIcon(style);
+    if (!shapeIconId().isEmpty()) {
+        if (!m_customIcon)
+            m_customIcon = new CustomIconItem(diagramSceneModel(), this);
+        m_customIcon->setStereotypeIconId(shapeIconId());
+        m_customIcon->setBaseSize(stereotypeIconMinimumSize(m_customIcon->stereotypeIcon(), CUSTOM_ICON_MINIMUM_AUTO_WIDTH, CUSTOM_ICON_MINIMUM_AUTO_HEIGHT));
+        m_customIcon->setBrush(style->fillBrush());
+        m_customIcon->setPen(style->outerLinePen());
+        m_customIcon->setZValue(SHAPE_ZVALUE);
+    } else if (m_customIcon) {
+        m_customIcon->scene()->removeItem(m_customIcon);
+        delete m_customIcon;
+        m_customIcon = nullptr;
+    }
 
     // shape
-    if (!customIconItem()) {
+    if (!m_customIcon) {
         if (!m_shape)
             m_shape = new QGraphicsRectItem(this);
         m_shape->setBrush(style->fillBrush());
@@ -88,7 +122,7 @@ void ItemItem::update()
         m_contextLabel = nullptr;
     }
 
-    updateSelectionMarker(customIconItem());
+    updateSelectionMarker(m_customIcon);
     updateRelationStarter();
     updateAlignmentButtons();
     updateGeometry();
@@ -96,8 +130,8 @@ void ItemItem::update()
 
 bool ItemItem::intersectShapeWithLine(const QLineF &line, QPointF *intersectionPoint, QLineF *intersectionLine) const
 {
-    if (customIconItem()) {
-        QList<QPolygonF> polygons = customIconItem()->outline();
+    if (m_customIcon) {
+        QList<QPolygonF> polygons = m_customIcon->outline();
         for (int i = 0; i < polygons.size(); ++i)
             polygons[i].translate(object()->pos() + object()->rect().topLeft());
         if (shapeIcon().textAlignment() == qmt::StereotypeIcon::TextalignBelow) {
@@ -140,16 +174,14 @@ QSizeF ItemItem::calcMinimumGeometry() const
 {
     double width = 0.0;
     double height = 0.0;
-    double customMinHeight = 0.0;
 
-    if (customIconItem()) {
-        QSizeF sz = customIconItemMinimumSize(customIconItem(),
+    if (m_customIcon) {
+        QSizeF sz = stereotypeIconMinimumSize(m_customIcon->stereotypeIcon(),
                                               CUSTOM_ICON_MINIMUM_AUTO_WIDTH, CUSTOM_ICON_MINIMUM_AUTO_HEIGHT);
         if (shapeIcon().textAlignment() != qmt::StereotypeIcon::TextalignTop
                   && shapeIcon().textAlignment() != qmt::StereotypeIcon::TextalignCenter)
             return sz;
         width = sz.width();
-        customMinHeight = sz.height();
     }
 
     height += BODY_VERT_BORDER;
@@ -171,9 +203,6 @@ QSizeF ItemItem::calcMinimumGeometry() const
 
     width = BODY_HORIZ_BORDER + width + BODY_HORIZ_BORDER;
 
-    if (height < customMinHeight)
-        height = customMinHeight;
-
     return GeometryUtilities::ensureMinimumRasterSize(QSizeF(width, height), 2 * RASTER_WIDTH, 2 * RASTER_HEIGHT);
 }
 
@@ -190,7 +219,7 @@ void ItemItem::updateGeometry()
     height = geometry.height();
 
     if (object()->isAutoSized()) {
-        correctAutoSize(customIconItem(), width, height, 0, 0);
+        // nothing
     } else {
         QRectF rect = object()->rect();
         if (rect.width() > width)
@@ -214,15 +243,15 @@ void ItemItem::updateGeometry()
     // a backup for the graphics item used for manual resized and persistency.
     object()->setRect(rect);
 
-    if (customIconItem()) {
-        customIconItem()->setPos(left, top);
-        customIconItem()->setActualSize(QSizeF(width, height));
+    if (m_customIcon) {
+        m_customIcon->setPos(left, top);
+        m_customIcon->setActualSize(QSizeF(width, height));
     }
 
     if (m_shape)
         m_shape->setRect(rect);
 
-    if (customIconItem()) {
+    if (m_customIcon) {
         switch (shapeIcon().textAlignment()) {
         case qmt::StereotypeIcon::TextalignBelow:
             y += height + BODY_VERT_BORDER;
@@ -264,7 +293,7 @@ void ItemItem::updateGeometry()
         y += nameItem()->boundingRect().height();
     }
     if (m_contextLabel) {
-        if (customIconItem()) {
+        if (m_customIcon) {
             m_contextLabel->resetMaxWidth();
         } else {
             double maxContextWidth = width - 2 * BODY_HORIZ_BORDER;

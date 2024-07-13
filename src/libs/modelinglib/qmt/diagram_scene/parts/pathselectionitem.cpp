@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "pathselectionitem.h"
 
@@ -79,10 +101,7 @@ protected:
     {
         m_lastPos = event->scenePos();
         QPointF delta = m_lastPos - m_startPos;
-        HandleQualifier qualifier = m_qualifier;
-        if (qualifier == None && (event->modifiers() & Qt::ShiftModifier) != 0)
-            qualifier = SnapHandle;
-        m_owner->moveHandle(m_pointIndex, delta, Release, qualifier);
+        m_owner->moveHandle(m_pointIndex, delta, Release, m_qualifier);
         clearFocus();
     }
 
@@ -156,7 +175,7 @@ QPainterPath PathSelectionItem::shape() const
 {
     QPainterPath shape;
     shape.setFillRule(Qt::WindingFill);
-    for (const GraphicsHandleItem *handle : m_handles)
+    foreach (const GraphicsHandleItem *handle, m_handles)
         shape.addPath(handle->shape());
     // TODO duplicate of ArrowItem::GraphicsShaftItem's shape
     QPolygonF polygon;
@@ -182,7 +201,7 @@ void PathSelectionItem::setPointSize(const QSizeF &size)
 QList<QPointF> PathSelectionItem::points() const
 {
     QList<QPointF> points;
-    for (GraphicsHandleItem *handle : m_handles)
+    foreach (GraphicsHandleItem *handle, m_handles)
         points.append(handle->pos());
     return points;
 }
@@ -198,7 +217,7 @@ void PathSelectionItem::setPoints(const QList<QPointF> &points)
         m_handles.removeLast();
     }
     int pointIndex = 0;
-    for (const QPointF &point : std::as_const(points)) {
+    foreach (const QPointF &point, points) {
         GraphicsHandleItem *handle;
         if (focusEndBItem && pointIndex == points.size() - 1) {
             handle = focusEndBItem;
@@ -257,7 +276,7 @@ void PathSelectionItem::update()
 {
     prepareGeometryChange();
     int i = 0;
-    for (GraphicsHandleItem *handle : std::as_const(m_handles)) {
+    foreach (GraphicsHandleItem *handle, m_handles) {
         handle->setPointSize(m_pointSize);
         handle->setSelection(m_isSecondarySelected
                              ? (isEndHandle(i) ? GraphicsHandleItem::NotSelected : GraphicsHandleItem::SecondarySelected)
@@ -270,7 +289,6 @@ void PathSelectionItem::moveHandle(int pointIndex, const QPointF &deltaMove, Han
 {
     switch (handleQualifier) {
     case None:
-    case SnapHandle:
     {
         if (handleStatus == Press) {
             m_focusHandleItem = m_handles.at(pointIndex);
@@ -279,13 +297,13 @@ void PathSelectionItem::moveHandle(int pointIndex, const QPointF &deltaMove, Han
         QPointF newPos = m_originalHandlePos + deltaMove;
         m_windable->setHandlePos(pointIndex, newPos);
         if (handleStatus == Release) {
-            m_windable->dropHandle(pointIndex, handleQualifier == SnapHandle, RASTER_WIDTH, RASTER_HEIGHT);
+            m_windable->dropHandle(pointIndex, RASTER_WIDTH, RASTER_HEIGHT);
             m_focusHandleItem = nullptr;
         }
         break;
     }
     case DeleteHandle:
-        if (handleStatus == Release)
+        if (handleStatus == Press)
             m_windable->deleteHandle(pointIndex);
         break;
     }

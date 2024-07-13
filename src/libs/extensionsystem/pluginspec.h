@@ -1,14 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "extensionsystem_global.h"
 
-#include "iplugin.h"
-
-#include <utils/expected.h>
-#include <utils/filepath.h>
+#include <utils/porting.h>
 
 #include <QHash>
 #include <QStaticPlugin>
@@ -19,31 +38,30 @@ QT_BEGIN_NAMESPACE
 class QRegularExpression;
 QT_END_NAMESPACE
 
-class tst_PluginSpec;
-
 namespace ExtensionSystem {
 
 namespace Internal {
 
 class OptionsParser;
-class PluginSpecImplPrivate;
-class PluginManagerPrivate;
 class PluginSpecPrivate;
+class PluginManagerPrivate;
 
 } // Internal
 
+class IPlugin;
 class PluginView;
 
 struct EXTENSIONSYSTEM_EXPORT PluginDependency
 {
-    enum Type { Required, Optional, Test };
+    enum Type {
+        Required,
+        Optional,
+        Test
+    };
 
     PluginDependency() : type(Required) {}
-    PluginDependency(const QString &name, const QString &version, Type type = Required)
-        : name(name)
-        , version(version)
-        , type(type)
-    {}
+
+    friend Utils::QHashValueType qHash(const PluginDependency &value);
 
     QString name;
     QString version;
@@ -52,8 +70,6 @@ struct EXTENSIONSYSTEM_EXPORT PluginDependency
     QString toString() const;
 };
 
-size_t EXTENSIONSYSTEM_EXPORT qHash(const PluginDependency &value);
-
 struct EXTENSIONSYSTEM_EXPORT PluginArgumentDescription
 {
     QString name;
@@ -61,155 +77,75 @@ struct EXTENSIONSYSTEM_EXPORT PluginArgumentDescription
     QString description;
 };
 
-struct EXTENSIONSYSTEM_EXPORT PerformanceData
-{
-    qint64 load = 0;
-    qint64 initialize = 0;
-    qint64 extensionsInitialized = 0;
-    qint64 delayedInitialize = 0;
-
-    qint64 total() const { return load + initialize + extensionsInitialized + delayedInitialize; }
-    QString summary() const
-    {
-        return QString("l: %1ms, i: %2ms, x: %3ms, d: %4ms")
-            .arg(load, 3)
-            .arg(initialize, 3)
-            .arg(extensionsInitialized, 3)
-            .arg(delayedInitialize, 3);
-    }
-};
-
-using PluginSpecs = QList<class PluginSpec *>;
-
 class EXTENSIONSYSTEM_EXPORT PluginSpec
 {
-    friend class ::tst_PluginSpec;
-    friend class Internal::PluginManagerPrivate;
-    friend class Internal::OptionsParser;
-
 public:
-    PluginSpec();
-    virtual ~PluginSpec();
-
-    using PluginArgumentDescriptions = QVector<PluginArgumentDescription>;
     enum State { Invalid, Read, Resolved, Loaded, Initialized, Running, Stopped, Deleted};
 
-    // information read from the plugin, valid after 'Read' state is reached
-    virtual QString name() const;
-    virtual QString version() const;
-    virtual QString compatVersion() const;
-    virtual QString vendor() const;
-    virtual QString copyright() const;
-    virtual QString license() const;
-    virtual QString description() const;
-    virtual QString longDescription() const;
-    virtual QString url() const;
-    virtual QString category() const;
-    virtual QString revision() const;
-    virtual QRegularExpression platformSpecification() const;
+    ~PluginSpec();
 
-    virtual bool isAvailableForHostPlatform() const;
-    virtual bool isRequired() const;
-    virtual bool isExperimental() const;
-    virtual bool isDeprecated() const;
-    virtual bool isEnabledByDefault() const;
-    virtual bool isEnabledBySettings() const;
-    virtual bool isEffectivelyEnabled() const;
-    virtual bool isEnabledIndirectly() const;
-    virtual bool isForceEnabled() const;
-    virtual bool isForceDisabled() const;
-    virtual bool isSoftLoadable() const;
+    // information from the xml file, valid after 'Read' state is reached
+    QString name() const;
+    QString version() const;
+    QString compatVersion() const;
+    QString vendor() const;
+    QString copyright() const;
+    QString license() const;
+    QString description() const;
+    QString url() const;
+    QString category() const;
+    QString revision() const;
+    QRegularExpression platformSpecification() const;
+    bool isAvailableForHostPlatform() const;
+    bool isRequired() const;
+    bool isExperimental() const;
+    bool isEnabledByDefault() const;
+    bool isEnabledBySettings() const;
+    bool isEffectivelyEnabled() const;
+    bool isEnabledIndirectly() const;
+    bool isForceEnabled() const;
+    bool isForceDisabled() const;
+    QVector<PluginDependency> dependencies() const;
+    QJsonObject metaData() const;
 
-    virtual QVector<PluginDependency> dependencies() const;
-    virtual QJsonObject metaData() const;
-    virtual PerformanceData &performanceData() const;
-    virtual PluginArgumentDescriptions argumentDescriptions() const;
-    virtual Utils::FilePath location() const;
-    virtual Utils::FilePath filePath() const;
-    virtual QStringList arguments() const;
-    virtual void setArguments(const QStringList &arguments);
-    virtual void addArgument(const QString &argument);
-    virtual QHash<PluginDependency, PluginSpec *> dependencySpecs() const;
+    using PluginArgumentDescriptions = QVector<PluginArgumentDescription>;
+    PluginArgumentDescriptions argumentDescriptions() const;
 
-    virtual bool provides(PluginSpec *spec, const PluginDependency &dependency) const;
-    virtual bool requiresAny(const QSet<PluginSpec *> &plugins) const;
-    virtual PluginSpecs enableDependenciesIndirectly(bool enableTestDependencies);
-    virtual bool resolveDependencies(const PluginSpecs &pluginSpecs);
+    // other information, valid after 'Read' state is reached
+    QString location() const;
+    QString filePath() const;
 
-    virtual IPlugin *plugin() const = 0;
-    virtual State state() const;
-    virtual bool hasError() const;
-    virtual QString errorString() const;
+    QStringList arguments() const;
+    void setArguments(const QStringList &arguments);
+    void addArgument(const QString &argument);
 
-    static bool isValidVersion(const QString &version);
-    static int versionCompare(const QString &version1, const QString &version2);
+    bool provides(const QString &pluginName, const QString &version) const;
 
-    virtual void setEnabledBySettings(bool value);
-
-protected:
-    virtual void setEnabledByDefault(bool value);
-    virtual void setEnabledIndirectly(bool value);
-    virtual void setForceDisabled(bool value);
-    virtual void setForceEnabled(bool value);
-
-    virtual bool loadLibrary() = 0;
-    virtual bool initializePlugin() = 0;
-    virtual bool initializeExtensions() = 0;
-    virtual bool delayedInitialize() = 0;
-    virtual IPlugin::ShutdownFlag stop() = 0;
-    virtual void kill() = 0;
-
-    virtual void setError(const QString &errorString);
-
-protected:
-    virtual void setState(State state);
-
-    virtual void setLocation(const Utils::FilePath &location);
-    virtual void setFilePath(const Utils::FilePath &filePath);
-    virtual Utils::expected_str<void> readMetaData(const QJsonObject &metaData);
-    Utils::expected_str<void> reportError(const QString &error);
-
-private:
-    std::unique_ptr<Internal::PluginSpecPrivate> d;
-};
-
-EXTENSIONSYSTEM_EXPORT Utils::expected_str<PluginSpec *> readCppPluginSpec(
-    const Utils::FilePath &filePath);
-EXTENSIONSYSTEM_EXPORT Utils::expected_str<PluginSpec *> readCppPluginSpec(
-    const QStaticPlugin &plugin);
-
-class EXTENSIONSYSTEM_TEST_EXPORT CppPluginSpec : public PluginSpec
-{
-    friend EXTENSIONSYSTEM_EXPORT Utils::expected_str<PluginSpec *> readCppPluginSpec(
-        const Utils::FilePath &filePath);
-    friend EXTENSIONSYSTEM_EXPORT Utils::expected_str<PluginSpec *> readCppPluginSpec(
-        const QStaticPlugin &plugin);
-
-public:
-    ~CppPluginSpec() override;
+    // dependency specs, valid after 'Resolved' state is reached
+    QHash<PluginDependency, PluginSpec *> dependencySpecs() const;
+    bool requiresAny(const QSet<PluginSpec *> &plugins) const;
 
     // linked plugin instance, valid after 'Loaded' state is reached
-    IPlugin *plugin() const override;
+    IPlugin *plugin() const;
 
-    bool loadLibrary() override;
-    bool initializePlugin() override;
-    bool initializeExtensions() override;
-    bool delayedInitialize() override;
-    IPlugin::ShutdownFlag stop() override;
-    void kill() override;
+    // state
+    State state() const;
+    bool hasError() const;
+    QString errorString() const;
 
-    Utils::expected_str<void> readMetaData(const QJsonObject &pluginMetaData) override;
+    void setEnabledBySettings(bool value);
 
-protected:
-    CppPluginSpec();
+    static PluginSpec *read(const QString &filePath);
+    static PluginSpec *read(const QStaticPlugin &plugin);
 
 private:
-    std::unique_ptr<Internal::PluginSpecImplPrivate> d;
+    PluginSpec();
+
+    Internal::PluginSpecPrivate *d;
     friend class PluginView;
     friend class Internal::OptionsParser;
     friend class Internal::PluginManagerPrivate;
-    friend class Internal::PluginSpecImplPrivate;
-    friend class ::tst_PluginSpec;
+    friend class Internal::PluginSpecPrivate;
 };
 
 } // namespace ExtensionSystem

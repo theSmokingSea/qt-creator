@@ -1,27 +1,47 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "devicemanagermodel.h"
 
 #include "devicemanager.h"
-#include "../projectexplorertr.h"
 
 #include <utils/qtcassert.h>
+#include <utils/fileutils.h>
 
-using namespace Utils;
+#include <QString>
 
 namespace ProjectExplorer {
 namespace Internal {
-
 class DeviceManagerModelPrivate
 {
 public:
     const DeviceManager *deviceManager;
     QList<IDevice::ConstPtr> devices;
-    QList<Id> filter;
-    Id typeToKeep;
+    QList<Utils::Id> filter;
+    Utils::Id typeToKeep;
 };
-
 } // namespace Internal
 
 DeviceManagerModel::DeviceManagerModel(const DeviceManager *deviceManager, QObject *parent) :
@@ -41,13 +61,13 @@ DeviceManagerModel::DeviceManagerModel(const DeviceManager *deviceManager, QObje
 
 DeviceManagerModel::~DeviceManagerModel() = default;
 
-void DeviceManagerModel::setFilter(const QList<Id> &filter)
+void DeviceManagerModel::setFilter(const QList<Utils::Id> &filter)
 {
     d->filter = filter;
     handleDeviceListChanged();
 }
 
-void DeviceManagerModel::setTypeFilter(Id type)
+void DeviceManagerModel::setTypeFilter(Utils::Id type)
 {
     if (d->typeToKeep == type)
         return;
@@ -55,7 +75,7 @@ void DeviceManagerModel::setTypeFilter(Id type)
     handleDeviceListChanged();
 }
 
-void DeviceManagerModel::updateDevice(Id id)
+void DeviceManagerModel::updateDevice(Utils::Id id)
 {
     handleDeviceUpdated(id);
 }
@@ -67,15 +87,15 @@ IDevice::ConstPtr DeviceManagerModel::device(int pos) const
     return d->devices.at(pos);
 }
 
-Id DeviceManagerModel::deviceId(int pos) const
+Utils::Id DeviceManagerModel::deviceId(int pos) const
 {
     IDevice::ConstPtr dev = device(pos);
-    return dev ? dev->id() : Id();
+    return dev ? dev->id() : Utils::Id();
 }
 
 int DeviceManagerModel::indexOf(IDevice::ConstPtr dev) const
 {
-    if (!dev)
+    if (dev.isNull())
         return -1;
     for (int i = 0; i < d->devices.count(); ++i) {
         IDevice::ConstPtr current = d->devices.at(i);
@@ -85,7 +105,7 @@ int DeviceManagerModel::indexOf(IDevice::ConstPtr dev) const
     return -1;
 }
 
-void DeviceManagerModel::handleDeviceAdded(Id id)
+void DeviceManagerModel::handleDeviceAdded(Utils::Id id)
 {
     if (d->filter.contains(id))
         return;
@@ -98,7 +118,7 @@ void DeviceManagerModel::handleDeviceAdded(Id id)
     endInsertRows();
 }
 
-void DeviceManagerModel::handleDeviceRemoved(Id id)
+void DeviceManagerModel::handleDeviceRemoved(Utils::Id id)
 {
     const int idx = indexForId(id);
     QTC_ASSERT(idx != -1, return);
@@ -107,7 +127,7 @@ void DeviceManagerModel::handleDeviceRemoved(Id id)
     endRemoveRows();
 }
 
-void DeviceManagerModel::handleDeviceUpdated(Id id)
+void DeviceManagerModel::handleDeviceUpdated(Utils::Id id)
 {
     const int idx = indexForId(id);
     if (idx < 0) // This occurs when a device not matching the type filter is updated
@@ -142,19 +162,18 @@ int DeviceManagerModel::rowCount(const QModelIndex &parent) const
 QVariant DeviceManagerModel::data(const QModelIndex &index, int role) const
 {
     if (!index.isValid() || index.row() >= rowCount())
-        return {};
+        return QVariant();
+    if (role != Qt::DisplayRole && role != Qt::UserRole)
+        return QVariant();
     const IDevice::ConstPtr dev = device(index.row());
-    switch (role) {
-    case Qt::DecorationRole:
-        return dev->deviceStateIcon();
-    case Qt::UserRole:
+    if (role == Qt::UserRole)
         return dev->id().toSetting();
-    case Qt::DisplayRole:
-        if (d->deviceManager->defaultDevice(dev->type()) == dev)
-            return Tr::tr("%1 (default for %2)").arg(dev->displayName(), dev->displayType());
-        return dev->displayName();
-    }
-    return {};
+    QString name;
+    if (d->deviceManager->defaultDevice(dev->type()) == dev)
+        name = tr("%1 (default for %2)").arg(dev->displayName(), dev->displayType());
+    else
+        name = dev->displayName();
+    return name;
 }
 
 bool DeviceManagerModel::matchesTypeFilter(const IDevice::ConstPtr &dev) const
@@ -162,7 +181,7 @@ bool DeviceManagerModel::matchesTypeFilter(const IDevice::ConstPtr &dev) const
     return !d->typeToKeep.isValid() || dev->type() == d->typeToKeep;
 }
 
-int DeviceManagerModel::indexForId(Id id) const
+int DeviceManagerModel::indexForId(Utils::Id id) const
 {
     for (int i = 0; i < d->devices.count(); ++i) {
         if (d->devices.at(i)->id() == id)

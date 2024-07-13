@@ -1,16 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "utils_global.h"
 
 #include "completinglineedit.h"
-#include "expected.h"
-#include "storekey.h"
 
 #include <QAbstractButton>
-#include <QFuture>
 
 #include <functional>
 
@@ -23,13 +42,13 @@ namespace Utils {
 
 class FancyLineEditPrivate;
 
-class QTCREATOR_UTILS_EXPORT FancyIconButton : public QAbstractButton
+class QTCREATOR_UTILS_EXPORT IconButton: public QAbstractButton
 {
     Q_OBJECT
     Q_PROPERTY(float iconOpacity READ iconOpacity WRITE setIconOpacity)
     Q_PROPERTY(bool autoHide READ hasAutoHide WRITE setAutoHide)
 public:
-    explicit FancyIconButton(QWidget *parent = nullptr);
+    explicit IconButton(QWidget *parent = nullptr);
     void paintEvent(QPaintEvent *event) override;
     float iconOpacity() { return m_iconOpacity; }
     void setIconOpacity(float value) { m_iconOpacity = value; update(); }
@@ -45,8 +64,8 @@ protected:
     void keyReleaseEvent(QKeyEvent *ke) override;
 
 private:
-    float m_iconOpacity = 1.0f;
-    bool m_autoHide = false;
+    float m_iconOpacity;
+    bool m_autoHide;
     QIcon m_icon;
 };
 
@@ -87,7 +106,7 @@ public:
     // Completion
 
     // Enable a history completer with a history of entries.
-    void setHistoryCompleter(const Utils::Key &historyKey, bool restoreLastItemFromHistory = false);
+    void setHistoryCompleter(const QString &historyKey, bool restoreLastItemFromHistory = false);
     // Sets a completer that is not a history completer.
     void setSpecialCompleter(QCompleter *completer);
 
@@ -101,19 +120,12 @@ public:
     //  Validation
 
     // line edit, (out)errorMessage -> valid?
-    using AsyncValidationResult = Utils::expected_str<QString>;
-    using AsyncValidationFuture = QFuture<AsyncValidationResult>;
-    using AsyncValidationFunction = std::function<AsyncValidationFuture(QString)>;
-    using SynchronousValidationFunction = std::function<bool(FancyLineEdit *, QString *)>;
-    using ValidationFunction = std::variant<AsyncValidationFunction, SynchronousValidationFunction>;
-
+    using ValidationFunction = std::function<bool(FancyLineEdit *, QString *)>;
     enum State { Invalid, DisplayingPlaceholderText, Valid };
 
     State state() const;
     bool isValid() const;
     QString errorMessage() const;
-
-    void setValidatePlaceHolder(bool on);
 
     void setValidationFunction(const ValidationFunction &fn);
     static ValidationFunction defaultValidationFunction();
@@ -144,9 +156,7 @@ protected:
     virtual QString fixInputString(const QString &string);
 
 private:
-    void iconClicked(FancyLineEdit::Side);
-
-    void handleValidationResult(AsyncValidationResult result, const QString &oldText);
+    void iconClicked();
 
     static bool validateWithValidator(FancyLineEdit *edit, QString *errorMessage);
     // Unimplemented, to force the user to make a decision on

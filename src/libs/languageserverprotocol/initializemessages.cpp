@@ -1,5 +1,27 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "initializemessages.h"
 
@@ -32,7 +54,7 @@ QString Trace::toString() const
 }
 #undef RETURN_CASE
 
-std::optional<QList<MarkupKind>>
+Utils::optional<QList<MarkupKind>>
 TextDocumentClientCapabilities::CompletionCapabilities::CompletionItemCapbilities::
 documentationFormat() const
 {
@@ -59,16 +81,16 @@ TextDocumentClientCapabilities::CompletionCapabilities::CompletionItemKindCapabi
                  CompletionItemKind::TypeParameter});
 }
 
-std::optional<QList<CompletionItemKind::Kind>>
+Utils::optional<QList<CompletionItemKind::Kind>>
 TextDocumentClientCapabilities::CompletionCapabilities::CompletionItemKindCapabilities::
 valueSet() const
 {
-    if (std::optional<QList<int>> array = optionalArray<int>(valueSetKey)) {
-        return std::make_optional(Utils::transform(*array, [](int value) {
+    if (Utils::optional<QList<int>> array = optionalArray<int>(valueSetKey)) {
+        return Utils::make_optional(Utils::transform(*array, [] (int value) {
             return static_cast<CompletionItemKind::Kind>(value);
         }));
     }
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
 void
@@ -78,7 +100,7 @@ setValueSet(const QList<CompletionItemKind::Kind> &valueSet)
     insert(valueSetKey, enumArrayToJsonArray<CompletionItemKind::Kind>(valueSet));
 }
 
-std::optional<QList<MarkupKind> > TextDocumentClientCapabilities::HoverCapabilities::contentFormat() const
+Utils::optional<QList<MarkupKind> > TextDocumentClientCapabilities::HoverCapabilities::contentFormat() const
 {
     return optionalArray<MarkupKind>(contentFormatKey);
 }
@@ -88,7 +110,7 @@ void TextDocumentClientCapabilities::HoverCapabilities::setContentFormat(const Q
     insertArray(contentFormatKey, contentFormat);
 }
 
-std::optional<QList<MarkupKind>>
+Utils::optional<QList<MarkupKind>>
 TextDocumentClientCapabilities::SignatureHelpCapabilities::SignatureInformationCapabilities::
 documentationFormat() const
 {
@@ -110,20 +132,20 @@ InitializeParams::InitializeParams()
     setTrace(s_trace);
 }
 
-std::optional<QJsonObject> InitializeParams::initializationOptions() const
+Utils::optional<QJsonObject> InitializeParams::initializationOptions() const
 {
     const QJsonValue &optionsValue = value(initializationOptionsKey);
     if (optionsValue.isObject())
         return optionsValue.toObject();
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
-std::optional<Trace> InitializeParams::trace() const
+Utils::optional<Trace> InitializeParams::trace() const
 {
     const QJsonValue &traceValue = value(traceKey);
     if (traceValue.isUndefined())
-        return std::nullopt;
-    return std::make_optional(Trace(traceValue.toString()));
+        return Utils::nullopt;
+    return Utils::make_optional(Trace(traceValue.toString()));
 }
 
 InitializeRequest::InitializeRequest(const InitializeParams &params)

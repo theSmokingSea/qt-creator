@@ -1,37 +1,60 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "extracompiler.h"
 
+#include "buildconfiguration.h"
 #include "buildmanager.h"
-#include "kitaspects.h"
-#include "projectmanager.h"
+#include "kitinformation.h"
+#include "session.h"
 #include "target.h"
 
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/idocument.h>
+#include <texteditor/texteditor.h>
+#include <texteditor/texteditorsettings.h>
+#include <texteditor/texteditorconstants.h>
+#include <texteditor/fontsettings.h>
 
-#include <solutions/tasking/tasktreerunner.h>
-
-#include <utils/async.h>
-#include <utils/expected.h>
-#include <utils/guard.h>
+#include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
+#include <utils/runextensions.h>
 
 #include <QDateTime>
-#include <QLoggingCategory>
+#include <QFutureInterface>
+#include <QFutureWatcher>
+#include <QTextBlock>
 #include <QThreadPool>
 #include <QTimer>
 
-using namespace Core;
-using namespace Tasking;
 using namespace Utils;
 
 namespace ProjectExplorer {
 
 Q_GLOBAL_STATIC(QThreadPool, s_extraCompilerThreadPool);
 Q_GLOBAL_STATIC(QList<ExtraCompilerFactory *>, factories);
-Q_LOGGING_CATEGORY(log, "qtc.projectexplorer.extracompiler", QtWarningMsg);
 
 class ExtraCompilerPrivate
 {
@@ -39,16 +62,15 @@ public:
     const Project *project;
     FilePath source;
     FileNameToContentsHash contents;
+    Tasks issues;
     QDateTime compileTime;
-    IEditor *lastEditor = nullptr;
+    Core::IEditor *lastEditor = nullptr;
     QMetaObject::Connection activeBuildConfigConnection;
     QMetaObject::Connection activeEnvironmentConnection;
-    Guard lock;
     bool dirty = false;
 
     QTimer timer;
-
-    TaskTreeRunner m_taskTreeRunner;
+    void updateIssues();
 };
 
 ExtraCompiler::ExtraCompiler(const Project *project, const FilePath &source,
@@ -61,41 +83,47 @@ ExtraCompiler::ExtraCompiler(const Project *project, const FilePath &source,
         d->contents.insert(target, QByteArray());
     d->timer.setSingleShot(true);
 
-    connect(&d->timer, &QTimer::timeout, this, &ExtraCompiler::compileIfDirty);
+    connect(&d->timer, &QTimer::timeout, this, [this](){
+        if (d->dirty && d->lastEditor) {
+            d->dirty = false;
+            run(d->lastEditor->document()->contents());
+        }
+    });
+
     connect(BuildManager::instance(), &BuildManager::buildStateChanged,
             this, &ExtraCompiler::onTargetsBuilt);
 
-    connect(ProjectManager::instance(), &ProjectManager::projectRemoved,
+    connect(SessionManager::instance(), &SessionManager::projectRemoved,
             this, [this](Project *project) {
         if (project == d->project)
             deleteLater();
     });
 
-    EditorManager *editorManager = EditorManager::instance();
-    connect(editorManager, &EditorManager::currentEditorChanged,
+    Core::EditorManager *editorManager = Core::EditorManager::instance();
+    connect(editorManager, &Core::EditorManager::currentEditorChanged,
             this, &ExtraCompiler::onEditorChanged);
-    connect(editorManager, &EditorManager::editorAboutToClose,
+    connect(editorManager, &Core::EditorManager::editorAboutToClose,
             this, &ExtraCompiler::onEditorAboutToClose);
 
     // Use existing target files, where possible. Otherwise run the compiler.
     QDateTime sourceTime = d->source.lastModified();
     for (const FilePath &target : targets) {
-        if (!target.exists()) {
+        QFileInfo targetFileInfo(target.toFileInfo());
+        if (!targetFileInfo.exists()) {
             d->dirty = true;
             continue;
         }
 
-        QDateTime lastModified = target.lastModified();
+        QDateTime lastModified = targetFileInfo.lastModified();
         if (lastModified < sourceTime)
             d->dirty = true;
 
         if (!d->compileTime.isValid() || d->compileTime > lastModified)
             d->compileTime = lastModified;
 
-        const expected_str<QByteArray> contents = target.fileContents();
-        QTC_ASSERT_EXPECTED(contents, return);
-
-        setContent(target, *contents);
+        QFile file(target.toString());
+        if (file.open(QFile::ReadOnly | QFile::Text))
+            setContent(target, file.readAll());
     }
 }
 
@@ -121,15 +149,20 @@ FilePaths ExtraCompiler::targets() const
     return d->contents.keys();
 }
 
-void ExtraCompiler::forEachTarget(std::function<void (const FilePath &)> func) const
+void ExtraCompiler::forEachTarget(std::function<void (const FilePath &)> func)
 {
     for (auto it = d->contents.constBegin(), end = d->contents.constEnd(); it != end; ++it)
         func(it.key());
 }
 
-void ExtraCompiler::updateCompileTime()
+void ExtraCompiler::setCompileTime(const QDateTime &time)
 {
-    d->compileTime = QDateTime::currentDateTime();
+    d->compileTime = time;
+}
+
+QDateTime ExtraCompiler::compileTime() const
+{
+    return d->compileTime;
 }
 
 QThreadPool *ExtraCompiler::extraCompilerThreadPool()
@@ -137,64 +170,9 @@ QThreadPool *ExtraCompiler::extraCompilerThreadPool()
     return s_extraCompilerThreadPool();
 }
 
-GroupItem ExtraCompiler::compileFileItem()
-{
-    return taskItemImpl(fromFileProvider());
-}
-
-void ExtraCompiler::compileFile()
-{
-    compileImpl(fromFileProvider());
-}
-
-void ExtraCompiler::compileContent(const QByteArray &content)
-{
-    compileImpl([content] { return content; });
-}
-
-void ExtraCompiler::compileImpl(const ContentProvider &provider)
-{
-    d->m_taskTreeRunner.start({taskItemImpl(provider)});
-}
-
-void ExtraCompiler::compileIfDirty()
-{
-    qCDebug(log) << Q_FUNC_INFO;
-    if (!d->lock.isLocked() && d->dirty && d->lastEditor) {
-        qCDebug(log) << '\t' << "about to compile";
-        d->dirty = false;
-        compileContent(d->lastEditor->document()->contents());
-    }
-}
-
-ExtraCompiler::ContentProvider ExtraCompiler::fromFileProvider() const
-{
-    const auto provider = [fileName = source()] {
-        QFile file(fileName.toString());
-        if (!file.open(QFile::ReadOnly | QFile::Text))
-            return QByteArray();
-        return file.readAll();
-    };
-    return provider;
-}
-
 bool ExtraCompiler::isDirty() const
 {
     return d->dirty;
-}
-
-void ExtraCompiler::block()
-{
-    qCDebug(log) << Q_FUNC_INFO;
-    d->lock.lock();
-}
-
-void ExtraCompiler::unblock()
-{
-    qCDebug(log) << Q_FUNC_INFO;
-    d->lock.unlock();
-    if (!d->lock.isLocked() && !d->timer.isActive())
-        d->timer.start();
 }
 
 void ExtraCompiler::onTargetsBuilt(Project *project)
@@ -215,34 +193,35 @@ void ExtraCompiler::onTargetsBuilt(Project *project)
             if (d->compileTime >= generateTime)
                 return;
 
-            const expected_str<QByteArray> contents = target.fileContents();
-            QTC_ASSERT_EXPECTED(contents, return);
-
-            d->compileTime = generateTime;
-            setContent(target, *contents);
+            QFile file(target.toString());
+            if (file.open(QFile::ReadOnly | QFile::Text)) {
+                d->compileTime = generateTime;
+                setContent(target, file.readAll());
+            }
         }
     });
 }
 
-void ExtraCompiler::onEditorChanged(IEditor *editor)
+void ExtraCompiler::onEditorChanged(Core::IEditor *editor)
 {
     // Handle old editor
     if (d->lastEditor) {
-        IDocument *doc = d->lastEditor->document();
-        disconnect(doc, &IDocument::contentsChanged,
+        Core::IDocument *doc = d->lastEditor->document();
+        disconnect(doc, &Core::IDocument::contentsChanged,
                    this, &ExtraCompiler::setDirty);
 
         if (d->dirty) {
             d->dirty = false;
-            compileContent(doc->contents());
+            run(doc->contents());
         }
     }
 
     if (editor && editor->document()->filePath() == d->source) {
         d->lastEditor = editor;
+        d->updateIssues();
 
         // Handle new editor
-        connect(d->lastEditor->document(), &IDocument::contentsChanged,
+        connect(d->lastEditor->document(), &Core::IDocument::contentsChanged,
                 this, &ExtraCompiler::setDirty);
     } else {
         d->lastEditor = nullptr;
@@ -255,41 +234,76 @@ void ExtraCompiler::setDirty()
     d->timer.start(1000);
 }
 
-void ExtraCompiler::onEditorAboutToClose(IEditor *editor)
+void ExtraCompiler::onEditorAboutToClose(Core::IEditor *editor)
 {
     if (d->lastEditor != editor)
         return;
 
     // Oh no our editor is going to be closed
     // get the content first
-    IDocument *doc = d->lastEditor->document();
-    disconnect(doc, &IDocument::contentsChanged,
+    Core::IDocument *doc = d->lastEditor->document();
+    disconnect(doc, &Core::IDocument::contentsChanged,
                this, &ExtraCompiler::setDirty);
     if (d->dirty) {
         d->dirty = false;
-        compileContent(doc->contents());
+        run(doc->contents());
     }
     d->lastEditor = nullptr;
 }
 
 Environment ExtraCompiler::buildEnvironment() const
 {
-    Target *target = project()->activeTarget();
-    if (!target)
-        return Environment::systemEnvironment();
+    if (Target *target = project()->activeTarget()) {
+        if (BuildConfiguration *bc = target->activeBuildConfiguration()) {
+            return bc->environment();
+        } else {
+            EnvironmentItems changes =
+                    EnvironmentKitAspect::environmentChanges(target->kit());
+            Environment env = Environment::systemEnvironment();
+            env.modify(changes);
+            return env;
+        }
+    }
 
-    if (BuildConfiguration *bc = target->activeBuildConfiguration())
-        return bc->environment();
+    return Environment::systemEnvironment();
+}
 
-    const EnvironmentItems changes = EnvironmentKitAspect::environmentChanges(target->kit());
-    Environment env = Environment::systemEnvironment();
-    env.modify(changes);
-    return env;
+void ExtraCompiler::setCompileIssues(const Tasks &issues)
+{
+    d->issues = issues;
+    d->updateIssues();
+}
+
+void ExtraCompilerPrivate::updateIssues()
+{
+    if (!lastEditor)
+        return;
+
+    auto widget = qobject_cast<TextEditor::TextEditorWidget *>(lastEditor->widget());
+    if (!widget)
+        return;
+
+    QList<QTextEdit::ExtraSelection> selections;
+    const QTextDocument *document = widget->document();
+    for (const Task &issue : qAsConst(issues)) {
+        QTextEdit::ExtraSelection selection;
+        QTextCursor cursor(document->findBlockByNumber(issue.line - 1));
+        cursor.movePosition(QTextCursor::StartOfLine);
+        cursor.movePosition(QTextCursor::EndOfLine, QTextCursor::KeepAnchor);
+        selection.cursor = cursor;
+
+        const auto fontSettings = TextEditor::TextEditorSettings::fontSettings();
+        selection.format = fontSettings.toTextCharFormat(issue.type == Task::Warning ?
+                TextEditor::C_WARNING : TextEditor::C_ERROR);
+        selection.format.setToolTip(issue.description());
+        selections.append(selection);
+    }
+
+    widget->setExtraSelections(TextEditor::TextEditorWidget::CodeWarningsSelection, selections);
 }
 
 void ExtraCompiler::setContent(const FilePath &file, const QByteArray &contents)
 {
-    qCDebug(log).noquote() << Q_FUNC_INFO << contents;
     auto it = d->contents.find(file);
     if (it != d->contents.end()) {
         if (it.value() != contents) {
@@ -299,7 +313,8 @@ void ExtraCompiler::setContent(const FilePath &file, const QByteArray &contents)
     }
 }
 
-ExtraCompilerFactory::ExtraCompilerFactory()
+ExtraCompilerFactory::ExtraCompilerFactory(QObject *parent)
+    : QObject(parent)
 {
     factories->append(this);
 }
@@ -319,35 +334,40 @@ ProcessExtraCompiler::ProcessExtraCompiler(const Project *project, const FilePat
     ExtraCompiler(project, source, targets, parent)
 { }
 
-GroupItem ProcessExtraCompiler::taskItemImpl(const ContentProvider &provider)
+ProcessExtraCompiler::~ProcessExtraCompiler()
 {
-    const auto onSetup = [this, provider](Async<FileNameToContentsHash> &async) {
-        async.setThreadPool(extraCompilerThreadPool());
-        // The passed synchronizer has cancelOnWait set to true by default.
-        async.setConcurrentCallData(&ProcessExtraCompiler::runInThread, this, command(),
-                                    workingDirectory(), arguments(), provider, buildEnvironment());
+    if (!m_watcher)
+        return;
+    m_watcher->cancel();
+    m_watcher->waitForFinished();
+}
+
+void ProcessExtraCompiler::run(const QByteArray &sourceContents)
+{
+    ContentProvider contents = [sourceContents]() { return sourceContents; };
+    runImpl(contents);
+}
+
+QFuture<FileNameToContentsHash> ProcessExtraCompiler::run()
+{
+    const FilePath fileName = source();
+    ContentProvider contents = [fileName]() {
+        QFile file(fileName.toString());
+        if (!file.open(QFile::ReadOnly | QFile::Text))
+            return QByteArray();
+        return file.readAll();
     };
-    const auto onDone = [this](const Async<FileNameToContentsHash> &async) {
-        if (!async.isResultAvailable())
-            return;
-        const FileNameToContentsHash data = async.result();
-        if (data.isEmpty())
-            return; // There was some kind of error...
-        for (auto it = data.constBegin(), end = data.constEnd(); it != end; ++it)
-            setContent(it.key(), it.value());
-        updateCompileTime();
-    };
-    return AsyncTask<FileNameToContentsHash>(onSetup, onDone, CallDoneIf::Success);
+    return runImpl(contents);
 }
 
 FilePath ProcessExtraCompiler::workingDirectory() const
 {
-    return {};
+    return FilePath();
 }
 
 QStringList ProcessExtraCompiler::arguments() const
 {
-    return {};
+    return QStringList();
 }
 
 bool ProcessExtraCompiler::prepareToRun(const QByteArray &sourceContents)
@@ -362,10 +382,27 @@ Tasks ProcessExtraCompiler::parseIssues(const QByteArray &stdErr)
     return {};
 }
 
-void ProcessExtraCompiler::runInThread(QPromise<FileNameToContentsHash> &promise,
-                                       const FilePath &cmd, const FilePath &workDir,
-                                       const QStringList &args, const ContentProvider &provider,
-                                       const Environment &env)
+QFuture<FileNameToContentsHash> ProcessExtraCompiler::runImpl(const ContentProvider &provider)
+{
+    if (m_watcher)
+        delete m_watcher;
+
+    m_watcher = new QFutureWatcher<FileNameToContentsHash>();
+    connect(m_watcher, &QFutureWatcher<FileNameToContentsHash>::finished,
+            this, &ProcessExtraCompiler::cleanUp);
+
+    m_watcher->setFuture(runAsync(extraCompilerThreadPool(),
+                                         &ProcessExtraCompiler::runInThread, this,
+                                         command(), workingDirectory(), arguments(), provider,
+                                         buildEnvironment()));
+    return m_watcher->future();
+}
+
+void ProcessExtraCompiler::runInThread(
+        QFutureInterface<FileNameToContentsHash> &futureInterface,
+        const FilePath &cmd, const FilePath &workDir,
+        const QStringList &args, const ContentProvider &provider,
+        const Environment &env)
 {
     if (cmd.isEmpty() || !cmd.toFileInfo().isExecutable())
         return;
@@ -374,27 +411,44 @@ void ProcessExtraCompiler::runInThread(QPromise<FileNameToContentsHash> &promise
     if (sourceContents.isNull() || !prepareToRun(sourceContents))
         return;
 
-    Process process;
+    QtcProcess process;
 
     process.setEnvironment(env);
     if (!workDir.isEmpty())
         process.setWorkingDirectory(workDir);
-    process.setCommand({cmd, args});
+    process.setCommand({ cmd, args });
     process.setWriteData(sourceContents);
     process.start();
     if (!process.waitForStarted())
         return;
 
-    while (!promise.isCanceled()) {
-        using namespace std::chrono_literals;
-        if (process.waitForFinished(200ms))
+    while (!futureInterface.isCanceled())
+        if (process.waitForFinished(200))
             break;
-    }
 
-    if (promise.isCanceled())
+    if (futureInterface.isCanceled())
         return;
 
-    promise.addResult(handleProcessFinished(&process));
+    futureInterface.reportResult(handleProcessFinished(&process));
+}
+
+void ProcessExtraCompiler::cleanUp()
+{
+    QTC_ASSERT(m_watcher, return);
+    auto future = m_watcher->future();
+    delete m_watcher;
+    m_watcher = nullptr;
+    if (!future.resultCount())
+        return;
+    const FileNameToContentsHash data = future.result();
+
+    if (data.isEmpty())
+        return; // There was some kind of error...
+
+    for (auto it = data.constBegin(), end = data.constEnd(); it != end; ++it)
+        setContent(it.key(), it.value());
+
+    setCompileTime(QDateTime::currentDateTime());
 }
 
 } // namespace ProjectExplorer

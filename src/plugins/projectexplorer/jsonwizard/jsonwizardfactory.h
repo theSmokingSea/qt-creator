@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -15,9 +37,11 @@
 
 namespace ProjectExplorer {
 
+class JsonWizardFactory;
+class JsonWizardPageFactory;
+class JsonWizardGeneratorFactory;
 class ProjectExplorerPlugin;
 class ProjectExplorerPluginPrivate;
-namespace Internal { class ProjectExplorerTest; }
 
 // Documentation inside.
 class PROJECTEXPLORER_EXPORT JsonWizardFactory : public Core::IWizardFactory
@@ -27,6 +51,7 @@ class PROJECTEXPLORER_EXPORT JsonWizardFactory : public Core::IWizardFactory
 public:
     // Add search paths for wizard.json files. All subdirs are going to be checked.
     static void addWizardPath(const Utils::FilePath &path);
+    static void clearWizardPaths();
 
     // actual interface of the wizard factory:
     class Generator {
@@ -46,9 +71,11 @@ public:
         int index = -1; // page index in the wizard
         Utils::Id typeId;
         QVariant enabled;
-        QVariant skipForSubprojects;
         QVariant data;
     };
+
+    static void registerPageFactory(JsonWizardPageFactory *factory);
+    static void registerGeneratorFactory(JsonWizardGeneratorFactory *factory);
 
     static QList<QVariant> objectOrList(const QVariant &data, QString *errorMessage);
 
@@ -57,9 +84,6 @@ public:
     bool isAvailable(Utils::Id platformId) const override;
 
     virtual std::pair<int, QStringList> screenSizeInfoFromPage(const QString &pageType) const;
-
-    // internal
-    static void setInstalledWizardsPath(const Utils::FilePath &path);
 
 private:
     Utils::Wizard *runWizardImpl(const Utils::FilePath &path, QWidget *parent, Utils::Id platform,
@@ -72,11 +96,11 @@ private:
                                                   const Utils::FilePath &baseDir,
                                                   QString *errorMessage);
     static Utils::FilePaths &searchPaths();
-    static void resetSearchPaths();
 
     static void setVerbose(int level);
     static int verbose();
 
+    static void destroyAllFactories();
     bool initialize(const QVariantMap &data, const Utils::FilePath &baseDir, QString *errorMessage);
 
     JsonWizardFactory::Page parsePage(const QVariant &value, QString *errorMessage);
@@ -98,7 +122,25 @@ private:
 
     friend class ProjectExplorerPlugin;
     friend class ProjectExplorerPluginPrivate;
-    friend class Internal::ProjectExplorerTest;
 };
 
+namespace Internal {
+
+class JsonWizardFactoryJsExtension : public QObject
+{
+    Q_OBJECT
+public:
+    JsonWizardFactoryJsExtension(Utils::Id platformId,
+                                 const QSet<Utils::Id> &availableFeatures,
+                                 const QSet<Utils::Id> &pluginFeatures);
+
+    Q_INVOKABLE QVariant value(const QString &name) const;
+
+private:
+    Utils::Id m_platformId;
+    QSet<Utils::Id> m_availableFeatures;
+    QSet<Utils::Id> m_pluginFeatures;
+};
+
+} // namespace Internal
 } // namespace ProjectExplorer

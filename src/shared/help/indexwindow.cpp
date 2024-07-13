@@ -1,11 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "indexwindow.h"
 
 #include "topicchooser.h"
 
-#include <helptr.h>
 #include <helpviewer.h>
 #include <localhelpmanager.h>
 #include <openpagesmanager.h>
@@ -27,7 +48,9 @@
 #include <QHelpEngine>
 #include <QHelpIndexModel>
 
+#ifdef HELP_NEW_FILTER_ENGINE
 #include <QHelpLink>
+#endif
 
 using namespace Help::Internal;
 
@@ -47,7 +70,7 @@ IndexWindow::IndexWindow()
     m_searchLineEdit->installEventFilter(this);
     m_searchLineEdit->setAttribute(Qt::WA_MacShowFocusRect, false);
 
-    QLabel *l = new QLabel(Tr::tr("&Look for:"));
+    QLabel *l = new QLabel(tr("&Look for:"));
     l->setBuddy(m_searchLineEdit);
     layout->addWidget(l);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -78,7 +101,7 @@ IndexWindow::IndexWindow()
     connect(m_indexWidget, &Utils::NavigationTreeView::activated,
             this, [this](const QModelIndex &index) { open(index); });
     connect(m_searchLineEdit, &QLineEdit::returnPressed,
-            m_indexWidget, [this] { open(m_indexWidget->currentIndex()); });
+            m_indexWidget, [this]() { open(m_indexWidget->currentIndex()); });
     layout->addWidget(m_indexWidget);
 
     m_indexWidget->viewport()->installEventFilter(this);
@@ -133,10 +156,10 @@ bool IndexWindow::eventFilter(QObject *obj, QEvent *e)
         QModelIndex idx = m_indexWidget->indexAt(ctxtEvent->pos());
         if (idx.isValid()) {
             QMenu menu;
-            QAction *curTab = menu.addAction(Tr::tr("Open Link"));
+            QAction *curTab = menu.addAction(tr("Open Link"));
             QAction *newTab = 0;
             if (m_isOpenInNewPageActionVisible)
-                newTab = menu.addAction(Tr::tr("Open Link as New Page"));
+                newTab = menu.addAction(tr("Open Link as New Page"));
             menu.move(m_indexWidget->mapToGlobal(ctxtEvent->pos()));
 
             QAction *action = menu.exec();
@@ -175,8 +198,15 @@ void IndexWindow::disableSearchLineEdit()
 void IndexWindow::open(const QModelIndex &index, bool newPage)
 {
     const QString keyword = m_filteredIndexModel->data(index, Qt::DisplayRole).toString();
-    const QMultiMap<QString, QUrl> links = LocalHelpManager::linksForKeyword(keyword);
+#ifndef HELP_NEW_FILTER_ENGINE
+    QMultiMap<QString, QUrl> links = LocalHelpManager::helpEngine().linksForKeyword(keyword);
+#else
+    QMultiMap<QString, QUrl> links;
+    const QList<QHelpLink> docs = LocalHelpManager::helpEngine().documentsForKeyword(keyword);
+    for (const auto &doc : docs)
+        links.insert(doc.title, doc.url);
 
+#endif
     emit linksActivated(links, keyword, newPage);
 }
 

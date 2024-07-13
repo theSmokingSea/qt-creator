@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "openelementvisitor.h"
 
@@ -132,8 +154,7 @@ void OpenModelElementVisitor::visitMElement(const qmt::MElement *element)
 
 void OpenModelElementVisitor::visitMObject(const qmt::MObject *object)
 {
-    if (m_elementTasks->hasLinkedFile(object))
-        m_elementTasks->openLinkedFile(object);
+    Q_UNUSED(object)
 }
 
 void OpenModelElementVisitor::visitMPackage(const qmt::MPackage *package)
@@ -146,26 +167,17 @@ void OpenModelElementVisitor::visitMPackage(const qmt::MPackage *package)
 
 void OpenModelElementVisitor::visitMClass(const qmt::MClass *klass)
 {
-    if (m_elementTasks->hasClassDefinition(klass))
-        m_elementTasks->openClassDefinition(klass);
-    else
-        visitMObject(klass);
+    m_elementTasks->openClassDefinition(klass);
 }
 
 void OpenModelElementVisitor::visitMComponent(const qmt::MComponent *component)
 {
-    if (m_elementTasks->hasSourceFile(component))
-        m_elementTasks->openSourceFile(component);
-    else
-        visitMObject(component);
+    m_elementTasks->openSourceFile(component);
 }
 
 void OpenModelElementVisitor::visitMDiagram(const qmt::MDiagram *diagram)
 {
-    if (m_elementTasks->hasDiagram(diagram))
-        m_elementTasks->openDiagram(diagram);
-    else
-        visitMObject(diagram);
+    m_elementTasks->openDiagram(diagram);
 }
 
 void OpenModelElementVisitor::visitMCanvasDiagram(const qmt::MCanvasDiagram *diagram)

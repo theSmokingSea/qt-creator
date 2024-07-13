@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "historycompleter.h"
 
@@ -30,8 +52,8 @@ public:
     void addEntry(const QString &str);
 
     QStringList list;
-    Key historyKey;
-    Key historyKeyIsLastItemEmpty;
+    QString historyKey;
+    QString historyKeyIsLastItemEmpty;
     int maxLines = 6;
     bool isLastItemEmpty = isLastItemEmptyDefault;
 };
@@ -54,11 +76,11 @@ public:
             optCopy.state |= QStyle::State_HasFocus;
         QItemDelegate::paint(painter,option,index);
         // add remove button
-        const qreal devicePixelRatio = painter->device()->devicePixelRatio();
-        const QPixmap iconPixmap = icon.pixmap(option.rect.size(), devicePixelRatio);
+        QWindow *window = view->window()->windowHandle();
+        const QPixmap iconPixmap = icon.pixmap(window, option.rect.size());
         QRect pixmapRect = QStyle::alignedRect(option.direction,
                                                Qt::AlignRight | Qt::AlignVCenter,
-                                               iconPixmap.size() / devicePixelRatio,
+                                               iconPixmap.size() / window->devicePixelRatio(),
                                                option.rect);
         if (!clearIconSize.isValid())
             clearIconSize = pixmapRect.size();
@@ -76,10 +98,6 @@ public:
     HistoryLineView(HistoryCompleterPrivate *model_)
         : model(model_)
     {
-        setEditTriggers(QAbstractItemView::NoEditTriggers);
-        setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
-        setSelectionBehavior(QAbstractItemView::SelectRows);
-        setSelectionMode(QAbstractItemView::SingleSelection);
     }
 
     void installDelegate()
@@ -174,16 +192,17 @@ void HistoryCompleterPrivate::addEntry(const QString &str)
                                      isLastItemEmptyDefault);
 }
 
-HistoryCompleter::HistoryCompleter(const Key &historyKey, QObject *parent)
+HistoryCompleter::HistoryCompleter(const QString &historyKey, QObject *parent)
     : QCompleter(parent),
       d(new HistoryCompleterPrivate)
 {
     QTC_ASSERT(!historyKey.isEmpty(), return);
     QTC_ASSERT(theSettings, return);
 
-    d->historyKey = "CompleterHistory/" + historyKey;
+    d->historyKey = QLatin1String("CompleterHistory/") + historyKey;
     d->list = theSettings->value(d->historyKey).toStringList();
-    d->historyKeyIsLastItemEmpty = "CompleterHistory/" + historyKey + ".IsLastItemEmpty";
+    d->historyKeyIsLastItemEmpty = QLatin1String("CompleterHistory/")
+        + historyKey + QLatin1String(".IsLastItemEmpty");
     d->isLastItemEmpty = theSettings->value(d->historyKeyIsLastItemEmpty, isLastItemEmptyDefault)
                              .toBool();
 
@@ -207,10 +226,10 @@ QString HistoryCompleter::historyItem() const
     return d->list.at(0);
 }
 
-bool HistoryCompleter::historyExistsFor(const Key &historyKey)
+bool HistoryCompleter::historyExistsFor(const QString &historyKey)
 {
     QTC_ASSERT(theSettings, return false);
-    const Key fullKey = "CompleterHistory/" + historyKey;
+    const QString fullKey = QLatin1String("CompleterHistory/") + historyKey;
     return theSettings->value(fullKey).isValid();
 }
 

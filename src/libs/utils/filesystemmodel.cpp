@@ -1,12 +1,46 @@
-// Copyright (C) 2020 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+/****************************************************************************
+**
+** Copyright (C) 2020 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtWidgets module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
 
 #include "filesystemmodel.h"
 
-#include "environment.h"
 #include "hostosinfo.h"
 #include "qtcassert.h"
-#include "utilstr.h"
 
 #include <QDateTime>
 #include <QCollator>
@@ -209,8 +243,7 @@ private:
 };
 
 /*!
-    \internal
-    Creates a thread.
+    Creates thread
 */
 FileInfoGatherer::FileInfoGatherer(QObject *parent)
     : QThread(parent)
@@ -220,8 +253,7 @@ FileInfoGatherer::FileInfoGatherer(QObject *parent)
 }
 
 /*!
-    \internal
-    Destroys a thread.
+    Destroys thread
 */
 FileInfoGatherer::~FileInfoGatherer()
 {
@@ -267,7 +299,6 @@ QFileIconProvider *FileInfoGatherer::iconProvider() const
 }
 
 /*!
-    \internal
     Fetch extended information for all \a files in \a path
 
     \sa updateFile(), update(), resolvedName()
@@ -298,7 +329,6 @@ void FileInfoGatherer::fetchExtendedInformation(const QString &path, const QStri
 }
 
 /*!
-    \internal
     Fetch extended information for all \a filePath
 
     \sa fetchExtendedInformation()
@@ -421,9 +451,9 @@ void FileInfoGatherer::run()
             condition.wait(&mutex);
         if (abort.loadRelaxed())
             return;
-        const QString thisPath = std::as_const(path).front();
+        const QString thisPath = qAsConst(path).front();
         path.pop_front();
-        const QStringList thisList = std::as_const(files).front();
+        const QStringList thisList = qAsConst(files).front();
         files.pop_front();
         locker.unlock();
 
@@ -438,8 +468,7 @@ ExtendedInformation FileInfoGatherer::getInfo(const QFileInfo &fileInfo) const
     info.displayType = m_iconProvider->type(fileInfo);
     if (useFileSystemWatcher()) {
         // ### Not ready to listen all modifications by default
-        static const bool watchFiles = qtcEnvironmentVariableIsSet(
-            "QT_FILESYSTEMMODEL_WATCH_FILES");
+        static const bool watchFiles = qEnvironmentVariableIsSet("QT_FILESYSTEMMODEL_WATCH_FILES");
         if (watchFiles) {
             if (!fileInfo.exists() && !fileInfo.isSymLink()) {
                 const_cast<FileInfoGatherer *>(this)->
@@ -664,7 +693,7 @@ public:
     void updateIcon(QFileIconProvider *iconProvider, const QString &path) {
         if (info)
             info->icon = iconProvider->icon(QFileInfo(path));
-        for (FileSystemNode *child : std::as_const(children)) {
+        for (FileSystemNode *child : qAsConst(children)) {
             //On windows the root (My computer) has no path so we don't want to add a / for nothing (e.g. /C:/)
             if (!path.isEmpty()) {
                 if (path.endsWith(QLatin1Char('/')))
@@ -679,7 +708,7 @@ public:
     void retranslateStrings(QFileIconProvider *iconProvider, const QString &path) {
         if (info)
             info->displayType = iconProvider->type(QFileInfo(path));
-        for (FileSystemNode *child : std::as_const(children)) {
+        for (FileSystemNode *child : qAsConst(children)) {
             //On windows the root (My computer) has no path so we don't want to add a / for nothing (e.g. /C:/)
             if (!path.isEmpty()) {
                 if (path.endsWith(QLatin1Char('/')))
@@ -751,8 +780,8 @@ public:
         // Vista == "Computer",
         // OS X == "Computer" (sometime user generated) "Benjamin's PowerBook G4"
         if (HostOsInfo::isWindowsHost())
-            return Tr::tr("My Computer");
-        return Tr::tr("Computer");
+            return FileSystemModel::tr("My Computer");
+        return FileSystemModel::tr("Computer");
     }
 
     inline void delayedSort() {
@@ -867,7 +896,7 @@ bool FileSystemModel::remove(const QModelIndex &aindex)
     if (useFileSystemWatcher() && HostOsInfo::isWindowsHost())  {
         // QTBUG-65683: Remove file system watchers prior to deletion to prevent
         // failure due to locked files on Windows.
-        d->unwatchPathsAt(aindex);
+        const QStringList watchedPaths = d->unwatchPathsAt(aindex);
     }
     const bool success = (fileInfo.isFile() || fileInfo.isSymLink())
             ? QFile::remove(path) : QDir(path).removeRecursively();
@@ -1053,8 +1082,10 @@ FileSystemNode *FileSystemModelPrivate::node(const QString &path, bool fetch) co
             elementPath = host;
             elementPath.append(separator);
         } else {
-            if (!pathElements.at(0).contains(QLatin1Char(':')))
-                pathElements.prepend(HostOsInfo::root().path());
+            if (!pathElements.at(0).contains(QLatin1Char(':'))) {
+                QString rootPath = QDir(longPath).rootPath();
+                pathElements.prepend(rootPath);
+            }
             if (pathElements.at(0).endsWith(QLatin1Char('/')))
                 pathElements[0].chop(1);
         }
@@ -1508,19 +1539,19 @@ QVariant FileSystemModel::headerData(int section, Qt::Orientation orientation, i
 
     QString returnValue;
     switch (section) {
-    case 0: returnValue = Tr::tr("Name");
+    case 0: returnValue = tr("Name");
             break;
-    case 1: returnValue = Tr::tr("Size");
+    case 1: returnValue = tr("Size");
             break;
     case 2: returnValue = HostOsInfo::isMacHost()
-                    ? Tr::tr("Kind", "Match OS X Finder")
-                    : Tr::tr("Type", "All other platforms");
+                    ? tr("Kind", "Match OS X Finder")
+                    :tr("Type", "All other platforms");
            break;
     // Windows   - Type
     // OS X      - Kind
     // Konqueror - File Type
     // Nautilus  - Type
-    case 3: returnValue = Tr::tr("Date Modified");
+    case 3: returnValue = tr("Date Modified");
             break;
     default: return QVariant();
     }
@@ -1721,7 +1752,7 @@ QStringList FileSystemModel::mimeTypes() const
     \a indexes. The format used to describe the items corresponding to the
     indexes is obtained from the mimeTypes() function.
 
-    If the list of indexes is empty, \c nullptr is returned rather than a
+    If the list of indexes is empty, \nullptr is returned rather than a
     serialized empty list.
 */
 QMimeData *FileSystemModel::mimeData(const QModelIndexList &indexes) const
@@ -1801,8 +1832,7 @@ QHash<int, QByteArray> FileSystemModel::roleNames() const
 }
 
 /*!
-    \internal
-    \enum Utils::FileSystemModel::Option
+    \enum FileSystemModel::Option
     \since 5.14
 
     \value DontWatchForChanges Do not add file watchers to the paths.
@@ -1850,7 +1880,6 @@ bool FileSystemModel::testOption(Option option) const
 }
 
 /*!
-    \internal
     \property FileSystemModel::options
     \brief the various options that affect the model
     \since 5.14
@@ -2125,7 +2154,6 @@ QDir::Filters FileSystemModel::filter() const
 }
 
 /*!
-    \internal
     \property FileSystemModel::resolveSymlinks
     \brief Whether the directory model should resolve symbolic links
 
@@ -2151,7 +2179,6 @@ bool FileSystemModel::resolveSymlinks() const
 }
 
 /*!
-    \internal
     \property FileSystemModel::readOnly
     \brief Whether the directory model allows writing to the file system
 
@@ -2171,7 +2198,6 @@ bool FileSystemModel::isReadOnly() const
 }
 
 /*!
-    \internal
     \property FileSystemModel::nameFilterDisables
     \brief Whether files that don't pass the name filter are hidden or disabled
 
@@ -2200,7 +2226,6 @@ void FileSystemModel::setNameFilters(const QStringList &filters)
         // update the bypass filter to only bypass the stuff that must be kept around
         d->bypassFilters.clear();
         // We guarantee that rootPath will stick around
-        // TODO: root looks unused - does it really guarantee anything?
         QPersistentModelIndex root(index(rootPath()));
         const QModelIndexList persistentList = persistentIndexList();
         for (const auto &persistentIndex : persistentList) {
@@ -2463,7 +2488,7 @@ void FileSystemModelPrivate::_q_fileSystemChanged(const QString &path,
     std::sort(rowsToUpdate.begin(), rowsToUpdate.end());
     PathKey min;
     PathKey max;
-    for (const PathKey &value : std::as_const(rowsToUpdate)) {
+    for (const PathKey &value : qAsConst(rowsToUpdate)) {
         //##TODO is there a way to bundle signals with QString as the content of the list?
         /*if (min.isEmpty()) {
             min = value;
@@ -2518,7 +2543,7 @@ QStringList FileSystemModelPrivate::unwatchPathsAt(const QModelIndex &index)
     QTC_CHECK(useFileSystemWatcher());
     const FileSystemNode *indexNode = node(index);
     if (indexNode == nullptr)
-        return {};
+        return QStringList();
     const Qt::CaseSensitivity caseSensitivity = indexNode->caseSensitive()
         ? Qt::CaseSensitive : Qt::CaseInsensitive;
     const QString path = indexNode->fileInfo().absoluteFilePath();

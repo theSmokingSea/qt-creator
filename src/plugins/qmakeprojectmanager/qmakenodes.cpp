@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmakenodes.h"
 
@@ -11,12 +33,12 @@
 #include <projectexplorer/target.h>
 
 #include <qtsupport/baseqtversion.h>
-#include <qtsupport/qtkitaspect.h>
+#include <qtsupport/qtkitinformation.h>
 
 #include <resourceeditor/resourcenode.h>
 
-#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
+#include <utils/stringutils.h>
 
 // #include <android/androidconstants.h>
 // #include <ios/iosconstants.h>
@@ -114,9 +136,10 @@ bool QmakeBuildSystem::supportsAction(Node *context, ProjectAction action, const
                 // A virtual folder, we do what the projectexplorer does
                 const FolderNode *folder = node->asFolderNode();
                 if (folder) {
-                    FilePaths list;
-                    folder->forEachFolderNode([&](FolderNode *f) { list << f->filePath(); });
-                    if (n->deploysFolder(FileUtils::commonPath(list).toString()))
+                    QStringList list;
+                    foreach (FolderNode *f, folder->folderNodes())
+                        list << f->filePath().toString() + QLatin1Char('/');
+                    if (n->deploysFolder(Utils::commonPath(list)))
                         addExistingFiles = false;
                 }
             }
@@ -167,7 +190,7 @@ bool QmakePriFileNode::removeSubProject(const FilePath &proFilePath)
 
 QStringList QmakePriFileNode::subProjectFileNamePatterns() const
 {
-    return {"*.pro"};
+    return QStringList("*.pro");
 }
 
 bool QmakeBuildSystem::addFiles(Node *context, const FilePaths &filePaths, FilePaths *notAdded)
@@ -340,7 +363,7 @@ QStringList QmakeProFileNode::targetApplications() const
     return apps;
 }
 
-QVariant QmakeProFileNode::data(Id role) const
+QVariant QmakeProFileNode::data(Utils::Id role) const
 {
     // if (role == Android::Constants::AndroidAbis)
     //     return variableValue(Variable::AndroidAbis);
@@ -363,12 +386,18 @@ QVariant QmakeProFileNode::data(Id role) const
     //     res.removeDuplicates();
     //     return res;
     // }
-
+    //
     // if (role == Android::Constants::AndroidTargets)
     //     return {};
     // if (role == Android::Constants::AndroidApk)
     //     return {};
-    //
+
+    // We can not use AppMan headers even at build time.
+    if (role == "AppmanPackageDir")
+        return singleVariableValue(Variable::AppmanPackageDir);
+    if (role == "AppmanManifest")
+        return singleVariableValue(Variable::AppmanManifest);
+
     // if (role == Ios::Constants::IosTarget) {
     //     const TargetInformation info = targetInformation();
     //     if (info.valid)
@@ -393,7 +422,7 @@ QVariant QmakeProFileNode::data(Id role) const
     return {};
 }
 
-bool QmakeProFileNode::setData(Id role, const QVariant &value) const
+bool QmakeProFileNode::setData(Utils::Id role, const QVariant &value) const
 {
     QmakeProFile *pro = proFile();
     if (!pro)
@@ -409,7 +438,7 @@ bool QmakeProFileNode::setData(Id role, const QVariant &value) const
             flags |= QmakeProjectManager::Internal::ProWriter::MultiLine;
         }
     }
-    //
+
     // if (role == Android::Constants::AndroidExtraLibs)
     //     return pro->setProVariable(QLatin1String(Android::Constants::ANDROID_EXTRA_LIBS),
     //                                value.toStringList(), scope, flags);

@@ -1,21 +1,51 @@
-// Copyright (C) 2016 Denis Mingulov
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Denis Mingulov
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "classviewparsertreeitem.h"
-
+#include "classviewsymbollocation.h"
+#include "classviewsymbolinformation.h"
 #include "classviewconstants.h"
+#include "classviewutils.h"
 
 #include <cplusplus/Icons.h>
+#include <cplusplus/Name.h>
 #include <cplusplus/Overview.h>
-
+#include <cplusplus/Symbol.h>
+#include <cplusplus/Symbols.h>
 #include <projectexplorer/project.h>
-#include <projectexplorer/projectmanager.h>
+#include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectnodes.h>
-#include <projectexplorer/projectmanager.h>
+#include <projectexplorer/session.h>
+#include <utils/algorithm.h>
+
+#include <QHash>
+#include <QPair>
+#include <QIcon>
+#include <QStandardItem>
 
 #include <QDebug>
-#include <QHash>
-#include <QStandardItem>
 
 namespace ClassView {
 namespace Internal {
@@ -44,7 +74,7 @@ public:
 
 void ParserTreeItemPrivate::mergeWith(const ParserTreeItem::ConstPtr &target)
 {
-    if (!target)
+    if (target.isNull())
         return;
 
     m_symbolLocations.unite(target->d->m_symbolLocations);
@@ -56,11 +86,11 @@ void ParserTreeItemPrivate::mergeWith(const ParserTreeItem::ConstPtr &target)
         const ParserTreeItem::ConstPtr &targetChild = it.value();
 
         ParserTreeItem::ConstPtr child = m_symbolInformations.value(inf);
-        if (child) {
+        if (!child.isNull()) {
             child->d->mergeWith(targetChild);
         } else {
-            const ParserTreeItem::ConstPtr clone = targetChild ? targetChild->d->cloneTree()
-                                                               : ParserTreeItem::ConstPtr();
+            const ParserTreeItem::ConstPtr clone = targetChild.isNull() ? ParserTreeItem::ConstPtr()
+                                                                   : targetChild->d->cloneTree();
             m_symbolInformations.insert(inf, clone);
         }
     }
@@ -99,11 +129,11 @@ void ParserTreeItemPrivate::mergeSymbol(const CPlusPlus::Symbol *symbol)
     // Better to improve qHash timing
     ParserTreeItem::ConstPtr childItem = m_symbolInformations.value(information);
 
-    if (!childItem)
+    if (childItem.isNull())
         childItem = ParserTreeItem::ConstPtr(new ParserTreeItem());
 
     // locations have 1-based column in Symbol, use the same here.
-    SymbolLocation location(symbol->filePath(),
+    SymbolLocation location(QString::fromUtf8(symbol->fileName() , symbol->fileNameLength()),
                             symbol->line(), symbol->column());
 
     childItem->d->m_symbolLocations.insert(location);
@@ -139,7 +169,7 @@ ParserTreeItem::ConstPtr ParserTreeItemPrivate::cloneTree() const
 
     for (auto it = m_symbolInformations.cbegin(); it != m_symbolInformations.cend(); ++it) {
         ParserTreeItem::ConstPtr child = it.value();
-        if (!child)
+        if (child.isNull())
             continue;
         newItem->d->m_symbolInformations.insert(it.key(), child->d->cloneTree());
     }
@@ -263,7 +293,7 @@ bool ParserTreeItem::canFetchMore(QStandardItem *item) const
 */
 void ParserTreeItem::fetchMore(QStandardItem *item) const
 {
-    using ProjectExplorer::ProjectManager;
+    using ProjectExplorer::SessionManager;
     if (!item)
         return;
 
@@ -281,11 +311,11 @@ void ParserTreeItem::fetchMore(QStandardItem *item) const
         add->setData(inf.type(), Constants::SymbolTypeRole);
         add->setData(inf.iconType(), Constants::IconTypeRole);
 
-        if (ptr) {
+        if (!ptr.isNull()) {
             // icon
             const Utils::FilePath &filePath = ptr->projectFilePath();
             if (!filePath.isEmpty()) {
-                ProjectExplorer::Project *project = ProjectManager::projectForFile(filePath);
+                ProjectExplorer::Project *project = SessionManager::projectForFile(filePath);
                 if (project)
                     add->setIcon(project->containerNode()->icon());
             }
@@ -311,8 +341,8 @@ void ParserTreeItem::debugDump(int indent) const
         const SymbolInformation &inf = it.key();
         const ConstPtr &child = it.value();
         qDebug() << QString(2 * indent, QLatin1Char(' ')) << inf.iconType() << inf.name()
-                 << inf.type() << bool(child);
-        if (child)
+                 << inf.type() << child.isNull();
+        if (!child.isNull())
             child->debugDump(indent + 1);
     }
 }

@@ -8,8 +8,7 @@ add_qtc_plugin(Nim
     editor/nimtexteditorwidget.cpp editor/nimtexteditorwidget.h
     nim.qrc
     nimconstants.h
-    nimplugin.cpp
-    nimtr.h
+    nimplugin.cpp nimplugin.h
     project/nimblebuildstep.h project/nimblebuildstep.cpp
     project/nimbleproject.h project/nimbleproject.cpp
     project/nimblerunconfiguration.h project/nimblerunconfiguration.cpp
@@ -24,8 +23,9 @@ add_qtc_plugin(Nim
     project/nimproject.cpp project/nimproject.h
     project/nimrunconfiguration.cpp project/nimrunconfiguration.h
     project/nimtoolchain.cpp project/nimtoolchain.h
+    project/nimtoolchainfactory.cpp project/nimtoolchainfactory.h
     settings/nimcodestylepreferencesfactory.cpp settings/nimcodestylepreferencesfactory.h
-    settings/nimcodestylepreferenceswidget.cpp settings/nimcodestylepreferenceswidget.h
+    settings/nimcodestylepreferenceswidget.cpp settings/nimcodestylepreferenceswidget.h settings/nimcodestylepreferenceswidget.ui
     settings/nimcodestylesettingspage.cpp settings/nimcodestylesettingspage.h
     settings/nimsettings.cpp settings/nimsettings.h
     suggest/client.cpp suggest/client.h

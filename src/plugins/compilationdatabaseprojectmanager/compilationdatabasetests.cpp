@@ -1,5 +1,27 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "compilationdatabasetests.h"
 
@@ -9,7 +31,7 @@
 #include <cppeditor/cpptoolstestcase.h>
 #include <cppeditor/projectinfo.h>
 
-#include <projectexplorer/kitaspects.h>
+#include <projectexplorer/kitinformation.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
@@ -25,7 +47,8 @@ using namespace CppEditor;
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace CompilationDatabaseProjectManager::Internal {
+namespace CompilationDatabaseProjectManager {
+namespace Internal {
 
 CompilationDatabaseTests::CompilationDatabaseTests(QObject *parent)
     : QObject(parent)
@@ -39,7 +62,7 @@ void CompilationDatabaseTests::initTestCase()
     if (allKits.empty())
         QSKIP("This test requires at least one kit to be present.");
 
-    Toolchain *toolchain = ToolchainManager::toolchain([](const Toolchain *tc) {
+    ToolChain *toolchain = ToolChainManager::toolChain([](const ToolChain *tc) {
         return tc->isValid() && tc->language() == ProjectExplorer::Constants::CXX_LANGUAGE_ID;
     });
     if (!toolchain)
@@ -56,7 +79,7 @@ void CompilationDatabaseTests::cleanupTestCase()
 
 void CompilationDatabaseTests::testProject()
 {
-    QFETCH(FilePath, projectFilePath);
+    QFETCH(QString, projectFilePath);
 
     CppEditor::Tests::ProjectOpenerAndCloser projectManager;
     const CppEditor::ProjectInfo::ConstPtr projectInfo = projectManager.open(projectFilePath, true);
@@ -68,13 +91,13 @@ void CompilationDatabaseTests::testProject()
     const CppEditor::ProjectPart &projectPart = *projectParts.first();
     QVERIFY(!projectPart.headerPaths.isEmpty());
     QVERIFY(!projectPart.projectMacros.isEmpty());
-    QVERIFY(!projectPart.toolchainMacros.isEmpty());
+    QVERIFY(!projectPart.toolChainMacros.isEmpty());
     QVERIFY(!projectPart.files.isEmpty());
 }
 
 void CompilationDatabaseTests::testProject_data()
 {
-    QTest::addColumn<FilePath>("projectFilePath");
+    QTest::addColumn<QString>("projectFilePath");
 
     addTestRow("qtc/compile_commands.json");
     addTestRow("llvm/compile_commands.json");
@@ -92,9 +115,7 @@ public:
 
     QStringList getFilteredFlags()
     {
-        filteredFlags(FilePath::fromString(fileName),
-                      FilePath::fromString(workingDir),
-                      flags, headerPaths, macros, fileKind, sysRoot);
+        filteredFlags(fileName, workingDir, flags, headerPaths, macros, fileKind, sysRoot);
         return flags;
     }
 
@@ -165,8 +186,8 @@ void CompilationDatabaseTests::testFilterArguments()
                                       {"RELATIVE_PLUGIN_PATH", "\"../lib/qtcreator/plugins\""},
                                       {"QT_CREATOR", "1"}}));
     QCOMPARE(testData.fileKind, CppEditor::ProjectFile::Kind::CXXSource);
-    QCOMPARE(testData.sysRoot.toUserOutput(), HostOsInfo::isWindowsHost()
-             ? QString("C:\\sysroot\\embedded") : QString("/opt/sysroot/embedded"));
+    QCOMPARE(testData.sysRoot.toString(), HostOsInfo::isWindowsHost() ? QString("C:\\sysroot\\embedded")
+                                                                      : QString("/opt/sysroot/embedded"));
 }
 
 static QString kCmakeCommand
@@ -264,11 +285,12 @@ void CompilationDatabaseTests::testSkipOutputFiles()
     QVERIFY(testData.getFilteredFlags().isEmpty());
 }
 
-void CompilationDatabaseTests::addTestRow(const QString &relativeFilePath)
+void CompilationDatabaseTests::addTestRow(const QByteArray &relativeFilePath)
 {
-    const FilePath absoluteFilePath = m_tmpDir->absolutePath(relativeFilePath);
+    const QString absoluteFilePath = m_tmpDir->absolutePath(relativeFilePath);
 
-    QTest::newRow(qPrintable(relativeFilePath)) << absoluteFilePath;
+    QTest::newRow(relativeFilePath.constData()) << absoluteFilePath;
 }
 
-} // CompilationDatabaseProjectManager::Internal
+} // namespace Internal
+} // namespace CompilationDatabaseProjectManager

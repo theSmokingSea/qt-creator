@@ -1,16 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "editorwidget.h"
-
-#include "formeditor.h"
+#include "formeditorw.h"
 #include "formeditorstack.h"
-#include "formwindoweditor.h"
-
-#include <utils/layoutbuilder.h>
 
 #include <coreplugin/editormanager/ieditor.h>
-#include <coreplugin/editortoolbar.h>
 
 #include <QDockWidget>
 #include <QAbstractItemView>
@@ -22,24 +39,18 @@ namespace Internal {
 
 // ---------- EditorWidget
 
-EditorWidget::EditorWidget(Core::EditorToolBar *toolBar, QWidget *parent)
-    : Utils::FancyMainWindow(parent)
-    , m_stack(new FormEditorStack)
-    , m_toolBar(toolBar)
+EditorWidget::EditorWidget(QWidget *parent) :
+    Utils::FancyMainWindow(parent),
+    m_stack(new FormEditorStack)
 {
-    using namespace Layouting;
-    QWidget *centralWidget = Layouting::Column{noMargin, spacing(0), m_toolBar, m_stack}.emerge();
-    centralWidget->setMinimumHeight(100);
-    centralWidget->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-
     setObjectName("EditorWidget");
-    setCentralWidget(centralWidget);
+    setCentralWidget(m_stack);
     setDocumentMode(true);
     setTabPosition(Qt::AllDockWidgetAreas, QTabWidget::South);
     setCorner(Qt::BottomLeftCorner, Qt::LeftDockWidgetArea);
     setCorner(Qt::BottomRightCorner, Qt::RightDockWidgetArea);
 
-    QWidget * const * subs = designerSubWindows();
+    QWidget * const*subs = FormEditorW::designerSubWindows();
     for (int i = 0; i < DesignerSubWindowCount; i++) {
         QWidget *subWindow = subs[i];
         subWindow->setWindowTitle(subs[i]->windowTitle());
@@ -90,7 +101,6 @@ void EditorWidget::add(SharedTools::WidgetHost *widgetHost, FormWindowEditor *fo
     data.formWindowEditor = formWindowEditor;
     data.widgetHost = widgetHost;
     m_stack->add(data);
-    m_toolBar->addEditor(formWindowEditor);
 }
 
 void EditorWidget::removeFormWindowEditor(Core::IEditor *xmlEditor)

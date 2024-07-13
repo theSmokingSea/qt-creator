@@ -1,28 +1,50 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "pdbengine.h"
 
-#include <debugger/breakhandler.h>
 #include <debugger/debuggeractions.h>
 #include <debugger/debuggercore.h>
 #include <debugger/debuggerdialogs.h>
+#include <debugger/debuggerplugin.h>
 #include <debugger/debuggerprotocol.h>
 #include <debugger/debuggertooltipmanager.h>
-#include <debugger/debuggertr.h>
+#include <debugger/threaddata.h>
+
+#include <debugger/breakhandler.h>
 #include <debugger/moduleshandler.h>
 #include <debugger/procinterrupt.h>
 #include <debugger/registerhandler.h>
-#include <debugger/sourceutils.h>
 #include <debugger/stackhandler.h>
-#include <debugger/threaddata.h>
+#include <debugger/sourceutils.h>
 #include <debugger/watchhandler.h>
 #include <debugger/watchutils.h>
 
 #include <utils/algorithm.h>
-#include <utils/environment.h>
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 
 #include <coreplugin/idocument.h>
 #include <coreplugin/icore.h>
@@ -39,7 +61,8 @@
 using namespace Core;
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 PdbEngine::PdbEngine()
 {
@@ -98,28 +121,20 @@ void PdbEngine::setupEngine()
     m_interpreter = runParameters().interpreter;
     QString bridge = ICore::resourcePath("debugger/pdbbridge.py").toString();
 
-    connect(&m_proc, &Process::started, this, &PdbEngine::handlePdbStarted);
-    connect(&m_proc, &Process::done, this, &PdbEngine::handlePdbDone);
-    connect(&m_proc, &Process::readyReadStandardOutput, this, &PdbEngine::readPdbStandardOutput);
-    connect(&m_proc, &Process::readyReadStandardError, this, &PdbEngine::readPdbStandardError);
+    connect(&m_proc, &QtcProcess::started, this, &PdbEngine::handlePdbStarted);
+    connect(&m_proc, &QtcProcess::done, this, &PdbEngine::handlePdbDone);
+    connect(&m_proc, &QtcProcess::readyReadStandardOutput, this, &PdbEngine::readPdbStandardOutput);
+    connect(&m_proc, &QtcProcess::readyReadStandardError, this, &PdbEngine::readPdbStandardError);
 
     const FilePath scriptFile = runParameters().mainScript;
     if (!scriptFile.isReadableFile()) {
-        AsynchronousMessageBox::critical(Tr::tr("Python Error"),
-                                         QString("Cannot open script file %1")
-                                             .arg(scriptFile.toUserOutput()));
+        AsynchronousMessageBox::critical(tr("Python Error"),
+            QString("Cannot open script file %1").arg(scriptFile.toUserOutput()));
         notifyEngineSetupFailed();
     }
 
     CommandLine cmd{m_interpreter, {bridge, scriptFile.path()}};
     cmd.addArg(runParameters().inferior.workingDirectory.path());
-    cmd.addArg("--");
-    QStringList arguments = runParameters().inferior.command.splitArguments();
-    if (!arguments.isEmpty() && arguments.constFirst() == "-u")
-        arguments.removeFirst(); // unbuffered added by run config
-    if (!arguments.isEmpty())
-        arguments.removeFirst(); // file added by run config
-    cmd.addArgs(arguments);
     showMessage("STARTING " + cmd.toUserOutput());
     m_proc.setEnvironment(runParameters().debugger.environment);
     m_proc.setCommand(cmd);
@@ -131,19 +146,16 @@ void PdbEngine::handlePdbStarted()
     notifyEngineSetupOk();
     QTC_ASSERT(state() == EngineRunRequested, qDebug() << state());
 
-    showStatusMessage(Tr::tr("Running requested..."), 5000);
+    showStatusMessage(tr("Running requested..."), 5000);
     BreakpointManager::claimBreakpointsForEngine(this);
     notifyEngineRunAndInferiorStopOk();
-    if (runParameters().breakOnMain)
-        updateAll();
-    else
-        continueInferior();
+    updateAll();
 }
 
 void PdbEngine::interruptInferior()
 {
     QString error;
-    interruptProcess(m_proc.processId(), &error);
+    interruptProcess(m_proc.processId(), GdbEngineType, &error);
 }
 
 void PdbEngine::executeStepIn(bool)
@@ -226,7 +238,7 @@ void PdbEngine::insertBreakpoint(const Breakpoint &bp)
     if (params.type  == BreakpointByFunction)
         loc = params.functionName;
     else
-        loc = params.fileName.toString() + ':' + QString::number(params.textPosition.line);
+        loc = params.fileName.toString() + ':' + QString::number(params.lineNumber);
 
     postDirectCommand("break " + loc);
 }
@@ -269,7 +281,7 @@ void PdbEngine::removeBreakpoint(const Breakpoint &bp)
     notifyBreakpointRemoveOk(bp);
 }
 
-void PdbEngine::loadSymbols(const FilePath &moduleName)
+void PdbEngine::loadSymbols(const QString &moduleName)
 {
     Q_UNUSED(moduleName)
 }
@@ -300,16 +312,16 @@ void PdbEngine::refreshModules(const GdbMi &modules)
                 && path.endsWith("' (built-in)>")) {
             path = "(builtin)";
         }
-        module.modulePath = FilePath::fromString(path);
+        module.modulePath = path;
         handler->updateModule(module);
     }
     handler->endUpdateAll();
 }
 
-void PdbEngine::requestModuleSymbols(const FilePath &moduleName)
+void PdbEngine::requestModuleSymbols(const QString &moduleName)
 {
     DebuggerCommand cmd("listSymbols");
-    cmd.arg("module", moduleName.path());
+    cmd.arg("module", moduleName);
     runCommand(cmd);
 }
 
@@ -347,7 +359,7 @@ void PdbEngine::refreshSymbols(const GdbMi &symbols)
         symbol.name = item["name"].data();
         syms.append(symbol);
     }
-    showModuleSymbols(runParameters().inferior.command.executable().withNewPath(moduleName), syms);
+    showModuleSymbols(moduleName, syms);
 }
 
 bool PdbEngine::canHandleToolTip(const DebuggerToolTipContext &) const
@@ -375,26 +387,26 @@ QString PdbEngine::errorMessage(QProcess::ProcessError error) const
 {
     switch (error) {
         case QProcess::FailedToStart:
-            return Tr::tr("The Pdb process failed to start. Either the "
+            return tr("The Pdb process failed to start. Either the "
                 "invoked program \"%1\" is missing, or you may have insufficient "
                 "permissions to invoke the program.")
                 .arg(m_interpreter.toUserOutput());
         case QProcess::Crashed:
-            return Tr::tr("The Pdb process crashed some time after starting "
+            return tr("The Pdb process crashed some time after starting "
                 "successfully.");
         case QProcess::Timedout:
-            return Tr::tr("The last waitFor...() function timed out. "
+            return tr("The last waitFor...() function timed out. "
                 "The state of QProcess is unchanged, and you can try calling "
                 "waitFor...() again.");
         case QProcess::WriteError:
-            return Tr::tr("An error occurred when attempting to write "
+            return tr("An error occurred when attempting to write "
                 "to the Pdb process. For example, the process may not be running, "
                 "or it may have closed its input channel.");
         case QProcess::ReadError:
-            return Tr::tr("An error occurred when attempting to read from "
+            return tr("An error occurred when attempting to read from "
                 "the Pdb process. For example, the process may not be running.");
         default:
-            return Tr::tr("An unknown error in the Pdb process occurred.") + ' ';
+            return tr("An unknown error in the Pdb process occurred.") + ' ';
     }
 }
 
@@ -403,7 +415,7 @@ void PdbEngine::handlePdbDone()
     if (m_proc.result() == ProcessResult::StartFailed) {
         notifyEngineSetupFailed();
         showMessage("ADAPTER START FAILED");
-        ICore::showWarningWithOptions(Tr::tr("Adapter start failed"), m_proc.exitMessage());
+        ICore::showWarningWithOptions(tr("Adapter start failed"), m_proc.exitMessage());
         return;
     }
 
@@ -411,7 +423,7 @@ void PdbEngine::handlePdbDone()
     if (error != QProcess::UnknownError) {
         showMessage("HANDLE PDB ERROR");
         if (error != QProcess::Crashed)
-            AsynchronousMessageBox::critical(Tr::tr("Pdb I/O Error"), errorMessage(error));
+            AsynchronousMessageBox::critical(tr("Pdb I/O Error"), errorMessage(error));
         if (error == QProcess::FailedToStart)
             return;
     }
@@ -422,7 +434,7 @@ void PdbEngine::handlePdbDone()
 
 void PdbEngine::readPdbStandardError()
 {
-    QString err = QString::fromUtf8(m_proc.readAllRawStandardError());
+    QString err = QString::fromUtf8(m_proc.readAllStandardError());
     //qWarning() << "Unexpected pdb stderr:" << err;
     showMessage("Unexpected pdb stderr: " + err);
     //handleOutput(err);
@@ -430,7 +442,8 @@ void PdbEngine::readPdbStandardError()
 
 void PdbEngine::readPdbStandardOutput()
 {
-    handleOutput(m_proc.readAllStandardOutput());
+    QString out = QString::fromUtf8(m_proc.readAllStandardOutput());
+    handleOutput(out);
 }
 
 void PdbEngine::handleOutput(const QString &data)
@@ -482,7 +495,7 @@ void PdbEngine::handleOutput2(const QString &data)
             QTC_ASSERT(bp, continue);
             bp->setResponseId(bpnr);
             bp->setFileName(fileName);
-            bp->setTextPosition({lineNumber, -1});
+            bp->setLineNumber(lineNumber);
             bp->adjustMarker();
             bp->setPending(false);
             notifyBreakpointInsertOk(bp);
@@ -547,9 +560,9 @@ void PdbEngine::updateLocals()
     watchHandler()->appendFormatRequests(&cmd);
     watchHandler()->appendWatchersAndTooltipRequests(&cmd);
 
-    const bool alwaysVerbose = qtcEnvironmentVariableIsSet("QTC_DEBUGGER_PYTHON_VERBOSE");
+    const static bool alwaysVerbose = qEnvironmentVariableIsSet("QTC_DEBUGGER_PYTHON_VERBOSE");
     cmd.arg("passexceptions", alwaysVerbose);
-    cmd.arg("fancy", settings().useDebuggingHelpers());
+    cmd.arg("fancy", debuggerSettings()->useDebuggingHelpers.value());
 
     //cmd.arg("resultvarname", m_resultVarName);
     //m_lastDebuggableCommand = cmd;
@@ -572,4 +585,5 @@ DebuggerEngine *createPdbEngine()
     return new PdbEngine;
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

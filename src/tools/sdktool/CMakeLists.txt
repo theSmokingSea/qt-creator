@@ -7,7 +7,7 @@ project(sdktool)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -16,19 +16,14 @@ if (NOT QT_CREATOR_API_DEFINED)
   set(DESTINATION DESTINATION .)
   include(QtCreatorIDEBranding)
   include(QtCreatorAPI)
-  qtc_handle_compiler_cache_support()
-
-  find_package(QT NAMES Qt6 Qt5
-    COMPONENTS Core
-    REQUIRED
-  )
-  find_package(Qt${QT_VERSION_MAJOR}
-    COMPONENTS Core
-    REQUIRED
-  )
 endif()
 
 configure_file(../../app/app_version.h.cmakein app/app_version.h ESCAPE_QUOTES)
+
+find_package(Qt5
+  COMPONENTS Core
+  REQUIRED
+)
 
 if (APPLE)
   find_library(FWFoundation Foundation)
@@ -41,7 +36,7 @@ file(RELATIVE_PATH DATA_PATH "/${IDE_LIBEXEC_PATH}" "/${IDE_DATA_PATH}")
 add_qtc_library(sdktoolLib
   STATIC
   DEFINES DATA_PATH=\"${DATA_PATH}\"
-  PUBLIC_DEPENDS Qt::Core
+  PUBLIC_DEPENDS Qt5::Core
   PUBLIC_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR} "${UtilsSourcesDir}/../"
   INCLUDES
     ${CMAKE_CURRENT_BINARY_DIR}
@@ -67,16 +62,35 @@ add_qtc_library(sdktoolLib
     rmqtoperation.cpp rmqtoperation.h
     rmtoolchainoperation.cpp rmtoolchainoperation.h
     settings.cpp settings.h
-    sdkpersistentsettings.cpp sdkpersistentsettings.h
 )
 
-if (MSVC)
-    find_library(DbgHelpLib dbghelp)
-endif()
-
-extend_qtc_library(sdktoolLib CONDITION MSVC
-  DEPENDS ${DbgHelpLib}
+extend_qtc_library(sdktoolLib
+  SOURCES_PREFIX "${UtilsSourcesDir}"
+  PUBLIC_DEFINES UTILS_STATIC_LIBRARY
+  SOURCES
+    commandline.cpp commandline.h
+    environment.cpp environment.h
+    filepath.cpp filepath.h
+    fileutils.cpp fileutils.h
+    hostosinfo.cpp hostosinfo.h
+    macroexpander.cpp macroexpander.h
+    namevaluedictionary.cpp namevaluedictionary.h
+    namevalueitem.cpp namevalueitem.h
+    persistentsettings.cpp persistentsettings.h
+    porting.h
+    qtcassert.cpp qtcassert.h
+    savefile.cpp savefile.h
+    stringutils.cpp stringutils.h
 )
+
+extend_qtc_library(sdktoolLib CONDITION APPLE
+  SOURCES_PREFIX "${UtilsSourcesDir}"
+  SOURCES
+    fileutils_mac.mm fileutils_mac.h
+  PUBLIC_DEPENDS
+    ${FWFoundation}
+)
+
 extend_qtc_library(sdktoolLib CONDITION WIN32
   PUBLIC_DEPENDS
     user32 iphlpapi ws2_32 shell32
@@ -95,7 +109,7 @@ add_qtc_executable(sdktool
     main.cpp
 )
 
-if (MSVC AND TARGET sdktool AND TARGET Qt5::Core)
+if (MSVC AND TARGET sdktool AND Qt5_VERSION VERSION_LESS 6.0.0)
   # find out if Qt is static and set /MT if so
   get_target_property(_input_type Qt5::Core TYPE)
   if (${_input_type} STREQUAL "STATIC_LIBRARY")

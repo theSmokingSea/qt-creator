@@ -1,11 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "vcsbase_global.h"
 
-#include <coreplugin/patchtool.h>
 #include <texteditor/texteditor.h>
 
 #include <QSet>
@@ -23,11 +44,10 @@ class VcsBaseEditorWidgetPrivate;
 } // namespace Internal
 
 class BaseAnnotationHighlighter;
-class VcsBaseEditorConfig;
 class VcsBaseEditorWidget;
+class VcsBaseEditorConfig;
 class VcsCommand;
 class VcsEditorFactory;
-class Annotation;
 
 // Documentation inside
 enum EditorContentType
@@ -42,20 +62,18 @@ class VCSBASE_EXPORT VcsBaseEditorParameters
 {
 public:
     EditorContentType type;
-    Utils::Id id;
-    QString displayName;
-    QString mimeType;
-    std::function<QWidget *()> editorWidgetCreator;
-    std::function<void (const Utils::FilePath &, const QString &)> describeFunc;
+    const char *id;
+    const char *displayName;
+    const char *mimeType;
 };
 
 class VCSBASE_EXPORT DiffChunk
 {
 public:
     bool isValid() const;
-    QByteArray asPatch(const Utils::FilePath &workingDirectory) const;
+    QByteArray asPatch(const QString &workingDirectory) const;
 
-    Utils::FilePath fileName;
+    QString fileName;
     QByteArray chunk;
     QByteArray header;
 };
@@ -63,7 +81,6 @@ public:
 class VCSBASE_EXPORT VcsBaseEditor : public TextEditor::BaseTextEditor
 {
     Q_OBJECT
-
 public:
     VcsBaseEditor();
 
@@ -75,8 +92,9 @@ public:
     // the editor manager and the project managers (defaults to system codec).
     // The codec should be set on editors displaying diff or annotation
     // output.
-    static QTextCodec *getCodec(const Utils::FilePath &source);
+    static QTextCodec *getCodec(const QString &source);
     static QTextCodec *getCodec(const Utils::FilePath &workingDirectory, const QStringList &files);
+    static QTextCodec *getCodec(const QString &workingDirectory, const QStringList &files); // FIXME: Remove
 
     // Utility to return the widget from the IEditor returned by the editor
     // manager which is a BaseTextEditor.
@@ -86,7 +104,7 @@ public:
     // pass in the file name to match it. To be used when jumping to current
     // line number in a 'annnotate current file' slot, which checks if the
     // current file originates from the current editor or the project selection.
-    static int lineNumberOfCurrentEditor(const Utils::FilePath &currentFile = {});
+    static int lineNumberOfCurrentEditor(const QString &currentFile = QString());
 
     //Helper to go to line of editor if it is a text editor
     static bool gotoLineOfEditor(Core::IEditor *e, int lineNumber);
@@ -94,8 +112,8 @@ public:
     // Convenience functions to determine the source to pass on to a diff
     // editor if one has a call consisting of working directory and file arguments.
     // ('git diff XX' -> 'XX' , 'git diff XX file' -> 'XX/file').
-    static Utils::FilePath getSource(const Utils::FilePath &workingDirectory, const QString &fileName);
-    static Utils::FilePath getSource(const Utils::FilePath &workingDirectory, const QStringList &fileNames);
+    static QString getSource(const Utils::FilePath &workingDirectory, const QString &fileName);
+    static QString getSource(const Utils::FilePath &workingDirectory, const QStringList &fileNames);
     // Convenience functions to determine an title/id to identify the editor
     // from the arguments (','-joined arguments or directory) + revision.
     static QString getTitleId(const Utils::FilePath &workingDirectory,
@@ -107,21 +125,18 @@ public:
      * the editor, they get a 'tag' containing type and parameters (dynamic property string). */
     static void tagEditor(Core::IEditor *e, const QString &tag);
     static Core::IEditor* locateEditorByTag(const QString &tag);
-    static QString editorTag(EditorContentType t, const Utils::FilePath &workingDirectory,
-                             const QStringList &files, const QString &revision = {});
+    static QString editorTag(EditorContentType t, const QString &workingDirectory, const QStringList &files,
+                             const QString &revision = QString());
     void finalizeInitialization() override;
 };
 
-using BaseAnnotationHighlighterCreator
-    = std::function<BaseAnnotationHighlighter *(const VcsBase::Annotation &annotation)>;
-template<typename T>
-BaseAnnotationHighlighterCreator getAnnotationHighlighterCreator()
-{
-    return [](const VcsBase::Annotation &annotation) { return new T(annotation); };
-}
-
 class VCSBASE_EXPORT VcsBaseEditorWidget : public TextEditor::TextEditorWidget
 {
+    Q_PROPERTY(QString source READ source WRITE setSource)
+    Q_PROPERTY(Utils::FilePath workingDirectory READ workingDirectory WRITE setWorkingDirectory)
+    Q_PROPERTY(QTextCodec *codec READ codec WRITE setCodec)
+    Q_PROPERTY(QString annotateRevisionTextFormat READ annotateRevisionTextFormat WRITE setAnnotateRevisionTextFormat)
+    Q_PROPERTY(bool isFileLogAnnotateEnabled READ isFileLogAnnotateEnabled WRITE setFileLogAnnotateEnabled)
     Q_OBJECT
 
 protected:
@@ -137,7 +152,7 @@ protected:
     // Pattern for annotation separator. Lookup will stop on match.
     void setAnnotationSeparatorPattern(const QString &pattern);
     virtual bool supportChangeLinks() const;
-    virtual Utils::FilePath fileNameForLine(int line) const;
+    virtual QString fileNameForLine(int line) const;
 
     QString lineNumber(int blockNumber) const override;
     int lineNumberDigits() const override;
@@ -147,9 +162,11 @@ public:
 
     void finalizeInitialization() override;
     // FIXME: Consolidate these into finalizeInitialization
+    void setDescribeFunc(DescribeFunc describeFunc);
+    // void
     virtual void init();
     //
-    void setParameters(const VcsBaseEditorParameters &parameters);
+    void setParameters(const VcsBaseEditorParameters *parameters);
 
     ~VcsBaseEditorWidget() override;
 
@@ -159,8 +176,8 @@ public:
      * files. */
     void setForceReadOnly(bool b);
 
-    Utils::FilePath source() const;
-    void setSource(const  Utils::FilePath &source);
+    QString source() const;
+    void setSource(const  QString &source);
 
     // Format for "Annotate" revision menu entries. Should contain '%1" placeholder
     QString annotateRevisionTextFormat() const;
@@ -196,8 +213,6 @@ public:
     VcsBaseEditorConfig *editorConfig() const;
 
     void setCommand(VcsCommand *command);
-    void setDefaultLineNumber(int line);
-    void gotoDefaultLine();
 
     virtual void setPlainText(const QString &text);
 
@@ -208,7 +223,11 @@ signals:
     void describeRequested(const Utils::FilePath &source, const QString &change);
     void annotateRevisionRequested(const Utils::FilePath &workingDirectory, const QString &file,
                                    const QString &change, int lineNumber);
-    void diffChunkReverted();
+    void diffChunkApplied(const VcsBase::DiffChunk &dc);
+    void diffChunkReverted(const VcsBase::DiffChunk &dc);
+
+public slots:
+    void reportCommandFinished(bool ok, int exitCode, const QVariant &data);
 
 protected:
     void contextMenuEvent(QContextMenuEvent *e) override;
@@ -232,7 +251,7 @@ protected:
     // Implement to identify a change number at the cursor position
     virtual QString changeUnderCursor(const QTextCursor &) const = 0;
     // Factory functions for highlighters
-    virtual BaseAnnotationHighlighterCreator annotationHighlighterCreator() const = 0;
+    virtual BaseAnnotationHighlighter *createAnnotationHighlighter(const QSet<QString> &changes) const = 0;
     // Returns a local file name from the diff file specification
     // (text cursor at position above change hunk)
     QString fileNameFromDiffSpecification(const QTextBlock &inBlock, QString *header = nullptr) const;
@@ -253,15 +272,15 @@ private:
     void slotPopulateLogBrowser();
     void slotJumpToEntry(int);
     void slotCursorPositionChanged() override;
-    void slotAnnotateRevision(const QString &change);
-    void slotApplyDiffChunk(const DiffChunk &chunk, Core::PatchAction patchAction);
+    void slotAnnotateRevision();
+    void slotApplyDiffChunk();
     void slotPaste();
     void showProgressIndicator();
     void hideProgressIndicator();
 
     bool canApplyDiffChunk(const DiffChunk &dc) const;
     // Revert a patch chunk. Default implementation uses patch.exe
-    bool applyDiffChunk(const DiffChunk &dc, Core::PatchAction patchAction) const;
+    bool applyDiffChunk(const DiffChunk &dc, bool revert = false) const;
 
     // Indicates if the editor has diff contents. If true, an appropriate
     // highlighter is used and double-click inside a diff chunk jumps to
@@ -284,13 +303,6 @@ public:
                                  const QByteArray &entry1,
                                  const QByteArray &entry2);
 #endif
-};
-
-class VCSBASE_EXPORT VcsEditorFactory : public TextEditor::TextEditorFactory
-{
-public:
-    explicit VcsEditorFactory(const VcsBaseEditorParameters &parameters);
-    ~VcsEditorFactory();
 };
 
 } // namespace VcsBase

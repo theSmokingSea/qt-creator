@@ -1,9 +1,29 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "jsontreeitem.h"
-
-#include "utilstr.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -19,19 +39,19 @@ static QString typeName(QJsonValue::Type type)
 {
     switch (type) {
     case QJsonValue::Null:
-        return Tr::tr("Null");
+        return JsonTreeItem::tr("Null");
     case QJsonValue::Bool:
-        return Tr::tr("Bool");
+        return JsonTreeItem::tr("Bool");
     case QJsonValue::Double:
-        return Tr::tr("Double");
+        return JsonTreeItem::tr("Double");
     case QJsonValue::String:
-        return Tr::tr("String");
+        return JsonTreeItem::tr("String");
     case QJsonValue::Array:
-        return Tr::tr("Array");
+        return JsonTreeItem::tr("Array");
     case QJsonValue::Object:
-        return Tr::tr("Object");
+        return JsonTreeItem::tr("Object");
     case QJsonValue::Undefined:
-        return Tr::tr("Undefined");
+        return JsonTreeItem::tr("Undefined");
     }
     return {};
 }
@@ -45,9 +65,9 @@ QVariant JsonTreeItem::data(int column, int role) const
     if (column == 2)
         return typeName(m_value.type());
     if (m_value.isObject())
-        return QString('[' + Tr::tr("%n Items", nullptr, m_value.toObject().size()) + ']');
+        return QString('[' + tr("%n Items", nullptr, m_value.toObject().size()) + ']');
     if (m_value.isArray())
-        return QString('[' + Tr::tr("%n Items", nullptr, m_value.toArray().size()) + ']');
+        return QString('[' + tr("%n Items", nullptr, m_value.toArray().size()) + ']');
     return m_value.toVariant();
 }
 

@@ -1,17 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "jsonwizardgeneratorfactory.h"
 
 #include "jsonwizard.h"
+#include "jsonwizardfilegenerator.h"
+#include "jsonwizardscannergenerator.h"
 
 #include "../editorconfiguration.h"
 #include "../project.h"
 #include "../projectexplorerconstants.h"
-#include "../projectexplorertr.h"
 
 #include <coreplugin/dialogs/promptoverwritedialog.h>
-
 #include <texteditor/icodestylepreferences.h>
 #include <texteditor/icodestylepreferencesfactory.h>
 #include <texteditor/storagesettings.h>
@@ -20,11 +42,11 @@
 #include <texteditor/textindenter.h>
 
 #include <utils/algorithm.h>
-#include <utils/fileutils.h>
 #include <utils/mimeutils.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 
+#include <QCoreApplication>
 #include <QDebug>
 #include <QDir>
 #include <QFileInfo>
@@ -89,7 +111,7 @@ bool JsonWizardGenerator::formatFile(const JsonWizard *wizard, GeneratedFile *fi
                      QChar::Null,
                      codeStylePrefs->currentTabSettings());
     delete indenter;
-    if (globalStorageSettings().m_cleanWhitespace) {
+    if (TextEditorSettings::storageSettings().m_cleanWhitespace) {
         QTextBlock block = doc.firstBlock();
         while (block.isValid()) {
             TabSettings::removeTrailingWhitespace(cursor, block);
@@ -136,14 +158,15 @@ bool JsonWizardGenerator::allDone(const JsonWizard *wizard, GeneratedFile *file,
 JsonWizardGenerator::OverwriteResult JsonWizardGenerator::promptForOverwrite(JsonWizard::GeneratorFiles *files,
                                                                              QString *errorMessage)
 {
-    FilePaths existingFiles;
+    QStringList existingFiles;
     bool oddStuffFound = false;
 
-    for (const JsonWizard::GeneratorFile &f : std::as_const(*files)) {
-        if (f.file.filePath().exists()
+    for (const JsonWizard::GeneratorFile &f : qAsConst(*files)) {
+        const QFileInfo fi(f.file.path());
+        if (fi.exists()
                 && !(f.file.attributes() & GeneratedFile::ForceOverwrite)
                 && !(f.file.attributes() & GeneratedFile::KeepExistingFileAttribute))
-            existingFiles.append(f.file.filePath());
+            existingFiles.append(f.file.path());
     }
     if (existingFiles.isEmpty())
         return OverwriteOk;
@@ -151,30 +174,34 @@ JsonWizardGenerator::OverwriteResult JsonWizardGenerator::promptForOverwrite(Jso
     // Before prompting to overwrite existing files, loop over files and check
     // if there is anything blocking overwriting them (like them being links or folders).
     // Format a file list message as ( "<file1> [readonly], <file2> [folder]").
-    const QString commonExistingPath = FileUtils::commonPath(existingFiles).toUserOutput();
-    const int commonPathSize = commonExistingPath.size();
+    const QString commonExistingPath = Utils::commonPath(existingFiles);
     QString fileNamesMsgPart;
-    for (const FilePath &filePath : std::as_const(existingFiles)) {
-        if (filePath.exists()) {
+    for (const QString &fileName : qAsConst(existingFiles)) {
+        const QFileInfo fi(fileName);
+        if (fi.exists()) {
             if (!fileNamesMsgPart.isEmpty())
                 fileNamesMsgPart += QLatin1String(", ");
-            const QString namePart = filePath.toUserOutput().mid(commonPathSize);
-            if (filePath.isDir()) {
+            const QString namePart = QDir::toNativeSeparators(fileName.mid(commonExistingPath.size() + 1));
+            if (fi.isDir()) {
                 oddStuffFound = true;
-                fileNamesMsgPart += Tr::tr("%1 [folder]").arg(namePart);
-            } else if (filePath.isSymLink()) {
+                fileNamesMsgPart += QCoreApplication::translate("ProjectExplorer::JsonWizardGenerator", "%1 [folder]")
+                        .arg(namePart);
+            } else if (fi.isSymLink()) {
                 oddStuffFound = true;
-                fileNamesMsgPart += Tr::tr("%1 [symbolic link]").arg(namePart);
-            } else if (!filePath.isWritableDir() && !filePath.isWritableFile()) {
+                fileNamesMsgPart += QCoreApplication::translate("ProjectExplorer::JsonWizardGenerator", "%1 [symbolic link]")
+                        .arg(namePart);
+            } else if (!fi.isWritable()) {
                 oddStuffFound = true;
-                fileNamesMsgPart += Tr::tr("%1 [read only]").arg(namePart);
+                fileNamesMsgPart += QCoreApplication::translate("ProjectExplorer::JsonWizardGenerator", "%1 [read only]")
+                        .arg(namePart);
             }
         }
     }
 
     if (oddStuffFound) {
-        *errorMessage = Tr::tr("The directory %1 contains files which cannot be overwritten:\n%2.")
-                .arg(commonExistingPath).arg(fileNamesMsgPart);
+        *errorMessage = QCoreApplication::translate("ProjectExplorer::JsonWizardGenerator",
+                                                    "The directory %1 contains files which cannot be overwritten:\n%2.")
+                .arg(QDir::toNativeSeparators(commonExistingPath)).arg(fileNamesMsgPart);
         return OverwriteError;
     }
 
@@ -183,19 +210,19 @@ JsonWizardGenerator::OverwriteResult JsonWizardGenerator::promptForOverwrite(Jso
 
     // Scripts cannot handle overwrite
     overwriteDialog.setFiles(existingFiles);
-    for (const JsonWizard::GeneratorFile &file : std::as_const(*files))
+    for (const JsonWizard::GeneratorFile &file : qAsConst(*files))
         if (!file.generator->canKeepExistingFiles())
-            overwriteDialog.setFileEnabled(file.file.filePath(), false);
+            overwriteDialog.setFileEnabled(file.file.path(), false);
     if (overwriteDialog.exec() != QDialog::Accepted)
         return OverwriteCanceled;
 
-    const QSet<FilePath> existingFilesToKeep = Utils::toSet(overwriteDialog.uncheckedFiles());
+    const QSet<QString> existingFilesToKeep = Utils::toSet(overwriteDialog.uncheckedFiles());
     if (existingFilesToKeep.size() == files->size()) // All exist & all unchecked->Cancel.
         return OverwriteCanceled;
 
     // Set 'keep' attribute in files
     for (JsonWizard::GeneratorFile &file : *files) {
-        if (!existingFilesToKeep.contains(file.file.filePath()))
+        if (!existingFilesToKeep.contains(file.file.path()))
             continue;
 
         file.file.setAttributes(file.file.attributes() | GeneratedFile::KeepExistingFileAttribute);
@@ -268,4 +295,87 @@ void JsonWizardGeneratorFactory::setTypeIdsSuffix(const QString &suffix)
     setTypeIdsSuffixes(QStringList() << suffix);
 }
 
+// --------------------------------------------------------------------
+// FileGeneratorFactory:
+// --------------------------------------------------------------------
+
+namespace Internal {
+
+FileGeneratorFactory::FileGeneratorFactory()
+{
+    setTypeIdsSuffix(QLatin1String("File"));
+}
+
+JsonWizardGenerator *FileGeneratorFactory::create(Id typeId, const QVariant &data,
+                                                  const QString &path, Id platform,
+                                                  const QVariantMap &variables)
+{
+    Q_UNUSED(path)
+    Q_UNUSED(platform)
+    Q_UNUSED(variables)
+
+    QTC_ASSERT(canCreate(typeId), return nullptr);
+
+    auto gen = new JsonWizardFileGenerator;
+    QString errorMessage;
+    gen->setup(data, &errorMessage);
+
+    if (!errorMessage.isEmpty()) {
+        qWarning() << "FileGeneratorFactory setup error:" << errorMessage;
+        delete gen;
+        return nullptr;
+    }
+
+    return gen;
+}
+
+bool FileGeneratorFactory::validateData(Id typeId, const QVariant &data, QString *errorMessage)
+{
+    QTC_ASSERT(canCreate(typeId), return false);
+
+    QScopedPointer<JsonWizardFileGenerator> gen(new JsonWizardFileGenerator);
+    return gen->setup(data, errorMessage);
+}
+
+// --------------------------------------------------------------------
+// ScannerGeneratorFactory:
+// --------------------------------------------------------------------
+
+ScannerGeneratorFactory::ScannerGeneratorFactory()
+{
+    setTypeIdsSuffix(QLatin1String("Scanner"));
+}
+
+JsonWizardGenerator *ScannerGeneratorFactory::create(Id typeId, const QVariant &data,
+                                                     const QString &path, Id platform,
+                                                     const QVariantMap &variables)
+{
+    Q_UNUSED(path)
+    Q_UNUSED(platform)
+    Q_UNUSED(variables)
+
+    QTC_ASSERT(canCreate(typeId), return nullptr);
+
+    auto gen = new JsonWizardScannerGenerator;
+    QString errorMessage;
+    gen->setup(data, &errorMessage);
+
+    if (!errorMessage.isEmpty()) {
+        qWarning() << "ScannerGeneratorFactory setup error:" << errorMessage;
+        delete gen;
+        return nullptr;
+    }
+
+    return gen;
+}
+
+bool ScannerGeneratorFactory::validateData(Id typeId, const QVariant &data, QString *errorMessage)
+{
+    QTC_ASSERT(canCreate(typeId), return false);
+
+    QScopedPointer<JsonWizardScannerGenerator> gen(new JsonWizardScannerGenerator);
+    return gen->setup(data, errorMessage);
+}
+
+} // namespace Internal
 } // namespace ProjectExplorer

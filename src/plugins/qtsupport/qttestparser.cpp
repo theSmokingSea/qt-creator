@@ -1,5 +1,27 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qttestparser.h"
 
@@ -13,10 +35,17 @@
 #include <QRegularExpression>
 #include <QRegularExpressionMatch>
 
+#ifdef WITH_TESTS
+#include "qtsupportplugin.h"
+#include <projectexplorer/outputparser_test.h>
+#include <QTest>
+#endif // WITH_TESTS
+
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace QtSupport::Internal {
+namespace QtSupport {
+namespace Internal {
 
 OutputLineParser::Result QtTestParser::handleLine(const QString &line, OutputFormat type)
 {
@@ -44,8 +73,8 @@ OutputLineParser::Result QtTestParser::handleLine(const QString &line, OutputFor
         m_currentTask.file = absoluteFilePath(FilePath::fromString(
                     QDir::fromNativeSeparators(match.captured("file"))));
         m_currentTask.line = match.captured("line").toInt();
-        addLinkSpecForAbsoluteFilePath(
-            linkSpecs, m_currentTask.file, m_currentTask.line, m_currentTask.column, match, "file");
+        addLinkSpecForAbsoluteFilePath(linkSpecs, m_currentTask.file, m_currentTask.line, match,
+                                       "file");
         emitCurrentTask();
         return {Status::Done, linkSpecs};
     }
@@ -64,26 +93,8 @@ void QtTestParser::emitCurrentTask()
     }
 }
 
-} // QtSupport::Internal
-
-
 #ifdef WITH_TESTS
-
-#include <projectexplorer/outputparser_test.h>
-
-#include <QTest>
-
-namespace QtSupport::Internal {
-
-class QtTestParserTest final : public QObject
-{
-    Q_OBJECT
-
-public slots:
-    void testQtTestOutputParser();
-};
-
-void QtTestParserTest::testQtTestOutputParser()
+void QtSupportPlugin::testQtTestOutputParser()
 {
     OutputParserTester testbench;
     testbench.addLineParser(new QtTestParser);
@@ -123,14 +134,7 @@ void QtTestParserTest::testQtTestOutputParser()
     testbench.testParsing(input, OutputParserTester::STDOUT, expectedTasks, expectedChildOutput,
                           QString(), QString());
 }
-
-QObject *createQtTestParserTest()
-{
-    return new QtTestParserTest;
-}
-
-} // QtSupport::Internal
-
-#include "qttestparser.moc"
-
 #endif // WITH_TESTS
+
+} // namespace Internal
+} // namespace QtSupport

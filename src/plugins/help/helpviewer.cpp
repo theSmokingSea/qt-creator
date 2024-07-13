@@ -1,9 +1,30 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "helpviewer.h"
 #include "helpconstants.h"
-#include "helptr.h"
 #include "localhelpmanager.h"
 
 #include <coreplugin/icore.h>
@@ -71,8 +92,6 @@ HelpViewer::~HelpViewer()
     restoreOverrideCursor();
 }
 
-void HelpViewer::setAntialias(bool) {}
-
 void HelpViewer::setFontZoom(int percentage)
 {
     setScale(percentage / 100.0);
@@ -136,9 +155,6 @@ bool HelpViewer::launchWithExternalApp(const QUrl &url)
         // QHelpEngineCore::findFile returns a valid url even though the file does not exist
         if (resolvedUrl.scheme() == "about" && resolvedUrl.path() == "blank")
             return false;
-        // fake items have no associated file - they are kind of virtual folders
-        if (resolvedUrl.fileName().isEmpty())
-            return false;
 
         const QString& path = resolvedUrl.path();
         if (!canOpenPage(path)) {
@@ -199,9 +215,8 @@ void HelpViewer::incrementZoom(int steps)
 void HelpViewer::applyZoom(int percentage)
 {
     const int newZoom = LocalHelpManager::setFontZoom(percentage);
-    Utils::FadingIndicator::showText(this,
-                                     Tr::tr("Zoom: %1%").arg(newZoom),
-                                     Utils::FadingIndicator::SmallText);
+    Utils::FadingIndicator::showText(this, QCoreApplication::translate("Help::HelpViewer",
+                                     "Zoom: %1%").arg(newZoom), Utils::FadingIndicator::SmallText);
 }
 
 void HelpViewer::slotLoadStarted()

@@ -3,9 +3,8 @@ set(resource_directories
   cplusplus
   glsl
   indexer_preincludes
-  jsonschemas
-  lua-plugins
   modeleditor
+  qml
   qmldesigner
   qmlicons
   qml-type-descriptions
@@ -20,7 +19,6 @@ set(resource_files
   debugger/.pylintrc
   debugger/boosttypes.py
   debugger/cdbbridge.py
-  debugger/cdbext.pyi
   debugger/creatortypes.py
   debugger/dumper.py
   debugger/gdbbridge.py
@@ -32,14 +30,16 @@ set(resource_files
   debugger/pdbbridge.py
   debugger/personaltypes.py
   debugger/qttypes.py
+  debugger/qttypes.py
   debugger/README.txt
   debugger/setup.cfg
-  debugger/android_stdtypes.py
-  debugger/libcpp_stdtypes.py
   debugger/stdtypes.py
   debugger/utils.py
-  debugger/loadorder.txt
 )
+
+if (APPLE)
+  set(resource_directories ${resource_directories} scripts)
+endif()
 
 # copy resource directories during build
 qtc_copy_to_builddir(copy_share_to_builddir

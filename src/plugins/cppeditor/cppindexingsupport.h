@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -7,13 +29,12 @@
 
 #include "cppmodelmanager.h"
 
-#include <utils/futuresynchronizer.h>
+#include <coreplugin/find/textfindconstants.h>
 
 #include <QFuture>
+#include <QStringList>
 
-#include <functional>
-
-namespace Utils { class SearchResultItem; }
+namespace Core { class SearchResultItem; }
 
 namespace CppEditor {
 
@@ -40,33 +61,29 @@ public:
     struct Parameters
     {
         QString text;
-        Utils::FindFlags flags;
+        Core::FindFlags flags;
         SymbolTypes types;
         SearchScope scope;
     };
 
-    SymbolSearcher(const SymbolSearcher::Parameters &parameters,
-                   const QSet<Utils::FilePath> &filePaths);
 
-    void runSearch(QPromise<Utils::SearchResultItem> &promise);
-
-private:
-    const CPlusPlus::Snapshot m_snapshot;
-    const Parameters m_parameters;
-    const QSet<Utils::FilePath> m_filePaths;
+public:
+    SymbolSearcher(QObject *parent = nullptr);
+    ~SymbolSearcher() override = 0;
+    virtual void runSearch(QFutureInterface<Core::SearchResultItem> &future) = 0;
 };
+
 
 class CPPEDITOR_EXPORT CppIndexingSupport
 {
 public:
-    static bool isFindErrorsIndexingActive();
+    virtual ~CppIndexingSupport() = 0;
 
-    QFuture<void> refreshSourceFiles(
-        const std::function<QSet<QString>()> &sourceFiles,
-        CppModelManager::ProgressNotificationMode mode);
-
-private:
-    Utils::FutureSynchronizer m_synchronizer;
+    virtual QFuture<void> refreshSourceFiles(const QSet<QString> &sourceFiles,
+                                             CppModelManager::ProgressNotificationMode mode)
+        = 0;
+    virtual SymbolSearcher *createSymbolSearcher(const SymbolSearcher::Parameters &parameters,
+                                                 const QSet<QString> &fileNames) = 0;
 };
 
 } // namespace CppEditor

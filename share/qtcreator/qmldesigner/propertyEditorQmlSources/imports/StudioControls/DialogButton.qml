@@ -1,36 +1,58 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0 WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 import QtQuick
 import QtQuick.Templates as T
 import StudioTheme 1.0 as StudioTheme
 
 T.Button {
-    id: control
+    id: root
 
-    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
-
-    implicitWidth: Math.max(buttonBackground ? buttonBackground.implicitWidth : 0,
-                            textItem.implicitWidth + leftPadding + rightPadding)
-    implicitHeight: Math.max(buttonBackground ? buttonBackground.implicitHeight : 0,
-                             textItem.implicitHeight + topPadding + bottomPadding)
-    leftPadding: control.style.dialogPadding
-    rightPadding: control.style.dialogPadding
+    implicitWidth: Math.max(
+                       background ? background.implicitWidth : 0,
+                       textItem.implicitWidth + leftPadding + rightPadding)
+    implicitHeight: Math.max(
+                        background ? background.implicitHeight : 0,
+                        textItem.implicitHeight + topPadding + bottomPadding)
+    leftPadding: StudioTheme.Values.dialogButtonPadding
+    rightPadding: StudioTheme.Values.dialogButtonPadding
 
     background: Rectangle {
-        id: buttonBackground
+        id: background
         implicitWidth: 70
         implicitHeight: 20
-        color: control.style.background.idle
-        border.color: control.style.border.idle
+        color: StudioTheme.Values.themeControlBackground
+        border.color: StudioTheme.Values.themeControlOutline
         anchors.fill: parent
     }
 
     contentItem: Text {
         id: textItem
-        text: control.text
-        font.pixelSize: control.style.baseFontSize
-        color: control.style.text.idle
+        text: root.text
+        font.pixelSize: StudioTheme.Values.baseFontSize
+        color: StudioTheme.Values.themeTextColor
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
     }
@@ -38,58 +60,58 @@ T.Button {
     states: [
         State {
             name: "default"
-            when: control.enabled && !control.down && !control.hovered && !control.checked
+            when: root.enabled && !root.down && !root.hovered && !root.checked
 
             PropertyChanges {
-                target: buttonBackground
-                color: control.highlighted ? control.style.interaction
-                                           : control.style.background.idle
-                border.color: control.style.border.idle
+                target: background
+                color: root.highlighted ? StudioTheme.Values.themeInteraction
+                                        : StudioTheme.Values.themeControlBackground
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
                 target: textItem
-                color: control.style.text.idle
+                color: StudioTheme.Values.themeTextColor
             }
         },
         State {
             name: "hover"
-            when: control.enabled && control.hovered && !control.checked && !control.down
+            when: root.enabled && root.hovered && !root.checked && !root.down
 
             PropertyChanges {
-                target: buttonBackground
-                color: control.style.background.hover
-                border.color: control.style.border.hover
+                target: background
+                color: StudioTheme.Values.themeControlBackgroundHover
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
                 target: textItem
-                color: control.style.text.hover
+                color: StudioTheme.Values.themeTextColor
             }
         },
         State {
             name: "press"
-            when: control.enabled && (control.checked || control.down)
+            when: root.enabled && (root.checked || root.down)
 
             PropertyChanges {
-                target: buttonBackground
-                color: control.style.background.interaction
-                border.color: control.style.border.interaction
+                target: background
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
             PropertyChanges {
                 target: textItem
-                color: control.style.text.interaction
+                color: StudioTheme.Values.themeTextColor
             }
         },
         State {
             name: "disable"
-            when: !control.enabled
+            when: !root.enabled
             PropertyChanges {
-                target: buttonBackground
-                color: control.style.background.disabled
-                border.color: control.style.border.disabled
+                target: background
+                color: StudioTheme.Values.themeControlBackgroundDisabled
+                border.color: StudioTheme.Values.themeControlOutlineDisabled
             }
             PropertyChanges {
                 target: textItem
-                color: control.style.text.disabled
+                color: StudioTheme.Values.themeTextColorDisabled
             }
         }
     ]

@@ -1,11 +1,32 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "filetransfer.h"
 
 #include "devicemanager.h"
 #include "idevice.h"
-#include "../projectexplorertr.h"
 
 #include <utils/processinterface.h>
 #include <utils/qtcassert.h>
@@ -16,18 +37,48 @@ using namespace Utils;
 
 namespace ProjectExplorer {
 
+FileTransferDirection FileToTransfer::direction() const
+{
+    if (m_source.needsDevice() == m_target.needsDevice())
+        return FileTransferDirection::Invalid;
+    return m_source.needsDevice() ? FileTransferDirection::Download : FileTransferDirection::Upload;
+}
+
 QString FileTransferSetupData::defaultRsyncFlags()
 {
     return "-av";
 }
 
-static IDeviceConstPtr matchedDevice(const FilesToTransfer &files)
+static FileTransferDirection transferDirection(const FilesToTransfer &files)
+{
+    if (files.isEmpty())
+        return FileTransferDirection::Invalid;
+
+    const FileTransferDirection direction = files.first().direction();
+    for (const FileToTransfer &file : files) {
+        if (file.direction() != direction)
+            return FileTransferDirection::Invalid;
+    }
+    return direction;
+}
+
+static const FilePath &remoteFile(FileTransferDirection direction, const FileToTransfer &file)
+{
+    return direction == FileTransferDirection::Upload ? file.m_target : file.m_source;
+}
+
+static bool isSameDevice(const FilePath &first, const FilePath &second)
+{
+    return (first.scheme() == second.scheme()) && (first.host() == second.host());
+}
+
+static IDeviceConstPtr matchedDevice(FileTransferDirection direction, const FilesToTransfer &files)
 {
     if (files.isEmpty())
         return {};
-    const FilePath filePath = files.first().m_target;
+    const FilePath &filePath = remoteFile(direction, files.first());
     for (const FileToTransfer &file : files) {
-        if (!filePath.isSameDevice(file.m_target))
+        if (!isSameDevice(filePath, remoteFile(direction, file)))
             return {};
     }
     return DeviceManager::deviceForPath(filePath);
@@ -43,10 +94,7 @@ class FileTransferPrivate : public QObject
     Q_OBJECT
 
 public:
-    IDeviceConstPtr m_testDevice;
-    ProcessResultData m_resultData;
-
-    void test();
+    void test(const ProjectExplorer::IDeviceConstPtr &onDevice);
     void start();
     void stop();
 
@@ -57,34 +105,32 @@ signals:
     void done(const ProcessResultData &resultData);
 
 private:
-    void emitDone(const ProcessResultData &resultData);
     void startFailed(const QString &errorString);
     void run(const FileTransferSetupData &setup, const IDeviceConstPtr &device);
 
     std::unique_ptr<FileTransferInterface> m_transfer;
 };
 
-void FileTransferPrivate::test()
+void FileTransferPrivate::test(const IDeviceConstPtr &onDevice)
 {
-    if (!m_testDevice)
-        return startFailed(Tr::tr("No device set for test transfer."));
+    if (!onDevice)
+        return startFailed(tr("No device set for test transfer."));
 
-    run({{}, m_setup.m_method, m_setup.m_rsyncFlags}, m_testDevice);
+    run({{}, m_setup.m_method, m_setup.m_rsyncFlags}, onDevice);
 }
 
 void FileTransferPrivate::start()
 {
     if (m_setup.m_files.isEmpty())
-        return startFailed(Tr::tr("No files to transfer."));
+        return startFailed(tr("No files to transfer."));
 
-    IDeviceConstPtr device = matchedDevice(m_setup.m_files);
+    const FileTransferDirection direction = transferDirection(m_setup.m_files);
+    if (direction == FileTransferDirection::Invalid)
+        return startFailed(tr("Mixing different types of transfer in one go."));
 
-    if (!device) {
-        // Fall back to generic copy.
-        const FilePath filePath = m_setup.m_files.first().m_target;
-        device = DeviceManager::deviceForPath(filePath);
-        m_setup.m_method = FileTransferMethod::GenericCopy;
-    }
+    const IDeviceConstPtr device = matchedDevice(direction, m_setup.m_files);
+    if (!device)
+        return startFailed(tr("Trying to transfer into / from not matching device."));
 
     run(m_setup, device);
 }
@@ -102,25 +148,19 @@ void FileTransferPrivate::run(const FileTransferSetupData &setup, const IDeviceC
     stop();
 
     m_transfer.reset(device->createFileTransferInterface(setup));
-    QTC_ASSERT(m_transfer, startFailed(Tr::tr("Missing transfer implementation.")); return);
+    QTC_ASSERT(m_transfer, startFailed(tr("Missing transfer implementation.")); return);
 
     m_transfer->setParent(this);
     connect(m_transfer.get(), &FileTransferInterface::progress,
             this, &FileTransferPrivate::progress);
     connect(m_transfer.get(), &FileTransferInterface::done,
-            this, &FileTransferPrivate::emitDone);
+            this, &FileTransferPrivate::done);
     m_transfer->start();
-}
-
-void FileTransferPrivate::emitDone(const ProcessResultData &resultData)
-{
-    m_resultData = resultData;
-    emit done(resultData);
 }
 
 void FileTransferPrivate::startFailed(const QString &errorString)
 {
-    emitDone({0, QProcess::NormalExit, QProcess::FailedToStart, errorString});
+    emit done({0, QProcess::NormalExit, QProcess::FailedToStart, errorString});
 }
 
 FileTransfer::FileTransfer()
@@ -152,14 +192,9 @@ void FileTransfer::setRsyncFlags(const QString &flags)
     d->m_setup.m_rsyncFlags = flags;
 }
 
-void FileTransfer::setTestDevice(const ProjectExplorer::IDeviceConstPtr &device)
+void FileTransfer::test(const ProjectExplorer::IDeviceConstPtr &onDevice)
 {
-    d->m_testDevice = device;
-}
-
-void FileTransfer::test()
-{
-    d->test();
+    d->test(onDevice);
 }
 
 FileTransferMethod FileTransfer::transferMethod() const
@@ -177,30 +212,14 @@ void FileTransfer::stop()
     d->stop();
 }
 
-ProcessResultData FileTransfer::resultData() const
-{
-    return d->m_resultData;
-}
-
 QString FileTransfer::transferMethodName(FileTransferMethod method)
 {
     switch (method) {
-    case FileTransferMethod::Sftp:  return Tr::tr("sftp");
-    case FileTransferMethod::Rsync: return Tr::tr("rsync");
-    case FileTransferMethod::GenericCopy: return Tr::tr("generic file copy");
+    case FileTransferMethod::Sftp:  return FileTransfer::tr("sftp");
+    case FileTransferMethod::Rsync: return FileTransfer::tr("rsync");
     }
     QTC_CHECK(false);
     return {};
-}
-
-FileTransferTaskAdapter::FileTransferTaskAdapter()
-{
-    connect(task(), &FileTransfer::done, this, [this](const ProcessResultData &result) {
-        const bool success = result.m_exitStatus == QProcess::NormalExit
-                             && result.m_error == QProcess::UnknownError
-                             && result.m_exitCode == 0;
-        emit done(Tasking::toDoneResult(success));
-    });
 }
 
 } // namespace ProjectExplorer

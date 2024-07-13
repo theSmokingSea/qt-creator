@@ -1,14 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "typehierarchybuilder.h"
 
 #include <cplusplus/FindUsages.h>
 
-#include <utils/algorithm.h>
-
 using namespace CPlusPlus;
-using namespace Utils;
 
 namespace CppEditor::Internal {
 namespace {
@@ -110,12 +129,20 @@ const QList<TypeHierarchy> &TypeHierarchy::hierarchy() const
 }
 
 TypeHierarchy TypeHierarchyBuilder::buildDerivedTypeHierarchy(Symbol *symbol,
-              const Snapshot &snapshot, const std::optional<QFuture<void>> &future)
+                                                              const Snapshot &snapshot)
+{
+    QFutureInterfaceBase dummy;
+    return TypeHierarchyBuilder::buildDerivedTypeHierarchy(dummy, symbol, snapshot);
+}
+
+TypeHierarchy TypeHierarchyBuilder::buildDerivedTypeHierarchy(QFutureInterfaceBase &futureInterface,
+                                                              Symbol *symbol,
+                                                              const Snapshot &snapshot)
 {
     TypeHierarchy hierarchy(symbol);
     TypeHierarchyBuilder builder;
     QHash<QString, QHash<QString, QString>> cache;
-    builder.buildDerived(future, &hierarchy, snapshot, cache);
+    builder.buildDerived(futureInterface, &hierarchy, snapshot, cache);
     return hierarchy;
 }
 
@@ -157,32 +184,41 @@ LookupItem TypeHierarchyBuilder::followTypedef(const LookupContext &context, con
     return matchingItem;
 }
 
-static FilePaths filesDependingOn(const Snapshot &snapshot, Symbol *symbol)
+static Utils::FilePaths filesDependingOn(const Snapshot &snapshot,
+                                         Symbol *symbol)
 {
     if (!symbol)
-        return {};
+        return Utils::FilePaths();
 
-    const FilePath file = symbol->filePath();
-    return FilePaths{file} + snapshot.filesDependingOn(file);
+    const Utils::FilePath file = Utils::FilePath::fromUtf8(symbol->fileName(), symbol->fileNameLength());
+    return Utils::FilePaths { file } + snapshot.filesDependingOn(file);
 }
 
-void TypeHierarchyBuilder::buildDerived(const std::optional<QFuture<void>> &future,
+void TypeHierarchyBuilder::buildDerived(QFutureInterfaceBase &futureInterface,
                                         TypeHierarchy *typeHierarchy,
                                         const Snapshot &snapshot,
-                                        QHash<QString, QHash<QString, QString>> &cache)
+                                        QHash<QString, QHash<QString, QString>> &cache,
+                                        int depth)
 {
     Symbol *symbol = typeHierarchy->_symbol;
-    if (!Utils::insert(_visited, symbol))
+    if (_visited.contains(symbol))
         return;
+
+    _visited.insert(symbol);
 
     const QString &symbolName = _overview.prettyName(LookupContext::fullyQualifiedName(symbol));
     DerivedHierarchyVisitor visitor(symbolName, cache);
 
-    const FilePaths dependingFiles = filesDependingOn(snapshot, symbol);
+    const Utils::FilePaths &dependingFiles = filesDependingOn(snapshot, symbol);
+    if (depth == 0)
+        futureInterface.setProgressRange(0, dependingFiles.size());
 
-    for (const FilePath &fileName : dependingFiles) {
-        if (future && future->isCanceled())
+    int i = -1;
+    for (const Utils::FilePath &fileName : dependingFiles) {
+        if (futureInterface.isCanceled())
             return;
+        if (depth == 0)
+            futureInterface.setProgressValue(++i);
         Document::Ptr doc = snapshot.document(fileName);
         if ((_candidates.contains(fileName) && !_candidates.value(fileName).contains(symbolName))
                 || !doc->control()->findIdentifier(symbol->identifier()->chars(),
@@ -196,8 +232,8 @@ void TypeHierarchyBuilder::buildDerived(const std::optional<QFuture<void>> &futu
         const QList<Symbol *> &derived = visitor.derived();
         for (Symbol *s : derived) {
             TypeHierarchy derivedHierarchy(s);
-            buildDerived(future, &derivedHierarchy, snapshot, cache);
-            if (future && future->isCanceled())
+            buildDerived(futureInterface, &derivedHierarchy, snapshot, cache, depth + 1);
+            if (futureInterface.isCanceled())
                 return;
             typeHierarchy->_hierarchy.append(derivedHierarchy);
         }

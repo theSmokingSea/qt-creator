@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cdbparsehelpers.h"
 
@@ -161,8 +183,7 @@ QString cdbAddBreakpointCommand(const BreakpointParameters &bpIn,
         str << '`';
         if (!params.module.isEmpty())
             str << params.module << '!';
-        str << cdbBreakPointFileName(params, sourcePathMapping)
-            << ':' << params.textPosition.line << '`';
+        str << cdbBreakPointFileName(params, sourcePathMapping) << ':' << params.lineNumber << '`';
         break;
     case WatchpointAtAddress: { // Read/write, no space here
         const unsigned size = params.size ? params.size : 1;
@@ -188,6 +209,64 @@ QString cdbClearBreakpointCommand(const Breakpoint &bp)
     const int firstBreakPoint = bp->responseId().toInt();
     const int lastBreakPoint = firstBreakPoint + cdbBreakPointIdMinorPart - 1;
     return "bc " + QString::number(firstBreakPoint) + '-' + QString::number(lastBreakPoint);
+}
+
+// Helper to retrieve an int child from GDBMI
+static inline bool gdbmiChildToInt(const GdbMi &parent, const char *childName, int *target)
+{
+    const GdbMi childBA = parent[childName];
+    if (childBA.isValid()) {
+        bool ok;
+        const int v = childBA.data().toInt(&ok);
+        if (ok) {
+            *target = v;
+            return  true;
+        }
+    }
+    return false;
+}
+
+// Helper to retrieve an bool child from GDBMI
+static inline bool gdbmiChildToBool(const GdbMi &parent, const char *childName, bool *target)
+{
+    const GdbMi childBA = parent[childName];
+    if (childBA.isValid()) {
+        *target = childBA.data() == "true";
+        return true;
+    }
+    return false;
+}
+
+// Parse extension command listing breakpoints.
+// Note that not all fields are returned, since file, line, function are encoded
+// in the expression (that is in addition deleted on resolving for a bp-type breakpoint).
+void parseBreakPoint(const GdbMi &gdbmi, BreakpointParameters *r,
+                     QString *expression /*  = 0 */)
+{
+    gdbmiChildToBool(gdbmi, "enabled", &(r->enabled));
+    gdbmiChildToBool(gdbmi, "deferred", &(r->pending));
+    const GdbMi moduleG = gdbmi["module"];
+    if (moduleG.isValid())
+        r->module = moduleG.data();
+    const GdbMi sourceFileName = gdbmi["srcfile"];
+    if (sourceFileName.isValid()) {
+        r->fileName = Utils::FilePath::fromUserInput(
+            Utils::FileUtils::normalizedPathName(sourceFileName.data()));
+        const GdbMi lineNumber = gdbmi["srcline"];
+        if (lineNumber.isValid())
+            r->lineNumber = lineNumber.data().toULongLong(nullptr, 0);
+    }
+    if (expression) {
+        const GdbMi expressionG = gdbmi["expression"];
+        if (expressionG.isValid())
+            *expression = expressionG.data();
+    }
+    const GdbMi addressG = gdbmi["address"];
+    if (addressG.isValid())
+        r->address = addressG.data().toULongLong(nullptr, 0);
+    if (gdbmiChildToInt(gdbmi, "passcount", &(r->ignoreCount)))
+        r->ignoreCount--;
+    gdbmiChildToInt(gdbmi, "thread", &(r->threadSpec));
 }
 
 QString cdbWriteMemoryCommand(quint64 addr, const QByteArray &data)

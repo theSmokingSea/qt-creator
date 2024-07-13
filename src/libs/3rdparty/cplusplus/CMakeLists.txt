@@ -1,5 +1,5 @@
 add_qtc_library(3rd_cplusplus OBJECT
-  PUBLIC_DEPENDS Qt::Core Utils
+  PUBLIC_DEPENDS Qt5::Core Utils
   SOURCES
     AST.cpp AST.h
     ASTClone.cpp
@@ -41,6 +41,7 @@ add_qtc_library(3rd_cplusplus OBJECT
     TypeVisitor.cpp TypeVisitor.h
     cppassert.h
   SKIP_PCH
+  PROPERTIES POSITION_INDEPENDENT_CODE ON
 )
 
 set(export_symbol_declaration DEFINES CPLUSPLUS_BUILD_LIB)
@@ -54,9 +55,5 @@ if(TARGET 3rd_cplusplus)
   if (BUILD_WITH_PCH)
     target_precompile_headers(3rd_cplusplus PRIVATE
       "${QtCreator_SOURCE_DIR}/src/shared/qtcreator_gui_pch.h")
-  endif()
-
-  if(UNIX)
-    target_compile_options(3rd_cplusplus PRIVATE "-Wno-unused-variable")
   endif()
 endif()

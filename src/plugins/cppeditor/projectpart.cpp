@@ -1,10 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "projectpart.h"
 
 #include <projectexplorer/project.h>
-#include <projectexplorer/projectmanager.h>
 
 #include <utils/algorithm.h>
 
@@ -13,7 +34,6 @@
 #include <QTextStream>
 
 using namespace ProjectExplorer;
-using namespace Utils;
 
 namespace CppEditor {
 
@@ -45,11 +65,6 @@ bool ProjectPart::belongsToProject(const Utils::FilePath &project) const
     return topLevelProject == project;
 }
 
-Project *ProjectPart::project() const
-{
-    return ProjectManager::projectWithProjectFilePath(topLevelProject);
-}
-
 QByteArray ProjectPart::readProjectConfigFile(const QString &projectConfigFile)
 {
     QByteArray result;
@@ -76,14 +91,14 @@ static Macros getProjectMacros(const RawProjectPart &rpp)
 
 static HeaderPaths getHeaderPaths(const RawProjectPart &rpp,
                                   const RawProjectPartFlags &flags,
-                                  const ProjectExplorer::ToolchainInfo &tcInfo)
+                                  const ProjectExplorer::ToolChainInfo &tcInfo)
 {
     HeaderPaths headerPaths;
 
     // Prevent duplicate include paths.
     // TODO: Do this once when finalizing the raw project part?
     std::set<QString> seenPaths;
-    for (const HeaderPath &p : std::as_const(rpp.headerPaths)) {
+    for (const HeaderPath &p : qAsConst(rpp.headerPaths)) {
         const QString cleanPath = QDir::cleanPath(p.path);
         if (seenPaths.insert(cleanPath).second)
             headerPaths << HeaderPath(cleanPath, p.type);
@@ -93,20 +108,17 @@ static HeaderPaths getHeaderPaths(const RawProjectPart &rpp,
         const HeaderPaths builtInHeaderPaths = tcInfo.headerPathsRunner(
                     flags.commandLineFlags, tcInfo.sysRootPath, tcInfo.targetTriple);
         for (const HeaderPath &header : builtInHeaderPaths) {
-            // Prevent projects from adding built-in paths as user paths.
-            erase_if(headerPaths, [&header](const HeaderPath &existing) {
-                return header.path == existing.path;
-            });
-            headerPaths.push_back(HeaderPath{header.path, header.type});
+            if (seenPaths.insert(header.path).second)
+                headerPaths.push_back(HeaderPath{header.path, header.type});
         }
     }
     return headerPaths;
 }
 
-static Toolchain::MacroInspectionReport getToolchainMacros(
-        const RawProjectPartFlags &flags, const ToolchainInfo &tcInfo, Utils::Language language)
+static ToolChain::MacroInspectionReport getToolchainMacros(
+        const RawProjectPartFlags &flags, const ToolChainInfo &tcInfo, Utils::Language language)
 {
-    Toolchain::MacroInspectionReport report;
+    ToolChain::MacroInspectionReport report;
     if (tcInfo.macroInspectionRunner) {
         report = tcInfo.macroInspectionRunner(flags.commandLineFlags);
     } else if (language == Utils::Language::C) { // No compiler set in kit.
@@ -122,32 +134,6 @@ static QStringList getIncludedFiles(const RawProjectPart &rpp, const RawProjectP
     return !rpp.includedFiles.isEmpty() ? rpp.includedFiles : flags.includedFiles;
 }
 
-static QStringList getExtraCodeModelFlags(const RawProjectPart &rpp, const ProjectFiles &files)
-{
-    if (!Utils::anyOf(files, [](const ProjectFile &f) { return f.kind == ProjectFile::CudaSource; }))
-        return {};
-
-    Utils::FilePath cudaPath;
-    for (const HeaderPath &hp : rpp.headerPaths) {
-        if (hp.type == HeaderPathType::BuiltIn)
-            continue;
-        if (!hp.path.endsWith("/include"))
-            continue;
-        const Utils::FilePath includeDir = Utils::FilePath::fromString(hp.path);
-        if (!includeDir.pathAppended("cuda.h").exists())
-            continue;
-        for (FilePath dir = includeDir.parentDir(); cudaPath.isEmpty() && !dir.isRootPath();
-             dir = dir.parentDir()) {
-            if (dir.pathAppended("nvvm").exists())
-                cudaPath = dir;
-        }
-        break;
-    }
-    if (!cudaPath.isEmpty())
-        return {"--cuda-path=" + cudaPath.toUserOutput()};
-    return {};
-}
-
 ProjectPart::ProjectPart(const Utils::FilePath &topLevelProject,
                          const RawProjectPart &rpp,
                          const QString &displayName,
@@ -155,7 +141,7 @@ ProjectPart::ProjectPart(const Utils::FilePath &topLevelProject,
                          Utils::Language language,
                          Utils::LanguageExtensions languageExtensions,
                          const RawProjectPartFlags &flags,
-                         const ToolchainInfo &tcInfo)
+                         const ToolChainInfo &tcInfo)
     : topLevelProject(topLevelProject),
       displayName(displayName),
       projectFile(rpp.projectFile),
@@ -175,14 +161,15 @@ ProjectPart::ProjectPart(const Utils::FilePath &topLevelProject,
       buildTargetType(rpp.buildTargetType),
       selectedForBuilding(rpp.selectedForBuilding),
       toolchainType(tcInfo.type),
-      isMsvc2015Toolchain(tcInfo.isMsvc2015Toolchain),
-      toolchainTargetTriple(tcInfo.targetTriple),
+      isMsvc2015Toolchain(tcInfo.isMsvc2015ToolChain),
+      toolChainTargetTriple(tcInfo.targetTriple),
       targetTripleIsAuthoritative(tcInfo.targetTripleIsAuthoritative),
-      toolchainAbi(tcInfo.abi),
-      toolchainInstallDir(tcInfo.installDir),
+      toolChainWordWidth(tcInfo.wordWidth == 64 ? ProjectPart::WordWidth64Bit
+                                                : ProjectPart::WordWidth32Bit),
+      toolChainInstallDir(tcInfo.installDir),
       compilerFilePath(tcInfo.compilerFilePath),
       warningFlags(flags.warningFlags),
-      extraCodeModelFlags(tcInfo.extraCodeModelFlags + getExtraCodeModelFlags(rpp, files)),
+      extraCodeModelFlags(tcInfo.extraCodeModelFlags),
       compilerFlags(flags.commandLineFlags),
       m_macroReport(getToolchainMacros(flags, tcInfo, language)),
       languageFeatures(deriveLanguageFeatures())
@@ -196,8 +183,6 @@ CPlusPlus::LanguageFeatures ProjectPart::deriveLanguageFeatures() const
     CPlusPlus::LanguageFeatures features;
     features.cxx11Enabled = languageVersion >= Utils::LanguageVersion::CXX11;
     features.cxx14Enabled = languageVersion >= Utils::LanguageVersion::CXX14;
-    features.cxx17Enabled = languageVersion >= Utils::LanguageVersion::CXX17;
-    features.cxx20Enabled = languageVersion >= Utils::LanguageVersion::CXX20;
     features.cxxEnabled = hasCxx;
     features.c99Enabled = languageVersion >= Utils::LanguageVersion::C99;
     features.objCEnabled = languageExtensions.testFlag(Utils::LanguageExtension::ObjectiveC);

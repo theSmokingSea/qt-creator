@@ -47,7 +47,7 @@ bool KeywordList::contains(QStringView str, Qt::CaseSensitivity caseSensitive) c
     /**
      * search with right predicate
      */
-    return std::binary_search(vectorToSearch.begin(), vectorToSearch.end(), str, KeywordComparator{caseSensitive});
+    return std::binary_search(vectorToSearch.begin(), vectorToSearch.end(), QStringView(str), KeywordComparator{caseSensitive});
 }
 
 void KeywordList::load(QXmlStreamReader &reader)
@@ -103,7 +103,10 @@ void KeywordList::initLookupForCaseSensitivity(Qt::CaseSensitivity caseSensitive
     /**
      * fill vector with refs to keywords
      */
-    vectorToSort.assign(m_keywords.constBegin(), m_keywords.constEnd());
+    vectorToSort.reserve(m_keywords.size());
+    for (const auto &keyword : std::as_const(m_keywords)) {
+        vectorToSort.push_back(keyword);
+    }
 
     /**
      * sort with right predicate
@@ -121,10 +124,10 @@ void KeywordList::resolveIncludeKeywords(DefinitionData &def)
         KeywordList *keywords = nullptr;
 
         if (idx >= 0) {
+            auto listName = kw_include.left(idx);
             auto defName = kw_include.mid(idx + 2);
             auto includeDef = def.repo->definitionForName(defName);
             if (includeDef.isValid()) {
-                auto listName = kw_include.left(idx);
                 auto defData = DefinitionData::get(includeDef);
                 defData->load(DefinitionData::OnlyKeywords(true));
                 keywords = defData->keywordList(listName);

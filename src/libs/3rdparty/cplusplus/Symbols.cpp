@@ -201,6 +201,7 @@ EnumeratorDeclaration::EnumeratorDeclaration(TranslationUnit *translationUnit, i
 {}
 
 
+
 Argument::Argument(TranslationUnit *translationUnit, int sourceLocation, const Name *name)
     : Symbol(translationUnit, sourceLocation, name),
       _initializer(nullptr)
@@ -283,10 +284,10 @@ bool Function::isSignatureEqualTo(const Function *other, Matcher *matcher) const
         Symbol *l = argumentAt(i);
         Symbol *r = other->argumentAt(i);
         if (! l->type().match(r->type(), matcher)) {
-            if (!l->type()->asReferenceType() && !l->type()->asPointerType()
-                    && !l->type()->asPointerToMemberType()
-                    && !r->type()->asReferenceType() && !r->type()->asPointerType()
-                    && !r->type()->asPointerToMemberType()) {
+            if (!l->type()->isReferenceType() && !l->type()->isPointerType()
+                    && !l->type()->isPointerToMemberType()
+                    && !r->type()->isReferenceType() && !r->type()->isPointerType()
+                    && !r->type()->isPointerToMemberType()) {
                 FullySpecifiedType lType = l->type();
                 FullySpecifiedType rType = r->type();
                 lType.setConst(false);
@@ -333,7 +334,7 @@ bool Function::hasReturnType() const
 int Function::argumentCount() const
 {
     const int memCnt = memberCount();
-    if (memCnt > 0 && memberAt(0)->type()->asVoidType())
+    if (memCnt > 0 && memberAt(0)->type()->isVoidType())
         return 0;
 
     // Definitions with function-try-blocks will have more than a block, and
@@ -362,7 +363,7 @@ Symbol *Function::argumentAt(int index) const
 bool Function::hasArguments() const
 {
     int argc = argumentCount();
-    return ! (argc == 0 || (argc == 1 && argumentAt(0)->type()->asVoidType()));
+    return ! (argc == 0 || (argc == 1 && argumentAt(0)->type()->isVoidType()));
 }
 
 int Function::minimumArgumentCount() const
@@ -904,7 +905,7 @@ Symbol *ObjCMethod::argumentAt(int index) const
 bool ObjCMethod::hasArguments() const
 {
     return ! (argumentCount() == 0 ||
-              (argumentCount() == 1 && argumentAt(0)->type()->asVoidType()));
+              (argumentCount() == 1 && argumentAt(0)->type()->isVoidType()));
 }
 
 void ObjCMethod::visitSymbol0(SymbolVisitor *visitor)

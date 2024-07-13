@@ -1,14 +1,34 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "CppDocument.h"
 
 #include <QDebug>
-#include <QFuture>
+#include <QFutureInterface>
 
-using namespace Utils;
-
-namespace CPlusPlus {
+using namespace CPlusPlus;
 
 Utils::FilePaths DependencyTable::filesDependingOn(const Utils::FilePath &fileName) const
 {
@@ -28,14 +48,14 @@ Utils::FilePaths DependencyTable::filesDependingOn(const Utils::FilePath &fileNa
     return deps;
 }
 
-void DependencyTable::build(const std::optional<QFuture<void>> &future, const Snapshot &snapshot)
+void DependencyTable::build(QFutureInterfaceBase &futureInterface, const Snapshot &snapshot)
 {
     files.clear();
     fileIndex.clear();
     includes.clear();
     includeMap.clear();
 
-    if (future && future->isCanceled())
+    if (futureInterface.isCanceled())
         return;
 
     const int documentCount = snapshot.size();
@@ -49,7 +69,7 @@ void DependencyTable::build(const std::optional<QFuture<void>> &future, const Sn
         fileIndex[it.key()] = i;
     }
 
-    if (future && future->isCanceled())
+    if (futureInterface.isCanceled())
         return;
 
     for (int i = 0; i < files.size(); ++i) {
@@ -57,10 +77,10 @@ void DependencyTable::build(const std::optional<QFuture<void>> &future, const Sn
         if (Document::Ptr doc = snapshot.document(fileName)) {
             QBitArray bitmap(files.size());
             QList<int> directIncludes;
-            const FilePaths documentIncludes = doc->includedFiles();
+            const QStringList documentIncludes = doc->includedFiles();
 
-            for (const FilePath &includedFile : documentIncludes) {
-                int index = fileIndex.value(includedFile);
+            for (const QString &includedFile : documentIncludes) {
+                int index = fileIndex.value(Utils::FilePath::fromString(includedFile));
 
                 if (index == -1)
                     continue;
@@ -68,13 +88,13 @@ void DependencyTable::build(const std::optional<QFuture<void>> &future, const Sn
                     directIncludes.append(index);
 
                 bitmap.setBit(index, true);
-                if (future && future->isCanceled())
+                if (futureInterface.isCanceled())
                     return;
             }
 
             includeMap[i] = bitmap;
             includes[i] = directIncludes;
-            if (future && future->isCanceled())
+            if (futureInterface.isCanceled())
                 return;
         }
     }
@@ -91,7 +111,7 @@ void DependencyTable::build(const std::optional<QFuture<void>> &future, const Sn
             const QList<int> includedFileIndexes = includes.value(i);
             for (const int includedFileIndex : includedFileIndexes) {
                 bitmap |= includeMap.value(includedFileIndex);
-                if (future && future->isCanceled())
+                if (futureInterface.isCanceled())
                     return;
             }
 
@@ -99,12 +119,10 @@ void DependencyTable::build(const std::optional<QFuture<void>> &future, const Sn
                 includeMap[i] = bitmap;
                 changed = true;
             }
-            if (future && future->isCanceled())
+            if (futureInterface.isCanceled())
                 return;
         }
-        if (future && future->isCanceled())
+        if (futureInterface.isCanceled())
             return;
     } while (changed);
 }
-
-} // CPlusPlus

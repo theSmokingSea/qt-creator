@@ -1,12 +1,34 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 import QtQuick.Window
 import QtQuick.Controls
 
 import QtQuick
 import QtQuick.Layouts
-import StudioControls as StudioControls
+import StudioControls as SC
 import StudioTheme as StudioTheme
 
 import BackendApi
@@ -23,17 +45,12 @@ ScrollView {
     property bool selectLast: false
 
     ScrollBar.horizontal.policy: ScrollBar.AlwaysOff
-    ScrollBar.vertical: StudioControls.TransientScrollBar {
-        id: verticalScrollBar
-        style: StudioTheme.Values.viewStyle
+    ScrollBar.vertical: SC.VerticalScrollBar {
         parent: scrollView
-        x: scrollView.width + (DialogValues.gridMargins - verticalScrollBar.width) * 0.5
+        x: scrollView.width + (DialogValues.gridMargins
+                               - StudioTheme.Values.scrollBarThickness) * 0.5
         y: scrollView.topPadding
         height: scrollView.availableHeight
-        orientation: Qt.Vertical
-
-        show: (scrollView.hovered || scrollView.focus || verticalScrollBar.inUse)
-              && verticalScrollBar.isNeeded
     }
 
     contentWidth: gridView.contentItem.childrenRect.width

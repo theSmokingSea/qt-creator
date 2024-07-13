@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "refactoroverlay.h"
 #include "textdocumentlayout.h"
@@ -24,24 +46,14 @@ RefactorOverlay::RefactorOverlay(TextEditor::TextEditorWidget *editor) :
 
 void RefactorOverlay::paint(QPainter *painter, const QRect &clip)
 {
-    const auto firstBlock = m_editor->blockForVerticalOffset(clip.top());
-    const int firstBlockNumber = firstBlock.isValid() ? firstBlock.blockNumber() : 0;
-    const auto lastBlock = m_editor->blockForVerticalOffset(clip.bottom());
-    const int lastBlockNumber = lastBlock.isValid() ? lastBlock.blockNumber()
-                                                    : m_editor->blockCount() - 1;
-
     m_maxWidth = 0;
-    for (const RefactorMarker &marker : std::as_const(m_markers)) {
-        const int markerBlockNumber = marker.cursor.block().blockNumber();
-        if (markerBlockNumber < firstBlockNumber)
-            continue;
-        if (markerBlockNumber > lastBlockNumber)
-            continue;
+    for (auto &marker : qAsConst(m_markers)) {
         paintMarker(marker, painter, clip);
     }
 
     if (auto documentLayout = qobject_cast<TextDocumentLayout*>(m_editor->document()->documentLayout()))
         documentLayout->setRequiredWidth(m_maxWidth);
+
 }
 
 RefactorMarker RefactorOverlay::markerAt(const QPoint &pos) const
@@ -75,7 +87,10 @@ void RefactorOverlay::paintMarker(const RefactorMarker& marker, QPainter *painte
     const QSize proposedIconSize =
         QSize(m_editor->fontMetrics().horizontalAdvance(QLatin1Char(' ')) + 3,
               cursorRect.height()) * devicePixelRatio;
-    const QSize actualIconSize = icon.actualSize(proposedIconSize);
+    QSize actualIconSize = icon.actualSize(proposedIconSize);
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+    actualIconSize /= devicePixelRatio;
+#endif // Qt < 6.0
 
     const int y = cursorRect.top() + ((cursorRect.height() - actualIconSize.height()) / 2);
     const int x = cursorRect.right();

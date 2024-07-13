@@ -1,39 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "imode.h"
 
 #include "modemanager.h"
 
-#include <utils/aspects.h>
-#include <utils/fancymainwindow.h>
-#include <utils/qtcassert.h>
-
-#include <aggregation/aggregate.h>
-
-using namespace Utils;
-
 namespace Core {
-
-namespace Internal {
-
-class IModePrivate
-{
-public:
-    QString m_displayName;
-    QIcon m_icon;
-    std::function<void(QMenu *)> m_menuFunction;
-    Utils::FancyMainWindow *m_mainWindow = nullptr;
-    int m_priority = -1;
-    Utils::Id m_id;
-    Context m_context;
-    QPointer<QWidget> m_widget;
-    std::function<QWidget *()> m_widgetCreator;
-    bool m_isEnabled = true;
-    BoolAspect m_isVisible;
-};
-
-} // namespace Internal
 
 /*!
     \class Core::IMode
@@ -113,168 +107,35 @@ public:
 */
 
 /*!
+    \property IMode::menu
+
+    This property holds the mode's menu.
+
+    By default, a mode does not have a menu. When you set a menu, it is not
+    owned by the mode unless you set the parent explicitly.
+*/
+
+/*!
     Creates an IMode with an optional \a parent.
 
     Registers the mode in \QC.
 */
-IMode::IMode(QObject *parent)
-    : QObject(parent)
-    , m_d(new Internal::IModePrivate)
+IMode::IMode(QObject *parent) : IContext(parent)
 {
-    m_d->m_isVisible.setDefaultValue(true);
-    connect(&m_d->m_isVisible, &BoolAspect::changed, this, [this] {
-        emit visibleChanged(m_d->m_isVisible.value());
-        m_d->m_isVisible.writeSettings();
-    });
     ModeManager::addMode(this);
-}
-
-IMode::~IMode()
-{
-    if (m_d->m_widgetCreator)
-        delete m_d->m_widget;
-}
-
-QString IMode::displayName() const
-{
-    return m_d->m_displayName;
-}
-
-QIcon IMode::icon() const
-{
-    return m_d->m_icon;
-}
-
-int IMode::priority() const
-{
-    return m_d->m_priority;
-}
-
-Utils::Id IMode::id() const
-{
-    return m_d->m_id;
 }
 
 void IMode::setEnabled(bool enabled)
 {
-    if (m_d->m_isEnabled == enabled)
+    if (m_isEnabled == enabled)
         return;
-    m_d->m_isEnabled = enabled;
-    emit enabledStateChanged(m_d->m_isEnabled);
-}
-
-void IMode::setVisible(bool visible)
-{
-    m_d->m_isVisible.setValue(visible);
-}
-
-void IMode::setDisplayName(const QString &displayName)
-{
-    m_d->m_displayName = displayName;
-}
-
-void IMode::setIcon(const QIcon &icon)
-{
-    m_d->m_icon = icon;
-}
-
-void IMode::setPriority(int priority)
-{
-    m_d->m_priority = priority;
-}
-
-void IMode::setId(Utils::Id id)
-{
-    m_d->m_id = id;
-    m_d->m_isVisible
-        .setSettingsKey("MainWindow", id.withPrefix("Mode.").withSuffix(".Visible").toKey());
-    m_d->m_isVisible.readSettings();
-}
-
-/*!
-    Sets a \a menuFunction that is used to add the mode specific items
-    to the mode's context menu. This is called every time the context
-    menu is requested with a new QMenu instance.
-    The menu is destroyed after the it closes.
-*/
-void IMode::setMenu(std::function<void(QMenu *)> menuFunction)
-{
-    m_d->m_menuFunction = menuFunction;
-}
-
-void IMode::setContext(const Context &context)
-{
-    m_d->m_context = context;
-}
-
-void IMode::setWidget(QWidget *widget)
-{
-    QTC_ASSERT(!m_d->m_widgetCreator,
-               qWarning("A mode widget should not be set if there is already a widget creator"));
-    m_d->m_widget = widget;
-}
-
-void IMode::setWidgetCreator(const std::function<QWidget *()> &widgetCreator)
-{
-    QTC_ASSERT(!m_d->m_widget,
-               qWarning("A mode widget widgetCreator should not be set if there is already a widget"));
-    m_d->m_widgetCreator = widgetCreator;
-}
-
-Utils::FancyMainWindow *IMode::mainWindow()
-{
-    if (m_d->m_mainWindow)
-        return m_d->m_mainWindow;
-    return qobject_cast<Utils::FancyMainWindow *>(widget());
-}
-
-void IMode::setMainWindow(Utils::FancyMainWindow *mw)
-{
-    m_d->m_mainWindow = mw;
-    emit ModeManager::instance()->currentMainWindowChanged();
+    m_isEnabled = enabled;
+    emit enabledStateChanged(m_isEnabled);
 }
 
 bool IMode::isEnabled() const
 {
-    return m_d->m_isEnabled;
-}
-
-bool IMode::isVisible() const
-{
-    return m_d->m_isVisible.value();
-}
-
-/*!
-    Returns if the mode provides mode specific context menu items.
-
-    \sa setMenu()
-*/
-bool IMode::hasMenu() const
-{
-    return bool(m_d->m_menuFunction);
-}
-
-/*!
-    Adds the mode specific items to the \a menu, if any.
-
-    \sa setMenu()
-*/
-void IMode::addToMenu(QMenu *menu) const
-{
-    if (m_d->m_menuFunction)
-        m_d->m_menuFunction(menu);
-}
-
-Context IMode::context() const
-{
-    return m_d->m_context;
-}
-
-QWidget *IMode::widget() const
-{
-    if (!m_d->m_widget && m_d->m_widgetCreator)
-        m_d->m_widget = m_d->m_widgetCreator();
-    return m_d->m_widget;
+    return m_isEnabled;
 }
 
 } // namespace Core

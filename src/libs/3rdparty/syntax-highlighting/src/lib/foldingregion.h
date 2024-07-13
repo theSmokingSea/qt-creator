@@ -22,7 +22,7 @@ public:
      * Defines whether a FoldingRegion starts or ends a folding region.
      */
     enum Type {
-        //! Used internally as indicator for an invalid FoldingRegion.
+        //! Used internally as indicator for invalid FoldingRegion%s.
         None,
         //! Indicates the start of a FoldingRegion.
         Begin,
@@ -64,7 +64,7 @@ public:
      * brace, you need to do kind of a reference counting to find the correct
      * closing brace.
      */
-    int id() const;
+    quint16 id() const;
 
     /**
      * Returns whether this is the begin or end of a region.
@@ -74,21 +74,12 @@ public:
      */
     Type type() const;
 
-    /**
-     * Returns the matching start or end region.
-     *
-     * @note Will return invalid region for an invalid region.
-     *
-     * @since 6.0
-     */
-    FoldingRegion sibling() const;
-
 private:
     friend class Rule;
-    KSYNTAXHIGHLIGHTING_NO_EXPORT FoldingRegion(Type type, int id);
+    FoldingRegion(Type type, quint16 id);
 
-    // 0 is invalid, positive begin, negative end
-    int m_idWithType = 0;
+    quint16 m_type : 2;
+    quint16 m_id : 14;
 };
 
 }

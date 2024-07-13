@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 import QtQuick 2.15
 import HelperWidgets 2.0
@@ -20,7 +42,7 @@ Column {
         SectionLayout {
             PropertyLabel {
                 text: qsTr("Interactive")
-                tooltip: qsTr("Toggles if the path view allows drag or flick.")
+                tooltip: qsTr("Allows users to drag or flick a path view.")
             }
 
             SecondColumnLayout {
@@ -34,10 +56,7 @@ Column {
                 ExpandingSpacer {}
             }
 
-            PropertyLabel {
-                text: qsTr("Drag margin")
-                tooltip: qsTr("Sets a margin within which the drag function also works even without clicking the item itself.")
-            }
+            PropertyLabel { text: qsTr("Drag margin") }
 
             SecondColumnLayout {
                 SpinBox {
@@ -52,10 +71,7 @@ Column {
                 ExpandingSpacer {}
             }
 
-            PropertyLabel {
-                text: qsTr("Flick deceleration")
-                tooltip: qsTr("Sets the rate by which a flick action slows down after performing.")
-            }
+            PropertyLabel { text: qsTr("Flick deceleration") }
 
             SecondColumnLayout {
                 SpinBox {
@@ -72,7 +88,7 @@ Column {
 
             PropertyLabel {
                 text: qsTr("Offset")
-                tooltip: qsTr("Sets how far along the path the items are from their initial position.")
+                tooltip: qsTr("Specifies how far along the path the items are from their initial positions. This is a real number that ranges from 0.0 to the count of items in the model.")
             }
 
             SecondColumnLayout {
@@ -90,7 +106,7 @@ Column {
 
             PropertyLabel {
                 text: qsTr("Item count")
-                tooltip: qsTr("Sets the number of items visible at once along the path.")
+                tooltip: qsTr("Number of items visible on the path at any one time.")
             }
 
             SecondColumnLayout {
@@ -117,7 +133,7 @@ Column {
         SectionLayout {
             PropertyLabel {
                 text: qsTr("Range")
-                tooltip: qsTr("Sets the highlight range mode.")
+                tooltip: qsTr("Highlight range")
             }
 
             SecondColumnLayout {
@@ -135,8 +151,7 @@ Column {
 
             PropertyLabel {
                 text: qsTr("Move duration")
-                tooltip: qsTr("Sets the animation duration of the highlight delegate when\n"
-                            + "it is moved.")
+                tooltip: qsTr("Move animation duration of the highlight delegate.")
             }
 
             SecondColumnLayout {
@@ -154,9 +169,7 @@ Column {
 
             PropertyLabel {
                 text: qsTr("Preferred begin")
-                tooltip: qsTr("Sets the preferred highlight beginning. It must be smaller than\n"
-                            + "the <b>Preferred end</b>. Note that the user has to add\n"
-                            + "a highlight component.")
+                tooltip: qsTr("Preferred highlight begin - must be smaller than Preferred end. Note that the user has to add a highlight component.")
             }
 
             SecondColumnLayout {
@@ -175,9 +188,7 @@ Column {
 
             PropertyLabel {
                 text: qsTr("Preferred end")
-                tooltip: qsTr("Sets the preferred highlight end. It must be larger than\n"
-                            + "the <b>Preferred begin</b>. Note that the user has to add\n"
-                            + "a highlight component.")
+                tooltip: qsTr("Preferred highlight end - must be larger than Preferred begin. Note that the user has to add a highlight component.")
             }
 
             SecondColumnLayout {

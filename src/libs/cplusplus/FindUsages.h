@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -17,31 +39,18 @@ namespace CPlusPlus {
 class CPLUSPLUS_EXPORT Usage
 {
 public:
-    enum class Tag {
-        Declaration = 1 << 0,
-        Read = 1 << 1,
-        Write = 1 << 2,
-        WritableRef = 1 << 3,
-        Override = 1 << 4,
-        MocInvokable = 1 << 5,
-        Template = 1 << 6,
-        ConstructorDestructor = 1 << 7,
-        Operator = 1 << 8,
-        Used = 1 << 9,
-    };
-    using Tags = QFlags<Tag>;
+    enum class Type { Declaration, Initialization, Read, Write, WritableRef, Other };
 
     Usage() = default;
-    Usage(const Utils::FilePath &path, const QString &lineText, const QString &func, Tags t,
+    Usage(const Utils::FilePath &path, const QString &lineText, const QString &func, Type t,
           int line, int col, int len)
-        : path(path), lineText(lineText), containingFunction(func), tags(t),
+        : path(path), lineText(lineText), containingFunction(func), type(t),
           line(line), col(col), len(len) {}
 
     Utils::FilePath path;
     QString lineText;
     QString containingFunction;
-    const Function *containingFunctionSymbol = nullptr;
-    Tags tags;
+    Type type = Type::Other;
     int line = 0;
     int col = 0;
     int len = 0;
@@ -68,8 +77,8 @@ protected:
 
     void reportResult(unsigned tokenIndex, const Name *name, Scope *scope = nullptr);
     void reportResult(unsigned tokenIndex, const QList<LookupItem> &candidates);
-    Usage::Tags getTags(int line, int column, int tokenIndex);
-    Function *getContainingFunction(int line, int column);
+    Usage::Type getType(int line, int column, int tokenIndex);
+    QString getContainingFunction(int line, int column);
 
     bool checkCandidates(const QList<LookupItem> &candidates) const;
     void checkExpression(unsigned startToken, unsigned endToken, Scope *scope = nullptr);
@@ -273,7 +282,6 @@ protected:
 
     // CoreDeclaratorAST
     virtual bool visit(DeclaratorIdAST *ast);
-    virtual bool visit(DecompositionDeclaratorAST *ast);
     virtual bool visit(NestedDeclaratorAST *ast);
 
     // PostfixDeclaratorAST
@@ -300,7 +308,7 @@ private:
     TypeOfExpression typeofExpression;
     Scope *_currentScope = nullptr;
     const bool _categorize = false;
-    class GetUsageTags;
+    class GetUsageType;
 };
 
 } // namespace CPlusPlus

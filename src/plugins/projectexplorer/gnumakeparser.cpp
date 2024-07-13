@@ -1,8 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "gnumakeparser.h"
 
+#include "projectexplorerconstants.h"
 #include "task.h"
 
 #include <utils/qtcassert.h>
@@ -103,7 +126,7 @@ OutputLineParser::Result GnuMakeParser::handleLine(const QString &line, OutputFo
         if (!m_suppressIssues) {
             const FilePath file = absoluteFilePath(FilePath::fromUserInput(match.captured(1)));
             const int lineNo = match.captured(4).toInt();
-            addLinkSpecForAbsoluteFilePath(linkSpecs, file, lineNo, -1, match, 1);
+            addLinkSpecForAbsoluteFilePath(linkSpecs, file, lineNo, match, 1);
             emitTask(BuildSystemTask(res.type, res.description, file, lineNo));
         }
         return {Status::Done, linkSpecs};
@@ -131,29 +154,25 @@ bool GnuMakeParser::hasFatalErrors() const
 #ifdef WITH_TESTS
 #   include <QTest>
 
+#   include <QUuid>
+
 #   include "outputparser_test.h"
-#   include "projectexplorer_test.h"
+#   include "projectexplorer.h"
+#   include "projectexplorerconstants.h"
 
-namespace ProjectExplorer::Internal {
+namespace ProjectExplorer {
 
-class GnuMakeParserTester : public QObject
+GnuMakeParserTester::GnuMakeParserTester(GnuMakeParser *p, QObject *parent) :
+    QObject(parent),
+    parser(p)
+{ }
+
+void GnuMakeParserTester::parserIsAboutToBeDeleted()
 {
-public:
-    explicit GnuMakeParserTester(GnuMakeParser *p, QObject *parent = nullptr) :
-        QObject(parent),
-        parser(p)
-    { }
+    directories = parser->searchDirectories();
+}
 
-    void parserIsAboutToBeDeleted()
-    {
-        directories = parser->searchDirectories();
-    }
-
-    FilePaths directories;
-    GnuMakeParser *parser;
-};
-
-void ProjectExplorerTest::testGnuMakeParserParsing_data()
+void ProjectExplorerPlugin::testGnuMakeParserParsing_data()
 {
     QTest::addColumn<QStringList>("extraSearchDirs");
     QTest::addColumn<QString>("input");
@@ -330,7 +349,7 @@ void ProjectExplorerTest::testGnuMakeParserParsing_data()
             << QStringList();
 }
 
-void ProjectExplorerTest::testGnuMakeParserParsing()
+void ProjectExplorerPlugin::testGnuMakeParserParsing()
 {
     OutputParserTester testbench;
     auto *childParser = new GnuMakeParser;
@@ -351,7 +370,7 @@ void ProjectExplorerTest::testGnuMakeParserParsing()
     FilePaths searchDirs = childParser->searchDirectories();
 
     // add extra directories:
-    for (const QString &dir : std::as_const(extraSearchDirs))
+    for (const QString &dir : qAsConst(extraSearchDirs))
         testbench.addSearchDir(FilePath::fromString(dir));
 
     testbench.testParsing(input, inputChannel,
@@ -360,13 +379,13 @@ void ProjectExplorerTest::testGnuMakeParserParsing()
 
     // make sure we still have all the original dirs
     FilePaths newSearchDirs = tester->directories;
-    for (const FilePath &dir : std::as_const(searchDirs)) {
+    for (const FilePath &dir : qAsConst(searchDirs)) {
         QVERIFY(newSearchDirs.contains(dir));
         newSearchDirs.removeOne(dir);
     }
 
     // make sure we have all additional dirs:
-    for (const QString &dir : std::as_const(additionalSearchDirs)) {
+    for (const QString &dir : qAsConst(additionalSearchDirs)) {
         const FilePath fp = FilePath::fromString(dir);
         QVERIFY(newSearchDirs.contains(fp));
         newSearchDirs.removeOne(fp);
@@ -376,7 +395,7 @@ void ProjectExplorerTest::testGnuMakeParserParsing()
     delete tester;
 }
 
-void ProjectExplorerTest::testGnuMakeParserTaskMangling()
+void ProjectExplorerPlugin::testGnuMakeParserTaskMangling()
 {
     TemporaryFile theMakeFile("Makefile.XXXXXX");
     QVERIFY2(theMakeFile.open(), qPrintable(theMakeFile.errorString()));
@@ -396,6 +415,6 @@ void ProjectExplorerTest::testGnuMakeParserTaskMangling()
         QString(), QString(), QString());
 }
 
-} // ProjectExplorer::Internal
+} // ProjectExplorer
 
-#endif // WITH_TESTS
+#endif

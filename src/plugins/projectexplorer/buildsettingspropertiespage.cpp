@@ -1,25 +1,44 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "buildsettingspropertiespage.h"
-
-#include "buildconfiguration.h"
 #include "buildinfo.h"
-#include "buildmanager.h"
-#include "namedwidget.h"
-#include "project.h"
-#include "projectconfigurationmodel.h"
-#include "projectexplorertr.h"
+#include "buildstepspage.h"
 #include "target.h"
-
-#include <coreplugin/icore.h>
-#include <coreplugin/session.h>
+#include "project.h"
+#include "buildconfiguration.h"
+#include "projectconfigurationmodel.h"
+#include "session.h"
 
 #include <utils/algorithm.h>
-#include <utils/guiutils.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
-#include <utils/stylehelper.h>
+#include <coreplugin/icore.h>
+#include <projectexplorer/projectexplorer.h>
+#include <projectexplorer/buildmanager.h>
+#include <utils/stringutils.h>
 
 #include <QMargins>
 #include <QCoreApplication>
@@ -54,8 +73,10 @@ BuildSettingsWidget::BuildSettingsWidget(Target *target) :
 
     if (!BuildConfigurationFactory::find(m_target)) {
         auto noSettingsLabel = new QLabel(this);
-        noSettingsLabel->setText(Tr::tr("No build settings available"));
-        noSettingsLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH4));
+        noSettingsLabel->setText(tr("No build settings available"));
+        QFont f = noSettingsLabel->font();
+        f.setPointSizeF(f.pointSizeF() * 1.2);
+        noSettingsLabel->setFont(f);
         vbox->addWidget(noSettingsLabel);
         return;
     }
@@ -63,32 +84,31 @@ BuildSettingsWidget::BuildSettingsWidget(Target *target) :
     { // Edit Build Configuration row
         auto hbox = new QHBoxLayout();
         hbox->setContentsMargins(0, 0, 0, 0);
-        hbox->addWidget(new QLabel(Tr::tr("Edit build configuration:"), this));
+        hbox->addWidget(new QLabel(tr("Edit build configuration:"), this));
         m_buildConfigurationComboBox = new QComboBox(this);
         m_buildConfigurationComboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
         m_buildConfigurationComboBox->setModel(m_target->buildConfigurationModel());
-        setWheelScrollingWithoutFocusBlocked(m_buildConfigurationComboBox);
         hbox->addWidget(m_buildConfigurationComboBox);
 
         m_addButton = new QPushButton(this);
-        m_addButton->setText(Tr::tr("Add"));
+        m_addButton->setText(tr("Add"));
         m_addButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         hbox->addWidget(m_addButton);
         m_addButtonMenu = new QMenu(this);
         m_addButton->setMenu(m_addButtonMenu);
 
         m_removeButton = new QPushButton(this);
-        m_removeButton->setText(Tr::tr("Remove"));
+        m_removeButton->setText(tr("Remove"));
         m_removeButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         hbox->addWidget(m_removeButton);
 
         m_renameButton = new QPushButton(this);
-        m_renameButton->setText(Tr::tr("Rename..."));
+        m_renameButton->setText(tr("Rename..."));
         m_renameButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         hbox->addWidget(m_renameButton);
 
         m_cloneButton = new QPushButton(this);
-        m_cloneButton->setText(Tr::tr("Clone..."));
+        m_cloneButton->setText(tr("Clone..."));
         m_cloneButton->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
         hbox->addWidget(m_cloneButton);
 
@@ -103,11 +123,11 @@ BuildSettingsWidget::BuildSettingsWidget(Target *target) :
     updateAddButtonMenu();
     updateBuildSettings();
 
-    connect(m_buildConfigurationComboBox, &QComboBox::currentIndexChanged,
+    connect(m_buildConfigurationComboBox, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &BuildSettingsWidget::currentIndexChanged);
 
     connect(m_removeButton, &QAbstractButton::clicked,
-            this, [this] { deleteConfiguration(m_buildConfiguration); });
+            this, [this]() { deleteConfiguration(m_buildConfiguration); });
 
     connect(m_renameButton, &QAbstractButton::clicked,
             this, &BuildSettingsWidget::renameConfiguration);
@@ -124,13 +144,16 @@ BuildSettingsWidget::BuildSettingsWidget(Target *target) :
 void BuildSettingsWidget::addSubWidget(NamedWidget *widget)
 {
     widget->setParent(this);
-    widget->setContentsMargins(0, 2, 0, 0);
+    widget->setContentsMargins(0, 10, 0, 0);
 
     auto label = new QLabel(this);
     label->setText(widget->displayName());
-    label->setFont(StyleHelper::uiFont(StyleHelper::UiElementH4));
+    QFont f = label->font();
+    f.setBold(true);
+    f.setPointSizeF(f.pointSizeF() * 1.2);
+    label->setFont(f);
 
-    label->setContentsMargins(0, 18, 0, 0);
+    label->setContentsMargins(0, 10, 0, 0);
 
     layout()->addWidget(label);
     layout()->addWidget(widget);
@@ -182,7 +205,7 @@ void BuildSettingsWidget::currentIndexChanged(int index)
 {
     auto buildConfiguration = qobject_cast<BuildConfiguration *>(
                 m_target->buildConfigurationModel()->projectConfigurationAt(index));
-    m_target->setActiveBuildConfiguration(buildConfiguration, SetActive::Cascade);
+    SessionManager::setActiveBuildConfiguration(m_target, buildConfiguration, SetActive::Cascade);
 }
 
 void BuildSettingsWidget::updateActiveConfiguration()
@@ -204,8 +227,8 @@ void BuildSettingsWidget::createConfiguration(const BuildInfo &info_)
     if (info.displayName.isEmpty()) {
         bool ok = false;
         info.displayName = QInputDialog::getText(Core::ICore::dialogParent(),
-                                                 Tr::tr("New Configuration"),
-                                                 Tr::tr("New configuration name:"),
+                                                 tr("New Configuration"),
+                                                 tr("New configuration name:"),
                                                  QLineEdit::Normal,
                                                  QString(),
                                                  &ok)
@@ -219,7 +242,7 @@ void BuildSettingsWidget::createConfiguration(const BuildInfo &info_)
         return;
 
     m_target->addBuildConfiguration(bc);
-    m_target->setActiveBuildConfiguration(bc, SetActive::Cascade);
+    SessionManager::setActiveBuildConfiguration(m_target, bc, SetActive::Cascade);
 }
 
 QString BuildSettingsWidget::uniqueName(const QString & name)
@@ -241,8 +264,8 @@ void BuildSettingsWidget::renameConfiguration()
 {
     QTC_ASSERT(m_buildConfiguration, return);
     bool ok;
-    QString name = QInputDialog::getText(this, Tr::tr("Rename..."),
-                                         Tr::tr("New name for build configuration <b>%1</b>:").
+    QString name = QInputDialog::getText(this, tr("Rename..."),
+                                         tr("New name for build configuration <b>%1</b>:").
                                             arg(m_buildConfiguration->displayName()),
                                          QLineEdit::Normal,
                                          m_buildConfiguration->displayName(), &ok);
@@ -266,15 +289,12 @@ void BuildSettingsWidget::cloneConfiguration()
 
     //: Title of a the cloned BuildConfiguration window, text of the window
     QString name = uniqueName(QInputDialog::getText(this,
-                                                    Tr::tr("Clone Configuration"),
-                                                    Tr::tr("New configuration name:"),
+                                                    tr("Clone Configuration"),
+                                                    tr("New configuration name:"),
                                                     QLineEdit::Normal,
                                                     m_buildConfiguration->displayName()));
     if (name.isEmpty())
         return;
-
-    // Save the current build configuration settings, so that the clone gets all the settings
-    m_target->project()->saveSettings();
 
     BuildConfiguration *bc = BuildConfigurationFactory::clone(m_target, m_buildConfiguration);
     if (!bc)
@@ -283,7 +303,7 @@ void BuildSettingsWidget::cloneConfiguration()
     bc->setDisplayName(name);
     const FilePath buildDirectory = bc->buildDirectory();
     if (buildDirectory != m_target->project()->projectDirectory()) {
-        const FilePathPredicate isBuildDirOk = [this](const FilePath &candidate) {
+        const std::function<bool(const FilePath &)> isBuildDirOk = [this](const FilePath &candidate) {
             if (candidate.exists())
                 return false;
             return !anyOf(m_target->buildConfigurations(), [&candidate](const BuildConfiguration *bc) {
@@ -292,7 +312,7 @@ void BuildSettingsWidget::cloneConfiguration()
         bc->setBuildDirectory(makeUniquelyNumbered(buildDirectory, isBuildDirOk));
     }
     m_target->addBuildConfiguration(bc);
-    m_target->setActiveBuildConfiguration(bc, SetActive::Cascade);
+    SessionManager::setActiveBuildConfiguration(m_target, bc, SetActive::Cascade);
 }
 
 void BuildSettingsWidget::deleteConfiguration(BuildConfiguration *deleteConfiguration)
@@ -303,19 +323,19 @@ void BuildSettingsWidget::deleteConfiguration(BuildConfiguration *deleteConfigur
 
     if (BuildManager::isBuilding(deleteConfiguration)) {
         QMessageBox box;
-        QPushButton *closeAnyway = box.addButton(Tr::tr("Cancel Build && Remove Build Configuration"), QMessageBox::AcceptRole);
-        QPushButton *cancelClose = box.addButton(Tr::tr("Do Not Remove"), QMessageBox::RejectRole);
+        QPushButton *closeAnyway = box.addButton(tr("Cancel Build && Remove Build Configuration"), QMessageBox::AcceptRole);
+        QPushButton *cancelClose = box.addButton(tr("Do Not Remove"), QMessageBox::RejectRole);
         box.setDefaultButton(cancelClose);
-        box.setWindowTitle(Tr::tr("Remove Build Configuration %1?").arg(deleteConfiguration->displayName()));
-        box.setText(Tr::tr("The build configuration <b>%1</b> is currently being built.").arg(deleteConfiguration->displayName()));
-        box.setInformativeText(Tr::tr("Do you want to cancel the build process and remove the Build Configuration anyway?"));
+        box.setWindowTitle(tr("Remove Build Configuration %1?").arg(deleteConfiguration->displayName()));
+        box.setText(tr("The build configuration <b>%1</b> is currently being built.").arg(deleteConfiguration->displayName()));
+        box.setInformativeText(tr("Do you want to cancel the build process and remove the Build Configuration anyway?"));
         box.exec();
         if (box.clickedButton() != closeAnyway)
             return;
         BuildManager::cancel();
     } else {
-        QMessageBox msgBox(QMessageBox::Question, Tr::tr("Remove Build Configuration?"),
-                           Tr::tr("Do you really want to delete build configuration <b>%1</b>?").arg(deleteConfiguration->displayName()),
+        QMessageBox msgBox(QMessageBox::Question, tr("Remove Build Configuration?"),
+                           tr("Do you really want to delete build configuration <b>%1</b>?").arg(deleteConfiguration->displayName()),
                            QMessageBox::Yes|QMessageBox::No, this);
         msgBox.setDefaultButton(QMessageBox::No);
         msgBox.setEscapeButton(QMessageBox::No);

@@ -1,8 +1,30 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtCreator.Tracing
+import QtQuick 2.1
+import QtCreator.Tracing 1.0
 
 Item {
     id: rangeMover
@@ -30,9 +52,7 @@ Item {
             return Qt.rgba(color.r, color.g, color.b, Math.max(Math.min(color.a, 0.7), 0.3));
         }
 
-        color: width > 1 ? alphaColor(dragArea.pressed ? rangeMover.dragColor
-                                                       : rangeMover.rangeColor)
-                         : rangeMover.singleLineColor
+        color: width > 1 ? alphaColor(dragArea.pressed ? dragColor : rangeColor) : singleLineColor
     }
 
     Item {
@@ -51,7 +71,7 @@ Item {
             height: parent.height
             anchors.right: parent.left
             width: 7
-            color: rangeMover.handleColor
+            color: handleColor
             visible: false
             Image {
                 source: "image://icons/range_handle"
@@ -74,7 +94,7 @@ Item {
             anchors.fill: leftBorderHandle
 
             drag.target: leftRange
-            drag.axis: Drag.XAxis
+            drag.axis: "XAxis"
             drag.minimumX: 0
             drag.maximumX: rangeMover.width
             drag.onActiveChanged: drag.maximumX = rightRange.x
@@ -104,7 +124,7 @@ Item {
             height: parent.height
             anchors.left: parent.right
             width: 7
-            color: rangeMover.handleColor
+            color: handleColor
             visible: false
             Image {
                 source: "image://icons/range_handle"
@@ -127,7 +147,7 @@ Item {
             anchors.fill: rightBorderHandle
 
             drag.target: rightRange
-            drag.axis: Drag.XAxis
+            drag.axis: "XAxis"
             drag.minimumX: 0
             drag.maximumX: rangeMover.width
             drag.onActiveChanged: drag.minimumX = leftRange.x
@@ -152,7 +172,7 @@ Item {
 
         anchors.fill: selectedRange
         drag.target: leftRange
-        drag.axis: Drag.XAxis
+        drag.axis: "XAxis"
         drag.minimumX: 0
         drag.maximumX: rangeMover.width - origWidth
         drag.onActiveChanged: origWidth = selectedRange.width

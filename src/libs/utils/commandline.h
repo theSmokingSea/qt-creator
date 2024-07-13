@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -8,10 +30,7 @@
 #include "filepath.h"
 #include "hostosinfo.h"
 
-#include <QPair>
 #include <QStringList>
-
-#include <variant>
 
 namespace Utils {
 
@@ -56,7 +75,7 @@ public:
     //! Append already quoted arguments to a shell command
     static void addArgs(QString *args, const QString &inArgs);
     //! Split a shell command into separate arguments.
-    static QStringList splitArgs(const QString &cmd, OsType osType,
+    static QStringList splitArgs(const QString &cmd, OsType osType = HostOsInfo::hostOs(),
                                  bool abortOnMeta = false, SplitError *err = nullptr,
                                  const Environment *env = nullptr, const QString *pwd = nullptr);
     //! Safely replace the expandos in a shell command
@@ -67,8 +86,7 @@ public:
      *  Assumes that the name of the actual command is *not* part of the line.
      *  Terminates after the first command if the command line is complex.
      */
-    class QTCREATOR_UTILS_EXPORT ArgIterator
-    {
+    class QTCREATOR_UTILS_EXPORT ArgIterator {
     public:
         ArgIterator(QString *str, OsType osType = HostOsInfo::hostOs())
             : m_str(str), m_osType(osType)
@@ -84,7 +102,6 @@ public:
         //! Insert argument into the command line after the last one fetched via next().
         //! This may be used before the first call to next() to insert at the front.
         void appendArg(const QString &str);
-
     private:
         QString *m_str, m_value;
         int m_pos = 0;
@@ -93,8 +110,7 @@ public:
         OsType m_osType;
     };
 
-    class QTCREATOR_UTILS_EXPORT ConstArgIterator
-    {
+    class QTCREATOR_UTILS_EXPORT ConstArgIterator {
     public:
         ConstArgIterator(const QString &str, OsType osType = HostOsInfo::hostOs())
             : m_str(str), m_ait(&m_str, osType)
@@ -102,7 +118,6 @@ public:
         bool next() { return m_ait.next(); }
         bool isSimple() const { return m_ait.isSimple(); }
         QString value() const { return m_ait.value(); }
-
     private:
         QString m_str;
         ArgIterator m_ait;
@@ -120,47 +135,21 @@ public:
     enum RawType { Raw };
 
     CommandLine();
-    ~CommandLine();
-
-    struct ArgRef
-    {
-        ArgRef(const char *arg) : m_arg(arg) {}
-        ArgRef(const QString &arg) : m_arg(arg) {}
-        ArgRef(const QStringList &args) : m_arg(args) {}
-
-    private:
-        friend class CommandLine;
-        const std::variant<const char *,
-                           std::reference_wrapper<const QString>,
-                           std::reference_wrapper<const QStringList>> m_arg;
-    };
-
     explicit CommandLine(const FilePath &executable);
     CommandLine(const FilePath &exe, const QStringList &args);
-    CommandLine(const FilePath &exe, std::initializer_list<ArgRef> args);
-    CommandLine(const FilePath &exe, const QStringList &args, OsType osType);
     CommandLine(const FilePath &exe, const QString &unparsedArgs, RawType);
 
     static CommandLine fromUserInput(const QString &cmdline, MacroExpander *expander = nullptr);
 
     void addArg(const QString &arg);
-    void addArg(const QString &arg, OsType osType);
-    void addMaskedArg(const QString &arg);
-    void addMaskedArg(const QString &arg, OsType osType);
     void addArgs(const QStringList &inArgs);
-    void addArgs(const QStringList &inArgs, OsType osType);
     void addArgs(const QString &inArgs, RawType);
-    CommandLine &operator<<(const QString &arg);
-    CommandLine &operator<<(const QStringList &arg);
 
     void prependArgs(const QStringList &inArgs);
     void prependArgs(const QString &inArgs, RawType);
 
     void addCommandLineAsArgs(const CommandLine &cmd);
     void addCommandLineAsArgs(const CommandLine &cmd, RawType);
-
-    void addCommandLineAsSingleArg(const CommandLine &cmd);
-    void addCommandLineWithAnd(const CommandLine &cmd);
 
     QString toUserOutput() const;
     QString displayName() const;
@@ -175,15 +164,19 @@ public:
 
     bool isEmpty() const { return m_executable.isEmpty(); }
 
-private:
-    friend QTCREATOR_UTILS_EXPORT bool operator==(const CommandLine &first, const CommandLine &second);
-    friend QTCREATOR_UTILS_EXPORT QDebug operator<<(QDebug dbg, const CommandLine &cmd);
+    friend bool operator==(const CommandLine &first, const CommandLine &second) {
+        return first.m_executable == second.m_executable && first.m_arguments == second.m_arguments;
+    }
 
+private:
     FilePath m_executable;
     QString m_arguments;
-    QList<QPair<int, int>> m_masked;
 };
 
-} // Utils
+} // namespace Utils
+
+QT_BEGIN_NAMESPACE
+QTCREATOR_UTILS_EXPORT QDebug operator<<(QDebug dbg, const Utils::CommandLine &cmd);
+QT_END_NAMESPACE
 
 Q_DECLARE_METATYPE(Utils::CommandLine)

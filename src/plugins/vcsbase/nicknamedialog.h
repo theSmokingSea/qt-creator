@@ -1,27 +1,48 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include <QDialog>
 
 QT_BEGIN_NAMESPACE
-class QDialogButtonBox;
-class QModelIndex;
-class QPushButton;
 class QSortFilterProxyModel;
 class QStandardItemModel;
+class QModelIndex;
+class QPushButton;
 QT_END_NAMESPACE
 
-namespace Utils {
-class FilePath;
-class TreeView;
-}
+namespace VcsBase {
+namespace Internal {
 
-namespace VcsBase::Internal {
+namespace Ui { class NickNameDialog; }
 
 class NickNameDialog : public QDialog
 {
+    Q_OBJECT
+
 public:
     explicit NickNameDialog(QStandardItemModel *model, QWidget *parent = nullptr);
     ~NickNameDialog() override;
@@ -30,7 +51,7 @@ public:
 
     // Utilities to initialize/populate the model
     static QStandardItemModel *createModel(QObject *parent);
-    static bool populateModelFromMailCapFile(const Utils::FilePath &file,
+    static bool populateModelFromMailCapFile(const QString &file,
                                              QStandardItemModel *model,
                                              QString *errorMessage);
 
@@ -43,11 +64,10 @@ private:
 
     QPushButton *okButton() const;
 
+    Ui::NickNameDialog *m_ui;
     QStandardItemModel *m_model;
     QSortFilterProxyModel *m_filterModel;
-
-    Utils::TreeView *m_filterTreeView;
-    QDialogButtonBox *m_buttonBox;
 };
 
-} // VcsBase::Internal
+} // namespace Internal
+} // namespace VcsBase

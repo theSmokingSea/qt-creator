@@ -1,20 +1,40 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "snippetscollection.h"
-
 #include "snippetprovider.h"
 #include "reuse.h"
-#include "../texteditortr.h"
 
 #include <coreplugin/icore.h>
-
 #include <extensionsystem/pluginmanager.h>
-
 #include <utils/algorithm.h>
 #include <utils/fileutils.h>
 
+#include <QLatin1String>
 #include <QFile>
+#include <QFileInfo>
 #include <QDir>
 #include <QDebug>
 #include <QXmlStreamReader>
@@ -78,7 +98,9 @@ SnippetsCollection::SnippetsCollection()
       m_builtInSnippetsFiles(Core::ICore::resourcePath("snippets")
         .dirEntries(FileFilter({"*.xml"})))
 {
-    identifyGroups();
+
+    connect(Core::ICore::instance(), &Core::ICore::coreOpened,
+            this, &SnippetsCollection::identifyGroups);
 }
 
 SnippetsCollection::~SnippetsCollection() = default;
@@ -229,7 +251,7 @@ void SnippetsCollection::restoreRemovedSnippets(const QString &groupId)
     const QVector<Snippet> toRestore = m_snippets[group].mid(m_activeSnippetsCount[group]);
     m_snippets[group].resize(m_activeSnippetsCount[group]);
 
-    for (Snippet snippet : std::as_const(toRestore)) {
+    for (Snippet snippet : qAsConst(toRestore)) {
         snippet.setIsRemoved(false);
         insertSnippet(snippet);
     }
@@ -275,14 +297,14 @@ void SnippetsCollection::reload()
         insertSnippet(snippet);
     }
 
-    for (const Snippet &snippet : std::as_const(activeBuiltInSnippets))
+    for (const Snippet &snippet : qAsConst(activeBuiltInSnippets))
         insertSnippet(snippet);
 }
 
 bool SnippetsCollection::synchronize(QString *errorString)
 {
     if (!m_userSnippetsFile.parentDir().ensureWritableDir()) {
-        *errorString = Tr::tr("Cannot create user snippet directory %1")
+        *errorString = tr("Cannot create user snippet directory %1")
                 .arg(m_userSnippetsFile.parentDir().toUserOutput());
         return false;
     }
@@ -354,7 +376,8 @@ QList<Snippet> SnippetsCollection::readXML(const FilePath &fileName, const QStri
                         } else if (isGroupKnown(groupId) && (snippetId.isEmpty() || snippetId == id)) {
                             Snippet snippet(groupId, id);
                             snippet.setTrigger(trigger);
-                            snippet.setComplement(Tr::tr(
+                            snippet.setComplement(QCoreApplication::translate(
+                                                      "TextEditor::Internal::Snippets",
                                                       atts.value(kComplement).toString().toLatin1(),
                                                       atts.value(kId).toString().toLatin1()));
                             snippet.setIsRemoved(toBool(atts.value(kRemoved).toString()));

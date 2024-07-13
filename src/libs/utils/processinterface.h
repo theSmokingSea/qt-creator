@@ -1,5 +1,27 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -9,64 +31,11 @@
 #include "commandline.h"
 #include "processenums.h"
 
-#include <QDeadlineTimer>
 #include <QProcess>
-#include <QSize>
 
 namespace Utils {
 
-namespace Internal { class ProcessPrivate; }
-
-namespace Pty {
-
-enum PtyInputFlag {
-    None = 0x0,
-    InputModeHidden = 0x1,
-};
-
-using ResizeHandler = std::function<void(const QSize &)>;
-using PtyInputFlagsChangeHandler = std::function<void(PtyInputFlag)>;
-
-class QTCREATOR_UTILS_EXPORT SharedData
-{
-public:
-    ResizeHandler m_handler;
-    PtyInputFlagsChangeHandler m_inputFlagsChangedHandler;
-};
-
-class QTCREATOR_UTILS_EXPORT Data
-{
-public:
-    Data() : m_data(new SharedData) {}
-
-    void setResizeHandler(const ResizeHandler &handler) { m_data->m_handler = handler; }
-    void setPtyInputFlagsChangedHandler(const PtyInputFlagsChangeHandler &handler)
-    {
-        m_data->m_inputFlagsChangedHandler = handler;
-    }
-
-    PtyInputFlagsChangeHandler ptyInputFlagsChangedHandler() const
-    {
-        return m_data->m_inputFlagsChangedHandler;
-    }
-
-    QSize size() const { return m_size; }
-    void resize(const QSize &size);
-
-private:
-    QSize m_size{80, 60};
-    std::shared_ptr<SharedData> m_data;
-};
-
-} // namespace Pty
-
-class QTCREATOR_UTILS_EXPORT ProcessRunData
-{
-public:
-    Utils::CommandLine command;
-    Utils::FilePath workingDirectory;
-    Utils::Environment environment;
-};
+namespace Internal { class QtcProcessPrivate; }
 
 class QTCREATOR_UTILS_EXPORT ProcessSetupData
 {
@@ -75,7 +44,6 @@ public:
     ProcessMode m_processMode = ProcessMode::Reader;
     TerminalMode m_terminalMode = TerminalMode::Off;
 
-    std::optional<Pty::Data> m_ptyData;
     CommandLine m_commandLine;
     FilePath m_workingDirectory;
     Environment m_environment;
@@ -86,15 +54,13 @@ public:
     QString m_standardInputFile;
     QString m_nativeArguments; // internal, dependent on specific code path
 
-    std::chrono::milliseconds m_reaperTimeout{500};
+    int m_reaperTimeout = 500; // in ms
     bool m_abortOnMetaChars = true;
     bool m_runAsRoot = false;
     bool m_lowPriority = false;
     bool m_unixTerminalDisabled = false;
     bool m_useCtrlCStub = false;
     bool m_belowNormalPriority = false; // internal, dependent on other fields and specific code path
-    bool m_createConsoleOnWindows = false;
-    bool m_forceDefaultErrorMode = false;
 };
 
 class QTCREATOR_UTILS_EXPORT ProcessResultData
@@ -110,8 +76,7 @@ enum class ControlSignal {
     Terminate,
     Kill,
     Interrupt,
-    KickOff,
-    CloseWriteChannel
+    KickOff
 };
 
 enum class ProcessSignalType {
@@ -127,9 +92,9 @@ private:
     // - Started is being called only in Starting state.
     // - ReadyRead is being called in Starting or Running state.
     // - Done is being called in Starting or Running state.
-    virtual bool waitForSignal(ProcessSignalType signalType, QDeadlineTimer timeout) = 0;
+    virtual bool waitForSignal(ProcessSignalType signalType, int msecs) = 0;
 
-    friend class Internal::ProcessPrivate;
+    friend class Internal::QtcProcessPrivate;
 };
 
 class QTCREATOR_UTILS_EXPORT ProcessInterface : public QObject
@@ -167,8 +132,8 @@ private:
 
     virtual ProcessBlockingInterface *processBlockingInterface() const { return nullptr; }
 
-    friend class Process;
-    friend class Internal::ProcessPrivate;
+    friend class QtcProcess;
+    friend class Internal::QtcProcessPrivate;
 };
 
 } // namespace Utils

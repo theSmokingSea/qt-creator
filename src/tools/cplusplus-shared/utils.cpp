@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "utils.h"
 
@@ -76,7 +98,7 @@ SystemPreprocessor::SystemPreprocessor(bool verbose)
 void SystemPreprocessor::check() const
 {
     QTextStream out(stderr);
-    if (!QFileInfo::exists(QLatin1String(PATH_PREPROCESSOR_CONFIG))) {
+    if (!QFile::exists(QLatin1String(PATH_PREPROCESSOR_CONFIG))) {
         out << QString::fromLatin1("Error: File \"%1\" does not exist.")
                    .arg(QLatin1String(PATH_PREPROCESSOR_CONFIG))
             << Qt::endl;
@@ -94,7 +116,7 @@ void SystemPreprocessor::check() const
 void SystemPreprocessor::preprocessFile(const QString &inputFile, const QString &outputFile) const
 {
     check();
-    if (!QFileInfo::exists(inputFile)) {
+    if (!QFile::exists(inputFile)) {
         QTextStream out(stderr);
         out << QString::fromLatin1("Error: File \"%1\" does not exist.").arg(inputFile) << Qt::endl;
         exit(EXIT_FAILURE);

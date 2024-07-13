@@ -1,20 +1,41 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "task.h"
 
 #include "fileinsessionfinder.h"
 #include "projectexplorerconstants.h"
-#include "projectexplorertr.h"
 
-#include <texteditor/fontsettings.h>
+#include <app/app_version.h>
 #include <texteditor/textmark.h>
+
 #include <utils/algorithm.h>
 #include <utils/utilsicons.h>
 #include <utils/qtcassert.h>
 
 #include <QFileInfo>
-#include <QGuiApplication>
 #include <QTextStream>
 
 using namespace Utils;
@@ -60,16 +81,16 @@ Task::Task(TaskType type_, const QString &description,
 Task Task::compilerMissingTask()
 {
     return BuildSystemTask(Task::Error,
-                           Tr::tr("%1 needs a compiler set up to build. "
-                                  "Configure a compiler in the kit options.")
-                               .arg(QGuiApplication::applicationDisplayName()));
+                           tr("%1 needs a compiler set up to build. "
+                              "Configure a compiler in the kit options.")
+                           .arg(Core::Constants::IDE_DISPLAY_NAME));
 }
 
 void Task::setMark(TextEditor::TextMark *mark)
 {
     QTC_ASSERT(mark, return);
-    QTC_ASSERT(!m_mark, return);
-    m_mark = std::shared_ptr<TextEditor::TextMark>(mark);
+    QTC_ASSERT(m_mark.isNull(), return);
+    m_mark = QSharedPointer<TextEditor::TextMark>(mark);
 }
 
 bool Task::isNull() const
@@ -86,11 +107,10 @@ void Task::clear()
     file = Utils::FilePath();
     line = -1;
     movedLine = -1;
-    column = 0;
     category = Utils::Id();
     m_icon = QIcon();
     formats.clear();
-    m_mark.reset();
+    m_mark.clear();
 }
 
 void Task::setFile(const Utils::FilePath &file_)
@@ -105,16 +125,11 @@ void Task::setFile(const Utils::FilePath &file_)
     }
 }
 
-QString Task::description(DescriptionTags tags) const
+QString Task::description() const
 {
-    QString desc;
-    if (tags & WithSummary)
-        desc = summary;
-    if (!details.isEmpty()) {
-        if (!desc.isEmpty())
-            desc.append('\n');
-        desc.append(details.join('\n'));
-    }
+    QString desc = summary;
+    if (!details.isEmpty())
+        desc.append('\n').append(details.join('\n'));
     return desc;
 }
 
@@ -123,39 +138,6 @@ QIcon Task::icon() const
     if (m_icon.isNull())
         m_icon = taskTypeIcon(type);
     return m_icon;
-}
-
-QString Task::formattedDescription(DescriptionTags tags, const QString &extraHeading) const
-{
-    if (isNull())
-        return {};
-
-    QString text = description(tags);
-    const int offset = (tags & WithSummary) ? 0 : summary.size() + 1;
-    static const QString linkTagStartPlaceholder("__QTC_LINK_TAG_START__");
-    static const QString linkTagEndPlaceholder("__QTC_LINK_TAG_END__");
-    static const QString linkEndPlaceholder("__QTC_LINK_END__");
-    if (tags & WithLinks) {
-        for (auto formatRange = formats.crbegin(); formatRange != formats.crend(); ++formatRange) {
-            if (!formatRange->format.isAnchor())
-                continue;
-            text.insert(formatRange->start - offset + formatRange->length, linkEndPlaceholder);
-            text.insert(formatRange->start - offset, QString::fromLatin1("%1%2%3").arg(
-                linkTagStartPlaceholder, formatRange->format.anchorHref(), linkTagEndPlaceholder));
-        }
-    }
-    text = text.toHtmlEscaped();
-    if (tags & WithLinks) {
-        text.replace(linkEndPlaceholder, "</a>");
-        text.replace(linkTagStartPlaceholder, "<a href=\"");
-        text.replace(linkTagEndPlaceholder, "\">");
-    }
-    const QString htmlExtraHeading = extraHeading.isEmpty()
-                                         ? QString()
-                                         : QString::fromUtf8("<b>%1</b><br/>").arg(extraHeading);
-    return QString::fromUtf8("<html><body>%1<code style=\"white-space:pre;font-family:%2\">"
-                             "%3</code></body></html>")
-        .arg(htmlExtraHeading, TextEditor::FontSettings::defaultFixedFontFamily(), text);
 }
 
 //
@@ -189,7 +171,7 @@ bool operator<(const Task &a, const Task &b)
 }
 
 
-size_t qHash(const Task &task)
+Utils::QHashValueType qHash(const Task &task)
 {
     return task.taskId;
 }
@@ -203,10 +185,10 @@ QString toHtml(const Tasks &issues)
         str << "<b>";
         switch (t.type) {
         case Task::Error:
-            str << Tr::tr("Error:") << " ";
+            str << QCoreApplication::translate("ProjectExplorer::Kit", "Error:") << " ";
             break;
         case Task::Warning:
-            str << Tr::tr("Warning:") << " ";
+            str << QCoreApplication::translate("ProjectExplorer::Kit", "Warning:") << " ";
             break;
         case Task::Unknown:
         default:

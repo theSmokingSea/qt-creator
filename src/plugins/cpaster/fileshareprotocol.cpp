@@ -1,14 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "fileshareprotocol.h"
-
-#include "cpastertr.h"
 #include "fileshareprotocolsettingspage.h"
 
+#include <coreplugin/icore.h>
 #include <coreplugin/messagemanager.h>
-
-#include <utils/fileutils.h>
 
 #include <QXmlStreamReader>
 #include <QXmlStreamAttribute>
@@ -19,22 +38,29 @@
 
 enum { debug = 0 };
 
-const char tempPatternC[] = "pasterXXXXXX.xml";
-const char tempGlobPatternC[] = "paster*.xml";
-const char pasterElementC[] = "paster";
-const char userElementC[] = "user";
-const char descriptionElementC[] = "description";
-const char textElementC[] = "text";
+static const char tempPatternC[] = "pasterXXXXXX.xml";
+static const char tempGlobPatternC[] = "paster*.xml";
+static const char pasterElementC[] = "paster";
+static const char userElementC[] = "user";
+static const char descriptionElementC[] = "description";
+static const char textElementC[] = "text";
 
 namespace CodePaster {
 
-FileShareProtocol::FileShareProtocol() = default;
+FileShareProtocol::FileShareProtocol() :
+    m_settingsPage(new FileShareProtocolSettingsPage(&m_settings))
+{
+    m_settings.readSettings(Core::ICore::settings());
+}
 
-FileShareProtocol::~FileShareProtocol() = default;
+FileShareProtocol::~FileShareProtocol()
+{
+    delete m_settingsPage;
+}
 
 QString FileShareProtocol::name() const
 {
-    return fileShareSettingsPage().displayName();
+    return m_settingsPage->displayName();
 }
 
 unsigned FileShareProtocol::capabilities() const
@@ -47,9 +73,9 @@ bool FileShareProtocol::hasSettings() const
     return true;
 }
 
-const Core::IOptionsPage *FileShareProtocol::settingsPage() const
+Core::IOptionsPage *FileShareProtocol::settingsPage() const
 {
-    return &fileShareSettingsPage();
+    return m_settingsPage;
 }
 
 static bool parse(const QString &fileName,
@@ -68,7 +94,7 @@ static bool parse(const QString &fileName,
 
     QFile file(fileName);
     if (!file.open(QIODevice::ReadOnly|QIODevice::Text)) {
-        *errorMessage = Tr::tr("Cannot open %1: %2").arg(fileName, file.errorString());
+        *errorMessage = FileShareProtocol::tr("Cannot open %1: %2").arg(fileName, file.errorString());
         return false;
     }
     QXmlStreamReader reader(&file);
@@ -77,7 +103,7 @@ static bool parse(const QString &fileName,
             const auto elementName = reader.name();
             // Check start element
             if (elementCount == 0 && elementName != QLatin1String(pasterElementC)) {
-                *errorMessage = Tr::tr("%1 does not appear to be a paster file.").arg(fileName);
+                *errorMessage = FileShareProtocol::tr("%1 does not appear to be a paster file.").arg(fileName);
                 return false;
             }
             // Parse elements
@@ -91,7 +117,7 @@ static bool parse(const QString &fileName,
         }
     }
     if (reader.hasError()) {
-        *errorMessage = Tr::tr("Error in %1 at %2: %3")
+        *errorMessage = FileShareProtocol::tr("Error in %1 at %2: %3")
                         .arg(fileName).arg(reader.lineNumber()).arg(reader.errorString());
         return false;
     }
@@ -100,9 +126,9 @@ static bool parse(const QString &fileName,
 
 bool FileShareProtocol::checkConfiguration(QString *errorMessage)
 {
-    if (fileShareSettings().path().isEmpty()) {
+    if (m_settings.path.value().isEmpty()) {
         if (errorMessage)
-            *errorMessage = Tr::tr("Please configure a path.");
+            *errorMessage = tr("Please configure a path.");
         return false;
     }
     return true;
@@ -113,7 +139,7 @@ void FileShareProtocol::fetch(const QString &id)
     // Absolute or relative path name.
     QFileInfo fi(id);
     if (fi.isRelative())
-        fi = fileShareSettings().path().pathAppended(id).toFileInfo();
+        fi = QFileInfo(m_settings.path.value() + '/' + id);
     QString errorMessage;
     QString text;
     if (parse(fi.absoluteFilePath(), &errorMessage, nullptr, nullptr, &text))
@@ -125,7 +151,7 @@ void FileShareProtocol::fetch(const QString &id)
 void FileShareProtocol::list()
 {
     // Read out directory, display by date (latest first)
-    QDir dir(fileShareSettings().path().toFSPathString(), tempGlobPatternC,
+    QDir dir(m_settings.path.value(), tempGlobPatternC,
              QDir::Time, QDir::Files|QDir::NoDotAndDotDot|QDir::Readable);
     QStringList entries;
     QString user;
@@ -133,7 +159,7 @@ void FileShareProtocol::list()
     QString errorMessage;
     const QChar blank = QLatin1Char(' ');
     const QFileInfoList entryInfoList = dir.entryInfoList();
-    const int count = qMin(int(fileShareSettings().displayCount()), entryInfoList.size());
+    const int count = qMin(int(m_settings.displayCount.value()), entryInfoList.size());
     for (int i = 0; i < count; i++) {
         const QFileInfo& entryFi = entryInfoList.at(i);
         if (parse(entryFi.absoluteFilePath(), &errorMessage, &user, &description)) {
@@ -160,7 +186,7 @@ void FileShareProtocol::paste(
         )
 {
     // Write out temp XML file
-    Utils::TempFileSaver saver(fileShareSettings().path().pathAppended(tempPatternC).toFSPathString());
+    Utils::TempFileSaver saver(m_settings.path.value() + '/' + tempPatternC);
     saver.setAutoRemove(false);
     if (!saver.hasError()) {
         // Flat text sections embedded into pasterElement

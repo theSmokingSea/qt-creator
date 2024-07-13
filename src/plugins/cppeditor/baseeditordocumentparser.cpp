@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "baseeditordocumentparser.h"
 #include "baseeditordocumentprocessor.h"
@@ -7,10 +29,6 @@
 #include "cppmodelmanager.h"
 #include "cppprojectpartchooser.h"
 #include "editordocumenthandle.h"
-
-#include <QPromise>
-
-using namespace Utils;
 
 namespace CppEditor {
 
@@ -33,7 +51,7 @@ namespace CppEditor {
     \endlist
 */
 
-BaseEditorDocumentParser::BaseEditorDocumentParser(const FilePath &filePath)
+BaseEditorDocumentParser::BaseEditorDocumentParser(const QString &filePath)
     : m_filePath(filePath)
 {
     static int meta = qRegisterMetaType<ProjectPartInfo>("ProjectPartInfo");
@@ -42,7 +60,7 @@ BaseEditorDocumentParser::BaseEditorDocumentParser(const FilePath &filePath)
 
 BaseEditorDocumentParser::~BaseEditorDocumentParser() = default;
 
-const FilePath &BaseEditorDocumentParser::filePath() const
+QString BaseEditorDocumentParser::filePath() const
 {
     return m_filePath;
 }
@@ -61,16 +79,15 @@ void BaseEditorDocumentParser::setConfiguration(const Configuration &configurati
 
 void BaseEditorDocumentParser::update(const UpdateParams &updateParams)
 {
-    QPromise<void> dummy;
-    dummy.start();
+    QFutureInterface<void> dummy;
     update(dummy, updateParams);
 }
 
-void BaseEditorDocumentParser::update(const QPromise<void> &promise,
+void BaseEditorDocumentParser::update(const QFutureInterface<void> &future,
                                       const UpdateParams &updateParams)
 {
     QMutexLocker locker(&m_updateIsRunning);
-    updateImpl(promise, updateParams);
+    updateImpl(future, updateParams);
 }
 
 BaseEditorDocumentParser::State BaseEditorDocumentParser::state() const
@@ -90,9 +107,10 @@ ProjectPartInfo BaseEditorDocumentParser::projectPartInfo() const
     return state().projectPartInfo;
 }
 
-BaseEditorDocumentParser::Ptr BaseEditorDocumentParser::get(const FilePath &filePath)
+BaseEditorDocumentParser::Ptr BaseEditorDocumentParser::get(const QString &filePath)
 {
-    if (CppEditorDocumentHandle *cppEditorDocument = CppModelManager::cppEditorDocument(filePath)) {
+    CppModelManager *cmmi = CppModelManager::instance();
+    if (CppEditorDocumentHandle *cppEditorDocument = cmmi->cppEditorDocument(filePath)) {
         if (BaseEditorDocumentProcessor *processor = cppEditorDocument->processor())
             return processor->parser();
     }
@@ -108,14 +126,14 @@ ProjectPartInfo BaseEditorDocumentParser::determineProjectPart(const QString &fi
 {
     Internal::ProjectPartChooser chooser;
     chooser.setFallbackProjectPart([](){
-        return CppModelManager::fallbackProjectPart();
+        return CppModelManager::instance()->fallbackProjectPart();
     });
     chooser.setProjectPartsForFile([](const QString &filePath) {
-        return CppModelManager::projectPart(filePath);
+        return CppModelManager::instance()->projectPart(filePath);
     });
     chooser.setProjectPartsFromDependenciesForFile([&](const QString &filePath) {
         const auto fileName = Utils::FilePath::fromString(filePath);
-        return CppModelManager::projectPartFromDependencies(fileName);
+        return CppModelManager::instance()->projectPartFromDependencies(fileName);
     });
 
     const ProjectPartInfo chooserResult

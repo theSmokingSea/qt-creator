@@ -1,49 +1,76 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cpptoolssettings.h"
 
 #include "cppeditorconstants.h"
-#include "cppeditortr.h"
 #include "cppcodestylepreferences.h"
 #include "cppcodestylepreferencesfactory.h"
 
 #include <coreplugin/icore.h>
-
-#include <extensionsystem/pluginmanager.h>
-
+#include <texteditor/commentssettings.h>
 #include <texteditor/completionsettingspage.h>
 #include <texteditor/codestylepool.h>
 #include <texteditor/tabsettings.h>
 #include <texteditor/texteditorsettings.h>
 
-#include <utils/mimeconstants.h>
+#include <extensionsystem/pluginmanager.h>
 #include <utils/qtcassert.h>
+#include <utils/settingsutils.h>
+
+#include <QSettings>
 
 static const char idKey[] = "CppGlobal";
+const bool kSortEditorDocumentOutlineDefault = true;
 
 using namespace Core;
 using namespace TextEditor;
-using namespace Utils;
 
 namespace CppEditor {
 namespace Internal {
-
 class CppToolsSettingsPrivate
 {
 public:
+    CommentsSettings m_commentsSettings;
     CppCodeStylePreferences *m_globalCodeStyle = nullptr;
 };
+} // namespace Internal
 
-} // Internal
-
-Internal::CppToolsSettingsPrivate *d = nullptr;
+CppToolsSettings *CppToolsSettings::m_instance = nullptr;
 
 CppToolsSettings::CppToolsSettings()
+    : d(new Internal::CppToolsSettingsPrivate)
 {
-    d = new Internal::CppToolsSettingsPrivate;
+    QTC_ASSERT(!m_instance, return);
+    m_instance = this;
 
     qRegisterMetaType<CppCodeStyleSettings>("CppEditor::CppCodeStyleSettings");
+
+    d->m_commentsSettings = TextEditorSettings::commentsSettings();
+    connect(TextEditorSettings::instance(), &TextEditorSettings::commentsSettingsChanged,
+            this, &CppToolsSettings::setCommentsSettings);
 
     // code style factory
     ICodeStylePreferencesFactory *factory = new CppCodeStylePreferencesFactory();
@@ -56,7 +83,7 @@ CppToolsSettings::CppToolsSettings()
     // global code style settings
     d->m_globalCodeStyle = new CppCodeStylePreferences(this);
     d->m_globalCodeStyle->setDelegatingPool(pool);
-    d->m_globalCodeStyle->setDisplayName(Tr::tr("Global", "Settings"));
+    d->m_globalCodeStyle->setDisplayName(tr("Global", "Settings"));
     d->m_globalCodeStyle->setId(idKey);
     pool->addCodeStyle(d->m_globalCodeStyle);
     TextEditorSettings::registerCodeStyle(Constants::CPP_SETTINGS_ID, d->m_globalCodeStyle);
@@ -90,7 +117,7 @@ CppToolsSettings::CppToolsSettings()
     // Qt style
     auto qtCodeStyle = new CppCodeStylePreferences;
     qtCodeStyle->setId("qt");
-    qtCodeStyle->setDisplayName(Tr::tr("Qt"));
+    qtCodeStyle->setDisplayName(tr("Qt"));
     qtCodeStyle->setReadOnly(true);
     TabSettings qtTabSettings;
     qtTabSettings.m_tabPolicy = TabSettings::SpacesOnlyTabPolicy;
@@ -103,7 +130,7 @@ CppToolsSettings::CppToolsSettings()
     // GNU style
     auto gnuCodeStyle = new CppCodeStylePreferences;
     gnuCodeStyle->setId("gnu");
-    gnuCodeStyle->setDisplayName(Tr::tr("GNU"));
+    gnuCodeStyle->setDisplayName(tr("GNU"));
     gnuCodeStyle->setReadOnly(true);
     TabSettings gnuTabSettings;
     gnuTabSettings.m_tabPolicy = TabSettings::MixedTabPolicy;
@@ -124,15 +151,63 @@ CppToolsSettings::CppToolsSettings()
 
     pool->loadCustomCodeStyles();
 
+    QSettings *s = ICore::settings();
     // load global settings (after built-in settings are added to the pool)
-    d->m_globalCodeStyle->fromSettings(Constants::CPP_SETTINGS_ID);
+    d->m_globalCodeStyle->fromSettings(QLatin1String(Constants::CPP_SETTINGS_ID), s);
+
+    // legacy handling start (Qt Creator Version < 2.4)
+    const bool legacyTransformed =
+                s->value(QLatin1String("CppCodeStyleSettings/LegacyTransformed"), false).toBool();
+
+    if (!legacyTransformed) {
+        // creator 2.4 didn't mark yet the transformation (first run of creator 2.4)
+
+        // we need to transform the settings only if at least one from
+        // below settings was already written - otherwise we use
+        // defaults like it would be the first run of creator 2.4 without stored settings
+        const QStringList groups = s->childGroups();
+        const bool needTransform = groups.contains(QLatin1String("textTabPreferences")) ||
+                                   groups.contains(QLatin1String("CppTabPreferences")) ||
+                                   groups.contains(QLatin1String("CppCodeStyleSettings"));
+        if (needTransform) {
+            CppCodeStyleSettings legacyCodeStyleSettings;
+            if (groups.contains(QLatin1String("CppCodeStyleSettings"))) {
+                Utils::fromSettings(QLatin1String("CppCodeStyleSettings"),
+                                    QString(), s, &legacyCodeStyleSettings);
+            }
+
+            const QString currentFallback = s->value(QLatin1String("CppTabPreferences/CurrentFallback")).toString();
+            TabSettings legacyTabSettings;
+            if (currentFallback == QLatin1String("CppGlobal")) {
+                // no delegate, global overwritten
+                Utils::fromSettings(QLatin1String("CppTabPreferences"),
+                                    QString(), s, &legacyTabSettings);
+            } else {
+                // delegating to global
+                legacyTabSettings = TextEditorSettings::codeStyle()->currentTabSettings();
+            }
+
+            // create custom code style out of old settings
+            QVariant v;
+            v.setValue(legacyCodeStyleSettings);
+            ICodeStylePreferences *oldCreator = pool->createCodeStyle(
+                     "legacy", legacyTabSettings, v, tr("Old Creator"));
+
+            // change the current delegate and save
+            d->m_globalCodeStyle->setCurrentDelegate(oldCreator);
+            d->m_globalCodeStyle->toSettings(QLatin1String(Constants::CPP_SETTINGS_ID), s);
+        }
+        // mark old settings as transformed
+        s->setValue(QLatin1String("CppCodeStyleSettings/LegacyTransformed"), true);
+        // legacy handling stop
+    }
+
 
     // mimetypes to be handled
-    using namespace Utils::Constants;
-    TextEditorSettings::registerMimeTypeForLanguageId(C_SOURCE_MIMETYPE, Constants::CPP_SETTINGS_ID);
-    TextEditorSettings::registerMimeTypeForLanguageId(C_HEADER_MIMETYPE, Constants::CPP_SETTINGS_ID);
-    TextEditorSettings::registerMimeTypeForLanguageId(CPP_SOURCE_MIMETYPE, Constants::CPP_SETTINGS_ID);
-    TextEditorSettings::registerMimeTypeForLanguageId(CPP_HEADER_MIMETYPE, Constants::CPP_SETTINGS_ID);
+    TextEditorSettings::registerMimeTypeForLanguageId(Constants::C_SOURCE_MIMETYPE, Constants::CPP_SETTINGS_ID);
+    TextEditorSettings::registerMimeTypeForLanguageId(Constants::C_HEADER_MIMETYPE, Constants::CPP_SETTINGS_ID);
+    TextEditorSettings::registerMimeTypeForLanguageId(Constants::CPP_SOURCE_MIMETYPE, Constants::CPP_SETTINGS_ID);
+    TextEditorSettings::registerMimeTypeForLanguageId(Constants::CPP_HEADER_MIMETYPE, Constants::CPP_SETTINGS_ID);
 }
 
 CppToolsSettings::~CppToolsSettings()
@@ -142,11 +217,50 @@ CppToolsSettings::~CppToolsSettings()
     TextEditorSettings::unregisterCodeStyleFactory(Constants::CPP_SETTINGS_ID);
 
     delete d;
+
+    m_instance = nullptr;
 }
 
-CppCodeStylePreferences *CppToolsSettings::cppCodeStyle()
+CppToolsSettings *CppToolsSettings::instance()
+{
+    return m_instance;
+}
+
+CppCodeStylePreferences *CppToolsSettings::cppCodeStyle() const
 {
     return d->m_globalCodeStyle;
+}
+
+const CommentsSettings &CppToolsSettings::commentsSettings() const
+{
+    return d->m_commentsSettings;
+}
+
+void CppToolsSettings::setCommentsSettings(const CommentsSettings &commentsSettings)
+{
+    d->m_commentsSettings = commentsSettings;
+}
+
+static QString sortEditorDocumentOutlineKey()
+{
+    return QLatin1String(Constants::CPPEDITOR_SETTINGSGROUP)
+         + QLatin1Char('/')
+         + QLatin1String(Constants::CPPEDITOR_SORT_EDITOR_DOCUMENT_OUTLINE);
+}
+
+bool CppToolsSettings::sortedEditorDocumentOutline() const
+{
+    return ICore::settings()
+        ->value(sortEditorDocumentOutlineKey(), kSortEditorDocumentOutlineDefault)
+        .toBool();
+}
+
+void CppToolsSettings::setSortedEditorDocumentOutline(bool sorted)
+{
+    ICore::settings()->setValueWithDefault(sortEditorDocumentOutlineKey(),
+                                           sorted,
+                                           kSortEditorDocumentOutlineDefault);
+    emit editorDocumentOutlineSortingChanged(sorted);
 }
 
 } // namespace CppEditor

@@ -1,14 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmakeproject.h"
 
 #include "qmakebuildconfiguration.h"
+#include "qmakebuildinfo.h"
 #include "qmakenodes.h"
 #include "qmakenodetreebuilder.h"
 #include "qmakeprojectimporter.h"
 #include "qmakeprojectmanagerconstants.h"
-#include "qmakeprojectmanagertr.h"
 #include "qmakestep.h"
 
 #include <coreplugin/documentmanager.h>
@@ -17,20 +39,17 @@
 #include <coreplugin/progressmanager/progressmanager.h>
 
 #include <cppeditor/cppmodelmanager.h>
+#include <cppeditor/cppprojectupdater.h>
 #include <cppeditor/generatedcodemodelsupport.h>
 #include <cppeditor/projectinfo.h>
 
 #include <projectexplorer/buildinfo.h>
 #include <projectexplorer/buildmanager.h>
-#include <projectexplorer/buildsteplist.h>
 #include <projectexplorer/buildtargetinfo.h>
 #include <projectexplorer/deploymentdata.h>
-#include <projectexplorer/devicesupport/idevice.h>
-#include <projectexplorer/extracompiler.h>
 #include <projectexplorer/headerpath.h>
 #include <projectexplorer/projectexplorer.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/projectupdater.h>
 #include <projectexplorer/rawprojectpart.h>
 #include <projectexplorer/runconfiguration.h>
 #include <projectexplorer/target.h>
@@ -41,17 +60,14 @@
 #include <proparser/qmakevfs.h>
 #include <proparser/qmakeglobals.h>
 
-#include <qmljs/qmljsmodelmanagerinterface.h>
-
 #include <qtsupport/profilereader.h>
 #include <qtsupport/qtcppkitinfo.h>
-#include <qtsupport/qtkitaspect.h>
+#include <qtsupport/qtkitinformation.h>
 #include <qtsupport/qtversionmanager.h>
 
 #include <utils/algorithm.h>
-#include <utils/async.h>
-#include <utils/mimeconstants.h>
-#include <utils/qtcprocess.h>
+#include <utils/runextensions.h>
+#include <qmljs/qmljsmodelmanagerinterface.h>
 
 #include <QDebug>
 #include <QDir>
@@ -86,11 +102,11 @@ static Q_LOGGING_CATEGORY(qmakeBuildSystemLog, "qtc.qmake.buildsystem", QtWarnin
 class QmakePriFileDocument : public Core::IDocument
 {
 public:
-    QmakePriFileDocument(QmakePriFile *qmakePriFile, const FilePath &filePath) :
+    QmakePriFileDocument(QmakePriFile *qmakePriFile, const Utils::FilePath &filePath) :
         IDocument(nullptr), m_priFile(qmakePriFile)
     {
         setId("Qmake.PriFile");
-        setMimeType(Utils::Constants::PROFILE_MIMETYPE);
+        setMimeType(QLatin1String(QmakeProjectManager::Constants::PROFILE_MIMETYPE));
         setFilePath(filePath);
         Core::DocumentManager::addDocument(this);
     }
@@ -154,7 +170,7 @@ private:
   */
 
 QmakeProject::QmakeProject(const FilePath &fileName) :
-    Project(Utils::Constants::PROFILE_MIMETYPE, fileName)
+    Project(QmakeProjectManager::Constants::PROFILE_MIMETYPE, fileName)
 {
     setId(Constants::QMAKEPROJECT_ID);
     setProjectLanguages(Core::Context(ProjectExplorer::Constants::CXX_LANGUAGE_ID));
@@ -172,7 +188,7 @@ QmakeProject::~QmakeProject()
     setRootProjectNode(nullptr);
 }
 
-Project::RestoreResult QmakeProject::fromMap(const Store &map, QString *errorMessage)
+Project::RestoreResult QmakeProject::fromMap(const QVariantMap &map, QString *errorMessage)
 {
     RestoreResult result = Project::fromMap(map, errorMessage);
     if (result != RestoreResult::Ok)
@@ -180,8 +196,8 @@ Project::RestoreResult QmakeProject::fromMap(const Store &map, QString *errorMes
 
     // Prune targets without buildconfigurations:
     // This can happen esp. when updating from a old version of Qt Creator
-    const QList<Target *> ts = targets();
-    for (Target *t : ts) {
+    QList<Target *>ts = targets();
+    foreach (Target *t, ts) {
         if (t->buildConfigurations().isEmpty()) {
             qWarning() << "Removing" << t->id().name() << "since it has no buildconfigurations!";
             removeTarget(t);
@@ -203,7 +219,7 @@ DeploymentKnowledge QmakeProject::deploymentKnowledge() const
 QmakeBuildSystem::QmakeBuildSystem(QmakeBuildConfiguration *bc)
     : BuildSystem(bc)
     , m_qmakeVfs(new QMakeVfs)
-    , m_cppCodeModelUpdater(ProjectUpdaterFactory::createCppProjectUpdater())
+    , m_cppCodeModelUpdater(new CppEditor::CppProjectUpdater)
 {
     setParseDelay(0);
 
@@ -236,9 +252,9 @@ QmakeBuildSystem::QmakeBuildSystem(QmakeBuildConfiguration *bc)
     connect(bc, &BuildConfiguration::environmentChanged,
             this, &QmakeBuildSystem::scheduleUpdateAllNowOrLater);
 
-    connect(ToolchainManager::instance(), &ToolchainManager::toolchainUpdated,
-            this, [this](Toolchain *tc) {
-        if (ToolchainKitAspect::cxxToolchain(kit()) == tc)
+    connect(ToolChainManager::instance(), &ToolChainManager::toolChainUpdated,
+            this, [this](ToolChain *tc) {
+        if (ToolChainKitAspect::cxxToolChain(kit()) == tc)
             scheduleUpdateAllNowOrLater();
     });
 
@@ -322,6 +338,7 @@ void QmakeBuildSystem::updateCppCodeModel()
     RawProjectParts rpps;
     for (const QmakeProFile *pro : rootProFile()->allProFiles()) {
         warnOnToolChainMismatch(pro);
+
         RawProjectPart rpp;
         rpp.setDisplayName(pro->displayName());
         rpp.setProjectFileLocation(pro->filePath().toString());
@@ -338,32 +355,11 @@ void QmakeBuildSystem::updateCppCodeModel()
             rpp.setBuildTargetType(BuildTargetType::Unknown);
             break;
         }
-        const FilePath includeFileBaseDir = pro->sourceDir();
-
-        QStringList cxxArgs = pro->variableValue(Variable::CppFlags);
-        QStringList cArgs = pro->variableValue(Variable::CFlags);
-
-        // For broken mkspecs, see QTCREATORBUG-28201.
-        const auto getExtraFlagsFromCompilerVar = [pro](Variable var) {
-            const QStringList value = pro->variableValue(var);
-            const int firstOptIndex = Utils::indexOf(value, [](const QString &arg) {
-                return arg.startsWith('-');
-            });
-            if (firstOptIndex <= 0)
-                return QStringList();
-            return value.mid(firstOptIndex);
-        };
-
-        const QStringList extraCxxArgs = getExtraFlagsFromCompilerVar(Variable::QmakeCxx);
-        cxxArgs << extraCxxArgs;
-        const QStringList extraCArgs = getExtraFlagsFromCompilerVar(Variable::QmakeCc);
-        cArgs << extraCArgs;
-        addTargetFlagForIos(cArgs, cxxArgs, this, [pro] {
-            return pro->variableValue(Variable::IosDeploymentTarget).join(QString());
-        });
-
-        rpp.setFlagsForCxx({kitInfo.cxxToolchain, cxxArgs, includeFileBaseDir});
-        rpp.setFlagsForC({kitInfo.cToolchain, cArgs, includeFileBaseDir});
+        const QString includeFileBaseDir = pro->sourceDir().toString();
+        rpp.setFlagsForCxx({kitInfo.cxxToolChain, pro->variableValue(Variable::CppFlags),
+                            includeFileBaseDir});
+        rpp.setFlagsForC({kitInfo.cToolChain, pro->variableValue(Variable::CFlags),
+                          includeFileBaseDir});
         rpp.setMacros(ProjectExplorer::Macro::toMacros(pro->cxxDefines()));
         rpp.setPreCompiledHeaders(pro->variableValue(Variable::PrecompiledHeader));
         rpp.setSelectedForBuilding(pro->includedInExactParse());
@@ -372,12 +368,11 @@ void QmakeBuildSystem::updateCppCodeModel()
         if (pro->variableValue(Variable::Config).contains(QLatin1String("qt")))
             rpp.setQtVersion(kitInfo.projectPartQtVersion);
         else
-            rpp.setQtVersion(QtMajorVersion::None);
+            rpp.setQtVersion(Utils::QtMajorVersion::None);
 
         // Header paths
         ProjectExplorer::HeaderPaths headerPaths;
-        const QStringList includes = pro->variableValue(Variable::IncludePath);
-        for (const QString &inc : includes) {
+        foreach (const QString &inc, pro->variableValue(Variable::IncludePath)) {
             const auto headerPath = HeaderPath::makeUser(inc);
             if (!headerPaths.contains(headerPath))
                 headerPaths += headerPath;
@@ -390,14 +385,14 @@ void QmakeBuildSystem::updateCppCodeModel()
         // Files and generators
         const QStringList cumulativeSourceFiles = pro->variableValue(Variable::CumulativeSource);
         QStringList fileList = pro->variableValue(Variable::ExactSource) + cumulativeSourceFiles;
-        const QList<ProjectExplorer::ExtraCompiler *> proGenerators = pro->extraCompilers();
-        for (ProjectExplorer::ExtraCompiler *ec : proGenerators) {
-            ec->forEachTarget([&](const FilePath &generatedFile) {
+        QList<ProjectExplorer::ExtraCompiler *> proGenerators = pro->extraCompilers();
+        foreach (ProjectExplorer::ExtraCompiler *ec, proGenerators) {
+            ec->forEachTarget([&](const Utils::FilePath &generatedFile) {
                 fileList += generatedFile.toString();
             });
         }
         generators.append(proGenerators);
-        fileList.prepend(CppEditor::CppModelManager::configurationFileName().toString());
+        fileList.prepend(CppEditor::CppModelManager::configurationFileName());
         rpp.setFiles(fileList, [cumulativeSourceFiles](const QString &filePath) {
             // Keep this lambda thread-safe!
             return !cumulativeSourceFiles.contains(filePath);
@@ -415,12 +410,10 @@ void QmakeBuildSystem::updateQmlJSCodeModel()
     if (!modelManager)
         return;
 
-    QmlJS::ModelManagerInterface::ProjectInfo projectInfo
-        = modelManager->defaultProjectInfoForProject(project(),
-                                                     project()->files(Project::HiddenRccFolders));
+    QmlJS::ModelManagerInterface::ProjectInfo projectInfo =
+            modelManager->defaultProjectInfoForProject(project());
 
     const QList<QmakeProFile *> proFiles = rootProFile()->allProFiles();
-    const QString device = rootProFile()->deviceRoot();
 
     projectInfo.importPaths.clear();
 
@@ -432,23 +425,21 @@ void QmakeBuildSystem::updateQmlJSCodeModel()
         }
         const QStringList &exactResources = file->variableValue(Variable::ExactResource);
         const QStringList &cumulativeResources = file->variableValue(Variable::CumulativeResource);
+        projectInfo.activeResourceFiles.append(exactResources);
+        projectInfo.allResourceFiles.append(exactResources);
+        projectInfo.allResourceFiles.append(cumulativeResources);
         QString errorMessage;
-        for (const QString &rc : exactResources) {
-            FilePath rcPath = FilePath::fromString(rc);
-            projectInfo.activeResourceFiles.append(rcPath);
-            projectInfo.allResourceFiles.append(rcPath);
+        foreach (const QString &rc, exactResources) {
             QString contents;
-            int id = m_qmakeVfs->idForFileName(device + rc, QMakeVfs::VfsExact);
+            int id = m_qmakeVfs->idForFileName(rc, QMakeVfs::VfsExact);
             if (m_qmakeVfs->readFile(id, &contents, &errorMessage) == QMakeVfs::ReadOk)
-                projectInfo.resourceFileContents[rcPath] = contents;
+                projectInfo.resourceFileContents[rc] = contents;
         }
-        for (const QString &rc : cumulativeResources) {
-            FilePath rcPath = FilePath::fromString(rc);
-            projectInfo.allResourceFiles.append(rcPath);
+        foreach (const QString &rc, cumulativeResources) {
             QString contents;
-            int id = m_qmakeVfs->idForFileName(device + rc, QMakeVfs::VfsCumulative);
+            int id = m_qmakeVfs->idForFileName(rc, QMakeVfs::VfsCumulative);
             if (m_qmakeVfs->readFile(id, &contents, &errorMessage) == QMakeVfs::ReadOk)
-                projectInfo.resourceFileContents[rcPath] = contents;
+                projectInfo.resourceFileContents[rc] = contents;
         }
         if (!hasQmlLib) {
             QStringList qtLibs = file->variableValue(Variable::Qt);
@@ -464,8 +455,8 @@ void QmakeBuildSystem::updateQmlJSCodeModel()
     // or QQmlEngine/QQuickView (QtQuick 2) instances.
     project()->setProjectLanguage(ProjectExplorer::Constants::QMLJS_LANGUAGE_ID, hasQmlLib);
 
-    projectInfo.activeResourceFiles = Utils::filteredUnique(projectInfo.activeResourceFiles);
-    projectInfo.allResourceFiles = Utils::filteredUnique(projectInfo.allResourceFiles);
+    projectInfo.activeResourceFiles.removeDuplicates();
+    projectInfo.allResourceFiles.removeDuplicates();
 
     modelManager->updateProjectInfo(projectInfo, project());
 }
@@ -533,11 +524,6 @@ void QmakeBuildSystem::scheduleUpdateAllNowOrLater()
         scheduleUpdateAll(QmakeProFile::ParseNow);
     else
         scheduleUpdateAll(QmakeProFile::ParseLater);
-}
-
-ExtraCompiler *QmakeBuildSystem::findExtraCompiler(const ExtraCompilerFilter &filter) const
-{
-    return m_rootProFile->findExtraCompiler(filter);
 }
 
 QmakeBuildConfiguration *QmakeBuildSystem::qmakeBuildConfiguration() const
@@ -680,7 +666,7 @@ void QmakeBuildSystem::asyncUpdate()
     m_asyncUpdateFutureInterface.reset(new QFutureInterface<void>);
     m_asyncUpdateFutureInterface->setProgressRange(0, 0);
     Core::ProgressManager::addTask(m_asyncUpdateFutureInterface->future(),
-                                   Tr::tr("Reading Project \"%1\"").arg(project()->displayName()),
+                                   tr("Reading Project \"%1\"").arg(project()->displayName()),
                                    Constants::PROFILE_EVALUATE);
 
     m_asyncUpdateFutureInterface->reportStarted();
@@ -702,10 +688,10 @@ void QmakeBuildSystem::asyncUpdate()
     QtSupport::QtVersion *const qtVersion = QtSupport::QtKitAspect::qtVersion(k);
     if (!qtVersion || !qtVersion->isValid()) {
         const QString errorMessage
-            = k ? Tr::tr("Cannot parse project \"%1\": The currently selected kit \"%2\" does not "
-                         "have a valid Qt.")
+            = k ? tr("Cannot parse project \"%1\": The currently selected kit \"%2\" does not "
+                     "have a valid Qt.")
                       .arg(project()->displayName(), k->displayName())
-                : Tr::tr("Cannot parse project \"%1\": No kit selected.").arg(project()->displayName());
+                : tr("Cannot parse project \"%1\": No kit selected.").arg(project()->displayName());
         proFileParseError(errorMessage, project()->projectFilePath());
         m_asyncUpdateFutureInterface->reportCanceled();
         m_asyncUpdateFutureInterface->reportFinished();
@@ -720,7 +706,7 @@ void QmakeBuildSystem::asyncUpdate()
     };
     if (m_asyncUpdateState != AsyncFullUpdatePending) {
         QSet<FilePath> projectFilePaths;
-        for (QmakeProFile * const file : std::as_const(m_partialEvaluate)) {
+        for (QmakeProFile * const file : qAsConst(m_partialEvaluate)) {
             QVector<QmakePriFile *> priFiles = file->children();
             for (int i = 0; i < priFiles.count(); ++i) {
                 const QmakePriFile * const priFile = priFiles.at(i);
@@ -735,7 +721,7 @@ void QmakeBuildSystem::asyncUpdate()
         project()->updateExtraProjectFiles(docUpdater);
         rootProFile()->asyncUpdate();
     } else {
-        for (QmakeProFile *file : std::as_const(m_partialEvaluate))
+        foreach (QmakeProFile *file, m_partialEvaluate)
             file->asyncUpdate();
     }
 
@@ -754,11 +740,11 @@ Tasks QmakeProject::projectIssues(const Kit *k) const
     Tasks result = Project::projectIssues(k);
     const QtSupport::QtVersion *const qtFromKit = QtSupport::QtKitAspect::qtVersion(k);
     if (!qtFromKit)
-        result.append(createProjectTask(Task::TaskType::Error, Tr::tr("No Qt version set in kit.")));
+        result.append(createProjectTask(Task::TaskType::Error, tr("No Qt version set in kit.")));
     else if (!qtFromKit->isValid())
-        result.append(createProjectTask(Task::TaskType::Error, Tr::tr("Qt version is invalid.")));
-    if (!ToolchainKitAspect::cxxToolchain(k))
-        result.append(createProjectTask(Task::TaskType::Error, Tr::tr("No C++ compiler set in kit.")));
+        result.append(createProjectTask(Task::TaskType::Error, tr("Qt version is invalid.")));
+    if (!ToolChainKitAspect::cxxToolChain(k))
+        result.append(createProjectTask(Task::TaskType::Error, tr("No C++ compiler set in kit.")));
 
     // A project can be considered part of more than one Qt version, for instance if it is an
     // example shipped via the installer.
@@ -771,33 +757,35 @@ Tasks QmakeProject::projectIssues(const Kit *k) const
     if (!qtsContainingThisProject.isEmpty()
             && !qtsContainingThisProject.contains(const_cast<QtVersion *>(qtFromKit))) {
         result.append(CompileTask(Task::Warning,
-                                  Tr::tr("Project is part of Qt sources that do not match "
-                                         "the Qt defined in the kit.")));
+                                  tr("Project is part of Qt sources that do not match "
+                                     "the Qt defined in the kit.")));
     }
 
     return result;
 }
 
 // Find the folder that contains a file with a certain name (recurse down)
-static FolderNode *folderOf(FolderNode *in, const FilePath &filePath)
+static FolderNode *folderOf(FolderNode *in, const FilePath &fileName)
 {
-    if (in->findChildFileNode([&filePath](FileNode *fn) { return fn->filePath() == filePath; }))
-        return in;
-
-    return in->findChildFolderNode([&filePath](FolderNode *folder) {
-        return folderOf(folder, filePath);
-    });
+    foreach (FileNode *fn, in->fileNodes())
+        if (fn->filePath() == fileName)
+            return in;
+    foreach (FolderNode *folder, in->folderNodes())
+        if (FolderNode *pn = folderOf(folder, fileName))
+            return pn;
+    return nullptr;
 }
 
 // Find the QmakeProFileNode that contains a certain file.
 // First recurse down to folder, then find the pro-file.
-static FileNode *fileNodeOf(FolderNode *in, const FilePath &filePath)
+static FileNode *fileNodeOf(FolderNode *in, const FilePath &fileName)
 {
-    for (FolderNode *folder = folderOf(in, filePath); folder; folder = folder->parentFolderNode()) {
-        if (auto proFile = dynamic_cast<QmakeProFileNode *>(folder)) {
-            return proFile->findChildFileNode([&filePath](FileNode *fn) {
-                return fn->filePath() == filePath;
-            });
+    for (FolderNode *folder = folderOf(in, fileName); folder; folder = folder->parentFolderNode()) {
+        if (auto *proFile = dynamic_cast<QmakeProFileNode *>(folder)) {
+            foreach (FileNode *fileNode, proFile->fileNodes()) {
+                if (fileNode->filePath() == fileName)
+                    return fileNode;
+            }
         }
     }
     return nullptr;
@@ -805,31 +793,15 @@ static FileNode *fileNodeOf(FolderNode *in, const FilePath &filePath)
 
 FilePath QmakeBuildSystem::buildDir(const FilePath &proFilePath) const
 {
+    const QDir srcDirRoot = QDir(projectDirectory().toString());
+    const QString relativeDir = srcDirRoot.relativeFilePath(proFilePath.parentDir().toString());
     const FilePath buildConfigBuildDir = buildConfiguration()->buildDirectory();
-    const FilePath buildDir = buildConfigBuildDir.isEmpty()
+    FilePath buildDir = buildConfigBuildDir.isEmpty()
                                  ? projectDirectory()
                                  : buildConfigBuildDir;
-
-    // The remote version below is actually generic, but I don't dare to touch
-    // the convoluted existing local version for now.
-    // For starters, compute a 'new' version to check what it would look like,
-    // but don't use it.
-    if (!proFilePath.needsDevice()) {
-        // This branch should not exist.
-        const QDir srcDirRoot = QDir(projectDirectory().toString());
-        const QString relativeDir = srcDirRoot.relativeFilePath(proFilePath.parentDir().toString());
-        // FIXME: Convoluted. Try to migrate to newRes once we feel confident enough.
-        const FilePath oldResult = buildDir.withNewPath(
-                    QDir::cleanPath(QDir(buildDir.path()).absoluteFilePath(relativeDir)));
-        const FilePath newResult = buildDir.resolvePath(relativeDir);
-        QTC_ASSERT(oldResult == newResult,
-                   qDebug() << "New build dir construction failed. Not equal:"
-                            << oldResult.toString() << newResult.toString());
-        return oldResult;
-    }
-
-    const FilePath relativeDir = proFilePath.parentDir().relativePathFrom(projectDirectory());
-    return buildDir.resolvePath(relativeDir).canonicalPath();
+    // FIXME: Convoluted.
+    buildDir.setPath(QDir::cleanPath(QDir(buildDir.path()).absoluteFilePath(relativeDir)));
+    return buildDir;
 }
 
 void QmakeBuildSystem::proFileParseError(const QString &errorMessage, const FilePath &filePath)
@@ -855,26 +827,21 @@ QtSupport::ProFileReader *QmakeBuildSystem::createProFileReader(const QmakeProFi
             qmakeArgs = bc->configCommandLineArguments();
 
         QtSupport::QtVersion *qtVersion = QtSupport::QtKitAspect::qtVersion(k);
-        m_qmakeSysroot = SysRootKitAspect::sysRoot(k);
+        m_qmakeSysroot = SysRootKitAspect::sysRoot(k).toString();
 
         if (qtVersion && qtVersion->isValid()) {
-            m_qmakeGlobals->qmake_abslocation =
-                QDir::cleanPath(qtVersion->qmakeFilePath().path());
+            m_qmakeGlobals->qmake_abslocation = QDir::cleanPath(qtVersion->qmakeFilePath().toString());
             qtVersion->applyProperties(m_qmakeGlobals.get());
         }
+        m_qmakeGlobals->setDirectories(rootProFile()->sourceDir().toString(),
+                                       buildDir(rootProFile()->filePath()).toString());
 
-        QString rootProFileName = buildDir(rootProFile()->filePath()).path();
-        m_qmakeGlobals->setDirectories(rootProFile()->sourceDir().path(),
-                                       rootProFileName,
-                                       deviceRoot());
+        Environment::const_iterator eit = env.constBegin(), eend = env.constEnd();
+        for (; eit != eend; ++eit)
+            m_qmakeGlobals->environment.insert(env.key(eit), env.expandedValueForKey(env.key(eit)));
 
-        env.forEachEntry([&](const QString &key, const QString &value, bool enabled) {
-            if (enabled)
-                m_qmakeGlobals->environment.insert(key, env.expandVariables(value));
-        });
-
-        m_qmakeGlobals->setCommandLineArguments(rootProFileName, qmakeArgs);
-        m_qmakeGlobals->runSystemFunction = bc->runQmakeSystemFunctions();
+        m_qmakeGlobals->setCommandLineArguments(buildDir(rootProFile()->filePath()).toString(), qmakeArgs);
+        m_qmakeGlobals->runSystemFunction = bc->runSystemFunction();
 
         QtSupport::ProFileCacheManager::instance()->incRefCount();
 
@@ -896,23 +863,24 @@ QtSupport::ProFileReader *QmakeBuildSystem::createProFileReader(const QmakeProFi
 
     auto reader = new QtSupport::ProFileReader(m_qmakeGlobals.get(), m_qmakeVfs);
 
+    // FIXME: Currently intentional.
     // Core parts of the ProParser hard-assert on non-local items
     reader->setOutputDir(buildDir(qmakeProFile->filePath()).path());
 
     return reader;
 }
 
-QMakeGlobals *QmakeBuildSystem::qmakeGlobals() const
+QMakeGlobals *QmakeBuildSystem::qmakeGlobals()
 {
     return m_qmakeGlobals.get();
 }
 
-QMakeVfs *QmakeBuildSystem::qmakeVfs() const
+QMakeVfs *QmakeBuildSystem::qmakeVfs()
 {
     return m_qmakeVfs;
 }
 
-const FilePath &QmakeBuildSystem::qmakeSysroot() const
+QString QmakeBuildSystem::qmakeSysroot()
 {
     return m_qmakeSysroot;
 }
@@ -920,9 +888,9 @@ const FilePath &QmakeBuildSystem::qmakeSysroot() const
 void QmakeBuildSystem::destroyProFileReader(QtSupport::ProFileReader *reader)
 {
     // The ProFileReader destructor is super expensive (but thread-safe).
-    const auto deleteFuture = Utils::asyncRun(ProjectExplorerPlugin::sharedThreadPool(),
-                                              [reader] { delete reader; });
-    Utils::onFinished(deleteFuture, this, [this](const QFuture<void> &) {
+    const auto deleteFuture = runAsync(ProjectExplorerPlugin::sharedThreadPool(), QThread::LowestPriority,
+                    [reader] { delete reader; });
+    onFinished(deleteFuture, this, [this](const QFuture<void> &) {
         if (!--m_qmakeGlobalsRefCnt) {
             deregisterFromCacheManager();
             m_qmakeGlobals.reset();
@@ -932,10 +900,10 @@ void QmakeBuildSystem::destroyProFileReader(QtSupport::ProFileReader *reader)
 
 void QmakeBuildSystem::deregisterFromCacheManager()
 {
-    QString dir = projectFilePath().path();
+    QString dir = projectFilePath().toString();
     if (!dir.endsWith(QLatin1Char('/')))
         dir += QLatin1Char('/');
-    QtSupport::ProFileCacheManager::instance()->discardFiles(deviceRoot(), dir, qmakeVfs());
+    QtSupport::ProFileCacheManager::instance()->discardFiles(dir, qmakeVfs());
     QtSupport::ProFileCacheManager::instance()->decRefCount();
 }
 
@@ -953,7 +921,7 @@ static void notifyChangedHelper(const FilePath &fileName, QmakeProFile *file)
 {
     if (file->filePath() == fileName) {
         QtSupport::ProFileCacheManager::instance()->discardFile(
-            file->deviceRoot(), fileName.path(), file->buildSystem()->qmakeVfs());
+                    fileName.toString(), file->buildSystem()->qmakeVfs());
         file->scheduleUpdate(QmakeProFile::ParseNow);
     }
 
@@ -1009,8 +977,8 @@ QSet<QString> CentralizedFolderWatcher::recursiveDirs(const QString &folder)
 {
     QSet<QString> result;
     QDir dir(folder);
-    const QStringList list = dir.entryList(QDir::Dirs | QDir::NoSymLinks | QDir::NoDotAndDotDot);
-    for (const QString &f : list) {
+    QStringList list = dir.entryList(QDir::Dirs | QDir::NoSymLinks | QDir::NoDotAndDotDot);
+    foreach (const QString &f, list) {
         const QString a = folder + f + QLatin1Char('/');
         result.insert(a);
         result += recursiveDirs(a);
@@ -1023,7 +991,7 @@ void CentralizedFolderWatcher::watchFolders(const QList<QString> &folders, Qmake
     m_watcher.addPaths(folders);
 
     const QChar slash = QLatin1Char('/');
-    for (const QString &f : folders) {
+    foreach (const QString &f, folders) {
         QString folder = f;
         if (!folder.endsWith(slash))
             folder.append(slash);
@@ -1041,7 +1009,7 @@ void CentralizedFolderWatcher::watchFolders(const QList<QString> &folders, Qmake
 void CentralizedFolderWatcher::unwatchFolders(const QList<QString> &folders, QmakePriFile *file)
 {
     const QChar slash = QLatin1Char('/');
-    for (const QString &f : folders) {
+    foreach (const QString &f, folders) {
         QString folder = f;
         if (!folder.endsWith(slash))
             folder.append(slash);
@@ -1055,7 +1023,7 @@ void CentralizedFolderWatcher::unwatchFolders(const QList<QString> &folders, Qma
         // where a given directory watcher actual comes from...
 
         QStringList toRemove;
-        for (const QString &rwf : std::as_const(m_recursiveWatchedFolders)) {
+        foreach (const QString &rwf, m_recursiveWatchedFolders) {
             if (rwf.startsWith(folder)) {
                 // So the rwf is a subdirectory of a folder we aren't watching
                 // but maybe someone else wants us to watch
@@ -1074,7 +1042,7 @@ void CentralizedFolderWatcher::unwatchFolders(const QList<QString> &folders, Qma
             }
         }
 
-        for (const QString &tr : std::as_const(toRemove))
+        foreach (const QString &tr, toRemove)
             m_recursiveWatchedFolders.remove(tr);
     }
 }
@@ -1087,7 +1055,7 @@ void CentralizedFolderWatcher::folderChanged(const QString &folder)
 
 void CentralizedFolderWatcher::onTimer()
 {
-    for (const QString &folder : std::as_const(m_changedFolders))
+    foreach (const QString &folder, m_changedFolders)
         delayedFolderChanged(folder);
     m_changedFolders.clear();
 }
@@ -1101,12 +1069,12 @@ void CentralizedFolderWatcher::delayedFolderChanged(const QString &folder)
     while (true) {
         if (!dir.endsWith(slash))
             dir.append(slash);
-        const QList<QmakePriFile *> files = m_map.values(dir);
+        QList<QmakePriFile *> files = m_map.values(dir);
         if (!files.isEmpty()) {
             // Collect all the files
             QSet<FilePath> newFiles;
             newFiles += QmakePriFile::recursiveEnumerate(folder);
-            for (QmakePriFile *file : files)
+            foreach (QmakePriFile *file, files)
                 newOrRemovedFiles = newOrRemovedFiles || file->folderChanged(folder, newFiles);
         }
 
@@ -1306,13 +1274,15 @@ static FilePath destDirFor(const TargetInformation &ti)
     return ti.destDir;
 }
 
-FilePaths QmakeBuildSystem::allLibraryTargetFiles(const QmakeProFile *file) const
+void QmakeBuildSystem::collectLibraryData(const QmakeProFile *file, DeploymentData &deploymentData)
 {
-    const Toolchain *const toolchain = ToolchainKitAspect::cxxToolchain(kit());
+    const QString targetPath = file->installsList().targetPath;
+    if (targetPath.isEmpty())
+        return;
+    const ToolChain *const toolchain = ToolChainKitAspect::cxxToolChain(kit());
     if (!toolchain)
-        return {};
+        return;
 
-    FilePaths libs;
     TargetInformation ti = file->targetInformation();
     QString targetFileName = ti.target;
     const QStringList config = file->variableValue(Variable::Config);
@@ -1332,7 +1302,7 @@ FilePaths QmakeBuildSystem::allLibraryTargetFiles(const QmakeProFile *file) cons
         }
         targetFileName += targetVersionExt + QLatin1Char('.');
         targetFileName += QLatin1String(isStatic ? "lib" : "dll");
-        libs << FilePath::fromString(targetFileName);
+        deploymentData.addFile(destDirFor(ti) / targetFileName, targetPath);
         break;
     }
     case Abi::DarwinOS: {
@@ -1352,10 +1322,10 @@ FilePaths QmakeBuildSystem::allLibraryTargetFiles(const QmakeProFile *file) cons
                 targetFileName += majorVersion;
             }
             targetFileName += QLatin1Char('.');
-            targetFileName += file->singleVariableValue(isStatic ? Variable::StaticLibExtension
-                                                                 : Variable::ShLibExtension);
+            targetFileName += file->singleVariableValue(isStatic
+                    ? Variable::StaticLibExtension : Variable::ShLibExtension);
         }
-        libs << destDir / targetFileName;
+        deploymentData.addFile(destDir / targetFileName, targetPath);
         break;
     }
     case Abi::LinuxOS:
@@ -1367,10 +1337,10 @@ FilePaths QmakeBuildSystem::allLibraryTargetFiles(const QmakeProFile *file) cons
 
         targetFileName += QLatin1Char('.');
         if (isStatic) {
-            libs << destDirFor(ti) / (targetFileName + QLatin1Char('a'));
+            targetFileName += QLatin1Char('a');
         } else {
             targetFileName += QLatin1String("so");
-            libs << destDirFor(ti) / targetFileName;
+            deploymentData.addFile(destDirFor(ti) / targetFileName, targetPath);
             if (nameIsVersioned) {
                 QString version = file->singleVariableValue(Variable::Version);
                 if (version.isEmpty())
@@ -1381,7 +1351,8 @@ FilePaths QmakeBuildSystem::allLibraryTargetFiles(const QmakeProFile *file) cons
                 targetFileName += QLatin1Char('.');
                 while (!versionComponents.isEmpty()) {
                     const QString versionString = versionComponents.join(QLatin1Char('.'));
-                    libs << destDirFor(ti).pathAppended(targetFileName + versionString);
+                    deploymentData.addFile(destDirFor(ti) / targetFileName + versionString,
+                                           targetPath);
                     versionComponents.removeLast();
                 }
             }
@@ -1390,22 +1361,10 @@ FilePaths QmakeBuildSystem::allLibraryTargetFiles(const QmakeProFile *file) cons
     default:
         break;
     }
-
-    return libs;
 }
 
-void QmakeBuildSystem::collectLibraryData(const QmakeProFile *file, DeploymentData &deploymentData)
-{
-    const QString targetPath = file->installsList().targetPath;
-    if (!targetPath.isEmpty()) {
-        const FilePaths libs = allLibraryTargetFiles(file);
-        for (const FilePath &lib : libs)
-            deploymentData.addFile(lib, targetPath);
-    }
-}
-
-static FilePath getFullPathOf(const QmakeProFile *pro, Variable variable,
-                              const BuildConfiguration *bc)
+static Utils::FilePath getFullPathOf(const QmakeProFile *pro, Variable variable,
+                                     const BuildConfiguration *bc)
 {
     // Take last non-flag value, to cover e.g. '@echo $< && $$QMAKE_CC' or 'ccache gcc'
     const QStringList values = Utils::filtered(pro->variableValue(variable),
@@ -1413,25 +1372,27 @@ static FilePath getFullPathOf(const QmakeProFile *pro, Variable variable,
         return !value.startsWith('-');
     });
     if (values.isEmpty())
-        return {};
+        return Utils::FilePath();
     const QString exe = values.last();
-    QTC_ASSERT(bc, return FilePath::fromUserInput(exe));
+    QTC_ASSERT(bc, return Utils::FilePath::fromUserInput(exe));
     QFileInfo fi(exe);
     if (fi.isAbsolute())
-        return FilePath::fromUserInput(exe);
+        return Utils::FilePath::fromUserInput(exe);
 
     return bc->environment().searchInPath(exe);
 }
 
-void QmakeBuildSystem::testToolChain(Toolchain *tc, const FilePath &path) const
+void QmakeBuildSystem::testToolChain(ToolChain *tc, const FilePath &path) const
 {
     if (!tc || path.isEmpty())
         return;
 
-    const FilePath expected = tc->compilerCommand();
-    if (tc->matchesCompilerCommand(expected))
+    const Utils::FilePath expected = tc->compilerCommand();
+    Environment env = buildConfiguration()->environment();
+
+    if (tc->matchesCompilerCommand(expected, env))
         return;
-    const QPair<FilePath, FilePath> pair{expected, path};
+    const QPair<Utils::FilePath, Utils::FilePath> pair = qMakePair(expected, path);
     if (m_toolChainWarnings.contains(pair))
         return;
     // Suppress warnings on Apple machines where compilers in /usr/bin point into Xcode.
@@ -1443,7 +1404,8 @@ void QmakeBuildSystem::testToolChain(Toolchain *tc, const FilePath &path) const
     }
     TaskHub::addTask(
         BuildSystemTask(Task::Warning,
-                        Tr::tr(
+                        QCoreApplication::translate(
+                            "QmakeProjectManager",
                             "\"%1\" is used by qmake, but \"%2\" is configured in the kit.\n"
                             "Please update your kit (%3) or choose a mkspec for qmake that matches "
                             "your target environment better.")
@@ -1453,28 +1415,17 @@ void QmakeBuildSystem::testToolChain(Toolchain *tc, const FilePath &path) const
     m_toolChainWarnings.insert(pair);
 }
 
-QString QmakeBuildSystem::deviceRoot() const
-{
-    IDeviceConstPtr device = BuildDeviceKitAspect::device(target()->kit());
-    QTC_ASSERT(device, return {});
-    FilePath deviceRoot = device->rootPath();
-    if (deviceRoot.needsDevice())
-        return deviceRoot.toFSPathString();
-
-    return {};
-}
-
 void QmakeBuildSystem::warnOnToolChainMismatch(const QmakeProFile *pro) const
 {
     const BuildConfiguration *bc = buildConfiguration();
-    testToolChain(ToolchainKitAspect::cToolchain(kit()), getFullPathOf(pro, Variable::QmakeCc, bc));
-    testToolChain(ToolchainKitAspect::cxxToolchain(kit()),
+    testToolChain(ToolChainKitAspect::cToolChain(kit()), getFullPathOf(pro, Variable::QmakeCc, bc));
+    testToolChain(ToolChainKitAspect::cxxToolChain(kit()),
                   getFullPathOf(pro, Variable::QmakeCxx, bc));
 }
 
 FilePath QmakeBuildSystem::executableFor(const QmakeProFile *file)
 {
-    const Toolchain *const tc = ToolchainKitAspect::cxxToolchain(kit());
+    const ToolChain *const tc = ToolChainKitAspect::cxxToolChain(kit());
     if (!tc)
         return {};
 
@@ -1533,87 +1484,11 @@ FilePaths QmakeBuildSystem::filesGeneratedFrom(const FilePath &input) const
     return {};
 }
 
-QVariant QmakeBuildSystem::additionalData(Id id) const
+QVariant QmakeBuildSystem::additionalData(Utils::Id id) const
 {
     if (id == "QmlDesignerImportPath")
         return m_rootProFile->variableValue(Variable::QmlDesignerImportPath);
     return BuildSystem::additionalData(id);
-}
-
-static const Id xcodeGeneratorId() { return "QMAKE_GENERATOR_XCODE"; }
-static const Id vsGeneratorId() { return "QMAKE_GENERATOR_VS"; }
-
-QList<QPair<Id, QString>> QmakeBuildSystem::generators() const
-{
-    if (HostOsInfo::isMacHost())
-        return {{xcodeGeneratorId(), Tr::tr("Generate Xcode project (via qmake)")}};
-    if (HostOsInfo::isWindowsHost())
-        return {{vsGeneratorId(), Tr::tr("Generate Visual Studio project (via qmake)")}};
-    return {};
-}
-
-void QmakeBuildSystem::runGenerator(Utils::Id id)
-{
-    QTC_ASSERT(buildConfiguration(), return);
-    const auto showError = [](const QString &detail) {
-        Core::MessageManager::writeDisrupting(Tr::tr("qmake generator failed: %1.").arg(detail));
-    };
-    const QtVersion * const qtVersion = QtKitAspect::qtVersion(kit());
-    if (!qtVersion) {
-        showError(Tr::tr("No Qt in kit"));
-        return;
-    }
-    const FilePath qmake = qtVersion->qmakeFilePath();
-    if (!qmake.isExecutableFile()) {
-        showError(Tr::tr("No valid qmake executable"));
-        return;
-    }
-    const QMakeStep * const step = buildConfiguration()->buildSteps()->firstOfType<QMakeStep>();
-    if (!step) {
-        showError(Tr::tr("No qmake step in active build configuration"));
-        return;
-    }
-    FilePath outDir = buildConfiguration()->buildDirectory();
-    CommandLine cmdLine(qmake, {"-r"});
-    cmdLine.addArgs(step->allArguments(qtVersion), CommandLine::Raw);
-    if (id == xcodeGeneratorId()) {
-        QStringList args = cmdLine.splitArguments();
-        for (auto it = args.begin(); it != args.end(); ++it) {
-            if (*it == "-spec") {
-                it = args.erase(it);
-                if (it != args.end())
-                    args.erase(it);
-                break;
-            }
-        }
-        args << "-spec" << "macx-xcode";
-        cmdLine.setArguments({});
-        cmdLine.addArgs(args);
-        outDir = outDir / "qtcgen_xcode";
-    } else if (id == vsGeneratorId()) {
-        cmdLine.addArgs({"-tp", "vc"});
-        outDir = outDir / "qtcgen_vs";
-    } else {
-        QTC_ASSERT(false, return);
-    }
-    if (!outDir.ensureWritableDir()) {
-        showError(Tr::tr("Cannot create output directory \"%1\".").arg(outDir.toUserOutput()));
-        return;
-    }
-    const auto proc = new Process(this);
-    connect(proc, &Process::done, proc, &Process::deleteLater);
-    connect(proc, &Process::readyReadStandardOutput, this, [proc] {
-        Core::MessageManager::writeFlashing(QString::fromLocal8Bit(proc->readAllRawStandardOutput()));
-    });
-    connect(proc, &Process::readyReadStandardError, this, [proc] {
-        Core::MessageManager::writeDisrupting(QString::fromLocal8Bit(proc->readAllRawStandardError()));
-    });
-    proc->setWorkingDirectory(outDir);
-    proc->setEnvironment(buildConfiguration()->environment());
-    proc->setCommand(cmdLine);
-    Core::MessageManager::writeFlashing(
-        Tr::tr("Running in \"%1\": %2.").arg(outDir.toUserOutput(), cmdLine.toUserOutput()));
-    proc->start();
 }
 
 void QmakeBuildSystem::buildHelper(Action action, bool isFileBuild, QmakeProFileNode *profile,

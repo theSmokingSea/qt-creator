@@ -1,20 +1,39 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "vcsconfigurationpage.h"
 
-#include "../vcsbasetr.h"
+#include "../vcsbaseconstants.h"
 
 #include <coreplugin/icore.h>
 #include <coreplugin/iversioncontrol.h>
 #include <coreplugin/vcsmanager.h>
-
-#include <extensionsystem/pluginmanager.h>
-
-#include <projectexplorer/projectexplorertr.h>
 #include <projectexplorer/jsonwizard/jsonwizard.h>
 #include <projectexplorer/jsonwizard/jsonwizardfactory.h>
 
+#include <extensionsystem/pluginmanager.h>
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 
@@ -34,8 +53,8 @@ VcsConfigurationPageFactory::VcsConfigurationPageFactory()
     setTypeIdsSuffix(QLatin1String("VcsConfiguration"));
 }
 
-WizardPage *VcsConfigurationPageFactory::create(JsonWizard *wizard, Id typeId,
-                                                const QVariant &data)
+Utils::WizardPage *VcsConfigurationPageFactory::create(JsonWizard *wizard, Id typeId,
+                                                       const QVariant &data)
 {
     Q_UNUSED(wizard)
 
@@ -56,9 +75,10 @@ bool VcsConfigurationPageFactory::validateData(Id typeId, const QVariant &data,
 {
     QTC_ASSERT(canCreate(typeId), return false);
 
-    if (data.isNull() || data.typeId() != QMetaType::QVariantMap) {
+    if (data.isNull() || data.type() != QVariant::Map) {
         //: Do not translate "VcsConfiguration", because it is the id of a page.
-        *errorMessage = ProjectExplorer::Tr::tr("\"data\" must be a JSON object for \"VcsConfiguration\" pages.");
+        *errorMessage = QCoreApplication::translate("ProjectExplorer::JsonWizard",
+                                                    "\"data\" must be a JSON object for \"VcsConfiguration\" pages.");
         return false;
     }
 
@@ -66,7 +86,8 @@ bool VcsConfigurationPageFactory::validateData(Id typeId, const QVariant &data,
     const QString vcsId = tmp.value(QLatin1String("vcsId")).toString();
     if (vcsId.isEmpty()) {
         //: Do not translate "VcsConfiguration", because it is the id of a page.
-        *errorMessage = ProjectExplorer::Tr::tr("\"VcsConfiguration\" page requires a \"vcsId\" set.");
+        *errorMessage = QCoreApplication::translate("ProjectExplorer::JsonWizard",
+                                                    "\"VcsConfiguration\" page requires a \"vcsId\" set.");
         return false;
     }
     return true;
@@ -84,7 +105,7 @@ public:
 
 VcsConfigurationPage::VcsConfigurationPage() : d(new Internal::VcsConfigurationPagePrivate)
 {
-    setTitle(Tr::tr("Configuration"));
+    setTitle(tr("Configuration"));
 
     d->m_versionControl = nullptr;
     d->m_configureButton = new QPushButton(ICore::msgShowOptionsDialog(), this);
@@ -127,18 +148,21 @@ void VcsConfigurationPage::initializePage()
         auto jw = qobject_cast<JsonWizard *>(wizard());
         if (!jw) {
             //: Do not translate "VcsConfiguration", because it is the id of a page.
-            emit reportError(Tr::tr("No version control set on \"VcsConfiguration\" page."));
+            emit reportError(tr("No version control set on \"VcsConfiguration\" page."));
         }
 
         const QString vcsId = jw ? jw->expander()->expand(d->m_versionControlId) : d->m_versionControlId;
 
         d->m_versionControl = VcsManager::versionControl(Id::fromString(vcsId));
         if (!d->m_versionControl) {
-            const QString values = Utils::transform(VcsManager::versionControls(),
-                [](const IVersionControl *vc) { return vc->id().toString(); }).join(", ");
-            //: Do not translate "VcsConfiguration", because it is the id of a page.
-            emit reportError(Tr::tr("\"vcsId\" (\"%1\") is invalid for \"VcsConfiguration\" page. "
-                                    "Possible values are: %2.").arg(vcsId, values));
+            emit reportError(
+                        //: Do not translate "VcsConfiguration", because it is the id of a page.
+                        tr("\"vcsId\" (\"%1\") is invalid for \"VcsConfiguration\" page. "
+                           "Possible values are: %2.")
+                        .arg(vcsId)
+                        .arg(QStringList(Utils::transform(VcsManager::versionControls(), [](const IVersionControl *vc) {
+                return vc->id().toString();
+            })).join(QLatin1String(", "))));
         }
     }
 
@@ -147,9 +171,9 @@ void VcsConfigurationPage::initializePage()
 
     d->m_configureButton->setEnabled(d->m_versionControl);
     if (d->m_versionControl)
-        setSubTitle(Tr::tr("Please configure <b>%1</b> now.").arg(d->m_versionControl->displayName()));
+        setSubTitle(tr("Please configure <b>%1</b> now.").arg(d->m_versionControl->displayName()));
     else
-        setSubTitle(Tr::tr("No known version control selected."));
+        setSubTitle(tr("No known version control selected."));
 }
 
 bool VcsConfigurationPage::isComplete() const

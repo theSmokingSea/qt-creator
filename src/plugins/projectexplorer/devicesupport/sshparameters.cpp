@@ -1,5 +1,27 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sshparameters.h"
 
@@ -8,8 +30,8 @@
 #include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 
 #include <QDebug>
 
@@ -19,23 +41,9 @@ using namespace Utils;
 
 namespace ProjectExplorer {
 
-SshParameters::SshParameters() = default;
-
-QString SshParameters::userAtHost() const
+SshParameters::SshParameters()
 {
-    QString res;
-    if (!m_userName.isEmpty())
-        res = m_userName + '@';
-    res += m_host;
-    return res;
-}
-
-QString SshParameters::userAtHostAndPort() const
-{
-    QString res = SshParameters::userAtHost();
-    if (m_port != 22)
-        res += QString(":%1").arg(m_port);
-    return res;
+    url.setPort(0);
 }
 
 QStringList SshParameters::connectionOptions(const FilePath &binary) const
@@ -75,14 +83,14 @@ QStringList SshParameters::connectionOptions(const FilePath &binary) const
     return args;
 }
 
-void SshParameters::setupSshEnvironment(Process *process)
+bool SshParameters::setupSshEnvironment(QtcProcess *process)
 {
     Environment env = process->controlEnvironment();
-    if (!env.hasChanges())
+    if (!env.isValid())
         env = Environment::systemEnvironment();
+    const bool hasDisplay = env.hasKey("DISPLAY") && (env.value("DISPLAY") != QString(":0"));
     if (SshSettings::askpassFilePath().exists()) {
         env.set("SSH_ASKPASS", SshSettings::askpassFilePath().toUserOutput());
-        env.set("SSH_ASKPASS_REQUIRE", "force");
 
         // OpenSSH only uses the askpass program if DISPLAY is set, regardless of the platform.
         if (!env.hasKey("DISPLAY"))
@@ -92,13 +100,13 @@ void SshParameters::setupSshEnvironment(Process *process)
 
     // Otherwise, ssh will ignore SSH_ASKPASS and read from /dev/tty directly.
     process->setDisableUnixTerminal();
+    return hasDisplay;
 }
 
-bool operator==(const SshParameters &p1, const SshParameters &p2)
+
+static inline bool equals(const SshParameters &p1, const SshParameters &p2)
 {
-    return p1.m_host == p2.m_host
-            && p1.m_port == p2.m_port
-            && p1.m_userName == p2.m_userName
+    return p1.url == p2.url
             && p1.authenticationType == p2.authenticationType
             && p1.privateKeyFile == p2.privateKeyFile
             && p1.hostKeyCheckingMode == p2.hostKeyCheckingMode
@@ -106,33 +114,43 @@ bool operator==(const SshParameters &p1, const SshParameters &p2)
             && p1.timeout == p2.timeout;
 }
 
+bool operator==(const SshParameters &p1, const SshParameters &p2)
+{
+    return equals(p1, p2);
+}
+
+bool operator!=(const SshParameters &p1, const SshParameters &p2)
+{
+    return !equals(p1, p2);
+}
+
 #ifdef WITH_TESTS
 namespace SshTest {
 const QString getHostFromEnvironment()
 {
-    const QString host = qtcEnvironmentVariable("QTC_SSH_TEST_HOST");
-    if (host.isEmpty() && qtcEnvironmentVariableIsSet("QTC_SSH_TEST_DEFAULTS"))
+    const QString host = QString::fromLocal8Bit(qgetenv("QTC_SSH_TEST_HOST"));
+    if (host.isEmpty() && qEnvironmentVariableIsSet("QTC_SSH_TEST_DEFAULTS"))
         return QString("127.0.0.1");
     return host;
 }
 
 quint16 getPortFromEnvironment()
 {
-    const int port = qtcEnvironmentVariableIntValue("QTC_SSH_TEST_PORT");
+    const int port = qEnvironmentVariableIntValue("QTC_SSH_TEST_PORT");
     return port != 0 ? quint16(port) : 22;
 }
 
 const QString getUserFromEnvironment()
 {
-    return qtcEnvironmentVariable("QTC_SSH_TEST_USER");
+    return QString::fromLocal8Bit(qgetenv("QTC_SSH_TEST_USER"));
 }
 
 const QString getKeyFileFromEnvironment()
 {
     const FilePath defaultKeyFile = FileUtils::homePath() / ".ssh/id_rsa";
-    const QString keyFile = qtcEnvironmentVariable("QTC_SSH_TEST_KEYFILE");
+    const QString keyFile = QString::fromLocal8Bit(qgetenv("QTC_SSH_TEST_KEYFILE"));
     if (keyFile.isEmpty()) {
-        if (qtcEnvironmentVariableIsSet("QTC_SSH_TEST_DEFAULTS"))
+        if (qEnvironmentVariableIsSet("QTC_SSH_TEST_DEFAULTS"))
             return defaultKeyFile.toString();
     }
     return keyFile;
@@ -146,19 +164,10 @@ const QString userAtHost()
     return userMidFix + getHostFromEnvironment();
 }
 
-const QString userAtHostAndPort()
-{
-    QString res = userAtHost();
-    const int port = getPortFromEnvironment();
-    if (port != 22)
-        res += QString(":%1").arg(port);
-    return res;
-}
-
 SshParameters getParameters()
 {
     SshParameters params;
-    if (!qtcEnvironmentVariableIsSet("QTC_SSH_TEST_DEFAULTS")) {
+    if (!qEnvironmentVariableIsSet("QTC_SSH_TEST_DEFAULTS")) {
         params.setUserName(getUserFromEnvironment());
         params.privateKeyFile = FilePath::fromUserInput(getKeyFileFromEnvironment());
     }
@@ -173,7 +182,7 @@ SshParameters getParameters()
 
 bool checkParameters(const SshParameters &params)
 {
-    if (qtcEnvironmentVariableIsSet("QTC_SSH_TEST_DEFAULTS"))
+    if (qEnvironmentVariableIsSet("QTC_SSH_TEST_DEFAULTS"))
         return true;
     if (params.host().isEmpty()) {
         qWarning("No hostname provided. Set QTC_SSH_TEST_HOST.");

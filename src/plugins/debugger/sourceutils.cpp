@@ -1,11 +1,32 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sourceutils.h"
 
 #include "debuggerinternalconstants.h"
 #include "debuggerengine.h"
-#include "debuggertr.h"
 #include "disassemblerlines.h"
 #include "watchdata.h"
 #include "watchutils.h"
@@ -113,7 +134,8 @@ QDebug operator<<(QDebug d, const Scope &scope)
 
 } // namespace CPlusPlus
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 /* getUninitializedVariables(): Get variables that are not initialized
  * at a certain line of a function from the code model to be able to
@@ -221,10 +243,10 @@ QStringList getUninitializedVariables(const Snapshot &snapshot,
     return result;
 }
 
-QString cppFunctionAt(const FilePath &filePath, int line, int column)
+QString cppFunctionAt(const QString &fileName, int line, int column)
 {
-    const Snapshot snapshot = CppModelManager::snapshot();
-    if (const Document::Ptr document = snapshot.document(filePath))
+    const Snapshot snapshot = CppModelManager::instance()->snapshot();
+    if (const Document::Ptr document = snapshot.document(fileName))
         return document->functionAt(line, column);
 
     return QString();
@@ -239,9 +261,9 @@ QString cppExpressionAt(TextEditorWidget *editorWidget, int pos,
     if (function)
         function->clear();
 
-    const FilePath filePath = editorWidget->textDocument()->filePath();
-    const Snapshot snapshot = CppModelManager::snapshot();
-    const Document::Ptr document = snapshot.document(filePath);
+    const QString fileName = editorWidget->textDocument()->filePath().toString();
+    const Snapshot snapshot = CppModelManager::instance()->snapshot();
+    const Document::Ptr document = snapshot.document(fileName);
     QTextCursor tc = editorWidget->textCursor();
     QString expr;
     if (tc.hasSelection() && pos >= tc.selectionStart() && pos <= tc.selectionEnd()) {
@@ -315,14 +337,14 @@ ContextData getLocationContext(TextDocument *document, int lineNumber)
                 if (ln > 0) {
                     data.type = LocationByFile;
                     data.fileName = Utils::FilePath::fromString(fileName);
-                    data.textPosition.line = ln;
+                    data.lineNumber = ln;
                 }
             }
         }
     } else {
         data.type = LocationByFile;
         data.fileName = document->filePath();
-        data.textPosition.line = lineNumber;
+        data.lineNumber = lineNumber;
     }
     return data;
 }
@@ -334,9 +356,7 @@ class DebuggerValueMark : public TextEditor::TextMark
 {
 public:
     DebuggerValueMark(const FilePath &fileName, int lineNumber, const QString &value)
-        : TextMark(fileName,
-                   lineNumber,
-                   {Tr::tr("Debugger Value"), Constants::TEXT_MARK_CATEGORY_VALUE})
+        : TextMark(fileName, lineNumber, Constants::TEXT_MARK_CATEGORY_VALUE)
     {
         setPriority(TextEditor::TextMark::HighPriority);
         setToolTipProvider([] { return QString(); });
@@ -376,18 +396,18 @@ static void setValueAnnotationsHelper(BaseTextEditor *textEditor,
     TextEditorWidget *widget = textEditor->editorWidget();
     TextDocument *textDocument = widget->textDocument();
     const FilePath filePath = loc.fileName();
-    const Snapshot snapshot = CppModelManager::snapshot();
-    const Document::Ptr cppDocument = snapshot.document(filePath);
+    const Snapshot snapshot = CppModelManager::instance()->snapshot();
+    const Document::Ptr cppDocument = snapshot.document(filePath.toString());
     if (!cppDocument) // For non-C++ documents.
         return;
 
-    const int firstLine = firstRelevantLine(cppDocument, loc.textPosition().line, 1);
+    const int firstLine = firstRelevantLine(cppDocument, loc.lineNumber(), 1);
     if (firstLine < 1)
         return;
 
     CPlusPlus::ExpressionUnderCursor expressionUnderCursor(cppDocument->languageFeatures());
     QTextCursor tc = widget->textCursor();
-    for (int lineNumber = loc.textPosition().line; lineNumber >= firstLine; --lineNumber) {
+    for (int lineNumber = loc.lineNumber(); lineNumber >= firstLine; --lineNumber) {
         const QTextBlock block = textDocument->document()->findBlockByNumber(lineNumber - 1);
         tc.setPosition(block.position());
         for (; !tc.atBlockEnd(); tc.movePosition(QTextCursor::NextCharacter)) {
@@ -419,4 +439,5 @@ void setValueAnnotations(const Location &loc, const QMap<QString, QString> &valu
     }
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

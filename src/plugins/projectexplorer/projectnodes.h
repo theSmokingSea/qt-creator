@@ -1,19 +1,42 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "projectexplorer_export.h"
 
+#include <QFutureInterface>
 #include <QIcon>
 #include <QStringList>
 
 #include <utils/fileutils.h>
 #include <utils/id.h>
+#include <utils/optional.h>
+#include <utils/variant.h>
 
 #include <functional>
-#include <optional>
-#include <variant>
 
 namespace Utils { class MimeType; }
 
@@ -32,8 +55,6 @@ enum class FileType : quint16 {
     Resource,
     QML,
     Project,
-    App,
-    Lib,
     FileTypeSize
 };
 
@@ -142,7 +163,7 @@ public:
     virtual ContainerNode *asContainerNode() { return nullptr; }
     virtual const ContainerNode *asContainerNode() const { return nullptr; }
 
-    virtual QString buildKey() const { return {}; }
+    virtual QString buildKey() const { return QString(); }
 
     static bool sortByPath(const Node *a, const Node *b);
     void setParentFolderNode(FolderNode *parentFolder);
@@ -204,14 +225,10 @@ public:
     QIcon icon() const;
     void setIcon(const QIcon icon);
 
-    bool useUnavailableMarker() const;
-    void setUseUnavailableMarker(bool useUnavailableMarker);
-
 private:
     FileType m_fileType;
     mutable QIcon m_icon;
     mutable bool m_hasError = false;
-    bool m_useUnavailableMarker = false;
 };
 
 // Documentation inside.
@@ -234,13 +251,11 @@ public:
                      const std::function<bool(const FolderNode *)> &folderFilterTask = {}) const;
     void forEachGenericNode(const std::function<void(Node *)> &genericTask) const;
     void forEachProjectNode(const std::function<void(const ProjectNode *)> &genericTask) const;
-    void forEachFileNode(const std::function<void(FileNode *)> &fileTask) const;
-    void forEachFolderNode(const std::function<void(FolderNode *)> &folderTask) const;
-    ProjectNode *findProjectNode(const std::function<bool(const ProjectNode *)> &predicate); // recursive
-    FolderNode *findChildFolderNode(const std::function<bool (FolderNode *)> &predicate) const; // non-recursive
-    FileNode *findChildFileNode(const std::function<bool (FileNode *)> &predicate) const; // non-recursive
+    ProjectNode *findProjectNode(const std::function<bool(const ProjectNode *)> &predicate);
     const QList<Node *> nodes() const;
+    QList<FileNode *> fileNodes() const;
     FileNode *fileNode(const Utils::FilePath &file) const;
+    QList<FolderNode *> folderNodes() const;
     FolderNode *folderNode(const Utils::FilePath &directory) const;
 
     using FolderNodeFactory = std::function<std::unique_ptr<FolderNode>(const Utils::FilePath &)>;
@@ -252,7 +267,7 @@ public:
                        const Utils::FilePath &overrideBaseDir = Utils::FilePath(),
                        const FolderNodeFactory &factory
                        = [](const Utils::FilePath &fn) { return std::make_unique<FolderNode>(fn); });
-    virtual void compress();
+    void compress();
 
     // takes ownership of newNode.
     // Will delete newNode if oldNode is not a child of this node.
@@ -339,7 +354,7 @@ private:
 
     QString m_displayName;
     QString m_addFileFilter;
-    mutable std::variant<QIcon, DirectoryIcon, QString, IconCreator> m_icon;
+    mutable Utils::variant<QIcon, DirectoryIcon, QString, IconCreator> m_icon;
     bool m_showWhenEmpty = false;
 };
 
@@ -368,8 +383,8 @@ public:
     virtual bool addSubProject(const Utils::FilePath &proFile);
     virtual QStringList subProjectFileNamePatterns() const;
     virtual bool removeSubProject(const Utils::FilePath &proFilePath);
-    virtual std::optional<Utils::FilePath> visibleAfterAddFileAction() const {
-        return std::nullopt;
+    virtual Utils::optional<Utils::FilePath> visibleAfterAddFileAction() const {
+        return Utils::nullopt;
     }
 
     bool isFolderNodeType() const override { return false; }

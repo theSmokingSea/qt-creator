@@ -1,10 +1,41 @@
-// Copyright (C) 2020 Uwe Kindler
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-2.1-or-later OR GPL-3.0-or-later
+/****************************************************************************
+**
+** Copyright (C) 2020 Uwe Kindler
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 2.1 or (at your option) any later version.
+** The licenses are as published by the Free Software Foundation
+** and appearing in the file LICENSE.LGPLv21 included in the packaging
+** of this file. Please review the following information to ensure
+** the GNU Lesser General Public License version 2.1 requirements
+** will be met: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "ads_globals.h"
-#include "autohidetab.h"
 #include "dockwidget.h"
 
 #include <QFrame>
@@ -25,16 +56,13 @@ class FloatingDockContainerPrivate;
 class FloatingDragPreview;
 class DockingStateReader;
 class FloatingDragPreviewPrivate;
-class AutoHideSideBar;
-class AutoHideTab;
-struct AutoHideTabPrivate;
-struct AutoHideDockContainerPrivate;
-class AutoHideDockContainer;
 
 /**
- * Container that manages a number of dock areas with single dock widgets or tabified dock widgets
- * in each area. Each window that support docking has a DockContainerWidget. That means the main
- * application window and all floating windows contain a DockContainerWidget instance.
+ * Container that manages a number of dock areas with single dock widgets
+ * or tabified dock widgets in each area.
+ * Each window that support docking has a DockContainerWidget. That means
+ * the main application window and all floating windows contain a
+ * DockContainerWidget instance.
  */
 class ADS_EXPORT DockContainerWidget : public QFrame
 {
@@ -51,11 +79,6 @@ private:
     friend class DockWidget;
     friend class FloatingDragPreview;
     friend class FloatingDragPreviewPrivate;
-    friend AutoHideDockContainer;
-    friend AutoHideTab;
-    friend AutoHideTabPrivate;
-    friend AutoHideDockContainerPrivate;
-    friend AutoHideSideBar;
 
 protected:
     /**
@@ -69,23 +92,9 @@ protected:
     QSplitter *rootSplitter() const;
 
     /**
-     * Creates and initializes a dockwidget auto hide container into the given area. Initializing
-     * inserts the tabs into the side tab widget and hides it
-     * Returns nullptr if you try and insert into an area where the configuration is not enabled
-     */
-    AutoHideDockContainer *createAndSetupAutoHideContainer(SideBarLocation area,
-                                                           DockWidget *dockWidget,
-                                                           int tabIndex = -1);
-
-    /**
      * Helper function for creation of the root splitter
      */
     void createRootSplitter();
-
-    /**
-     * Helper function for creation of the side tab bar widgets
-     */
-    void createSideTabBarWidgets();
 
     /**
      * Drop floating widget into the container
@@ -99,10 +108,7 @@ protected:
      * a nullptr, then the DropArea indicates the drop area in the given
      * TargetAreaWidget
      */
-    void dropWidget(QWidget *widget,
-                    DockWidgetArea dropArea,
-                    DockAreaWidget *targetAreaWidget,
-                    int tabIndex = -1);
+    void dropWidget(QWidget *widget, DockWidgetArea dropArea, DockAreaWidget *targetAreaWidget);
 
     /**
      * Adds the given dock area to this container widget
@@ -117,7 +123,7 @@ protected:
     /**
      * This function replaces the goto construct. Still need to write a good description.
      */
-    void emitAndExit() const;
+    void emitAndExit() const; // TODO rename
 
     /**
      * Saves the state into the given stream
@@ -160,28 +166,6 @@ protected:
     */
     QList<DockWidget *> dockWidgets() const;
 
-    /**
-     * This function forces the dock container widget to update handles of splitters
-     * based on resize modes of dock widgets contained in the container.
-     */
-    void updateSplitterHandles(QSplitter *splitter);
-
-    /**
-     * Registers the given floating widget in the internal list of auto hide widgets
-     */
-    void registerAutoHideWidget(AutoHideDockContainer *autoHideWidget);
-
-    /**
-     * Remove the given auto hide widget from the list of registered auto hide widgets
-     */
-    void removeAutoHideWidget(AutoHideDockContainer *autoHideWidget);
-
-    /**
-     * Handles widget events of auto hide widgets to trigger delayed show
-     * or hide actions for auto hide container on auto hide tab mouse over
-     */
-    void handleAutoHideWidgetEvent(QEvent *e, QWidget *w);
-
 public:
     /**
      * Default Constructor
@@ -193,8 +177,6 @@ public:
      */
     ~DockContainerWidget() override;
 
-    QSize minimumSizeHint() const override;
-
     /**
      * Adds dockwidget into the given area.
      * If DockAreaWidget is not null, then the area parameter indicates the area
@@ -204,8 +186,7 @@ public:
      */
     DockAreaWidget *addDockWidget(DockWidgetArea area,
                                   DockWidget *dockWidget,
-                                  DockAreaWidget *dockAreaWidget = nullptr,
-                                  int index = -1);
+                                  DockAreaWidget *dockAreaWidget = nullptr);
 
     /**
      * Removes dockwidget
@@ -240,18 +221,6 @@ public:
      * If all dock widgets in a dock area are closed, the dock area will be closed
      */
     QList<DockAreaWidget *> openedDockAreas() const;
-
-    /**
-     * Returns a list for all open dock widgets in all open dock areas
-     */
-    QList<DockWidget *> openedDockWidgets() const;
-
-    /**
-     * This function returns true, if the container has open dock areas.
-     * This functions is a little bit faster than calling openedDockAreas().isEmpty()
-     * because it returns as soon as it finds an open dock area
-     */
-    bool hasOpenDockAreas() const;
 
     /**
      * This function returns true if this dock area has only one single
@@ -302,34 +271,6 @@ public:
      */
     void closeOtherAreas(DockAreaWidget *keepOpenArea);
 
-    /**
-     * Returns the side tab widget for the given area
-     */
-    AutoHideSideBar *autoHideSideBar(SideBarLocation area) const;
-
-    /**
-     * Access function for auto hide widgets
-     */
-    QList<AutoHideDockContainer *> autoHideWidgets() const;
-
-    /**
-     * Returns the content rectangle without the autohide side bars
-     */
-    QRect contentRect() const;
-
-    /**
-     * Returns the content rectangle mapped to global space.
-     * The content rectangle is the rectangle of the dock manager widget minus
-     * the auto hide side bars. So that means, it is the geometry of the
-     * internal root splitter mapped to global space.
-     */
-    QRect contentRectGlobal() const;
-
-    /**
-     * Returns the dock manager that owns this container
-     */
-    DockManager *dockManager() const;
-
 signals:
     /**
      * This signal is emitted if one or multiple dock areas has been added to
@@ -337,11 +278,6 @@ signals:
      * If multiple dock areas are inserted, this signal is emitted only once
      */
     void dockAreasAdded();
-
-    /**
-     * This signal is emitted, if a new auto hide widget has been created.
-     */
-    void autoHideWidgetCreated(AutoHideDockContainer *autoHideWidget);
 
     /**
      * This signal is emitted if one or multiple dock areas has been removed

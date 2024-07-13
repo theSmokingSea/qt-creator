@@ -1,14 +1,31 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "futuresynchronizer.h"
 
-#include "qtcassert.h"
-#include "threadutils.h"
-
-/*!
-  \class Utils::FutureSynchronizer
-  \inmodule QtCreator
+/*! \class Utils::FutureSynchronizer
 
   \brief The FutureSynchronizer is an enhanced version of QFutureSynchronizer.
 */
@@ -58,25 +75,11 @@ bool FutureSynchronizer::isCancelOnWait() const
 void FutureSynchronizer::flushFinishedFutures()
 {
     QList<QFuture<void>> newFutures;
-    for (const QFuture<void> &future : std::as_const(m_futures)) {
+    for (const QFuture<void> &future : qAsConst(m_futures)) {
         if (!future.isFinished())
             newFutures.append(future);
     }
     m_futures = newFutures;
-}
-
-Q_GLOBAL_STATIC(FutureSynchronizer, s_futureSynchronizer);
-
-/*!
-    Returns a global FutureSynchronizer.
-    The application should cancel and wait for the tasks in this synchronizer before actually
-    unloading any libraries. This is for example done by the plugin manager in Qt Creator.
-    May only be accessed by the main thread.
-*/
-FutureSynchronizer *futureSynchronizer()
-{
-    QTC_ASSERT(isMainThread(), return nullptr);
-    return s_futureSynchronizer;
 }
 
 } // namespace Utils

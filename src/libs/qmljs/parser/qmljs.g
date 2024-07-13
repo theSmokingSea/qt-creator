@@ -1,5 +1,41 @@
+----------------------------------------------------------------------------
+--
 -- Copyright (C) 2016 The Qt Company Ltd.
--- SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+-- Contact: http://www.qt.io/licensing/
+--
+-- This file is part of the QtQml module of the Qt Toolkit.
+--
+-- $QT_BEGIN_LICENSE:LGPL$
+-- Commercial License Usage
+-- Licensees holding valid commercial Qt licenses may use this file in
+-- accordance with the commercial license agreement provided with the
+-- Software or, alternatively, in accordance with the terms contained in
+-- a written agreement between you and The Qt Company. For licensing terms
+-- and conditions see https://www.qt.io/terms-conditions. For further
+-- information use the contact form at https://www.qt.io/contact-us.
+--
+-- GNU Lesser General Public License Usage
+-- Alternatively, this file may be used under the terms of the GNU Lesser
+-- General Public License version 3 as published by the Free Software
+-- Foundation and appearing in the file LICENSE.LGPL3 included in the
+-- packaging of this file. Please review the following information to
+-- ensure the GNU Lesser General Public License version 3 requirements
+-- will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
+--
+-- GNU General Public License Usage
+-- Alternatively, this file may be used under the terms of the GNU
+-- General Public License version 2.0 or (at your option) the GNU General
+-- Public license version 3 or any later version approved by the KDE Free
+-- Qt Foundation. The licenses are as published by the Free Software
+-- Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+-- included in the packaging of this file. Please review the following
+-- information to ensure the GNU General Public License requirements will
+-- be met: https://www.gnu.org/licenses/gpl-2.0.html and
+-- https://www.gnu.org/licenses/gpl-3.0.html.
+--
+-- $QT_END_LICENSE$
+--
+----------------------------------------------------------------------------
 
 %parser         QmlJSGrammar
 %decl           qmljsparser_p.h
@@ -73,18 +109,7 @@
 %token T_GET "get"
 %token T_SET "set"
 
--- token representing no token
-%token T_NONE
-
 %token T_ERROR
-
--- states for line by line parsing
-%token T_EOL
-%token T_PARTIAL_COMMENT "non closed multiline comment"
-%token T_PARTIAL_SINGLE_QUOTE_STRING_LITERAL "multiline single quote string literal"
-%token T_PARTIAL_DOUBLE_QUOTE_STRING_LITERAL "multiline double quote string literal"
-%token T_PARTIAL_TEMPLATE_HEAD "(template head)"
-%token T_PARTIAL_TEMPLATE_MIDDLE "(template middle)"
 
 --- feed tokens
 %token T_FEED_UI_PROGRAM
@@ -107,9 +132,44 @@
 
 %start TopLevel
 
-/.// Copyright (C) 2016 The Qt Company Ltd.
-// Contact: https://www.qt.io/licensing/
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+/./****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtQml module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
 
 #include "qmljs/parser/qmljsengine_p.h"
 #include "qmljs/parser/qmljslexer_p.h"
@@ -123,9 +183,44 @@
 
 ./
 
-/:// Copyright (C) 2016 The Qt Company Ltd.
-// Contact: https://www.qt.io/licensing/
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-3.0-only OR GPL-2.0-only OR GPL-3.0-only
+/:/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the QtQml module of the Qt Toolkit.
+**
+** $QT_BEGIN_LICENSE:LGPL$
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 3 as published by the Free Software
+** Foundation and appearing in the file LICENSE.LGPL3 included in the
+** packaging of this file. Please review the following information to
+** ensure the GNU Lesser General Public License version 3 requirements
+** will be met: https://www.gnu.org/licenses/lgpl-3.0.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 2.0 or (at your option) the GNU General
+** Public license version 3 or any later version approved by the KDE Free
+** Qt Foundation. The licenses are as published by the Free Software
+** Foundation and appearing in the file LICENSE.GPL2 and LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-2.0.html and
+** https://www.gnu.org/licenses/gpl-3.0.html.
+**
+** $QT_END_LICENSE$
+**
+****************************************************************************/
 
 
 //
@@ -212,7 +307,7 @@ public:
       AST::ExportClause *ExportClause;
       AST::ExportDeclaration *ExportDeclaration;
       AST::TypeAnnotation *TypeAnnotation;
-      AST::TypeArgument *TypeArgument;
+      AST::TypeArgumentList *TypeArgumentList;
       AST::Type *Type;
 
       AST::UiProgram *UiProgram;
@@ -286,7 +381,7 @@ public:
     inline DiagnosticMessage diagnosticMessage() const
     {
         for (const DiagnosticMessage &d : diagnostic_messages) {
-            if (d.isWarning())
+            if (d.kind != Severity::Warning)
                 return d;
         }
 
@@ -351,8 +446,8 @@ protected:
     Value *sym_stack = nullptr;
     int *state_stack = nullptr;
     SourceLocation *location_stack = nullptr;
-    std::vector<QStringView> string_stack;
-    std::vector<QStringView> rawString_stack;
+    QVector<QStringView> string_stack;
+    QVector<QStringView> rawString_stack;
 
     AST::Node *program = nullptr;
 
@@ -379,7 +474,6 @@ protected:
     SavedToken *last_token = nullptr;
 
     int functionNestingLevel = 0;
-    int classNestingLevel = 0;
 
     enum CoverExpressionType {
         CE_Invalid,
@@ -755,7 +849,7 @@ UiVersionSpecifier: T_VERSION_NUMBER T_DOT T_VERSION_NUMBER;
     case $rule_number: {
         const int major = sym(1).dval;
         const int minor = sym(3).dval;
-        if (!QTypeRevision::isValidSegment(major) || !QTypeRevision::isValidSegment(minor)) {
+        if (major < 0  || major >= 255 || minor < 0 || minor >= 255) {
             diagnostic_messages.append(
                     compileError(loc(1),
                     QLatin1String("Invalid version. Version numbers must be >= 0 and < 255.")));
@@ -768,12 +862,11 @@ UiVersionSpecifier: T_VERSION_NUMBER T_DOT T_VERSION_NUMBER;
     } break;
 ./
 
-
 UiVersionSpecifier: T_VERSION_NUMBER;
 /.
     case $rule_number: {
         const int major = sym(1).dval;
-        if (!QTypeRevision::isValidSegment(major)) {
+        if (major < 0 || major >= 255) {
             diagnostic_messages.append(
                     compileError(loc(1),
                     QLatin1String("Invalid major version. Version numbers must be >= 0 and < 255.")));
@@ -1131,10 +1224,10 @@ UiParameterListOpt: UiParameterList;
     } break;
 ./
 
-UiParameterList: QmlIdentifier T_COLON Type;
+UiParameterList: QmlIdentifier T_COLON UiPropertyType;
 /.
     case $rule_number: {
-        AST::UiParameterList *node = new (pool) AST::UiParameterList(sym(3).Type, stringRef(1));
+        AST::UiParameterList *node = new (pool) AST::UiParameterList(sym(3).UiQualifiedId->finish(), stringRef(1));
         node->identifierToken = loc(1);
         node->colonToken = loc(2);
         node->propertyTypeToken = loc(3);
@@ -1142,20 +1235,20 @@ UiParameterList: QmlIdentifier T_COLON Type;
     } break;
 ./
 
-UiParameterList: Type QmlIdentifier;
+UiParameterList: UiPropertyType QmlIdentifier;
 /.
     case $rule_number: {
-        AST::UiParameterList *node = new (pool) AST::UiParameterList(sym(1).Type, stringRef(2));
+        AST::UiParameterList *node = new (pool) AST::UiParameterList(sym(1).UiQualifiedId->finish(), stringRef(2));
         node->propertyTypeToken = loc(1);
         node->identifierToken = loc(2);
         sym(1).Node = node;
     } break;
 ./
 
-UiParameterList: UiParameterList T_COMMA QmlIdentifier T_COLON Type;
+UiParameterList: UiParameterList T_COMMA QmlIdentifier T_COLON UiPropertyType;
 /.
     case $rule_number: {
-        AST::UiParameterList *node = new (pool) AST::UiParameterList(sym(1).UiParameterList, sym(5).Type, stringRef(3));
+        AST::UiParameterList *node = new (pool) AST::UiParameterList(sym(1).UiParameterList, sym(5).UiQualifiedId->finish(), stringRef(3));
         node->propertyTypeToken = loc(5);
         node->commaToken = loc(2);
         node->identifierToken = loc(3);
@@ -1164,10 +1257,10 @@ UiParameterList: UiParameterList T_COMMA QmlIdentifier T_COLON Type;
     } break;
 ./
 
-UiParameterList: UiParameterList T_COMMA Type QmlIdentifier;
+UiParameterList: UiParameterList T_COMMA UiPropertyType QmlIdentifier;
 /.
     case $rule_number: {
-        AST::UiParameterList *node = new (pool) AST::UiParameterList(sym(1).UiParameterList, sym(3).Type, stringRef(4));
+        AST::UiParameterList *node = new (pool) AST::UiParameterList(sym(1).UiParameterList, sym(3).UiQualifiedId->finish(), stringRef(4));
         node->propertyTypeToken = loc(3);
         node->commaToken = loc(2);
         node->identifierToken = loc(4);
@@ -1327,26 +1420,9 @@ UiObjectMemberWithScriptStatement: UiPropertyAttributes UiPropertyType QmlIdenti
     } break;
 ./
 
-UiObjectMemberWithScriptStatement: UiPropertyAttributes T_IDENTIFIER T_LT UiPropertyType T_GT QmlIdentifier T_COLON UiScriptStatement OptionalSemicolon;
-/.
-    case $rule_number: {
-        AST::UiPublicMember *node = new (pool) AST::UiPublicMember(sym(4).UiQualifiedId->finish(), stringRef(6), sym(8).Statement);
-        node->typeModifier = stringRef(2);
-        auto attributes = sym(1).UiPropertyAttributes;
-        if (attributes->isRequired())
-            diagnostic_messages.append(compileError(attributes->requiredToken(), QLatin1String("Required properties with initializer do not make sense."), QtCriticalMsg));
-        node->setAttributes(attributes);
-        node->typeModifierToken = loc(2);
-        node->typeToken = loc(4);
-        node->identifierToken = loc(6);
-        node->colonToken = loc(7);
-        sym(1).Node = node;
-    } break;
-./
-
 UiObjectMember: UiObjectMemberWithScriptStatement;
 
-UiObjectMemberWithArray: UiPropertyAttributes T_IDENTIFIER T_LT UiPropertyType T_GT QmlIdentifier T_COLON ExpressionStatementLookahead T_LBRACKET UiArrayMemberList T_RBRACKET Semicolon;
+UiObjectMemberWithArray: UiPropertyAttributes T_IDENTIFIER T_LT UiPropertyType T_GT QmlIdentifier T_COLON T_LBRACKET UiArrayMemberList T_RBRACKET Semicolon;
 /.
     case $rule_number: {
         AST::UiPublicMember *node = new (pool) AST::UiPublicMember(sym(4).UiQualifiedId->finish(), stringRef(6));
@@ -1364,10 +1440,10 @@ UiObjectMemberWithArray: UiPropertyAttributes T_IDENTIFIER T_LT UiPropertyType T
         propertyName->identifierToken = loc(6);
         propertyName->next = nullptr;
 
-        AST::UiArrayBinding *binding = new (pool) AST::UiArrayBinding(propertyName, sym(10).UiArrayMemberList->finish());
+        AST::UiArrayBinding *binding = new (pool) AST::UiArrayBinding(propertyName, sym(9).UiArrayMemberList->finish());
         binding->colonToken = loc(7);
-        binding->lbracketToken = loc(9);
-        binding->rbracketToken = loc(11);
+        binding->lbracketToken = loc(8);
+        binding->rbracketToken = loc(10);
 
         node->binding = binding;
 
@@ -1455,8 +1531,6 @@ UiObjectMember: T_ENUM T_IDENTIFIER T_LBRACE EnumMemberList T_RBRACE;
     case $rule_number: {
         AST::UiEnumDeclaration *enumDeclaration = new (pool) AST::UiEnumDeclaration(stringRef(2), sym(4).UiEnumMemberList->finish());
         enumDeclaration->enumToken = loc(1);
-        enumDeclaration->identifierToken = loc(2);
-        enumDeclaration->lbraceToken = loc(3);
         enumDeclaration->rbraceToken = loc(5);
         sym(1).Node = enumDeclaration;
         break;
@@ -1497,18 +1571,6 @@ EnumMemberList: T_IDENTIFIER T_EQ T_NUMERIC_LITERAL;
     }
 ./
 
-
-EnumMemberList: T_IDENTIFIER T_EQ T_MINUS T_NUMERIC_LITERAL;
-/.
-    case $rule_number: {
-        AST::UiEnumMemberList *node = new (pool) AST::UiEnumMemberList(stringRef(1), -sym(4).dval);
-        node->memberToken = loc(1);
-        node->valueToken = combine(loc(3), loc(4));
-        sym(1).Node = node;
-        break;
-    }
-./
-
 EnumMemberList: EnumMemberList T_COMMA T_IDENTIFIER;
 /.
     case $rule_number: {
@@ -1525,18 +1587,6 @@ EnumMemberList: EnumMemberList T_COMMA T_IDENTIFIER T_EQ T_NUMERIC_LITERAL;
         AST::UiEnumMemberList *node = new (pool) AST::UiEnumMemberList(sym(1).UiEnumMemberList, stringRef(3), sym(5).dval);
         node->memberToken = loc(3);
         node->valueToken = loc(5);
-        sym(1).Node = node;
-        break;
-    }
-./
-
-
-EnumMemberList: EnumMemberList T_COMMA T_IDENTIFIER T_EQ T_MINUS T_NUMERIC_LITERAL;
-/.
-    case $rule_number: {
-        AST::UiEnumMemberList *node = new (pool) AST::UiEnumMemberList(sym(1).UiEnumMemberList, stringRef(3), -sym(6).dval);
-        node->memberToken = loc(3);
-        node->valueToken = combine(loc(5), loc(6));
         sym(1).Node = node;
         break;
     }
@@ -1575,16 +1625,28 @@ BindingIdentifier: IdentifierReference;
 -- Types
 --------------------------------------------------------------------------------------------------------
 
-Type: UiQualifiedId T_LT SimpleType T_GT;
+TypeArguments: Type;
 /.
     case $rule_number: {
-        sym(1).Type = new (pool) AST::Type(sym(1).UiQualifiedId, sym(3).Type);
+        sym(1).TypeArgumentList = new (pool) AST::TypeArgumentList(sym(1).Type);
     } break;
 ./
 
-Type: SimpleType;
+TypeArguments: TypeArguments T_COMMA Type;
+/.
+    case $rule_number: {
+        sym(1).TypeArgumentList = new (pool) AST::TypeArgumentList(sym(1).TypeArgumentList, sym(3).Type);
+    } break;
+./
 
-SimpleType: T_RESERVED_WORD;
+Type: UiQualifiedId T_LT TypeArguments T_GT;
+/.
+    case $rule_number: {
+        sym(1).Type = new (pool) AST::Type(sym(1).UiQualifiedId, sym(3).TypeArgumentList->finish());
+    } break;
+./
+
+Type: T_RESERVED_WORD;
 /.
     case $rule_number: {
         AST::UiQualifiedId *id = new (pool) AST::UiQualifiedId(stringRef(1));
@@ -1593,22 +1655,10 @@ SimpleType: T_RESERVED_WORD;
     } break;
 ./
 
-SimpleType: UiQualifiedId;
+Type: UiQualifiedId;
 /.
     case $rule_number: {
         sym(1).Type = new (pool) AST::Type(sym(1).UiQualifiedId);
-    } break;
-./
-
-SimpleType: T_VAR;
-/.  case $rule_number: Q_FALLTHROUGH(); ./
-
-SimpleType: T_VOID;
-/.
-    case $rule_number: {
-        AST::UiQualifiedId *id = new (pool) AST::UiQualifiedId(stringRef(1));
-        id->identifierToken = loc(1);
-        sym(1).Type = new (pool) AST::Type(id->finish());
     } break;
 ./
 
@@ -4304,16 +4354,16 @@ ClassDeclaration_Default: ClassDeclaration;
 ClassLBrace: T_LBRACE;
 /.
     case $rule_number: {
-        if (++classNestingLevel == 1)
-            lexer->setStaticIsKeyword(true);
+        lexer->setStaticIsKeyword(true);
     } break;
 ./
 
 ClassRBrace: T_RBRACE;
+/. case $rule_number: ./
+ClassStaticQualifier: T_STATIC;
 /.
     case $rule_number: {
-        if (--classNestingLevel == 0)
-            lexer->setStaticIsKeyword(false);
+        lexer->setStaticIsKeyword(false);
     } break;
 ./
 
@@ -4368,9 +4418,10 @@ ClassElement: MethodDefinition;
     } break;
 ./
 
-ClassElement: T_STATIC MethodDefinition;
+ClassElement: ClassStaticQualifier MethodDefinition;
 /.
     case $rule_number: {
+        lexer->setStaticIsKeyword(true);
         AST::ClassElementList *node = new (pool) AST::ClassElementList(sym(2).PatternProperty, true);
         sym(1).Node = node;
     } break;

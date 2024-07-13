@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -8,6 +30,7 @@
 #include <QComboBox>
 #include <QCheckBox>
 #include <QWizardPage>
+#include <QSharedPointer>
 
 QT_BEGIN_NAMESPACE
 class QFormLayout;
@@ -31,8 +54,8 @@ class CustomWizardFieldPage : public QWizardPage {
 public:
     using FieldList = QList<CustomWizardField>;
 
-    explicit CustomWizardFieldPage(const std::shared_ptr<CustomWizardContext> &ctx,
-                                   const std::shared_ptr<CustomWizardParameters> &parameters,
+    explicit CustomWizardFieldPage(const QSharedPointer<CustomWizardContext> &ctx,
+                                   const QSharedPointer<CustomWizardParameters> &parameters,
                                    QWidget *parent = nullptr);
 
     bool validatePage() override;
@@ -40,7 +63,7 @@ public:
     void cleanupPage() override;
 
     static QMap<QString, QString> replacementMap(const QWizard *w,
-                                                 const std::shared_ptr<CustomWizardContext> &ctx,
+                                                 const QSharedPointer<CustomWizardContext> &ctx,
                                                  const FieldList &f);
 
 protected:
@@ -84,8 +107,8 @@ private:
                               const CustomWizardField &field);
     void addField(const CustomWizardField &f);
 
-    const std::shared_ptr<CustomWizardParameters> m_parameters;
-    const std::shared_ptr<CustomWizardContext> m_context;
+    const QSharedPointer<CustomWizardParameters> m_parameters;
+    const QSharedPointer<CustomWizardContext> m_context;
     QFormLayout *m_formLayout;
     LineEditDataList m_lineEdits;
     TextEditDataList m_textEdits;
@@ -99,8 +122,8 @@ class CustomWizardPage : public CustomWizardFieldPage
     Q_OBJECT
 
 public:
-    explicit CustomWizardPage(const std::shared_ptr<CustomWizardContext> &ctx,
-                              const std::shared_ptr<CustomWizardParameters> &parameters,
+    explicit CustomWizardPage(const QSharedPointer<CustomWizardContext> &ctx,
+                              const QSharedPointer<CustomWizardParameters> &parameters,
                               QWidget *parent = nullptr);
 
     Utils::FilePath filePath() const;

@@ -1,17 +1,40 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "clientcapabilities.h"
 
 namespace LanguageServerProtocol {
 
-std::optional<QList<SymbolKind>> SymbolCapabilities::SymbolKindCapabilities::valueSet() const
+Utils::optional<QList<SymbolKind> > SymbolCapabilities::SymbolKindCapabilities::valueSet() const
 {
-    if (std::optional<QList<int>> array = optionalArray<int>(valueSetKey)) {
-        return std::make_optional(
-            Utils::transform(*array, [](int value) { return static_cast<SymbolKind>(value); }));
+    if (Utils::optional<QList<int>> array = optionalArray<int>(valueSetKey)) {
+        return Utils::make_optional(Utils::transform(*array, [] (int value) {
+            return static_cast<SymbolKind>(value);
+        }));
     }
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
 void SymbolCapabilities::SymbolKindCapabilities::setValueSet(const QList<SymbolKind> &valueSet)
@@ -19,62 +42,49 @@ void SymbolCapabilities::SymbolKindCapabilities::setValueSet(const QList<SymbolK
     insert(valueSetKey, enumArrayToJsonArray<SymbolKind>(valueSet));
 }
 
-std::optional<QList<SymbolTag> > SymbolCapabilities::SymbolTagCapabilities::valueSet() const
-{
-    if (std::optional<QList<int>> array = optionalArray<int>(valueSetKey)) {
-        return std::make_optional(
-            Utils::transform(*array, [](int value) { return static_cast<SymbolTag>(value); }));
-    }
-    return std::nullopt;
-}
-
-void SymbolCapabilities::SymbolTagCapabilities::setValueSet(const QList<SymbolTag> &valueSet)
-{
-    insert(valueSetKey, enumArrayToJsonArray<SymbolTag>(valueSet));
-}
-
 WorkspaceClientCapabilities::WorkspaceClientCapabilities()
 {
     setWorkspaceFolders(true);
 }
 
-std::optional<std::variant<bool, QJsonObject>> SemanticTokensClientCapabilities::Requests::range()
+Utils::optional<Utils::variant<bool, QJsonObject>> SemanticTokensClientCapabilities::Requests::range()
     const
 {
-    using RetType = std::variant<bool, QJsonObject>;
+    using RetType = Utils::variant<bool, QJsonObject>;
     const QJsonValue &rangeOptions = value(rangeKey);
     if (rangeOptions.isBool())
         return RetType(rangeOptions.toBool());
     if (rangeOptions.isObject())
         return RetType(rangeOptions.toObject());
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
 void SemanticTokensClientCapabilities::Requests::setRange(
-    const std::variant<bool, QJsonObject> &range)
+    const Utils::variant<bool, QJsonObject> &range)
 {
     insertVariant<bool, QJsonObject>(rangeKey, range);
 }
 
-std::optional<std::variant<bool, FullSemanticTokenOptions>>
+Utils::optional<Utils::variant<bool, FullSemanticTokenOptions>>
 SemanticTokensClientCapabilities::Requests::full() const
 {
-    using RetType = std::variant<bool, FullSemanticTokenOptions>;
+    using RetType = Utils::variant<bool, FullSemanticTokenOptions>;
     const QJsonValue &fullOptions = value(fullKey);
     if (fullOptions.isBool())
         return RetType(fullOptions.toBool());
     if (fullOptions.isObject())
         return RetType(FullSemanticTokenOptions(fullOptions.toObject()));
-    return std::nullopt;
+    return Utils::nullopt;
 }
 
 void SemanticTokensClientCapabilities::Requests::setFull(
-    const std::variant<bool, FullSemanticTokenOptions> &full)
+    const Utils::variant<bool, FullSemanticTokenOptions> &full)
 {
     insertVariant<bool, FullSemanticTokenOptions>(fullKey, full);
 }
 
-std::optional<SemanticTokensClientCapabilities> TextDocumentClientCapabilities::semanticTokens() const
+Utils::optional<SemanticTokensClientCapabilities> TextDocumentClientCapabilities::semanticTokens()
+    const
 {
     return optionalValue<SemanticTokensClientCapabilities>(semanticTokensKey);
 }
@@ -89,48 +99,6 @@ bool SemanticTokensClientCapabilities::isValid() const
 {
     return contains(requestsKey) && contains(tokenTypesKey) && contains(tokenModifiersKey)
            && contains(formatsKey);
-}
-
-const char resourceOperationCreate[] = "create";
-const char resourceOperationRename[] = "rename";
-const char resourceOperationDelete[] = "delete";
-
-std::optional<QList<WorkspaceClientCapabilities::WorkspaceEditCapabilities::ResourceOperationKind>>
-WorkspaceClientCapabilities::WorkspaceEditCapabilities::resourceOperations() const
-{
-    if (!contains(resourceOperationsKey))
-        return std::nullopt;
-    QList<ResourceOperationKind> result;
-    for (const QJsonValue &value : this->value(resourceOperationsKey).toArray()) {
-        const QString str = value.toString();
-        if (str == resourceOperationCreate)
-            result << ResourceOperationKind::Create;
-        else if (str == resourceOperationRename)
-            result << ResourceOperationKind::Rename;
-        else if (str == resourceOperationDelete)
-            result << ResourceOperationKind::Delete;
-    }
-    return result;
-}
-
-void WorkspaceClientCapabilities::WorkspaceEditCapabilities::setResourceOperations(
-    const QList<ResourceOperationKind> &resourceOperations)
-{
-    QJsonArray array;
-    for (const auto &kind : resourceOperations) {
-        switch (kind) {
-        case ResourceOperationKind::Create:
-            array << resourceOperationCreate;
-            break;
-        case ResourceOperationKind::Rename:
-            array << resourceOperationRename;
-            break;
-        case ResourceOperationKind::Delete:
-            array << resourceOperationDelete;
-            break;
-        }
-    }
-    insert(resourceOperationsKey, array);
 }
 
 } // namespace LanguageServerProtocol

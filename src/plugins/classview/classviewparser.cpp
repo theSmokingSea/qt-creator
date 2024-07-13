@@ -1,9 +1,39 @@
-// Copyright (C) 2016 Denis Mingulov
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Denis Mingulov
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "classviewparser.h"
+#include "classviewconstants.h"
+#include "classviewutils.h"
 
+// cplusplus shared library. the same folder (cplusplus)
+#include <cplusplus/Symbol.h>
+
+// other
 #include <cppeditor/cppmodelmanager.h>
+#include <utils/algorithm.h>
+#include <utils/qtcassert.h>
 
 #include <QElapsedTimer>
 #include <QDebug>
@@ -122,7 +152,7 @@ ParserTreeItem::ConstPtr Parser::parse()
         const FilePath projectPath = it.key();
         const SymbolInformation projectInfo = { projectCache.projectName, projectPath.toString() };
         ParserTreeItem::ConstPtr item = getCachedOrParseProjectTree(projectPath, projectCache.fileNames);
-        if (!item)
+        if (item.isNull())
             continue;
         projectTrees.insert(projectInfo, item);
     }
@@ -159,7 +189,7 @@ ParserTreeItem::ConstPtr Parser::getParseProjectTree(const FilePath &projectPath
         revision += doc->revision();
 
         const ParserTreeItem::ConstPtr docTree = getCachedOrParseDocumentTree(doc);
-        if (!docTree)
+        if (docTree.isNull())
             continue;
         docTrees.append(docTree);
     }
@@ -185,7 +215,7 @@ ParserTreeItem::ConstPtr Parser::getCachedOrParseProjectTree(const FilePath &pro
                                                              const QSet<FilePath> &filesInProject)
 {
     const auto it = d->m_projectCache.constFind(projectPath);
-    if (it != d->m_projectCache.constEnd() && it.value().tree) {
+    if (it != d->m_projectCache.constEnd() && !it.value().tree.isNull()) {
         // calculate project's revision
         unsigned revision = 0;
         for (const FilePath &fileInProject : filesInProject) {
@@ -215,7 +245,7 @@ ParserTreeItem::ConstPtr Parser::getParseDocumentTree(const CPlusPlus::Document:
     if (doc.isNull())
         return ParserTreeItem::ConstPtr();
 
-    const FilePath fileName = doc->filePath();
+    const FilePath fileName = FilePath::fromString(doc->fileName());
 
     ParserTreeItem::ConstPtr itemPtr = ParserTreeItem::parseDocument(doc);
 
@@ -235,8 +265,9 @@ ParserTreeItem::ConstPtr Parser::getCachedOrParseDocumentTree(const CPlusPlus::D
     if (doc.isNull())
         return ParserTreeItem::ConstPtr();
 
-    const auto it = d->m_documentCache.constFind(doc->filePath());
-    if (it != d->m_documentCache.constEnd() && it.value().tree
+    const QString &fileName = doc->fileName();
+    const auto it = d->m_documentCache.constFind(FilePath::fromString(fileName));
+    if (it != d->m_documentCache.constEnd() && !it.value().tree.isNull()
             && it.value().treeRevision == doc->revision()) {
         return it.value().tree;
     }
@@ -250,7 +281,7 @@ ParserTreeItem::ConstPtr Parser::getCachedOrParseDocumentTree(const CPlusPlus::D
 
 void Parser::updateDocuments(const QSet<FilePath> &documentPaths)
 {
-    updateDocumentsFromSnapshot(documentPaths, CppEditor::CppModelManager::snapshot());
+    updateDocumentsFromSnapshot(documentPaths, CppEditor::CppModelManager::instance()->snapshot());
 }
 
 void Parser::updateDocumentsFromSnapshot(const QSet<FilePath> &documentPaths,
@@ -293,7 +324,7 @@ void Parser::resetData(const QHash<FilePath, QPair<QString, FilePaths>> &project
     d->m_projectCache.clear();
     d->m_documentCache.clear();
 
-    const CPlusPlus::Snapshot &snapshot = CppEditor::CppModelManager::snapshot();
+    const CPlusPlus::Snapshot &snapshot = CppEditor::CppModelManager::instance()->snapshot();
     for (auto it = projects.cbegin(); it != projects.cend(); ++it) {
         const auto projectData = it.value();
         QSet<FilePath> commonFiles;
@@ -313,7 +344,7 @@ void Parser::resetData(const QHash<FilePath, QPair<QString, FilePaths>> &project
 void Parser::addProject(const FilePath &projectPath, const QString &projectName,
                         const FilePaths &filesInProject)
 {
-    const CPlusPlus::Snapshot &snapshot = CppEditor::CppModelManager::snapshot();
+    const CPlusPlus::Snapshot &snapshot = CppEditor::CppModelManager::instance()->snapshot();
     QSet<FilePath> commonFiles;
     for (const auto &fileInProject : filesInProject) {
         CPlusPlus::Document::Ptr doc = snapshot.document(fileInProject);

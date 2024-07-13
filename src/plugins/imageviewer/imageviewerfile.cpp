@@ -1,31 +1,50 @@
-// Copyright (C) 2016 Denis Mingulov.
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Denis Mingulov.
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "imageviewerfile.h"
-
+#include "imageviewer.h"
 #include "imageviewerconstants.h"
-#include "imageviewertr.h"
 
 #include <coreplugin/editormanager/documentmodel.h>
-#include <coreplugin/editormanager/ieditor.h>
-
-#include <utils/algorithm.h>
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
 #include <utils/mimeutils.h>
 #include <utils/qtcassert.h>
 
+#include <QFileInfo>
 #include <QGraphicsPixmapItem>
+#ifndef QT_NO_SVG
+#include <QGraphicsSvgItem>
+#endif
 #include <QImageReader>
 #include <QMovie>
 #include <QPainter>
 #include <QPixmap>
 
-#ifndef QT_NO_SVG
-#include <QGraphicsSvgItem>
-#endif
-
-namespace ImageViewer::Internal {
+namespace ImageViewer {
+namespace Internal {
 
 class MovieItem : public QObject, public QGraphicsPixmapItem
 {
@@ -84,7 +103,7 @@ Core::IDocument::OpenResult ImageViewerFile::openImpl(QString *errorString,
     // if it is impossible to recognize a file format - file will not be open correctly
     if (format.isEmpty()) {
         if (errorString)
-            *errorString = Tr::tr("Image format not supported.");
+            *errorString = tr("Image format not supported.");
         return OpenResult::CannotHandle;
     }
 
@@ -96,7 +115,7 @@ Core::IDocument::OpenResult ImageViewerFile::openImpl(QString *errorString,
             delete m_tempSvgItem;
             m_tempSvgItem = nullptr;
             if (errorString)
-                *errorString = Tr::tr("Failed to read SVG image.");
+                *errorString = tr("Failed to read SVG image.");
             return OpenResult::CannotHandle;
         }
         m_type = TypeSvg;
@@ -109,19 +128,31 @@ Core::IDocument::OpenResult ImageViewerFile::openImpl(QString *errorString,
         m_movie->jumpToNextFrame();
         if (!m_movie->isValid()) {
             if (errorString)
-                *errorString = Tr::tr("Failed to read image.");
+                *errorString = tr("Failed to read image.");
             delete m_movie;
             m_movie = nullptr;
             return OpenResult::CannotHandle;
         }
         m_type = TypeMovie;
+        m_movie->setCacheMode(QMovie::CacheAll);
+        connect(
+            m_movie,
+            &QMovie::finished,
+            m_movie,
+            [this] {
+                if (m_movie->isValid())
+                    m_movie->start();
+            },
+            Qt::QueuedConnection);
         connect(m_movie, &QMovie::resized, this, &ImageViewerFile::imageSizeChanged);
-        connect(m_movie, &QMovie::stateChanged, this, &ImageViewerFile::movieStateChanged);
+        m_movie->start();
+        m_isPaused = false; // force update
+        setPaused(true);
     } else {
         m_pixmap = new QPixmap(fileName);
         if (m_pixmap->isNull()) {
             if (errorString)
-                *errorString = Tr::tr("Failed to read image.");
+                *errorString = tr("Failed to read image.");
             delete m_pixmap;
             m_pixmap = nullptr;
             return OpenResult::CannotHandle;
@@ -157,9 +188,18 @@ bool ImageViewerFile::reload(QString *errorString,
     return success;
 }
 
-QMovie *ImageViewerFile::movie() const
+bool ImageViewerFile::isPaused() const
 {
-    return m_movie;
+    return m_isPaused;
+}
+
+void ImageViewerFile::setPaused(bool paused)
+{
+    if (!m_movie || m_isPaused == paused)
+        return;
+    m_isPaused = paused;
+    m_movie->setPaused(paused);
+    emit isPausedChanged(m_isPaused);
 }
 
 QGraphicsItem *ImageViewerFile::createGraphicsItem() const
@@ -200,13 +240,16 @@ ImageViewerFile::ImageType ImageViewerFile::type() const
 
 void ImageViewerFile::updateVisibility()
 {
-    if (!m_movie || m_movie->state() != QMovie::Running)
+    if (!m_movie || m_isPaused)
         return;
-    const bool anyVisible = Utils::anyOf(Core::DocumentModel::editorsForDocument(this),
-                                           [] (Core::IEditor *editor)
-                                           { return editor->widget()->isVisible(); });
-    if (!anyVisible)
-        m_movie->setPaused(true);
+    bool visible = false;
+    foreach (Core::IEditor *editor, Core::DocumentModel::editorsForDocument(this)) {
+        if (editor->widget()->isVisible()) {
+            visible = true;
+            break;
+        }
+    }
+    m_movie->setPaused(!visible);
 }
 
 void ImageViewerFile::cleanUp()
@@ -222,4 +265,5 @@ void ImageViewerFile::cleanUp()
     m_type = TypeInvalid;
 }
 
-} // ImageViewer::Internal
+} // namespace Internal
+} // namespace ImageViewer

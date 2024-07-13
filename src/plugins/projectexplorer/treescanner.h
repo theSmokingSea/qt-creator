@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Alexander Drozdov.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Alexander Drozdov.
+** Contact: Alexander Drozdov (adrozdoff@gmail.com)
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -31,7 +53,7 @@ public:
     };
     using Future = QFuture<Result>;
     using FutureWatcher = QFutureWatcher<Result>;
-    using Promise = QPromise<Result>;
+    using FutureInterface = QFutureInterface<Result>;
 
     using FileFilter = std::function<bool(const Utils::MimeType &, const Utils::FilePath &)>;
     using FileTypeFactory = std::function<ProjectExplorer::FileType(const Utils::MimeType &, const Utils::FilePath &)>;
@@ -44,9 +66,6 @@ public:
 
     // Setup filter for ignored files
     void setFilter(FileFilter filter);
-
-    // Setup dir filters for scanned folders
-    void setDirFilter(QDir::Filters dirFilter);
 
     // Setup factory for file types
     void setTypeFactory(FileTypeFactory factory);
@@ -72,15 +91,11 @@ signals:
     void finished();
 
 private:
-    static void scanForFiles(Promise &fi,
-        const Utils::FilePath &directory,
-        const FileFilter &filter,
-        QDir::Filters dirFilter,
-        const FileTypeFactory &factory);
+    static void scanForFiles(FutureInterface &fi, const Utils::FilePath &directory,
+                             const FileFilter &filter, const FileTypeFactory &factory);
 
 private:
     FileFilter m_filter;
-    QDir::Filters m_dirFilter = QDir::AllEntries | QDir::NoDotAndDotDot;
     FileTypeFactory m_factory;
 
     FutureWatcher m_futureWatcher;

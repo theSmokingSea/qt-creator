@@ -1,10 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "panelswidget.h"
 
 #include <coreplugin/icore.h>
-#include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 #include <utils/styledbar.h>
 #include <utils/stylehelper.h>
@@ -32,7 +53,7 @@ const int BELOW_CONTENTS_MARGIN = 16;
 // PanelsWidget
 ///
 
-PanelsWidget::PanelsWidget(QWidget *parent, bool addStretch) : QWidget(parent)
+PanelsWidget::PanelsWidget(QWidget *parent) : QWidget(parent)
 {
     m_root = new QWidget(nullptr);
     m_root->setFocusPolicy(Qt::NoFocus);
@@ -53,8 +74,7 @@ PanelsWidget::PanelsWidget(QWidget *parent, bool addStretch) : QWidget(parent)
     m_layout->setSpacing(0);
 
     topLayout->addLayout(m_layout);
-    if (addStretch)
-        topLayout->addStretch(1);
+    topLayout->addStretch(100);
 
     auto layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
@@ -73,7 +93,7 @@ PanelsWidget::PanelsWidget(const QString &displayName, QWidget *widget)
 }
 
 PanelsWidget::PanelsWidget(const QString &displayName, ProjectSettingsWidget *widget)
-    : PanelsWidget(nullptr, !widget->expanding())
+    : PanelsWidget(nullptr)
 {
     addPropertiesPanel(displayName);
     addGlobalSettingsProperties(widget);
@@ -100,9 +120,18 @@ void PanelsWidget::addPropertiesPanel(const QString &displayName)
     auto nameLabel = new QLabel(m_root);
     nameLabel->setText(displayName);
     nameLabel->setContentsMargins(0, ABOVE_HEADING_MARGIN, 0, 0);
-    nameLabel->setFont(StyleHelper::uiFont(StyleHelper::UiElementH4));
+    QFont f = nameLabel->font();
+    f.setBold(true);
+    f.setPointSizeF(f.pointSizeF() * 1.6);
+    nameLabel->setFont(f);
     m_layout->addWidget(nameLabel);
-    m_layout->addWidget(Layouting::createHr());
+
+    // line:
+    auto line = new QFrame(m_root);
+    line->setFrameShape(QFrame::HLine);
+    line->setForegroundRole(QPalette::Midlight);
+    line->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_layout->addWidget(line);
 }
 
 void PanelsWidget::addWidget(QWidget *widget)
@@ -153,7 +182,10 @@ void PanelsWidget::addGlobalSettingsProperties(ProjectSettingsWidget *widget)
     }
     horizontalLayout->addStretch(1);
     m_layout->addLayout(horizontalLayout);
-    m_layout->addWidget(Layouting::createHr());
+
+    auto separator = new QFrame(m_root);
+    separator->setFrameShape(QFrame::HLine);
+    m_layout->addWidget(separator);
 }
 
 } // ProjectExplorer

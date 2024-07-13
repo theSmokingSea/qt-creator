@@ -1,15 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "variablechooser.h"
 
 #include "fancylineedit.h"
 #include "headerviewstretcher.h" // IconButton
 #include "macroexpander.h"
-#include "qtcassert.h"
 #include "treemodel.h"
+#include "qtcassert.h"
 #include "utilsicons.h"
-#include "utilstr.h"
 
 #include <QApplication>
 #include <QHeaderView>
@@ -81,11 +102,11 @@ public:
 
     void createIconButton()
     {
-        m_iconButton = new FancyIconButton;
+        m_iconButton = new IconButton;
         m_iconButton->setIcon(Icons::REPLACE.icon());
-        m_iconButton->setToolTip(Tr::tr("Insert Variable"));
+        m_iconButton->setToolTip(VariableChooser::tr("Insert Variable"));
         m_iconButton->hide();
-        connect(m_iconButton.data(), &QAbstractButton::clicked,
+        connect(m_iconButton.data(), static_cast<void(QAbstractButton::*)(bool)>(&QAbstractButton::clicked),
                 this, &VariableChooserPrivate::updatePositionAndShow);
     }
 
@@ -108,7 +129,7 @@ public:
     QPointer<QLineEdit> m_lineEdit;
     QPointer<QTextEdit> m_textEdit;
     QPointer<QPlainTextEdit> m_plainTextEdit;
-    QPointer<FancyIconButton> m_iconButton;
+    QPointer<IconButton> m_iconButton;
 
     FancyLineEdit *m_variableFilter;
     VariableTreeView *m_variableTree;
@@ -189,7 +210,7 @@ public:
             const QString value = m_expander->value(m_variable).toHtmlEscaped();
             if (!value.isEmpty())
                 description += QLatin1String("<p>")
-                        + Tr::tr("Current Value: %1").arg(value);
+                        + VariableChooser::tr("Current Value: %1").arg(value);
             return description;
         }
 
@@ -213,17 +234,17 @@ void VariableTreeView::contextMenuEvent(QContextMenuEvent *ev)
     QAction *insertExpandedAction = nullptr;
 
     if (unexpandedText.isEmpty()) {
-        insertUnexpandedAction = menu.addAction(Tr::tr("Insert Unexpanded Value"));
+        insertUnexpandedAction = menu.addAction(VariableChooser::tr("Insert Unexpanded Value"));
         insertUnexpandedAction->setEnabled(false);
     } else {
-        insertUnexpandedAction = menu.addAction(Tr::tr("Insert \"%1\"").arg(unexpandedText));
+        insertUnexpandedAction = menu.addAction(VariableChooser::tr("Insert \"%1\"").arg(unexpandedText));
     }
 
     if (expandedText.isEmpty()) {
-        insertExpandedAction = menu.addAction(Tr::tr("Insert Expanded Value"));
+        insertExpandedAction = menu.addAction(VariableChooser::tr("Insert Expanded Value"));
         insertExpandedAction->setEnabled(false);
     } else {
-        insertExpandedAction = menu.addAction(Tr::tr("Insert \"%1\"").arg(expandedText));
+        insertExpandedAction = menu.addAction(VariableChooser::tr("Insert \"%1\"").arg(expandedText));
     }
 
 
@@ -251,7 +272,7 @@ VariableChooserPrivate::VariableChooserPrivate(VariableChooser *parent)
       m_variableTree(nullptr),
       m_variableDescription(nullptr)
 {
-    m_defaultDescription = Tr::tr("Select a variable to insert.");
+    m_defaultDescription = VariableChooser::tr("Select a variable to insert.");
 
     m_variableFilter = new FancyLineEdit(q);
     m_variableTree = new VariableTreeView(q, this);
@@ -372,12 +393,12 @@ VariableChooser::VariableChooser(QWidget *parent) :
     QWidget(parent),
     d(new VariableChooserPrivate(this))
 {
-    setWindowTitle(Tr::tr("Variables"));
+    setWindowTitle(tr("Variables"));
     setWindowFlags(Qt::Tool);
     setFocusPolicy(Qt::StrongFocus);
     setFocusProxy(d->m_variableTree);
     setGeometry(QRect(0, 0, 400, 500));
-    addMacroExpanderProvider([] { return globalMacroExpander(); });
+    addMacroExpanderProvider([]() { return globalMacroExpander(); });
 }
 
 /*!
@@ -489,12 +510,11 @@ void VariableChooserPrivate::updateCurrentEditor(QWidget *old, QWidget *widget)
     m_currentVariableName = widget->property(kVariableNameProperty).toByteArray();
     bool supportsVariables = chooser == q;
     if (auto lineEdit = qobject_cast<QLineEdit *>(widget))
-        m_lineEdit = (supportsVariables && !lineEdit->isReadOnly() ? lineEdit : nullptr);
+        m_lineEdit = (supportsVariables ? lineEdit : nullptr);
     else if (auto textEdit = qobject_cast<QTextEdit *>(widget))
-        m_textEdit = (supportsVariables && !textEdit->isReadOnly() ? textEdit : nullptr);
+        m_textEdit = (supportsVariables ? textEdit : nullptr);
     else if (auto plainTextEdit = qobject_cast<QPlainTextEdit *>(widget))
-        m_plainTextEdit = (supportsVariables && !plainTextEdit->isReadOnly() ?
-                               plainTextEdit : nullptr);
+        m_plainTextEdit = (supportsVariables ? plainTextEdit : nullptr);
 
     QWidget *current = currentWidget();
     if (current != previousWidget) {

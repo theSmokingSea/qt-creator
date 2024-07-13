@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "fancytabwidget.h"
 
@@ -7,13 +29,13 @@
 #include "fancyactionbar.h"
 
 #include <utils/hostosinfo.h>
-#include <utils/layoutbuilder.h>
 #include <utils/qtcassert.h>
 #include <utils/styledbar.h>
 #include <utils/stylehelper.h>
 #include <utils/theme/theme.h>
 
 #include <QDebug>
+#include <QHBoxLayout>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPixmapCache>
@@ -68,12 +90,14 @@ QSize FancyTabBar::tabSizeHint(bool minimum) const
                     Core::Constants::MODEBAR_ICONSONLY_BUTTON_SIZE / (minimum ? 3 : 1)};
     }
 
-    const QFont boldFont = StyleHelper::uiFont(StyleHelper::UiElementCaptionStrong);
+    QFont boldFont(font());
+    boldFont.setPointSizeF(StyleHelper::sidebarFontSize());
+    boldFont.setBold(true);
     const QFontMetrics fm(boldFont);
     const int spacing = 8;
     const int width = 60 + spacing + 2;
     int maxLabelwidth = 0;
-    for (auto tab : std::as_const(m_tabs)) {
+    for (auto tab : qAsConst(m_tabs)) {
         const int width = fm.horizontalAdvance(tab->text);
         if (width > maxLabelwidth)
             maxLabelwidth = width;
@@ -91,37 +115,25 @@ void FancyTabBar::paintEvent(QPaintEvent *event)
         p.fillRect(event->rect(), StyleHelper::baseColor());
     }
 
-    int visibleIndex = 0;
-    int visibleCurrentIndex = -1;
-    for (int i = 0; i < count(); ++i) {
-        if (!m_tabs.at(i)->visible)
-            continue;
+    for (int i = 0; i < count(); ++i)
         if (i != currentIndex())
-            paintTab(&p, i, visibleIndex);
-        else
-            visibleCurrentIndex = visibleIndex;
-        ++visibleIndex;
-    }
+            paintTab(&p, i);
 
     // paint active tab last, since it overlaps the neighbors
     if (currentIndex() != -1)
-        paintTab(&p, currentIndex(), visibleCurrentIndex);
+        paintTab(&p, currentIndex());
 }
 
 // Handle hover events for mouse fade ins
 void FancyTabBar::mouseMoveEvent(QMouseEvent *event)
 {
     int newHover = -1;
-    int visibleIndex = 0;
     for (int i = 0; i < count(); ++i) {
-        if (!m_tabs.at(i)->visible)
-            continue;
-        const QRect area = tabRect(visibleIndex);
+        const QRect area = tabRect(i);
         if (area.contains(event->pos())) {
             newHover = i;
             break;
         }
-        ++visibleIndex;
     }
     if (newHover == m_hoverIndex)
         return;
@@ -133,7 +145,7 @@ void FancyTabBar::mouseMoveEvent(QMouseEvent *event)
 
     if (validIndex(m_hoverIndex)) {
         m_tabs[m_hoverIndex]->fadeIn();
-        m_hoverRect = tabRect(visibleIndex);
+        m_hoverRect = tabRect(m_hoverIndex);
     }
 }
 
@@ -152,7 +164,7 @@ bool FancyTabBar::event(QEvent *event)
 }
 
 // Resets hover animation on mouse enter
-void FancyTabBar::enterEvent(QEnterEvent *event)
+void FancyTabBar::enterEvent(EnterEvent *event)
 {
     Q_UNUSED(event)
     m_hoverRect = QRect();
@@ -165,7 +177,7 @@ void FancyTabBar::leaveEvent(QEvent *event)
     Q_UNUSED(event)
     m_hoverIndex = -1;
     m_hoverRect = QRect();
-    for (auto tab : std::as_const(m_tabs))
+    for (auto tab : qAsConst(m_tabs))
         tab->fadeOut();
 }
 
@@ -181,60 +193,43 @@ QSize FancyTabBar::minimumSizeHint() const
     return {sh.width(), sh.height() * int(m_tabs.count())};
 }
 
-QRect FancyTabBar::tabRect(int visibleIndex) const
+QRect FancyTabBar::tabRect(int index) const
 {
     QSize sh = tabSizeHint();
 
     if (sh.height() * m_tabs.count() > height())
         sh.setHeight(height() / m_tabs.count());
 
-    return {0, visibleIndex * sh.height(), sh.width(), sh.height()};
-}
-
-int FancyTabBar::visibleIndex(int index) const
-{
-    int vIndex = 0;
-    for (int i = 0; i < m_tabs.size(); ++i) {
-        if (i == index)
-            return vIndex;
-        if (m_tabs.at(i)->visible)
-            ++vIndex;
-    }
-    return vIndex;
+    return {0, index * sh.height(), sh.width(), sh.height()};
 }
 
 void FancyTabBar::mousePressEvent(QMouseEvent *event)
 {
     event->accept();
-    int visibleIndex = 0;
     for (int index = 0; index < m_tabs.count(); ++index) {
-        if (!m_tabs.at(index)->visible)
-            continue;
-        const QRect rect = tabRect(visibleIndex);
+        const QRect rect = tabRect(index);
         if (rect.contains(event->pos())) {
-            if (isTabEnabled(index) && event->button() == Qt::LeftButton) {
+            if (isTabEnabled(index)) {
                 if (m_tabs.at(index)->hasMenu
-                    && (!m_iconsOnly && rect.right() - event->pos().x() <= kMenuButtonWidth)) {
-                    // menu arrow clicked
+                    && ((!m_iconsOnly && rect.right() - event->pos().x() <= kMenuButtonWidth)
+                        || event->button() == Qt::RightButton)) {
+                    // menu arrow clicked or right-click
                     emit menuTriggered(index, event);
                 } else {
                     if (index != m_currentIndex) {
                         emit currentAboutToChange(index);
                         m_currentIndex = index;
                         update();
-                        emit currentChanged(m_currentIndex);
+                        // update tab bar before showing widget
+                        QMetaObject::invokeMethod(this, [this]() {
+                            emit currentChanged(m_currentIndex);
+                        }, Qt::QueuedConnection);
                     }
                 }
-            } else if (event->button() == Qt::RightButton) {
-                emit menuTriggered(index, event);
             }
-            return;
+            break;
         }
-        ++visibleIndex;
     }
-    // not in a mode button
-    if (event->button() == Qt::RightButton)
-        emit menuTriggered(-1, event);
 }
 
 static void paintSelectedTabBackground(QPainter *painter, const QRect &spanRect)
@@ -304,7 +299,7 @@ static void paintIcon(QPainter *painter, const QRect &rect,
         painter->setOpacity(1.0);
         QRect accentRect = rect;
         accentRect.setWidth(2);
-        painter->fillRect(accentRect, creatorColor(Theme::IconsBaseColor));
+        painter->fillRect(accentRect, creatorTheme()->color(Theme::IconsBaseColor));
     }
 }
 
@@ -312,7 +307,9 @@ static void paintIconAndText(QPainter *painter, const QRect &rect,
                              const QIcon &icon, const QString &text,
                              bool enabled, bool selected)
 {
-    const QFont boldFont = StyleHelper::uiFont(StyleHelper::UiElementCaptionStrong);
+    QFont boldFont(painter->font());
+    boldFont.setPointSizeF(StyleHelper::sidebarFontSize());
+    boldFont.setBold(true);
     painter->setFont(boldFont);
 
     const bool drawIcon = rect.height() > 36;
@@ -334,16 +331,16 @@ static void paintIconAndText(QPainter *painter, const QRect &rect,
     if (selected && creatorTheme()->flag(Theme::FlatToolBars)) {
         QRect accentRect = rect;
         accentRect.setWidth(2);
-        painter->fillRect(accentRect, creatorColor(Theme::IconsBaseColor));
+        painter->fillRect(accentRect, creatorTheme()->color(Theme::IconsBaseColor));
     }
     if (enabled) {
         painter->setPen(
-            selected ? creatorColor(Theme::FancyTabWidgetEnabledSelectedTextColor)
-                     : creatorColor(Theme::FancyTabWidgetEnabledUnselectedTextColor));
+            selected ? creatorTheme()->color(Theme::FancyTabWidgetEnabledSelectedTextColor)
+                     : creatorTheme()->color(Theme::FancyTabWidgetEnabledUnselectedTextColor));
     } else {
         painter->setPen(
-            selected ? creatorColor(Theme::FancyTabWidgetDisabledSelectedTextColor)
-                     : creatorColor(Theme::FancyTabWidgetDisabledUnselectedTextColor));
+            selected ? creatorTheme()->color(Theme::FancyTabWidgetDisabledSelectedTextColor)
+                     : creatorTheme()->color(Theme::FancyTabWidgetDisabledUnselectedTextColor));
     }
 
     painter->translate(0, -1);
@@ -354,7 +351,7 @@ static void paintIconAndText(QPainter *painter, const QRect &rect,
     painter->drawText(tabTextRect, textFlags, text);
 }
 
-void FancyTabBar::paintTab(QPainter *painter, int tabIndex, int visibleIndex) const
+void FancyTabBar::paintTab(QPainter *painter, int tabIndex) const
 {
     if (!validIndex(tabIndex)) {
         qWarning("invalid index");
@@ -363,14 +360,14 @@ void FancyTabBar::paintTab(QPainter *painter, int tabIndex, int visibleIndex) co
     painter->save();
 
     const FancyTab *tab = m_tabs.at(tabIndex);
-    const QRect rect = tabRect(visibleIndex);
+    const QRect rect = tabRect(tabIndex);
     const bool selected = (tabIndex == m_currentIndex);
     const bool enabled = isTabEnabled(tabIndex);
 
     if (selected) {
         if (creatorTheme()->flag(Theme::FlatToolBars)) {
             // background color of a fancy tab that is active
-            painter->fillRect(rect, creatorColor(Theme::FancyTabBarSelectedBackgroundColor));
+            painter->fillRect(rect, creatorTheme()->color(Theme::FancyTabBarSelectedBackgroundColor));
         } else {
             paintSelectedTabBackground(painter, rect);
         }
@@ -381,7 +378,7 @@ void FancyTabBar::paintTab(QPainter *painter, int tabIndex, int visibleIndex) co
         painter->save();
         painter->setOpacity(fader);
         if (creatorTheme()->flag(Theme::FlatToolBars))
-            painter->fillRect(rect, creatorColor(Theme::FancyToolButtonHoverColor));
+            painter->fillRect(rect, creatorTheme()->color(Theme::FancyToolButtonHoverColor));
         else
             FancyToolButton::hoverOverlay(painter, rect);
         painter->restore();
@@ -404,7 +401,7 @@ void FancyTabBar::paintTab(QPainter *painter, int tabIndex, int visibleIndex) co
 
 void FancyTabBar::setCurrentIndex(int index)
 {
-    if ((index == -1 || isTabEnabled(index)) && index != m_currentIndex) {
+    if (isTabEnabled(index) && index != m_currentIndex) {
         emit currentAboutToChange(index);
         m_currentIndex = index;
         update();
@@ -425,8 +422,7 @@ void FancyTabBar::setTabEnabled(int index, bool enable)
 
     if (index < m_tabs.size() && index >= 0) {
         m_tabs[index]->enabled = enable;
-        if (m_tabs[index]->visible)
-            update(tabRect(visibleIndex(index)));
+        update(tabRect(index));
     }
 }
 
@@ -441,15 +437,6 @@ bool FancyTabBar::isTabEnabled(int index) const
     return false;
 }
 
-void FancyTabBar::setTabVisible(int index, bool visible)
-{
-    QTC_ASSERT(index < m_tabs.size(), return);
-    QTC_ASSERT(index >= 0, return);
-
-    m_tabs[index]->visible = visible;
-    update();
-}
-
 class FancyColorButton : public QWidget
 {
     Q_OBJECT
@@ -461,7 +448,7 @@ public:
         setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::Preferred);
     }
 
-    void mousePressEvent(QMouseEvent *ev) override { emit clicked(ev); }
+    void mousePressEvent(QMouseEvent *ev) override { emit clicked(ev->button(), ev->modifiers()); }
 
     void paintEvent(QPaintEvent *event) override
     {
@@ -479,7 +466,7 @@ public:
     }
 
 signals:
-    void clicked(QMouseEvent *ev);
+    void clicked(Qt::MouseButton button, Qt::KeyboardModifiers modifiers);
 };
 
 //////
@@ -492,50 +479,56 @@ FancyTabWidget::FancyTabWidget(QWidget *parent)
     m_tabBar = new FancyTabBar(this);
     m_tabBar->setObjectName("ModeSelector"); // used for UI introduction
 
+    m_selectionWidget = new QWidget(this);
+    auto selectionLayout = new QVBoxLayout;
+    selectionLayout->setSpacing(0);
+    selectionLayout->setContentsMargins(0, 0, 0, 0);
+
     auto bar = new StyledBar;
-    auto fancyButton = new FancyColorButton;
-    connect(fancyButton, &FancyColorButton::clicked, this, [this](QMouseEvent *event) {
-        if (event->button() == Qt::RightButton)
-            emit menuTriggered(-1, event);
-        else
-            emit topAreaClicked(event);
-    });
+    auto layout = new QHBoxLayout(bar);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+    auto fancyButton = new FancyColorButton(this);
+    connect(fancyButton, &FancyColorButton::clicked, this, &FancyTabWidget::topAreaClicked);
+    layout->addWidget(fancyButton);
+    selectionLayout->addWidget(bar);
 
-    m_modesStack = new QStackedLayout;
-    m_modesStack->addWidget(new QWidget(this));
-    m_statusBar = new QStatusBar;
-    m_statusBar->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
-
-    QVBoxLayout *vlayout;
-
-    // clang-format off
-    using namespace Layouting;
-    Row { fancyButton, noMargin }.attachTo(bar);
-    Row {
-        Widget {
-            bindTo(&m_selectionWidget),
-            Column {
-                bar,
-                m_tabBar,
-                Widget {
-                    bindTo(&m_cornerWidgetContainer),
-                    Column { spacing(0), noMargin },
-                },
-                spacing(0), noMargin,
-            },
-        },
-        Column { bindTo(&vlayout), m_modesStack, m_statusBar, spacing(0) },
-        spacing(1), noMargin,
-    }.attachTo(this);
-    // clang-format on
-
+    selectionLayout->addWidget(m_tabBar);
+    selectionLayout->addStretch(1);
+    m_selectionWidget->setLayout(selectionLayout);
     m_selectionWidget->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Expanding);
 
+    m_cornerWidgetContainer = new QWidget(this);
     m_cornerWidgetContainer->setSizePolicy(QSizePolicy::Minimum, QSizePolicy::Preferred);
     m_cornerWidgetContainer->setAutoFillBackground(false);
 
+    auto cornerWidgetLayout = new QVBoxLayout;
+    cornerWidgetLayout->setSpacing(0);
+    cornerWidgetLayout->setContentsMargins(0, 0, 0, 0);
+    cornerWidgetLayout->addStretch();
+    m_cornerWidgetContainer->setLayout(cornerWidgetLayout);
+
+    selectionLayout->addWidget(m_cornerWidgetContainer, 0);
+
+    m_modesStack = new QStackedLayout;
+    m_statusBar = new QStatusBar;
+    m_statusBar->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Fixed);
+
+    auto vlayout = new QVBoxLayout;
+    vlayout->setContentsMargins(0, 0, 0, 0);
+    vlayout->setSpacing(0);
+    vlayout->addLayout(m_modesStack);
+    vlayout->addWidget(m_statusBar);
+
     m_infoBarDisplay.setTarget(vlayout, 1);
     m_infoBarDisplay.setEdge(Qt::BottomEdge);
+
+    auto mainLayout = new QHBoxLayout;
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->setSpacing(1);
+    mainLayout->addWidget(m_selectionWidget);
+    mainLayout->addLayout(vlayout);
+    setLayout(mainLayout);
 
     connect(m_tabBar, &FancyTabBar::currentAboutToChange, this, &FancyTabWidget::currentAboutToShow);
     connect(m_tabBar, &FancyTabBar::currentChanged, this, &FancyTabWidget::showWidget);
@@ -554,13 +547,13 @@ bool FancyTabWidget::isSelectionWidgetVisible() const
 
 void FancyTabWidget::insertTab(int index, QWidget *tab, const QIcon &icon, const QString &label, bool hasMenu)
 {
-    m_modesStack->insertWidget(index + 1, tab);
+    m_modesStack->insertWidget(index, tab);
     m_tabBar->insertTab(index, icon, label, hasMenu);
 }
 
 void FancyTabWidget::removeTab(int index)
 {
-    m_modesStack->removeWidget(m_modesStack->widget(index + 1));
+    m_modesStack->removeWidget(m_modesStack->widget(index));
     m_tabBar->removeTab(index);
 }
 
@@ -638,7 +631,7 @@ void FancyTabWidget::setCurrentIndex(int index)
 
 void FancyTabWidget::showWidget(int index)
 {
-    m_modesStack->setCurrentIndex(index + 1);
+    m_modesStack->setCurrentIndex(index);
     QWidget *w = m_modesStack->currentWidget();
     if (QTC_GUARD(w)) {
         if (QWidget *focusWidget = w->focusWidget())
@@ -661,11 +654,6 @@ void FancyTabWidget::setTabEnabled(int index, bool enable)
 bool FancyTabWidget::isTabEnabled(int index) const
 {
     return m_tabBar->isTabEnabled(index);
-}
-
-void FancyTabWidget::setTabVisible(int index, bool visible)
-{
-    m_tabBar->setTabVisible(index, visible);
 }
 
 void FancyTabWidget::setIconsOnly(bool iconsOnly)

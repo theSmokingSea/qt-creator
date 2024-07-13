@@ -5,8 +5,9 @@ add_qtc_plugin(Todo
     constants.h
     cpptodoitemsscanner.cpp cpptodoitemsscanner.h
     keyword.cpp keyword.h
-    keyworddialog.cpp keyworddialog.h
+    keyworddialog.cpp keyworddialog.h keyworddialog.ui
     lineparser.cpp lineparser.h
+    optionsdialog.cpp optionsdialog.h optionsdialog.ui
     qmljstodoitemsscanner.cpp qmljstodoitemsscanner.h
     settings.cpp settings.h
     todoicons.cpp todoicons.h
@@ -17,8 +18,7 @@ add_qtc_plugin(Todo
     todooutputpane.cpp todooutputpane.h
     todooutputtreeview.cpp todooutputtreeview.h
     todooutputtreeviewdelegate.cpp todooutputtreeviewdelegate.h
-    todoplugin.cpp
+    todoplugin.cpp todoplugin.h
     todoplugin.qrc
-    todoprojectpanel.cpp todoprojectpanel.h
-    todotr.h
+    todoprojectsettingswidget.cpp todoprojectsettingswidget.h todoprojectsettingswidget.ui
 )

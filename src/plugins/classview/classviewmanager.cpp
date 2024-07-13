@@ -1,18 +1,43 @@
-// Copyright (C) 2016 Denis Mingulov
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Denis Mingulov
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "classviewmanager.h"
-
+#include "classviewsymbollocation.h"
+#include "classviewnavigationwidgetfactory.h"
 #include "classviewparser.h"
 #include "classviewutils.h"
 
+#include <utils/qtcassert.h>
+#include <projectexplorer/projectexplorer.h>
+#include <projectexplorer/session.h>
 #include <cppeditor/cppeditorconstants.h>
 #include <cppeditor/cppmodelmanager.h>
-
 #include <coreplugin/progressmanager/progressmanager.h>
-
-#include <projectexplorer/projectmanager.h>
-
+#include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/editormanager/ieditor.h>
+#include <coreplugin/idocument.h>
 #include <texteditor/texteditor.h>
 
 #include <QThread>
@@ -22,7 +47,8 @@ using namespace Core;
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace ClassView::Internal {
+namespace ClassView {
+namespace Internal {
 
 ///////////////////////////////// ManagerPrivate //////////////////////////////////
 
@@ -47,7 +73,7 @@ static Manager *managerInstance = nullptr;
 */
 
 /*!
-    \fn void ClassView::Internal::Manager::treeDataUpdate(std::shared_ptr<QStandardItem> result)
+    \fn void ClassView::Internal::Manager::treeDataUpdate(QSharedPointer<QStandardItem> result)
 
     Emits a signal about a tree data update (to tree view). \a result holds the
     item with the current tree.
@@ -93,9 +119,9 @@ void ManagerPrivate::resetParser()
     cancelScheduledUpdate();
 
     QHash<FilePath, QPair<QString, FilePaths>> projectData;
-    for (const Project *project : ProjectManager::projects()) {
+    for (const Project *project : SessionManager::projects()) {
         projectData.insert(project->projectFilePath(),
-                           {project->displayName(), project->files(Project::SourceFiles)});
+                           qMakePair(project->displayName(), project->files(Project::SourceFiles)));
     }
     QMetaObject::invokeMethod(m_parser, [this, projectData]() {
         m_parser->resetData(projectData);
@@ -128,7 +154,7 @@ ParserTreeItem::ConstPtr ManagerPrivate::findItemByRoot(const QStandardItem *ite
         uiList.removeLast();
         const SymbolInformation &inf = Internal::symbolInformationFromItem(cur);
         internal = internal->child(inf);
-        if (!internal)
+        if (internal.isNull())
             break;
     }
 
@@ -147,7 +173,7 @@ Manager::Manager(QObject *parent)
     managerInstance = this;
 
     // register - to be able send between signal/slots
-    qRegisterMetaType<std::shared_ptr<QStandardItem>>("std::shared_ptr<QStandardItem>");
+    qRegisterMetaType<QSharedPointer<QStandardItem> >("QSharedPointer<QStandardItem>");
 
     initialize();
 
@@ -174,7 +200,7 @@ Manager *Manager::instance()
 bool Manager::canFetchMore(QStandardItem *item, bool skipRoot) const
 {
     ParserTreeItem::ConstPtr ptr = d->findItemByRoot(item, skipRoot);
-    if (!ptr)
+    if (ptr.isNull())
         return false;
     return ptr->canFetchMore(item);
 }
@@ -186,7 +212,7 @@ bool Manager::canFetchMore(QStandardItem *item, bool skipRoot) const
 void Manager::fetchMore(QStandardItem *item, bool skipRoot)
 {
     ParserTreeItem::ConstPtr ptr = d->findItemByRoot(item, skipRoot);
-    if (!ptr)
+    if (ptr.isNull())
         return;
     ptr->fetchMore(item);
 }
@@ -194,7 +220,7 @@ void Manager::fetchMore(QStandardItem *item, bool skipRoot)
 bool Manager::hasChildren(QStandardItem *item) const
 {
     ParserTreeItem::ConstPtr ptr = d->findItemByRoot(item);
-    if (!ptr)
+    if (ptr.isNull())
         return false;
     return ptr->childCount();
 }
@@ -204,8 +230,8 @@ void Manager::initialize()
     d->m_timer.setSingleShot(true);
 
     // connections to enable/disable navi widget factory
-    ProjectManager *sessionManager = ProjectManager::instance();
-    connect(sessionManager, &ProjectManager::projectAdded,
+    SessionManager *sessionManager = SessionManager::instance();
+    connect(sessionManager, &SessionManager::projectAdded,
             this, [this](Project *project) {
         const FilePath projectPath = project->projectFilePath();
         const QString projectName = project->displayName();
@@ -214,7 +240,7 @@ void Manager::initialize()
             d->m_parser->addProject(projectPath, projectName, projectFiles);
         }, Qt::QueuedConnection);
     });
-    connect(sessionManager, &ProjectManager::projectRemoved,
+    connect(sessionManager, &SessionManager::projectRemoved,
             this, [this](Project *project) {
         const FilePath projectPath = project->projectFilePath();
         QMetaObject::invokeMethod(d->m_parser, [this, projectPath]() {
@@ -255,8 +281,8 @@ void Manager::initialize()
         if (!state())
             return;
 
-        std::shared_ptr<QStandardItem> rootItem(new QStandardItem());
-        d->m_root->fetchMore(rootItem.get());
+        QSharedPointer<QStandardItem> rootItem(new QStandardItem());
+        d->m_root->fetchMore(rootItem.data());
         emit treeDataUpdate(rootItem);
     }, Qt::QueuedConnection);
 
@@ -277,11 +303,11 @@ void Manager::initialize()
         if (doc.data() == nullptr)
             return;
 
-        d->m_awaitingDocuments.insert(doc->filePath());
+        d->m_awaitingDocuments.insert(FilePath::fromString(doc->fileName()));
         d->m_timer.start(400); // Accumulate multiple requests into one, restarts the timer
     });
 
-    connect(&d->m_timer, &QTimer::timeout, this, [this] {
+    connect(&d->m_timer, &QTimer::timeout, this, [this]() {
         const QSet<FilePath> docsToBeUpdated = d->m_awaitingDocuments;
         d->cancelScheduledUpdate();
         if (!state() || d->disableCodeParser) // enabling any of them will trigger the total update
@@ -349,9 +375,9 @@ void Manager::onWidgetVisibilityIsChanged(bool visibility)
     \a column (0-based).
 */
 
-void Manager::gotoLocation(const FilePath &filePath, int line, int column)
+void Manager::gotoLocation(const QString &fileName, int line, int column)
 {
-    EditorManager::openEditorAt({filePath, line, column});
+    EditorManager::openEditorAt({FilePath::fromString(fileName), line, column});
 }
 
 /*!
@@ -374,11 +400,11 @@ void Manager::gotoLocations(const QList<QVariant> &list)
         auto textEditor = qobject_cast<TextEditor::BaseTextEditor *>(EditorManager::currentEditor());
         if (textEditor) {
             // check if current cursor position is a known location of the symbol
-            const FilePath filePath = textEditor->document()->filePath();
+            const QString fileName = textEditor->document()->filePath().toString();
             int line;
             int column;
             textEditor->convertPosition(textEditor->position(), &line, &column);
-            const SymbolLocation current(filePath, line, column + 1);
+            const SymbolLocation current(fileName, line, column);
             if (auto it = locations.constFind(current), end = locations.constEnd(); it != end) {
                 // we already are at the symbol, cycle to next location
                 ++it;
@@ -390,7 +416,7 @@ void Manager::gotoLocations(const QList<QVariant> &list)
     }
     const SymbolLocation &location = *locationIt;
     // line is 1-based, column is 0-based
-    gotoLocation(location.filePath(), location.line(), location.column() - 1);
+    gotoLocation(location.fileName(), location.line(), location.column() - 1);
 }
 
 /*!
@@ -404,9 +430,5 @@ void Manager::setFlatMode(bool flat)
     }, Qt::QueuedConnection);
 }
 
-void setupClassViewManager(QObject *guard)
-{
-    (void) new Manager(guard);
-}
-
-} // ClassView::Internal
+} // namespace Internal
+} // namespace ClassView

@@ -1,12 +1,33 @@
-// Copyright (C) 2018 Benjamin Balga
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 Benjamin Balga
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "serialoutputpane.h"
 
 #include "consolelineedit.h"
 #include "serialcontrol.h"
 #include "serialterminalconstants.h"
-#include "serialterminaltr.h"
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -32,8 +53,6 @@
 #include <QTabBar>
 #include <QToolButton>
 #include <QVBoxLayout>
-
-using namespace Utils;
 
 namespace SerialTerminal {
 namespace Internal {
@@ -116,14 +135,10 @@ SerialOutputPane::SerialOutputPane(Settings &settings) :
     m_tabWidget(new TabWidget),
     m_settings(settings),
     m_devicesModel(new SerialDeviceModel),
-    m_closeCurrentTabAction(new QAction(Tr::tr("Close Tab"), this)),
-    m_closeAllTabsAction(new QAction(Tr::tr("Close All Tabs"), this)),
-    m_closeOtherTabsAction(new QAction(Tr::tr("Close Other Tabs"), this))
+    m_closeCurrentTabAction(new QAction(tr("Close Tab"), this)),
+    m_closeAllTabsAction(new QAction(tr("Close All Tabs"), this)),
+    m_closeOtherTabsAction(new QAction(tr("Close Other Tabs"), this))
 {
-    setId("Serial Terminal");
-    setDisplayName(Tr::tr(Constants::OUTPUT_PANE_TITLE));
-    setPriorityInStatusBar(-70);
-
     createToolButtons();
 
     auto layout = new QVBoxLayout;
@@ -145,7 +160,7 @@ SerialOutputPane::SerialOutputPane(Settings &settings) :
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(2);
 
-    m_inputLine->setPlaceholderText(Tr::tr("Type text and hit Enter to send."));
+    m_inputLine->setPlaceholderText(tr("Type text and hit Enter to send."));
     inputLayout->addWidget(m_inputLine);
 
     connect(m_inputLine, &QLineEdit::returnPressed, this, &SerialOutputPane::sendInput);
@@ -154,7 +169,7 @@ SerialOutputPane::SerialOutputPane(Settings &settings) :
     updateLineEndingsComboBox();
     inputLayout->addWidget(m_lineEndingsSelection);
 
-    connect(m_lineEndingsSelection, &QComboBox::currentIndexChanged,
+    connect(m_lineEndingsSelection, QOverload<int>::of(&QComboBox::currentIndexChanged),
             this, &SerialOutputPane::defaultLineEndingChanged);
 
     layout->addLayout(inputLayout);
@@ -176,6 +191,16 @@ QList<QWidget *> SerialOutputPane::toolBarWidgets() const
                 m_portsSelection, m_baudRateSelection,
                 m_connectButton, m_disconnectButton,
                 m_resetButton };
+}
+
+QString SerialOutputPane::displayName() const
+{
+    return tr(Constants::OUTPUT_PANE_TITLE);
+}
+
+int SerialOutputPane::priorityInStatusBar() const
+{
+    return 30;
 }
 
 void SerialOutputPane::clearContents()
@@ -227,11 +252,6 @@ bool SerialOutputPane::canNavigate() const
     return false;
 }
 
-bool SerialOutputPane::hasFilterContext() const
-{
-    return true;
-}
-
 void SerialOutputPane::appendMessage(SerialControl *rc, const QString &out, Utils::OutputFormat format)
 {
     const int index = indexOf(rc);
@@ -258,12 +278,14 @@ void SerialOutputPane::createNewOutputWindow(SerialControl *rc)
         return;
 
     // Signals to update buttons
-    connect(rc, &SerialControl::started, this, [this, rc] {
+    connect(rc, &SerialControl::started,
+            [this, rc]() {
         if (isCurrent(rc))
             enableButtons(rc, true);
     });
 
-    connect(rc, &SerialControl::finished, this, [this, rc] {
+    connect(rc, &SerialControl::finished,
+            [this, rc]() {
         const int tabIndex = indexOf(rc);
         if (tabIndex != -1)
             m_serialControlTabs[tabIndex].window->flush();
@@ -278,7 +300,7 @@ void SerialOutputPane::createNewOutputWindow(SerialControl *rc)
     static int counter = 0;
     Utils::Id contextId = Utils::Id(Constants::C_SERIAL_OUTPUT).withSuffix(counter++);
     Core::Context context(contextId);
-    auto ow = new Core::OutputWindow(context, Key(), m_tabWidget);
+    auto ow = new Core::OutputWindow(context, QString(), m_tabWidget);
     using TextEditor::TextEditorSettings;
     auto fontSettingsChanged = [ow] {
         ow->setBaseFont(TextEditorSettings::fontSettings().font());
@@ -287,7 +309,7 @@ void SerialOutputPane::createNewOutputWindow(SerialControl *rc)
     connect(TextEditorSettings::instance(), &TextEditorSettings::fontSettingsChanged,
             this, fontSettingsChanged);
     fontSettingsChanged();
-    ow->setWindowTitle(Tr::tr("Serial Terminal Window"));
+    ow->setWindowTitle(tr("Serial Terminal Window"));
     // TODO: wordwrap, maxLineCount, zoom/wheelZoom (add to settings)
 
     auto controlTab = SerialControlTab(rc, ow);
@@ -323,7 +345,7 @@ void SerialOutputPane::createToolButtons()
     // Connect button
     m_connectButton = new QToolButton;
     m_connectButton->setIcon(Utils::Icons::RUN_SMALL_TOOLBAR.icon());
-    m_connectButton->setToolTip(Tr::tr("Connect"));
+    m_connectButton->setToolTip(tr("Connect"));
     m_connectButton->setEnabled(false);
     connect(m_connectButton, &QToolButton::clicked,
             this, &SerialOutputPane::connectControl);
@@ -331,7 +353,7 @@ void SerialOutputPane::createToolButtons()
     // Disconnect button
     m_disconnectButton = new QToolButton;
     m_disconnectButton->setIcon(Utils::Icons::STOP_SMALL_TOOLBAR.icon());
-    m_disconnectButton->setToolTip(Tr::tr("Disconnect"));
+    m_disconnectButton->setToolTip(tr("Disconnect"));
     m_disconnectButton->setEnabled(false);
 
     connect(m_disconnectButton, &QToolButton::clicked,
@@ -340,7 +362,7 @@ void SerialOutputPane::createToolButtons()
     // Reset button
     m_resetButton = new QToolButton;
     m_resetButton->setIcon(Utils::Icons::RELOAD_TOOLBAR.icon());
-    m_resetButton->setToolTip(Tr::tr("Reset Board"));
+    m_resetButton->setToolTip(tr("Reset Board"));
     m_resetButton->setEnabled(false);
 
     connect(m_resetButton, &QToolButton::clicked,
@@ -349,7 +371,7 @@ void SerialOutputPane::createToolButtons()
     // New terminal button
     m_newButton = new QToolButton;
     m_newButton->setIcon(Utils::Icons::PLUS_TOOLBAR.icon());
-    m_newButton->setToolTip(Tr::tr("Add New Terminal"));
+    m_newButton->setToolTip(tr("Add New Terminal"));
     m_newButton->setEnabled(true);
 
     connect(m_newButton, &QToolButton::clicked,
@@ -361,7 +383,7 @@ void SerialOutputPane::createToolButtons()
     m_portsSelection->setModel(m_devicesModel);
     updatePortsList();
     connect(m_portsSelection, &ComboBox::opened, this, &SerialOutputPane::updatePortsList);
-    connect(m_portsSelection, &ComboBox::currentIndexChanged,
+    connect(m_portsSelection, QOverload<int>::of(&ComboBox::currentIndexChanged),
             this, &SerialOutputPane::activePortNameChanged);
     // TODO: the ports are not updated with the box opened (if the user wait for it) -> add a timer?
 
@@ -370,7 +392,7 @@ void SerialOutputPane::createToolButtons()
     m_baudRateSelection = new ComboBox;
     m_baudRateSelection->setSizeAdjustPolicy(QComboBox::AdjustToContents);
     m_baudRateSelection->addItems(m_devicesModel->baudRates());
-    connect(m_baudRateSelection, &ComboBox::currentIndexChanged,
+    connect(m_baudRateSelection, QOverload<int>::of(&ComboBox::currentIndexChanged),
             this, &SerialOutputPane::activeBaudRateChanged);
 
     if (m_settings.baudRate > 0)

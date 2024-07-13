@@ -1,9 +1,30 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of the Qt Design Tooling
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmlprojectgenerator.h"
-#include "../cmakegen/cmakewriter.h"
-#include "../qmlprojectmanagertr.h"
+#include "../cmakegen/generatecmakelists.h"
 
 #include <coreplugin/documentmanager.h>
 #include <coreplugin/icore.h>
@@ -61,7 +82,7 @@ bool QmlProjectFileGenerator::execute()
     importDirs.removeAll("content");
     const QString importPaths = createDirArrayEntry("importPaths", importDirs);
 
-    const QString fileContent = GenerateCmake::CMakeWriter::readTemplate(QMLPROJECT_FILE_TEMPLATE_PATH)
+    const QString fileContent = GenerateCmake::readTemplate(QMLPROJECT_FILE_TEMPLATE_PATH)
             .arg(contentEntry, imageEntry, jsEntry, assetEntry, importPaths);
 
     QFile file(m_targetFile.toString());
@@ -74,8 +95,8 @@ bool QmlProjectFileGenerator::execute()
     file.close();
 
     QMessageBox::information(Core::ICore::dialogParent(),
-                             Tr::tr("Project File Generated"),
-                             Tr::tr("File created:\n\n%1").arg(m_targetFile.toString()),
+                             QObject::tr("Project File Generated"),
+                             QObject::tr("File created:\n\n%1").arg(m_targetFile.toString()),
                              QMessageBox::Ok);
 
     return true;
@@ -152,9 +173,9 @@ const FilePath QmlProjectFileGenerator::selectTargetFile(const FilePath &uiFileP
     bool selectionCompleted = false;
     do {
         targetFile = Core::DocumentManager::getSaveFileNameWithExtension(
-                                    Tr::tr("Select File Location"),
+                                    QObject::tr("Select File Location"),
                                     suggestedDir,
-                                    Tr::tr("Qt Design Studio Project Files (*.qmlproject)"));
+                                    QObject::tr("Qt Design Studio Project Files (*.qmlproject)"));
         selectionCompleted = isDirAcceptable(targetFile.parentDir(), uiFilePath);
     } while (!selectionCompleted);
 
@@ -167,8 +188,8 @@ bool QmlProjectFileGenerator::isDirAcceptable(const FilePath &dir, const FilePat
 
     if (dir.isChildOf(uiFileParentDir)) {
         QMessageBox::warning(Core::ICore::dialogParent(),
-                             Tr::tr("Invalid Directory"),
-                             Tr::tr("Project file must be placed in a parent directory of the QML files."),
+                             QObject::tr("Invalid Directory"),
+                             QObject::tr("Project file must be placed in a parent directory of the QML files."),
                              QMessageBox::Ok);
         return false;
     }
@@ -178,8 +199,8 @@ bool QmlProjectFileGenerator::isDirAcceptable(const FilePath &dir, const FilePat
         QStringList components = relativePath.toString().split("/");
         if (components.size() > 2) {
             QMessageBox::StandardButton sel = QMessageBox::question(Core::ICore::dialogParent(),
-                                                  Tr::tr("Problem"),
-                                                  Tr::tr("Selected directory is far away from the QML file. This can cause unexpected results.\n\nAre you sure?"),
+                                                  QObject::tr("Problem"),
+                                                  QObject::tr("Selected directory is far away from the QML file. This can cause unexpected results.\n\nAre you sure?"),
                                                   QMessageBox::Yes | QMessageBox::No);
             if (sel == QMessageBox::No)
                 return false;

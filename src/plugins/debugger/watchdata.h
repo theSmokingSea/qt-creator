@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -7,18 +29,20 @@
 
 #include <utils/treemodel.h>
 
+#include <QCoreApplication>
 #include <QMetaType>
 
 #include <vector>
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 class GdbMi;
 
 class WatchItem : public Utils::TypedTreeItem<WatchItem, WatchItem>
 {
 public:
-    WatchItem() {}
+    WatchItem();
 
     void parse(const GdbMi &input, bool maySort);
 
@@ -33,13 +57,11 @@ public:
     QString toToolTip() const;
 
     QVariant editValue() const;
-    QMetaType::Type editType() const;
+    int editType() const;
 
     static const qint64 InvalidId = -1;
-    constexpr static char loadMoreName[] = "<load more>";
 
     void setHasChildren(bool c)   { wantsChildren = c; }
-    bool isLoadMore() const;
 
     bool isValid()   const { return !iname.isEmpty(); }
     bool isVTablePointer() const;
@@ -50,42 +72,42 @@ public:
 
     QString toString() const;
 
+    static QString msgNotInScope();
     static QString shadowedName(const QString &name, int seen);
+    static const QString &shadowedNameFormat();
 
     QString hexAddress() const;
     QString key() const { return address ? hexAddress() : iname; }
 
 public:
-    qint64          id = InvalidId;        // Token for the engine for internal mapping
-    QString         iname;                 // Internal name sth like 'local.baz.public.a'
-    QString         exp;                   // The expression
-    QString         name;                  // Displayed name
-    QString         value;                 // Displayed value
-    QString         editvalue;             // Displayed value
-    QString         editformat;            // Format of displayed value
-    DebuggerEncoding editencoding;         // Encoding of displayed value
-    QString         type;                  // Type for further processing
-    quint64         address = 0;           // Displayed address of the actual object
-    quint64         origaddr = 0;          // Address of the pointer referencing this item (gdb auto-deref)
-    uint            size = 0;              // Size
-    uint            bitpos = 0;            // Position within bit fields
-    uint            bitsize = 0;           // Size in case of bit fields
-    uint            autoDerefCount = 0;    // number of levels of automatic dereferencing that has taken place (for pointer types)
-    uint            variablesReference = 0;// reference to the variable in the variables request DAP related
-    int             valuelen = 0;          // -1 if cut on unknown size, full size otherwise
-    int             arrayIndex = -1;       // -1 if not an array member
-    uchar           sortGroup = 0;         // 0 - ordinary member, 1 - vptr, 2 - base class
-    bool            wantsChildren = false;
-    bool            valueEnabled = true;   // Value will be enabled or not
-    bool            valueEditable = true;  // Value will be editable
-    bool            outdated = false;      // \internal item is to be removed.
-    double          time = 0;              // Time used on the dumper side to produce this item
-
-    mutable QString  valueCache;           // Pre-computed displayed value
-    void updateValueCache() const;          // implemented in watchhandler.cpp
+    qint64          id;            // Token for the engine for internal mapping
+    QString         iname;         // Internal name sth like 'local.baz.public.a'
+    QString         exp;           // The expression
+    QString         name;          // Displayed name
+    QString         value;         // Displayed value
+    QString         editvalue;     // Displayed value
+    QString         editformat;    // Format of displayed value
+    DebuggerEncoding editencoding; // Encoding of displayed value
+    QString         type;          // Type for further processing
+    quint64         address;       // Displayed address of the actual object
+    quint64         origaddr;      // Address of the pointer referencing this item (gdb auto-deref)
+    uint            size;          // Size
+    uint            bitpos;        // Position within bit fields
+    uint            bitsize;       // Size in case of bit fields
+    int             elided;        // Full size if value was cut off, -1 if cut on unknown size, 0 otherwise
+    int             arrayIndex;    // -1 if not an array member
+    uchar           sortGroup;     // 0 - ordinary member, 1 - vptr, 2 - base class
+    bool            wantsChildren;
+    bool            valueEnabled;  // Value will be enabled or not
+    bool            valueEditable; // Value will be editable
+    uint            autoDerefCount; // number of levels of automatic dereferencing that has taken place (for pointer types)
+    bool            outdated;      // \internal item is to be removed.
+    double          time = 0;      // Time used on the dumper side to produce this item
 
 private:
     void parseHelper(const GdbMi &input, bool maySort);
+    Q_DECLARE_TR_FUNCTIONS(Debugger::Internal::WatchHandler)
 };
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

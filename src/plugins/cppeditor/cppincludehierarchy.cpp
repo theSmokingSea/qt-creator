@@ -1,19 +1,42 @@
-// Copyright (C) 2016 Przemyslaw Gorszkowski <pgorszkowski@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Przemyslaw Gorszkowski <pgorszkowski@gmail.com>
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppincludehierarchy.h"
 
 #include "baseeditordocumentprocessor.h"
+#include "editordocumenthandle.h"
+#include "cppeditorwidget.h"
 #include "cppeditorconstants.h"
 #include "cppeditordocument.h"
-#include "cppeditortr.h"
+#include "cppeditorplugin.h"
+#include "cppelementevaluator.h"
 #include "cppmodelmanager.h"
 
-#include <coreplugin/actionmanager/actionmanager.h>
 #include <coreplugin/editormanager/editormanager.h>
+#include <coreplugin/fileiconprovider.h>
 #include <coreplugin/find/itemviewfind.h>
-#include <coreplugin/navigationwidget.h>
-#include <coreplugin/progressmanager/progressmanager.h>
 
 #include <cplusplus/CppDocument.h>
 
@@ -22,15 +45,15 @@
 #include <utils/delegates.h>
 #include <utils/dropsupport.h>
 #include <utils/fileutils.h>
-#include <utils/fsengine/fileiconprovider.h>
 #include <utils/navigationtreeview.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcsettings.h>
-#include <utils/stylehelper.h>
 #include <utils/utilsicons.h>
 
+#include <QCoreApplication>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QSettings>
 #include <QStackedWidget>
 #include <QTimer>
 #include <QToolButton>
@@ -51,30 +74,30 @@ enum {
 
 static Snapshot globalSnapshot()
 {
-    return CppModelManager::snapshot();
+    return CppModelManager::instance()->snapshot();
 }
 
 struct FileAndLine
 {
     FileAndLine() = default;
-    FileAndLine(const FilePath &f, int l) : file(f), line(l) {}
+    FileAndLine(const QString &f, int l) : file(f), line(l) {}
 
-    FilePath file;
+    QString file;
     int line = 0;
 };
 
 using FileAndLines = QList<FileAndLine>;
 
-static FileAndLines findIncluders(const FilePath &filePath)
+static FileAndLines findIncluders(const QString &filePath)
 {
     FileAndLines result;
     const Snapshot snapshot = globalSnapshot();
     for (auto cit = snapshot.begin(), citEnd = snapshot.end(); cit != citEnd; ++cit) {
-        const FilePath filePathFromSnapshot = cit.key();
+        const QString filePathFromSnapshot = cit.key().toString();
         Document::Ptr doc = cit.value();
         const QList<Document::Include> resolvedIncludes = doc->resolvedIncludes();
         for (const auto &includeFile : resolvedIncludes) {
-            const FilePath includedFilePath = includeFile.resolvedFileName();
+            const QString includedFilePath = includeFile.resolvedFileName();
             if (includedFilePath == filePath)
                 result.append(FileAndLine(filePathFromSnapshot, int(includeFile.line())));
         }
@@ -82,7 +105,7 @@ static FileAndLines findIncluders(const FilePath &filePath)
     return result;
 }
 
-static FileAndLines findIncludes(const FilePath &filePath, const Snapshot &snapshot)
+static FileAndLines findIncludes(const QString &filePath, const Snapshot &snapshot)
 {
     FileAndLines result;
     if (Document::Ptr doc = snapshot.document(filePath)) {
@@ -100,11 +123,11 @@ public:
     enum SubTree { RootItem, InIncludes, InIncludedBy };
     CppIncludeHierarchyItem() = default;
 
-    void createChild(const FilePath &filePath, SubTree subTree,
+    void createChild(const QString &filePath, SubTree subTree,
                      int line = 0, bool definitelyNoChildren = false)
     {
         auto item = new CppIncludeHierarchyItem;
-        item->m_fileName = filePath.fileName();
+        item->m_fileName = filePath.mid(filePath.lastIndexOf('/') + 1);
         item->m_filePath = filePath;
         item->m_line = line;
         item->m_subTree = subTree;
@@ -119,7 +142,7 @@ public:
             item->setChildrenChecked();
     }
 
-    FilePath filePath() const
+    QString filePath() const
     {
         return isPhony() ? model()->editorFilePath() : m_filePath;
     }
@@ -137,7 +160,7 @@ private:
 
     Qt::ItemFlags flags(int) const override
     {
-        const Utils::Link link(m_filePath, m_line);
+        const Utils::Link link(Utils::FilePath::fromString(m_filePath), m_line);
         if (link.hasValidTarget())
             return Qt::ItemIsDragEnabled | Qt::ItemIsEnabled | Qt::ItemIsSelectable;
         return Qt::ItemIsEnabled | Qt::ItemIsSelectable;
@@ -147,7 +170,7 @@ private:
     void fetchMore() override;
 
     QString m_fileName;
-    FilePath m_filePath;
+    QString m_filePath;
     int m_line = 0;
     SubTree m_subTree = RootItem;
     bool m_isCyclic = false;
@@ -159,9 +182,9 @@ QVariant CppIncludeHierarchyItem::data(int column, int role) const
     Q_UNUSED(column)
     if (role == Qt::DisplayRole) {
         if (isPhony() && childCount() == 0)
-            return QString(m_fileName + ' ' + Tr::tr("(none)"));
+            return QString(m_fileName + ' ' + CppIncludeHierarchyModel::tr("(none)"));
         if (m_isCyclic)
-            return QString(m_fileName + ' ' + Tr::tr("(cyclic)"));
+            return QString(m_fileName + ' ' + CppIncludeHierarchyModel::tr("(cyclic)"));
         return m_fileName;
     }
 
@@ -170,11 +193,11 @@ QVariant CppIncludeHierarchyItem::data(int column, int role) const
 
     switch (role) {
         case Qt::ToolTipRole:
-            return m_filePath.displayName();
+            return m_filePath;
         case Qt::DecorationRole:
-            return FileIconProvider::icon(m_filePath);
+            return FileIconProvider::icon(FilePath::fromString(m_filePath));
         case LinkRole:
-            return QVariant::fromValue(Link(m_filePath, m_line));
+            return QVariant::fromValue(Link(FilePath::fromString(m_filePath), m_line));
     }
 
     return QVariant();
@@ -196,7 +219,7 @@ void CppIncludeHierarchyItem::fetchMore()
 
     model()->m_seen.insert(m_filePath);
 
-    const FilePath editorFilePath = model()->editorFilePath();
+    const QString editorFilePath = model()->editorFilePath();
 
     setChildrenChecked();
     if (m_subTree == InIncludes) {
@@ -219,14 +242,12 @@ void CppIncludeHierarchyItem::fetchMore()
     }
 }
 
-void CppIncludeHierarchyModel::buildHierarchy(const FilePath &document)
+void CppIncludeHierarchyModel::buildHierarchy(const QString &document)
 {
     m_editorFilePath = document;
     rootItem()->removeChildren();
-    rootItem()->createChild(FilePath::fromPathPart(Tr::tr("Includes")),
-                            CppIncludeHierarchyItem::InIncludes);
-    rootItem()->createChild(FilePath::fromPathPart(Tr::tr("Included by")),
-                            CppIncludeHierarchyItem::InIncludedBy);
+    rootItem()->createChild(tr("Includes"), CppIncludeHierarchyItem::InIncludes);
+    rootItem()->createChild(tr("Included by"), CppIncludeHierarchyItem::InIncludedBy);
 }
 
 void CppIncludeHierarchyModel::setSearching(bool on)
@@ -330,8 +351,8 @@ public:
 
     void perform();
 
-    void saveSettings(QtcSettings *settings, int position);
-    void restoreSettings(QtcSettings *settings, int position);
+    void saveSettings(QSettings *settings, int position);
+    void restoreSettings(QSettings *settings, int position);
 
 private:
     void onItemActivated(const QModelIndex &index);
@@ -367,7 +388,7 @@ CppIncludeHierarchyWidget::CppIncludeHierarchyWidget()
     m_treeView->setItemDelegate(&m_delegate);
     connect(m_treeView, &QAbstractItemView::activated, this, &CppIncludeHierarchyWidget::onItemActivated);
 
-    m_includeHierarchyInfoLabel = new QLabel(Tr::tr("No include hierarchy available"), this);
+    m_includeHierarchyInfoLabel = new QLabel(tr("No include hierarchy available"), this);
     m_includeHierarchyInfoLabel->setAlignment(Qt::AlignCenter);
     m_includeHierarchyInfoLabel->setAutoFillBackground(true);
     m_includeHierarchyInfoLabel->setBackgroundRole(QPalette::Base);
@@ -380,10 +401,9 @@ CppIncludeHierarchyWidget::CppIncludeHierarchyWidget()
             this, &CppIncludeHierarchyWidget::perform);
 
     m_toggleSync = new QToolButton(this);
-    StyleHelper::setPanelWidget(m_toggleSync);
     m_toggleSync->setIcon(Utils::Icons::LINK_TOOLBAR.icon());
     m_toggleSync->setCheckable(true);
-    m_toggleSync->setToolTip(Tr::tr("Synchronize with Editor"));
+    m_toggleSync->setToolTip(tr("Synchronize with Editor"));
     connect(m_toggleSync, &QToolButton::clicked,
             this, &CppIncludeHierarchyWidget::syncFromEditorManager);
 
@@ -394,6 +414,8 @@ CppIncludeHierarchyWidget::CppIncludeHierarchyWidget()
     layout->addWidget(ItemViewFind::createSearchableWrapper(new IncludeFinder(m_treeView, &m_model)));
     layout->addWidget(m_includeHierarchyInfoLabel);
 
+    connect(CppEditorPlugin::instance(), &CppEditorPlugin::includeHierarchyRequested,
+            this, &CppIncludeHierarchyWidget::perform);
     connect(EditorManager::instance(), &EditorManager::editorsClosed,
             this, &CppIncludeHierarchyWidget::editorsClosed);
     connect(EditorManager::instance(), &EditorManager::currentEditorChanged,
@@ -411,7 +433,7 @@ void CppIncludeHierarchyWidget::perform()
         return;
 
     const Utils::FilePath documentPath = m_editor->textDocument()->filePath();
-    m_model.buildHierarchy(documentPath);
+    m_model.buildHierarchy(documentPath.toString());
 
     m_inspectedFile->setText(m_editor->textDocument()->displayName());
     m_inspectedFile->setLink(Utils::Link(documentPath));
@@ -425,15 +447,15 @@ void CppIncludeHierarchyWidget::perform()
 
 const bool kSyncDefault = false;
 
-void CppIncludeHierarchyWidget::saveSettings(QtcSettings *settings, int position)
+void CppIncludeHierarchyWidget::saveSettings(QSettings *settings, int position)
 {
-    const Key key = keyFromString(QString("IncludeHierarchy.%1.SyncWithEditor").arg(position));
-    settings->setValueWithDefault(key, m_toggleSync->isChecked(), kSyncDefault);
+    const QString key = QString("IncludeHierarchy.%1.SyncWithEditor").arg(position);
+    QtcSettings::setValueWithDefault(settings, key, m_toggleSync->isChecked(), kSyncDefault);
 }
 
-void CppIncludeHierarchyWidget::restoreSettings(QtcSettings *settings, int position)
+void CppIncludeHierarchyWidget::restoreSettings(QSettings *settings, int position)
 {
-    const Key key = keyFromString(QString("IncludeHierarchy.%1.SyncWithEditor").arg(position));
+    const QString key = QString("IncludeHierarchy.%1.SyncWithEditor").arg(position);
     m_toggleSync->setChecked(settings->value(key, kSyncDefault).toBool());
 }
 
@@ -492,6 +514,27 @@ void CppIncludeHierarchyWidget::syncFromEditorManager()
 
 // CppIncludeHierarchyFactory
 
+CppIncludeHierarchyFactory::CppIncludeHierarchyFactory()
+{
+    setDisplayName(tr("Include Hierarchy"));
+    setPriority(800);
+    setId(Constants::INCLUDE_HIERARCHY_ID);
+}
+
+NavigationView CppIncludeHierarchyFactory::createWidget()
+{
+    auto hierarchyWidget = new CppIncludeHierarchyWidget;
+    hierarchyWidget->perform();
+
+    auto stack = new QStackedWidget;
+    stack->addWidget(hierarchyWidget);
+
+    NavigationView navigationView;
+    navigationView.dockToolBarWidgets << hierarchyWidget->m_toggleSync;
+    navigationView.widget = stack;
+    return navigationView;
+}
+
 static CppIncludeHierarchyWidget *hierarchyWidget(QWidget *widget)
 {
     auto stack = qobject_cast<QStackedWidget *>(widget);
@@ -501,83 +544,14 @@ static CppIncludeHierarchyWidget *hierarchyWidget(QWidget *widget)
     return hierarchyWidget;
 }
 
-class CppIncludeHierarchyFactory final : public INavigationWidgetFactory
+void CppIncludeHierarchyFactory::saveSettings(QtcSettings *settings, int position, QWidget *widget)
 {
-public:
-    CppIncludeHierarchyFactory()
-    {
-        setDisplayName(Tr::tr("Include Hierarchy"));
-        setPriority(800);
-        setId(Constants::INCLUDE_HIERARCHY_ID);
-
-        ActionBuilder openIncludeHierarchy(this, Constants::OPEN_INCLUDE_HIERARCHY);
-        openIncludeHierarchy.setText(Tr::tr("Open Include Hierarchy"));
-        openIncludeHierarchy.bindContextAction(&m_openIncludeHierarchyAction);
-        openIncludeHierarchy.setContext(Context(Constants::CPPEDITOR_ID));
-        openIncludeHierarchy.setDefaultKeySequence(Tr::tr("Meta+Shift+I"), Tr::tr("Ctrl+Shift+I"));
-        openIncludeHierarchy.addToContainers({Constants::M_TOOLS_CPP, Constants::M_CONTEXT},
-                                             Constants::G_FILE);
-
-        connect(m_openIncludeHierarchyAction, &QAction::triggered, this, [] {
-            NavigationWidget::activateSubWidget(Constants::INCLUDE_HIERARCHY_ID, Side::Left);
-        });
-
-        connect(ProgressManager::instance(), &ProgressManager::taskStarted, [this](Id type) {
-            if (type == Constants::TASK_INDEX)
-                m_openIncludeHierarchyAction->setEnabled(false);
-        });
-        connect(ProgressManager::instance(), &ProgressManager::allTasksFinished, [this](Id type) {
-            if (type == Constants::TASK_INDEX)
-                m_openIncludeHierarchyAction->setEnabled(true);
-        });
-
-    }
-
-    NavigationView createWidget() final
-    {
-        auto hierarchyWidget = new CppIncludeHierarchyWidget;
-        hierarchyWidget->perform();
-
-        auto stack = new QStackedWidget;
-        stack->addWidget(hierarchyWidget);
-
-        NavigationView navigationView;
-        navigationView.dockToolBarWidgets << hierarchyWidget->m_toggleSync;
-        navigationView.widget = stack;
-
-        connect(m_openIncludeHierarchyAction, &QAction::triggered,
-                hierarchyWidget, &CppIncludeHierarchyWidget::perform);
-
-        return navigationView;
-    }
-
-    void saveSettings(QtcSettings *settings, int position, QWidget *widget) final
-    {
-        hierarchyWidget(widget)->saveSettings(settings, position);
-    }
-
-    void restoreSettings(QtcSettings *settings, int position, QWidget *widget) final
-    {
-        hierarchyWidget(widget)->restoreSettings(settings, position);
-    }
-
-    QAction *m_openIncludeHierarchyAction = nullptr;
-};
-
-static CppIncludeHierarchyFactory &cppIncludeHierarchyFactory()
-{
-    static CppIncludeHierarchyFactory theCppIncludeHierarchyFactory;
-    return theCppIncludeHierarchyFactory;
+    hierarchyWidget(widget)->saveSettings(settings, position);
 }
 
-void openCppIncludeHierarchy()
+void CppIncludeHierarchyFactory::restoreSettings(QSettings *settings, int position, QWidget *widget)
 {
-     cppIncludeHierarchyFactory().m_openIncludeHierarchyAction->trigger();
-}
-
-void setupCppIncludeHierarchy()
-{
-    (void) cppIncludeHierarchyFactory(); // Force instantiation
+    hierarchyWidget(widget)->restoreSettings(settings, position);
 }
 
 } // namespace Internal

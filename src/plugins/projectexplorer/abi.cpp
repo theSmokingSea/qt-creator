@@ -1,11 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "abi.h"
-#include "projectexplorerconstants.h"
 
 #include <utils/algorithm.h>
-#include <utils/environment.h>
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 
@@ -22,7 +42,7 @@
     \brief The Abi class represents the Application Binary Interface (ABI) of
     a target platform.
 
-    \sa ProjectExplorer::Toolchain
+    \sa ProjectExplorer::ToolChain
 */
 
 namespace ProjectExplorer {
@@ -101,7 +121,6 @@ static void setupPreregisteredOsFlavors() {
                                                      Abi::OS::UnixOS,
                                                      Abi::OS::QnxOS,
                                                      Abi::OS::BareMetalOS});
-    registerOsFlavor(Abi::PokyFlavor, "poky", {Abi::OS::LinuxOS});
     registerOsFlavor(Abi::UnknownFlavor, "unknown", {Abi::OS::BsdOS,
                                                      Abi::OS::LinuxOS,
                                                      Abi::OS::DarwinOS,
@@ -198,11 +217,11 @@ static Abi macAbiForCpu(quint32 type) {
     case 0x01000000 + 12: // CPU_TYPE_ARM64
         return Abi(Abi::ArmArchitecture, Abi::DarwinOS, Abi::GenericFlavor, Abi::MachOFormat, 64);
     default:
-        return {};
+        return Abi();
     }
 }
 
-static Abis parseCoffHeader(const QByteArray &data, int pePos)
+static Abis parseCoffHeader(const QByteArray &data)
 {
     Abis result;
     if (data.size() < 20)
@@ -243,11 +262,7 @@ static Abis parseCoffHeader(const QByteArray &data, int pePos)
         break;
     }
 
-    if (pePos == 132 || pePos == 124) {
-        // 132 (0x84) => GNU ld.bfd
-        // 124 (0x7c) => LLVM lld
-        flavor = Abi::WindowsMSysFlavor;
-    } else if (data.size() >= 24) {
+    if (data.size() >= 24) {
         // Get Major and Minor Image Version from optional header fields
         quint8 minorLinker = data.at(23);
         switch (data.at(22)) {
@@ -433,21 +448,9 @@ static Abis abiOf(const QByteArray &data)
             return result;
         if (getUint8(data, pePos) == 'P' && getUint8(data, pePos + 1) == 'E'
             && getUint8(data, pePos + 2) == 0 && getUint8(data, pePos + 3) == 0)
-            result = parseCoffHeader(data.mid(pePos + 4), pePos + 4);
+            result = parseCoffHeader(data.mid(pePos + 4));
     }
     return result;
-}
-
-static QString androidAbiFromAbi(const Abi &abi)
-{
-    QString androidAbi;
-    if (abi.architecture() == Abi::Architecture::ArmArchitecture)
-        androidAbi = QLatin1String(abi.wordWidth() == 64 ? Constants::ANDROID_ABI_ARM64_V8A
-                                                         : Constants::ANDROID_ABI_ARMEABI_V7A);
-    else
-        androidAbi = QLatin1String(abi.wordWidth() == 64 ? Constants::ANDROID_ABI_X86_64
-                                                         : Constants::ANDROID_ABI_X86);
-    return androidAbi;
 }
 
 // --------------------------------------------------------------------------
@@ -465,7 +468,7 @@ Abi Abi::abiFromTargetTriplet(const QString &triple)
 {
     const QString machine = triple.toLower();
     if (machine.isEmpty())
-        return {};
+        return Abi();
 
     const QStringList parts = machine.split(QRegularExpression("[ /-]"));
 
@@ -474,6 +477,7 @@ Abi Abi::abiFromTargetTriplet(const QString &triple)
     OSFlavor flavor = UnknownFlavor;
     BinaryFormat format = UnknownFormat;
     unsigned char width = 0;
+    int unknownCount = 0;
 
     for (const QString &p : parts) {
         if (p == "unknown" || p == "pc"
@@ -632,13 +636,12 @@ Abi Abi::abiFromTargetTriplet(const QString &triple)
             width = 32;
         } else if (p.startsWith("asmjs")) {
             arch = AsmJsArchitecture;
-        } else if (p == "poky") {
-            os = LinuxOS;
-            flavor = PokyFlavor;
         } else if (p == "none") {
             os = BareMetalOS;
             flavor = GenericFlavor;
             format = ElfFormat;
+        } else {
+            ++unknownCount;
         }
     }
 
@@ -890,7 +893,7 @@ Abi Abi::fromString(const QString &abiString)
     if (!abiParts.isEmpty()) {
         architecture = architectureFromString(abiParts.at(0));
         if (abiParts.at(0) != toString(architecture))
-            return {};
+            return Abi();
     }
 
     Abi::OS os = UnknownOS;
@@ -921,11 +924,7 @@ Abi Abi::fromString(const QString &abiString)
             return Abi(architecture, os, flavor, format, 0);
     }
 
-    Abi abi(architecture, os, flavor, format, wordWidth);
-    if (abi.os() == LinuxOS && abi.osFlavor() == AndroidLinuxFlavor)
-        abi.m_param = androidAbiFromAbi(abi);
-
-    return abi;
+    return Abi(architecture, os, flavor, format, wordWidth);
 }
 
 Abi::Architecture Abi::architectureFromString(const QString &a)
@@ -1172,7 +1171,7 @@ Abis Abi::abisOfBinary(const Utils::FilePath &path)
     if (path.isEmpty())
         return tmp;
 
-    QByteArray data = path.fileContents(1024).value_or(QByteArray());
+    QByteArray data = path.fileContents(1024);
     if (data.size() >= 67
             && getUint8(data, 0) == '!' && getUint8(data, 1) == '<' && getUint8(data, 2) == 'a'
             && getUint8(data, 3) == 'r' && getUint8(data, 4) == 'c' && getUint8(data, 5) == 'h'
@@ -1199,11 +1198,11 @@ Abis Abi::abisOfBinary(const Utils::FilePath &path)
 
             tmp.append(abiOf(data.mid(toSkip)));
             if (tmp.isEmpty() && fileName == "/0              ") {
-                tmp = parseCoffHeader(data.mid(toSkip, 20), toSkip); // This might be windws...
+                tmp = parseCoffHeader(data.mid(toSkip, 20)); // This might be windws...
                 if (tmp.isEmpty()) {
                     // Qt 6.2 static builds have the coff headers for both MSVC and MinGW at offset 66
                     toSkip = 66 + fileNameOffset;
-                    tmp = parseCoffHeader(data.mid(toSkip, 20), toSkip);
+                    tmp = parseCoffHeader(data.mid(toSkip, 20));
                 }
             }
 
@@ -1211,7 +1210,7 @@ Abis Abi::abisOfBinary(const Utils::FilePath &path)
                 break;
 
             offset += (offset % 2); // ar is 2 byte aligned
-            data = path.fileContents(1024, offset).value_or(QByteArray());
+            data = path.fileContents(1024, offset);
         }
     } else {
         tmp = abiOf(data);
@@ -1219,7 +1218,7 @@ Abis Abi::abisOfBinary(const Utils::FilePath &path)
 
     // Remove duplicates:
     Abis result;
-    for (const Abi &a : std::as_const(tmp)) {
+    for (const Abi &a : qAsConst(tmp)) {
         if (!result.contains(a))
             result.append(a);
     }
@@ -1234,16 +1233,14 @@ Abis Abi::abisOfBinary(const Utils::FilePath &path)
 #   include <QTest>
 #   include <QFileInfo>
 
-#   include "projectexplorer_test.h"
-
-namespace ProjectExplorer::Internal {
+#   include "projectexplorer.h"
 
 static bool isGenericFlavor(ProjectExplorer::Abi::OSFlavor f)
 {
     return f == ProjectExplorer::Abi::GenericFlavor;
 }
 
-void ProjectExplorerTest::testAbiRoundTrips()
+void ProjectExplorer::ProjectExplorerPlugin::testAbiRoundTrips()
 {
     for (int i = 0; i <= Abi::UnknownArchitecture; ++i) {
         const QString string = Abi::toString(static_cast<Abi::Architecture>(i));
@@ -1280,7 +1277,7 @@ void ProjectExplorerTest::testAbiRoundTrips()
     }
 }
 
-void ProjectExplorerTest::testAbiOfBinary_data()
+void ProjectExplorer::ProjectExplorerPlugin::testAbiOfBinary_data()
 {
     QTest::addColumn<QString>("file");
     QTest::addColumn<QStringList>("abis");
@@ -1294,7 +1291,7 @@ void ProjectExplorerTest::testAbiOfBinary_data()
 
     // Clone test data from: https://git.qt.io/chstenge/creator-test-data
     // Set up prefix for test data now that we can be sure to have some tests to run:
-    QString prefix = Utils::qtcEnvironmentVariable("QTC_TEST_EXTRADATALOCATION");
+    QString prefix = QString::fromLocal8Bit(qgetenv("QTC_TEST_EXTRADATALOCATION"));
     if (prefix.isEmpty())
         return;
     prefix += "/projectexplorer/abi";
@@ -1417,7 +1414,7 @@ void ProjectExplorerTest::testAbiOfBinary_data()
             << (QStringList() << QString::fromLatin1("x86-windows-msys-pe-32bit"));
 }
 
-void ProjectExplorerTest::testAbiOfBinary()
+void ProjectExplorer::ProjectExplorerPlugin::testAbiOfBinary()
 {
     QFETCH(QString, file);
     QFETCH(QStringList, abis);
@@ -1433,7 +1430,7 @@ void ProjectExplorerTest::testAbiOfBinary()
         QCOMPARE(result.at(i).toString(), abis.at(i));
 }
 
-void ProjectExplorerTest::testAbiFromTargetTriplet_data()
+void ProjectExplorer::ProjectExplorerPlugin::testAbiFromTargetTriplet_data()
 {
     QTest::addColumn<int>("architecture");
     QTest::addColumn<int>("os");
@@ -1550,7 +1547,7 @@ void ProjectExplorerTest::testAbiFromTargetTriplet_data()
                                               << int(Abi::EmscriptenFormat) << 32;
 }
 
-void ProjectExplorerTest::testAbiFromTargetTriplet()
+void ProjectExplorer::ProjectExplorerPlugin::testAbiFromTargetTriplet()
 {
     QFETCH(int, architecture);
     QFETCH(int, os);
@@ -1566,7 +1563,7 @@ void ProjectExplorerTest::testAbiFromTargetTriplet()
     QCOMPARE(Abi::abiFromTargetTriplet(QLatin1String(QTest::currentDataTag())), expectedAbi);
 }
 
-void ProjectExplorerTest::testAbiUserOsFlavor_data()
+void ProjectExplorer::ProjectExplorerPlugin::testAbiUserOsFlavor_data()
 {
     QTest::addColumn<int>("os");
     QTest::addColumn<QString>("osFlavorName");
@@ -1594,7 +1591,7 @@ void ProjectExplorerTest::testAbiUserOsFlavor_data()
             << int(Abi::UnixOS) << "msvc2100" << int(Abi::UnknownFlavor) + 1;
 }
 
-void ProjectExplorerTest::testAbiUserOsFlavor()
+void ProjectExplorer::ProjectExplorerPlugin::testAbiUserOsFlavor()
 {
     QFETCH(int, os);
     QFETCH(QString, osFlavorName);
@@ -1626,6 +1623,5 @@ void ProjectExplorerTest::testAbiUserOsFlavor()
      }
 }
 
-} // ProjectExplorer::Internal
 
-#endif // WITH_TESTS
+#endif

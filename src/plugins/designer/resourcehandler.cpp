@@ -1,17 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "resourcehandler.h"
-
 #include "designerconstants.h"
 
-#include <projectexplorer/project.h>
 #include <projectexplorer/projectexplorer.h>
-#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projectnodes.h>
-
+#include <projectexplorer/project.h>
+#include <projectexplorer/session.h>
 #include <resourceeditor/resourcenode.h>
-
 #include <utils/algorithm.h>
 #include <utils/qtcassert.h>
 
@@ -45,10 +64,10 @@ void ResourceHandler::ensureInitialized()
                 Qt::QueuedConnection);
     };
 
-    for (Project *p : ProjectManager::projects())
+    for (Project *p : SessionManager::projects())
         connector(p);
 
-    connect(ProjectManager::instance(), &ProjectManager::projectAdded, this, connector);
+    connect(SessionManager::instance(), &SessionManager::projectAdded, this, connector);
 
     m_originalUiQrcPaths = m_form->activeResourceFilePaths();
     if (Designer::Constants::Internal::debug)
@@ -71,13 +90,13 @@ void ResourceHandler::updateResourcesHelper(bool updateProjectResources)
         qDebug() << "ResourceHandler::updateResources()" << fileName;
 
     // Filename could change in the meantime.
-    Project *project = ProjectManager::projectForFile(Utils::FilePath::fromUserInput(fileName));
+    Project *project = SessionManager::projectForFile(Utils::FilePath::fromUserInput(fileName));
     const bool dirty = m_form->property("_q_resourcepathchanged").toBool();
     if (dirty)
         m_form->setDirty(true);
 
     // Does the file belong to a project?
-    if (project && project->rootProjectNode()) {
+    if (project) {
         // Collect project resource files.
 
         // Find the (sub-)project the file belongs to. We don't want to find resources
@@ -118,13 +137,13 @@ void ResourceHandler::updateResourcesHelper(bool updateProjectResources)
         // Check if the user has chosen to update the lacking resource inside designer
         if (dirty && updateProjectResources) {
             QStringList qrcPathsToBeAdded;
-            for (const QString &originalQrcPath : std::as_const(m_originalUiQrcPaths)) {
+            for (const QString &originalQrcPath : qAsConst(m_originalUiQrcPaths)) {
                 if (!projectQrcFiles.contains(originalQrcPath) && !qrcPathsToBeAdded.contains(originalQrcPath))
                     qrcPathsToBeAdded.append(originalQrcPath);
             }
             if (!qrcPathsToBeAdded.isEmpty()) {
                 m_handlingResources = true;
-                projectNodeForUiFile->addFiles(FileUtils::toFilePathList(qrcPathsToBeAdded));
+                projectNodeForUiFile->addFiles(Utils::transform(qrcPathsToBeAdded, &FilePath::fromString));
                 m_handlingResources = false;
                 projectQrcFiles += qrcPathsToBeAdded;
             }

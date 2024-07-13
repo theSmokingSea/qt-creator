@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmljsreformatter.h"
 #include "qmljscodeformatter.h"
@@ -101,23 +123,22 @@ public:
         _hadEmptyLine = false;
         _binaryExpDepth = 0;
 
-        const QString &source = _doc->source();
+
         // emit directives
         if (_doc->bind()->isJsLibrary()) {
-            const QString pragmaLine(".pragma library");
-            out(pragmaLine, SourceLocation(source.indexOf(".pragma"), pragmaLine.length()));
+            out(QLatin1String(".pragma library"));
             newLine();
         }
         const QList<SourceLocation> &directives = _doc->jsDirectives();
         for (const auto &d: directives) {
-            quint32 line = 0;
-            int i = -1;
-            while (++line < d.startLine)
-                i = source.indexOf(QChar('\n'), i + 1);
+            quint32 line = 1;
+            int i = 0;
+            while (line++ < d.startLine && i++ >= 0)
+                i = _doc->source().indexOf(QChar('\n'), i);
             quint32 offset = static_cast<quint32>(i) + d.startColumn;
-            int endline = source.indexOf('\n', static_cast<int>(offset) + 1);
-            int end = endline == -1 ? source.length() : endline;
-            quint32 length = static_cast<quint32>(end) - offset + 1;
+            int endline = _doc->source().indexOf('\n', static_cast<int>(offset) + 1);
+            int end = endline == -1 ? _doc->source().length() : endline;
+            quint32 length =  static_cast<quint32>(end) - offset;
             out(SourceLocation(offset, length, d.startLine, d.startColumn));
         }
         if (!directives.isEmpty())
@@ -274,7 +295,7 @@ protected:
             const int minContentLength = 10;
 
             qreal result = badnessFromSplits;
-            for (const QString &line : std::as_const(lines)) {
+            foreach (const QString &line, lines) {
                 // really long lines should be avoided at all cost
                 if (line.size() > strongMaxLineLength) {
                     result += 50 + (line.size() - strongMaxLineLength);
@@ -590,32 +611,11 @@ protected:
         return true;
     }
 
-    bool visit(UiAnnotation *ast) override
-    {
-        out("@");
-        accept(ast->qualifiedTypeNameId);
-        out(" ");
-        accept(ast->initializer);
-        return false;
-    }
-
-    bool visit(UiAnnotationList *ast) override
-    {
-        for (UiAnnotationList *it = ast; it; it = it->next) {
-            accept(it->annotation);
-            newLine();
-        }
-        return false;
-    }
-
     bool visit(UiObjectDefinition *ast) override
     {
-        accept(ast->annotations);
-
         accept(ast->qualifiedTypeNameId);
         out(" ");
         accept(ast->initializer);
-
         return false;
     }
 
@@ -708,12 +708,9 @@ protected:
 
     bool visit(UiScriptBinding *ast) override
     {
-        accept(ast->annotations);
-
         accept(ast->qualifiedId);
         out(": ", ast->colonToken);
         accept(ast->statement);
-
         return false;
     }
 
@@ -1112,10 +1109,7 @@ protected:
         out(" ");
         out(ast->lparenToken);
         accept(ast->lhs);
-        if (ast->type == ForEachType::In)
-            out(" in ");
-        else
-            out(" of ");
+        out(" in ");
         accept(ast->expression);
         out(ast->rparenToken);
         acceptBlockOrIndented(ast->statement);
@@ -1282,10 +1276,6 @@ protected:
         out(ast->rparenToken);
         if (ast->isArrowFunction && !ast->formals)
             out("()");
-        if (ast->typeAnnotation) {
-            out(": ");
-            out(ast->typeAnnotation->type->toString());
-        }
         out(" ");
         if (ast->isArrowFunction)
             out("=> ");
@@ -1318,7 +1308,6 @@ protected:
     {
         for (UiObjectMemberList *it = ast; it; it = it->next) {
             accept(it->member);
-
             if (it->next)
                 newLine();
         }
@@ -1410,10 +1399,6 @@ protected:
     {
         for (FormalParameterList *it = ast; it; it = it->next) {
             accept(it->element);
-            if (it->element->typeAnnotation) {
-                out(": ");
-                out(it->element->typeAnnotation->type->toString());
-            }
             if (it->next)
                 out(", ");
         }

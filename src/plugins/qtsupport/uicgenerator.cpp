@@ -1,97 +1,107 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "uicgenerator.h"
-
 #include "baseqtversion.h"
-#include "qtkitaspect.h"
+#include "qtkitinformation.h"
 
-#include <projectexplorer/buildconfiguration.h>
-#include <projectexplorer/extracompiler.h>
 #include <projectexplorer/kitmanager.h>
 #include <projectexplorer/target.h>
+#include <projectexplorer/buildconfiguration.h>
 
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
+#include <utils/qtcprocess.h>
 
-#include <QDateTime>
+#include <QFileInfo>
+#include <QDir>
 #include <QLoggingCategory>
+#include <QDateTime>
 
 using namespace ProjectExplorer;
-using namespace Utils;
 
-namespace QtSupport::Internal {
+namespace QtSupport {
 
-class UicGenerator final : public ProcessExtraCompiler
+UicGenerator::UicGenerator(const Project *project, const Utils::FilePath &source,
+                           const Utils::FilePaths &targets, QObject *parent) :
+    ProcessExtraCompiler(project, source, targets, parent)
 {
-public:
-    UicGenerator(const Project *project, const FilePath &source,
-                 const FilePaths &targets, QObject *parent)
-        : ProcessExtraCompiler(project, source, targets, parent)
-    {
-        QTC_ASSERT(targets.count() == 1, return);
-    }
+    QTC_ASSERT(targets.count() == 1, return);
+}
 
-protected:
-    FilePath command() const final;
-    QStringList arguments() const final { return {"-p"}; }
-    FileNameToContentsHash handleProcessFinished(Process *process) final;
-};
-
-FilePath UicGenerator::command() const
+Utils::FilePath UicGenerator::command() const
 {
-    Target *target = project()->activeTarget();
-    Kit *kit = target ? target->kit() : KitManager::defaultKit();
-    QtVersion *version = QtKitAspect::qtVersion(kit);
+    QtSupport::QtVersion *version = nullptr;
+    Target *target;
+    if ((target = project()->activeTarget()))
+        version = QtSupport::QtKitAspect::qtVersion(target->kit());
+    else
+        version = QtSupport::QtKitAspect::qtVersion(KitManager::defaultKit());
 
     if (!version)
-        return {};
+        return Utils::FilePath();
 
     return version->uicFilePath();
 }
 
-FileNameToContentsHash UicGenerator::handleProcessFinished(Process *process)
+QStringList UicGenerator::arguments() const
+{
+    return {"-p"};
+}
+
+FileNameToContentsHash UicGenerator::handleProcessFinished(Utils::QtcProcess *process)
 {
     FileNameToContentsHash result;
     if (process->exitStatus() != QProcess::NormalExit && process->exitCode() != 0)
         return result;
 
-    const FilePaths targetList = targets();
+    const Utils::FilePaths targetList = targets();
     if (targetList.size() != 1)
         return result;
     // As far as I can discover in the UIC sources, it writes out local 8-bit encoding. The
     // conversion below is to normalize both the encoding, and the line terminators.
-    QByteArray content = QString::fromLocal8Bit(process->readAllRawStandardOutput()).toUtf8();
+    QByteArray content = QString::fromLocal8Bit(process->readAllStandardOutput()).toUtf8();
     content.prepend("#pragma once\n");
     result[targetList.first()] = content;
     return result;
 }
 
-// UicGeneratorFactory
-
-class UicGeneratorFactory final : public ExtraCompilerFactory
+FileType UicGeneratorFactory::sourceType() const
 {
-public:
-    explicit UicGeneratorFactory(QObject *guard) : m_guard(guard) {}
-
-private:
-    FileType sourceType() const final { return FileType::Form; }
-
-    QString sourceTag() const final { return QLatin1String("ui"); }
-
-    ExtraCompiler *create(const Project *project,
-                          const FilePath &source,
-                          const FilePaths &targets) final
-    {
-        return new UicGenerator(project, source, targets, m_guard);
-    }
-
-    QObject *m_guard;
-};
-
-void setupUicGenerator(QObject *guard)
-{
-    static UicGeneratorFactory theUicGeneratorFactory(guard);
+    return FileType::Form;
 }
 
-} // QtSupport::Internal
+QString UicGeneratorFactory::sourceTag() const
+{
+    return QLatin1String("ui");
+}
+
+ExtraCompiler *UicGeneratorFactory::create(const Project *project,
+                                           const Utils::FilePath &source,
+                                           const Utils::FilePaths &targets)
+{
+    return new UicGenerator(project, source, targets, this);
+}
+
+} // QtSupport

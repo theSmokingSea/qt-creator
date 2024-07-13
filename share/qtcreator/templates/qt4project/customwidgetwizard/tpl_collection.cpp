@@ -10,3 +10,5 @@ QList<QDesignerCustomWidgetInterface*> @COLLECTION_PLUGIN_CLASS@::customWidgets(
 {
     return m_widgets;
 }
+
+@COLLECTION_PLUGIN_EXPORT@

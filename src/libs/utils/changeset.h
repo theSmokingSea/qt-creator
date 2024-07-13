@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -8,11 +30,8 @@
 #include <QString>
 #include <QList>
 
-#include <optional>
-
 QT_BEGIN_NAMESPACE
 class QTextCursor;
-class QTextDocument;
 QT_END_NAMESPACE
 
 namespace Utils {
@@ -23,6 +42,7 @@ public:
     struct EditOp {
         enum Type
         {
+            Unset,
             Replace,
             Move,
             Insert,
@@ -31,28 +51,15 @@ public:
             Copy
         };
 
-        EditOp(Type t, const QString &text = {});
+        EditOp() = default;
+        EditOp(Type t): type(t) {}
 
-        Type type() const { return m_type; }
-        QString text() const { return m_text; }
-
-        bool hasFormat1() const { return m_format1.has_value(); }
-        bool format1() const { return hasFormat1() && *m_format1; }
-        void setFormat1(bool f) { m_format1 = f; }
-        bool hasFormat2() const { return m_format2.has_value(); }
-        bool format2() const { return hasFormat2() && *m_format2; }
-        void setFormat2(bool f) { m_format2 = f; }
-
+        Type type = Unset;
         int pos1 = 0;
         int pos2 = 0;
         int length1 = 0;
         int length2 = 0;
-
-    private:
-        Type m_type;
-        QString m_text;
-        std::optional<bool> m_format1;
-        std::optional<bool> m_format2;
+        QString text;
     };
 
     struct Range {
@@ -72,15 +79,8 @@ public:
     bool isEmpty() const;
 
     QList<EditOp> operationList() const;
-    QList<EditOp> &operationList();
 
     void clear();
-
-    static ChangeSet makeReplace(const Range &range, const QString &replacement);
-    static ChangeSet makeReplace(int start, int end, const QString &replacement);
-    static ChangeSet makeRemove(const Range &range);
-    static ChangeSet makeFlip(int start1, int end1, int start2, int end2);
-    static ChangeSet makeInsert(int pos, const QString &text);
 
     bool replace(const Range &range, const QString &replacement);
     bool remove(const Range &range);
@@ -98,7 +98,6 @@ public:
 
     void apply(QString *s);
     void apply(QTextCursor *textCursor);
-    void apply(QTextDocument *document);
 
 private:
     // length-based API.
@@ -123,8 +122,6 @@ private:
     QList<EditOp> m_operationList;
     bool m_error;
 };
-
-using EditOperations = QList<ChangeSet::EditOp>;
 
 inline bool operator<(const ChangeSet::Range &r1, const ChangeSet::Range &r2)
 {

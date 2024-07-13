@@ -1,36 +1,54 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
-#include "projectexplorer_export.h"
 #include "projectnodes.h"
 
 #include <coreplugin/generatedfile.h>
 #include <coreplugin/iwizardfactory.h>
 
-#include <utils/infolabel.h>
 #include <utils/wizardpage.h>
 #include <utils/treemodel.h>
 
 QT_BEGIN_NAMESPACE
-class QComboBox;
-class QLabel;
-class QPushButton;
+class QTreeView;
 class QModelIndex;
 QT_END_NAMESPACE
 
-namespace Utils { class TreeViewComboBox; }
 namespace Core { class IVersionControl; }
 
 namespace ProjectExplorer {
 namespace Internal {
 
 class AddNewTree;
-}
+
+namespace Ui { class WizardPage; }
 
 // Documentation inside.
-class PROJECTEXPLORER_EXPORT ProjectWizardPage : public Utils::WizardPage
+class ProjectWizardPage : public Utils::WizardPage
 {
     Q_OBJECT
 
@@ -47,30 +65,25 @@ public:
     Core::IVersionControl *currentVersionControl();
 
     // Returns the common path
-    void setFiles(const Utils::FilePaths &files);
+    void setFiles(const QStringList &files);
 
     bool runVersionControl(const QList<Core::GeneratedFile> &files, QString *errorMessage);
 
     void initializeProjectTree(Node *context, const Utils::FilePaths &paths,
                                Core::IWizardFactory::WizardKind kind,
-                               ProjectAction action,
-                               bool limitToSubproject);
+                               ProjectAction action);
 
     void initializeVersionControls();
     void setProjectUiVisible(bool visible);
-    void setStatus(const QString &text, Utils::InfoLabel::InfoType type);
-    void setStatusVisible(bool visible);
 
 signals:
     void projectNodeChanged();
     void versionControlChanged(int);
 
-protected:
-    void setVersionControlUiElementsVisible(bool visible);
-
 private:
     void projectChanged(int);
     void manageVcs();
+    void hideVersionControlUiElements();
 
     void setAdditionalInfo(const QString &text);
     void setAddingSubProject(bool addingSubProject);
@@ -79,21 +92,14 @@ private:
     void setProjectToolTip(const QString &);
     bool expandTree(const QModelIndex &root);
 
+    Ui::WizardPage *m_ui;
     QStringList m_projectToolTips;
     Utils::TreeModel<> m_model;
 
     QList<Core::IVersionControl*> m_activeVersionControls;
-    Utils::FilePath m_commonDirectory;
+    QString m_commonDirectory;
     bool m_repositoryExists = false;
-
-    QLabel *m_projectLabel;
-    Utils::TreeViewComboBox *m_projectComboBox;
-    Utils::InfoLabel *m_infoLabel;
-    QLabel *m_additionalInfo;
-    QLabel *m_addToVersionControlLabel;
-    QComboBox *m_addToVersionControlComboBox;
-    QPushButton *m_vcsManageButton;
-    QLabel *m_filesLabel;
 };
 
+} // namespace Internal
 } // namespace ProjectExplorer

@@ -1,12 +1,10 @@
 add_qtc_plugin(CMakeProjectManager
   PLUGIN_CLASS CMakeProjectPlugin
   DEPENDS QmlJS
-  PLUGIN_DEPENDS Core CppEditor Debugger ProjectExplorer TextEditor QtSupport
-  SYSTEM_INCLUDES 3dparty/cmake
+  PLUGIN_DEPENDS Core CppEditor ProjectExplorer TextEditor QtSupport
   SOURCES
     builddirparameters.cpp builddirparameters.h
     cmake_global.h
-    cmakeabstractprocessstep.cpp cmakeabstractprocessstep.h
     cmakeautocompleter.cpp cmakeautocompleter.h
     cmakebuildconfiguration.cpp cmakebuildconfiguration.h
     cmakebuildsystem.cpp cmakebuildsystem.h
@@ -15,10 +13,8 @@ add_qtc_plugin(CMakeProjectManager
     cmakeconfigitem.cpp cmakeconfigitem.h
     cmakeeditor.cpp cmakeeditor.h
     cmakefilecompletionassist.cpp cmakefilecompletionassist.h
-    cmakeformatter.cpp cmakeformatter.h
     cmakeindenter.cpp cmakeindenter.h
-    cmakeinstallstep.cpp cmakeinstallstep.h
-    cmakekitaspect.cpp cmakekitaspect.h
+    cmakekitinformation.cpp cmakekitinformation.h
     cmakelocatorfilter.cpp cmakelocatorfilter.h
     cmakeparser.cpp cmakeparser.h
     cmakeprocess.cpp cmakeprocess.h
@@ -27,9 +23,8 @@ add_qtc_plugin(CMakeProjectManager
     cmakeprojectconstants.h
     cmakeprojectimporter.cpp cmakeprojectimporter.h
     cmakeprojectmanager.cpp cmakeprojectmanager.h
-    cmakeprojectmanagertr.h
     cmakeprojectnodes.cpp cmakeprojectnodes.h
-    cmakeprojectplugin.cpp
+    cmakeprojectplugin.cpp cmakeprojectplugin.h
     cmakesettingspage.cpp cmakesettingspage.h
     cmakespecificsettings.cpp cmakespecificsettings.h
     cmaketool.cpp cmaketool.h
@@ -40,11 +35,5 @@ add_qtc_plugin(CMakeProjectManager
     fileapidataextractor.cpp fileapidataextractor.h
     fileapiparser.cpp fileapiparser.h
     fileapireader.cpp fileapireader.h
-    presetsparser.cpp presetsparser.h
-    presetsmacros.cpp presetsmacros.h
     projecttreehelper.cpp projecttreehelper.h
-    3rdparty/cmake/cmListFileCache.cxx
-    3rdparty/cmake/cmListFileLexer.cxx
-    3rdparty/cmake/cmListFileCache.h
-    3rdparty/rstparser/rstparser.cc 3rdparty/rstparser/rstparser.h
 )

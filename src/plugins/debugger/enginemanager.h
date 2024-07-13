@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -7,10 +29,10 @@
 
 #include <QPointer>
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
 
 class DebuggerEngine;
-struct PerspectiveItem;
 
 class EngineManager final : public QObject
 {
@@ -22,25 +44,17 @@ public:
 
     static EngineManager *instance();
     static QAbstractItemModel *model();
-    static QAbstractItemModel *dapModel();
 
     static QString registerEngine(DebuggerEngine *engine);
     static void unregisterEngine(DebuggerEngine *engine);
 
-    static QString registerDefaultPerspective(const QString &name,
-                                              const QString &type,
-                                              const QString &id);
-
     static void activateDebugMode();
     static void deactivateDebugMode();
-    static void activateByIndex(int index);
 
     static QList<QPointer<DebuggerEngine> > engines();
     static QPointer<DebuggerEngine> currentEngine();
 
     static QWidget *engineChooser();
-    static QWidget *dapEngineChooser();
-
     static void updatePerspectives();
 
     static bool shutDown(); // Return true if some engine is being forced to shut down.
@@ -50,4 +64,5 @@ signals:
     void currentEngineChanged();
 };
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

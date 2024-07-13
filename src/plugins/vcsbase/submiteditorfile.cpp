@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "submiteditorfile.h"
 
@@ -9,7 +31,6 @@
 
 #include <QFileInfo>
 
-using namespace Core;
 using namespace VcsBase;
 using namespace VcsBase::Internal;
 using namespace Utils;
@@ -27,11 +48,12 @@ SubmitEditorFile::SubmitEditorFile(VcsBaseSubmitEditor *editor) :
 {
     setTemporary(true);
     connect(m_editor, &VcsBaseSubmitEditor::fileContentsChanged,
-            this, &IDocument::contentsChanged);
+            this, &Core::IDocument::contentsChanged);
 }
 
-IDocument::OpenResult SubmitEditorFile::open(QString *errorString, const FilePath &filePath,
-                                             const FilePath &realFilePath)
+Core::IDocument::OpenResult SubmitEditorFile::open(QString *errorString,
+                                                   const Utils::FilePath &filePath,
+                                                   const Utils::FilePath &realFilePath)
 {
     if (filePath.isEmpty())
         return OpenResult::ReadError;
@@ -67,15 +89,16 @@ void SubmitEditorFile::setModified(bool modified)
     emit changed();
 }
 
-bool SubmitEditorFile::saveImpl(QString *errorString, const FilePath &filePath, bool autoSave)
+bool SubmitEditorFile::save(QString *errorString, const FilePath &filePath, bool autoSave)
 {
-    FileSaver saver(filePath, QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text);
+    const FilePath &fName = filePath.isEmpty() ? this->filePath() : filePath;
+    FileSaver saver(fName, QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text);
     saver.write(m_editor->fileContents());
     if (!saver.finalize(errorString))
         return false;
     if (autoSave)
         return true;
-    setFilePath(filePath.absoluteFilePath());
+    setFilePath(fName.absoluteFilePath());
     setModified(false);
     if (!errorString->isEmpty())
         return false;
@@ -83,7 +106,7 @@ bool SubmitEditorFile::saveImpl(QString *errorString, const FilePath &filePath, 
     return true;
 }
 
-IDocument::ReloadBehavior SubmitEditorFile::reloadBehavior(ChangeTrigger state, ChangeType type) const
+Core::IDocument::ReloadBehavior SubmitEditorFile::reloadBehavior(ChangeTrigger state, ChangeType type) const
 {
     Q_UNUSED(state)
     Q_UNUSED(type)

@@ -1,44 +1,51 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "formattexteditor.h"
 
 #include "textdocument.h"
 #include "textdocumentlayout.h"
 #include "texteditor.h"
-#include "texteditortr.h"
 
 #include <coreplugin/messagemanager.h>
 
-#include <utils/async.h>
 #include <utils/differ.h>
-#include <utils/expected.h>
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
 #include <utils/qtcprocess.h>
+#include <utils/runextensions.h>
 #include <utils/temporarydirectory.h>
 #include <utils/textutils.h>
 
+#include <QFileInfo>
 #include <QFutureWatcher>
 #include <QScrollBar>
 #include <QTextBlock>
 
 using namespace Utils;
 
-using namespace std::chrono_literals;
-
 namespace TextEditor {
-
-struct FormatInput
-{
-    Utils::FilePath filePath;
-    QString sourceData;
-    TextEditor::Command command;
-    int startPos = -1;
-    int endPos = 0;
-};
-
-using FormatOutput = expected_str<QString>;
 
 void formatCurrentFile(const Command &command, int startPos, int endPos)
 {
@@ -53,80 +60,101 @@ static QString sourceData(TextEditorWidget *editor, int startPos, int endPos)
             : Utils::Text::textAt(editor->textCursor(), startPos, (endPos - startPos));
 }
 
-static FormatOutput format(const FormatInput &input)
+static FormatTask format(FormatTask task)
 {
-    const FilePath executable = input.command.executable();
-    if (executable.isEmpty())
-        return {};
+    task.error.clear();
+    task.formattedData.clear();
 
-    switch (input.command.processing()) {
+    const QString executable = task.command.executable();
+    if (executable.isEmpty())
+        return task;
+
+    switch (task.command.processing()) {
     case Command::FileProcessing: {
         // Save text to temporary file
+        const QFileInfo fi(task.filePath);
         Utils::TempFileSaver sourceFile(Utils::TemporaryDirectory::masterDirectoryPath()
-                                        + "/qtc_beautifier_XXXXXXXX." + input.filePath.suffix());
+                                        + "/qtc_beautifier_XXXXXXXX."
+                                        + fi.suffix());
         sourceFile.setAutoRemove(true);
-        sourceFile.write(input.sourceData.toUtf8());
+        sourceFile.write(task.sourceData.toUtf8());
         if (!sourceFile.finalize()) {
-            return Utils::make_unexpected(Tr::tr("Cannot create temporary file \"%1\": %2.")
-                         .arg(sourceFile.filePath().toUserOutput(), sourceFile.errorString()));
+            task.error = QString(QT_TRANSLATE_NOOP("TextEditor",
+                                                   "Cannot create temporary file \"%1\": %2."))
+                    .arg(sourceFile.filePath().toUserOutput(), sourceFile.errorString());
+            return task;
         }
 
         // Format temporary file
-        QStringList options = input.command.options();
+        QStringList options = task.command.options();
         options.replaceInStrings(QLatin1String("%file"), sourceFile.filePath().toString());
-        Process process;
-        process.setCommand({executable, options});
-        process.runBlocking(5s);
+        QtcProcess process;
+        process.setTimeoutS(5);
+        process.setCommand({FilePath::fromString(executable), options});
+        process.runBlocking();
         if (process.result() != ProcessResult::FinishedWithSuccess) {
-            return Utils::make_unexpected(Tr::tr("Failed to format: %1.")
-                                             .arg(process.exitMessage()));
+            task.error = QString(QT_TRANSLATE_NOOP("TextEditor", "Failed to format: %1."))
+                             .arg(process.exitMessage());
+            return task;
         }
         const QString output = process.cleanedStdErr();
         if (!output.isEmpty())
-            return Utils::make_unexpected(executable.toUserOutput() + ": " + output);
+            task.error = executable + QLatin1String(": ") + output;
 
         // Read text back
         Utils::FileReader reader;
         if (!reader.fetch(sourceFile.filePath(), QIODevice::Text)) {
-            return Utils::make_unexpected(Tr::tr("Cannot read file \"%1\": %2.")
-                         .arg(sourceFile.filePath().toUserOutput(), reader.errorString()));
+            task.error = QString(QT_TRANSLATE_NOOP("TextEditor", "Cannot read file \"%1\": %2."))
+                    .arg(sourceFile.filePath().toUserOutput(), reader.errorString());
+            return task;
         }
-        return QString::fromUtf8(reader.data());
+        task.formattedData = QString::fromUtf8(reader.data());
     }
+    return task;
 
     case Command::PipeProcessing: {
-        Process process;
-        QStringList options = input.command.options();
-        options.replaceInStrings("%filename", input.filePath.fileName());
-        options.replaceInStrings("%file", input.filePath.toString());
-        process.setCommand({executable, options});
-        process.setWriteData(input.sourceData.toUtf8());
+        QtcProcess process;
+        QStringList options = task.command.options();
+        options.replaceInStrings("%filename", QFileInfo(task.filePath).fileName());
+        options.replaceInStrings("%file", task.filePath);
+        process.setCommand({FilePath::fromString(executable), options});
+        process.setWriteData(task.sourceData.toUtf8());
         process.start();
-        if (!process.waitForFinished(5s)) {
-            return Utils::make_unexpected(Tr::tr("Cannot call %1 or some other error occurred. "
-                                                 "Timeout reached while formatting file %2.")
-                    .arg(executable.toUserOutput(), input.filePath.displayName()));
+        if (!process.waitForStarted(3000)) {
+            task.error = QString(QT_TRANSLATE_NOOP("TextEditor",
+                                                   "Cannot call %1 or some other error occurred."))
+                    .arg(executable);
+            return task;
         }
-        const QString errorText = process.readAllStandardError();
+        if (!process.waitForFinished(5000)) {
+            task.error = QString(QT_TRANSLATE_NOOP("TextEditor",
+                                                   "Cannot call %1 or some other error occurred. Timeout "
+                                                   "reached while formatting file %2."))
+                    .arg(executable, task.filePath);
+            return task;
+        }
+        const QByteArray errorText = process.readAllStandardError();
         if (!errorText.isEmpty()) {
-            return Utils::make_unexpected(QString("%1: %2").arg(executable.toUserOutput(),
-                                                                errorText));
+            task.error = QString::fromLatin1("%1: %2").arg(executable,
+                                                           QString::fromUtf8(errorText));
+            return task;
         }
 
-        QString formattedData = process.readAllStandardOutput();
+        task.formattedData = QString::fromUtf8(process.readAllStandardOutput());
 
-        if (input.command.pipeAddsNewline() && formattedData.endsWith('\n')) {
-            formattedData.chop(1);
-            if (formattedData.endsWith('\r'))
-                formattedData.chop(1);
+        if (task.command.pipeAddsNewline() && task.formattedData.endsWith('\n')) {
+            task.formattedData.chop(1);
+            if (task.formattedData.endsWith('\r'))
+                task.formattedData.chop(1);
         }
-        if (input.command.returnsCRLF())
-            formattedData.replace("\r\n", "\n");
+        if (task.command.returnsCRLF())
+            task.formattedData.replace("\r\n", "\n");
 
-        return formattedData;
+        return task;
     }
     }
-    return {};
+
+    return task;
 }
 
 /**
@@ -134,7 +162,7 @@ static FormatOutput format(const FormatInput &input)
  * actually changed parts are updated while preserving the cursor position, the folded
  * blocks, and the scroll bar position.
  */
-void updateEditorText(QPlainTextEdit *editor, const QString &text)
+static void updateEditorText(QPlainTextEdit *editor, const QString &text)
 {
     const QString editorText = editor->toPlainText();
     if (editorText == text)
@@ -219,7 +247,7 @@ void updateEditorText(QPlainTextEdit *editor, const QString &text)
                     }
                 }
             }
-            cursor.setPosition(cursor.position() + d.text.size(), QTextCursor::KeepAnchor);
+            cursor.movePosition(QTextCursor::Right, QTextCursor::KeepAnchor, d.text.size());
             cursor.removeSelectedText();
             break;
         }
@@ -227,7 +255,7 @@ void updateEditorText(QPlainTextEdit *editor, const QString &text)
         case Diff::Equal:
             // Adjust cursor position
             charactersInfrontOfCursor -= d.text.size();
-            cursor.setPosition(cursor.position() + d.text.size(), QTextCursor::MoveAnchor);
+            cursor.movePosition(QTextCursor::Right, QTextCursor::MoveAnchor, d.text.size());
             break;
         }
     }
@@ -242,7 +270,7 @@ void updateEditorText(QPlainTextEdit *editor, const QString &text)
                                               + absoluteVerticalCursorOffset / fontHeight);
     // Restore folded blocks
     const QTextDocument *doc = editor->document();
-    for (int blockId : std::as_const(foldedBlocks)) {
+    for (int blockId : qAsConst(foldedBlocks)) {
         const QTextBlock block = doc->findBlockByNumber(qMax(0, blockId));
         if (block.isValid())
             TextDocumentLayout::doFoldOrUnfold(block, false);
@@ -253,33 +281,40 @@ void updateEditorText(QPlainTextEdit *editor, const QString &text)
 
 static void showError(const QString &error)
 {
-    Core::MessageManager::writeFlashing(Tr::tr("Error in text formatting: %1").arg(error.trimmed()));
+    Core::MessageManager::writeFlashing(
+                QString(QT_TRANSLATE_NOOP("TextEditor", "Error in text formatting: %1"))
+                .arg(error.trimmed()));
 }
 
 /**
  * Checks the state of @a task and if the formatting was successful calls updateEditorText() with
  * the respective members of @a task.
  */
-static void checkAndApplyTask(const QPointer<QPlainTextEdit> &textEditor, const FormatInput &input,
-                              const FormatOutput &output)
+static void checkAndApplyTask(const FormatTask &task)
 {
-    if (!output.has_value()) {
-        showError(output.error());
+    if (!task.error.isEmpty()) {
+        showError(task.error);
         return;
     }
 
-    if (output->isEmpty()) {
-        showError(Tr::tr("Could not format file %1.").arg(input.filePath.displayName()));
+    if (task.formattedData.isEmpty()) {
+        showError(QString(QT_TRANSLATE_NOOP("TextEditor", "Could not format file %1.")).arg(
+                      task.filePath));
         return;
     }
 
+    QPlainTextEdit *textEditor = task.editor;
     if (!textEditor) {
-        showError(Tr::tr("File %1 was closed.").arg(input.filePath.displayName()));
+        showError(QString(QT_TRANSLATE_NOOP("TextEditor", "File %1 was closed.")).arg(
+                      task.filePath));
         return;
     }
 
-    const QString formattedData = (input.startPos < 0) ? *output
-        : textEditor->toPlainText().replace(input.startPos, (input.endPos - input.startPos), *output);
+    const QString formattedData = (task.startPos < 0)
+            ? task.formattedData
+            : QString(textEditor->toPlainText()).replace(
+                  task.startPos, (task.endPos - task.startPos), task.formattedData);
+
     updateEditorText(textEditor, formattedData);
 }
 
@@ -297,8 +332,8 @@ void formatEditor(TextEditorWidget *editor, const Command &command, int startPos
     const QString sd = sourceData(editor, startPos, endPos);
     if (sd.isEmpty())
         return;
-    const FormatInput input{editor->textDocument()->filePath(), sd, command, startPos, endPos};
-    checkAndApplyTask(editor, input, format(input));
+    checkAndApplyTask(format(FormatTask(editor, editor->textDocument()->filePath().toString(), sd,
+                                        command, startPos, endPos)));
 }
 
 /**
@@ -312,89 +347,18 @@ void formatEditorAsync(TextEditorWidget *editor, const Command &command, int sta
     if (sd.isEmpty())
         return;
 
-    auto watcher = new QFutureWatcher<FormatOutput>;
+    auto watcher = new QFutureWatcher<FormatTask>;
     const TextDocument *doc = editor->textDocument();
-    const FormatInput input{doc->filePath(), sd, command, startPos, endPos};
-    QObject::connect(doc, &TextDocument::contentsChanged, watcher,
-                     &QFutureWatcher<FormatOutput>::cancel);
-    QObject::connect(watcher, &QFutureWatcherBase::finished, watcher,
-                     [watcher, editor = QPointer<QPlainTextEdit>(editor), input] {
+    QObject::connect(doc, &TextDocument::contentsChanged, watcher, &QFutureWatcher<FormatTask>::cancel);
+    QObject::connect(watcher, &QFutureWatcherBase::finished, [watcher] {
         if (watcher->isCanceled())
-            showError(Tr::tr("File was modified."));
+            showError(QString(QT_TRANSLATE_NOOP("TextEditor", "File was modified.")));
         else
-            checkAndApplyTask(editor, input, watcher->result());
+            checkAndApplyTask(watcher->result());
         watcher->deleteLater();
     });
-    watcher->setFuture(Utils::asyncRun(&format, input));
+    watcher->setFuture(Utils::runAsync(&format, FormatTask(editor, doc->filePath().toString(), sd,
+                                                           command, startPos, endPos)));
 }
 
 } // namespace TextEditor
-
-#ifdef WITH_TESTS
-
-#include <QTest>
-
-namespace TextEditor::Internal {
-
-class FormatTextTest final : public QObject
-{
-    Q_OBJECT
-
-private slots:
-    void testFormatting_data();
-    void testFormatting();
-};
-
-void FormatTextTest::testFormatting_data()
-{
-    QTest::addColumn<QString>("code");
-    QTest::addColumn<QString>("result");
-
-    {
-        QString code {
-            "import QtQuick\n\n"
-            "  Item {\n"
-            "     property string cat: [\"👩🏽‍🚒d👩🏽‍🚒d👩🏽‍🚒\"]\n"
-            "        property string dog: cat\n"
-            "}\n"
-        };
-
-        QString result {
-            "import QtQuick\n\n"
-            "Item {\n"
-            "    property string cat: [\"👩🏽‍🚒\"]\n"
-            "    property string dog: cat\n"
-            "}\n"
-        };
-
-        QTest::newRow("unicodeCharacterInFormattedCode") << code << result;
-    }
-}
-
-void FormatTextTest::testFormatting()
-{
-    QFETCH(QString, code);
-    QFETCH(QString, result);
-
-    QScopedPointer<TextEditorWidget> editor(new TextEditorWidget);
-    QVERIFY(editor.get());
-
-    QSharedPointer<TextDocument> doc(new TextDocument);
-    doc->setPlainText(code);
-    editor->setTextDocument(doc);
-
-    TextEditor::updateEditorText(editor.get(), result);
-
-    QCOMPARE(editor->toPlainText(), result);
-}
-
-QObject *createFormatTextTest()
-{
-    return new FormatTextTest;
-}
-
-} // namespace TextEditor::Internal
-
-#include "formattexteditor.moc"
-
-#endif // WITH_TESTS

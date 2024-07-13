@@ -1,18 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "devicetestdialog.h"
-
-#include "../projectexplorertr.h"
+#include "ui_devicetestdialog.h"
 
 #include <utils/fileutils.h>
-#include <utils/layoutbuilder.h>
 
 #include <QBrush>
 #include <QColor>
-#include <QDialogButtonBox>
 #include <QFont>
-#include <QPlainTextEdit>
 #include <QPushButton>
 #include <QTextCharFormat>
 
@@ -27,10 +45,9 @@ public:
     {
     }
 
+    Ui::DeviceTestDialog ui;
     DeviceTester * const deviceTester;
     bool finished;
-    QPlainTextEdit *textEdit;
-    QDialogButtonBox *buttonBox;
 };
 
 DeviceTestDialog::DeviceTestDialog(const IDevice::Ptr &deviceConfiguration,
@@ -38,19 +55,9 @@ DeviceTestDialog::DeviceTestDialog(const IDevice::Ptr &deviceConfiguration,
     : QDialog(parent)
     , d(std::make_unique<DeviceTestDialogPrivate>(deviceConfiguration->createDeviceTester()))
 {
-    resize(620, 580);
-    d->textEdit = new QPlainTextEdit;
-    d->textEdit->setReadOnly(true);
-    d->buttonBox = new QDialogButtonBox(QDialogButtonBox::Cancel);
-
-    using namespace Layouting;
-    Column {
-        d->textEdit,
-        d->buttonBox,
-    }.attachTo(this);
+    d->ui.setupUi(this);
 
     d->deviceTester->setParent(this);
-    connect(d->buttonBox, &QDialogButtonBox::rejected, this, &DeviceTestDialog::reject);
     connect(d->deviceTester, &DeviceTester::progressMessage,
             this, &DeviceTestDialog::handleProgressMessage);
     connect(d->deviceTester, &DeviceTester::errorMessage,
@@ -84,24 +91,26 @@ void DeviceTestDialog::handleErrorMessage(const QString &message)
 void DeviceTestDialog::handleTestFinished(DeviceTester::TestResult result)
 {
     d->finished = true;
-    d->buttonBox->button(QDialogButtonBox::Cancel)->setText(Tr::tr("Close"));
+    d->ui.buttonBox->button(QDialogButtonBox::Cancel)->setText(tr("Close"));
 
     if (result == DeviceTester::TestSuccess)
-        addText(Tr::tr("Device test finished successfully."),
+        addText(tr("Device test finished successfully."),
                 Utils::Theme::OutputPanes_NormalMessageTextColor, true);
     else
-        addText(Tr::tr("Device test failed."), Utils::Theme::OutputPanes_ErrorMessageTextColor, true);
+        addText(tr("Device test failed."), Utils::Theme::OutputPanes_ErrorMessageTextColor, true);
 }
 
 void DeviceTestDialog::addText(const QString &text, Utils::Theme::Color color, bool bold)
 {
-    QTextCharFormat format = d->textEdit->currentCharFormat();
-    format.setForeground(QBrush(creatorColor(color)));
+    Utils::Theme *theme = Utils::creatorTheme();
+
+    QTextCharFormat format = d->ui.textEdit->currentCharFormat();
+    format.setForeground(QBrush(theme->color(color)));
     QFont font = format.font();
     font.setBold(bold);
     format.setFont(font);
-    d->textEdit->setCurrentCharFormat(format);
-    d->textEdit->appendPlainText(text);
+    d->ui.textEdit->setCurrentCharFormat(format);
+    d->ui.textEdit->appendPlainText(text);
 }
 
 } // namespace Internal

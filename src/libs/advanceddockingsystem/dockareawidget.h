@@ -1,15 +1,44 @@
-// Copyright (C) 2020 Uwe Kindler
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-2.1-or-later OR GPL-3.0-or-later
+/****************************************************************************
+**
+** Copyright (C) 2020 Uwe Kindler
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 2.1 or (at your option) any later version.
+** The licenses are as published by the Free Software Foundation
+** and appearing in the file LICENSE.LGPLv21 included in the packaging
+** of this file. Please review the following information to ensure
+** the GNU Lesser General Public License version 2.1 requirements
+** will be met: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "ads_globals.h"
-#include "autohidetab.h"
 #include "dockwidget.h"
 
 #include <QFrame>
-
-#include <memory>
 
 QT_BEGIN_NAMESPACE
 class QAbstractButton;
@@ -23,8 +52,6 @@ class DockManager;
 class DockContainerWidget;
 class DockContainerWidgetPrivate;
 class DockAreaTitleBar;
-class DockingStateReader;
-class AutoHideDockContainer;
 
 /**
  * DockAreaWidget manages multiple instances of DockWidgets.
@@ -35,7 +62,7 @@ class ADS_EXPORT DockAreaWidget : public QFrame
 {
     Q_OBJECT
 private:
-    std::unique_ptr<DockAreaWidgetPrivate> d; ///< private data (pimpl)
+    DockAreaWidgetPrivate *d; ///< private data (pimpl)
     friend struct DockAreaWidgetPrivate;
     friend class DockContainerWidget;
     friend class DockContainerWidgetPrivate;
@@ -44,9 +71,6 @@ private:
     friend class DockWidget;
     friend class DockManagerPrivate;
     friend class DockManager;
-    friend class AutoHideDockContainer;
-
-    void onDockWidgetFeaturesChanged();
 
     void onTabCloseRequested(int index);
 
@@ -56,34 +80,7 @@ private:
      */
     void reorderDockWidget(int fromIndex, int toIndex);
 
-    /*
-     * Update the auto hide button checked state based on if it's contained in an auto hide container or not
-     */
-    void updateAutoHideButtonCheckState();
-
-    /*
-     * Update the title bar button tooltips
-     */
-    void updateTitleBarButtonsToolTips();
-
-    /**
-     * Calculate the auto hide side bar location depending on the dock area
-     * widget position in the container
-     */
-    SideBarLocation calculateSideTabBarArea() const;
-
 protected:
-
-#ifdef Q_OS_WIN
-    /**
-     * Reimplements QWidget::event to handle QEvent::PlatformSurface
-     * This is here to fix issue #294 Tab refresh problem with a QGLWidget
-     * that exists since Qt version 5.12.7. So this function is here to
-     * work around a Qt issue.
-     */
-    virtual bool event(QEvent *event) override;
-#endif
-
     /**
      * Inserts a dock widget into dock area.
      * All dockwidgets in the dock area tabified in a stacked layout with tabs.
@@ -145,25 +142,10 @@ protected:
      */
     void markTitleBarMenuOutdated();
 
-    /*
-     * Update the title bar button visibility based on if it's top level or not
-     */
-    void updateTitleBarButtonVisibility(bool isTopLevel) const;
-
     void toggleView(bool open);
 
 public:
     using Super = QFrame;
-
-    /**
-     * Dock area related flags
-     */
-    enum eDockAreaFlag
-    {
-        HideSingleWidgetTitleBar = 0x0001,
-        DefaultFlags = 0x0000
-    };
-    Q_DECLARE_FLAGS(DockAreaFlags, eDockAreaFlag)
 
     /**
      * Default Constructor
@@ -185,27 +167,6 @@ public:
      * if there is no
      */
     DockContainerWidget *dockContainer() const;
-    /**
-     * Returns the auto hide dock container widget this dock area widget belongs to or 0
-     * if there is no
-     */
-    AutoHideDockContainer *autoHideDockContainer() const;
-
-    /**
-     * Returns true if the dock area is in an auto hide container
-     */
-    bool isAutoHide() const;
-
-    /**
-     * Sets the current auto hide dock container
-     */
-    void setAutoHideDockContainer(AutoHideDockContainer *autoHideDockContainer);
-
-    /**
-     * Returns the largest minimumSizeHint() of the dock widgets in this area.
-     * The minimum size hint is updated if a dock widget is removed or added.
-     */
-    virtual QSize minimumSizeHint() const override;
 
     /**
      * Returns the rectangle of the title area
@@ -277,12 +238,6 @@ public:
     void saveState(QXmlStreamWriter &stream) const;
 
     /**
-     * Restores a dock area.
-     * \see restoreChildNodes() for details
-     */
-    static bool restoreState(DockingStateReader& stream, DockAreaWidget*& createdWidget, bool testing, DockContainerWidget* parentContainer);
-
-    /**
      * This functions returns the dock widget features of all dock widget in
      * this area.
      * A bitwise and is used to combine the flags of all dock widgets. That
@@ -320,41 +275,6 @@ public:
     DockAreaTitleBar *titleBar() const;
 
     /**
-     * Returns the dock area flags - a combination of flags that configure the
-     * appearance and features of the dock area.
-     * \see setDockAreaFlasg()
-     */
-    DockAreaFlags dockAreaFlags() const;
-
-    /**
-     * Sets the dock area flags - a combination of flags that configure the
-     * appearance and features of the dock area
-     */
-    void setDockAreaFlags(DockAreaFlags flags);
-
-    /**
-     * Sets the dock area flag Flag on this widget if on is true; otherwise
-     * clears the flag.
-     */
-    void setDockAreaFlag(eDockAreaFlag flag, bool on);
-
-    /**
-     * Returns true if the area has a single dock widget and contains the central widget of it's manager.
-     */
-    bool isCentralWidgetArea() const;
-
-    /**
-     * Returns true if the area contains the central widget of it's manager.
-     */
-    bool containsCentralWidget() const;
-
-    /**
-     * If this dock area is the one and only visible area in a container, then
-     * this function returns true
-     */
-    bool isTopLevelArea() const;
-
-    /**
      * This activates the tab for the given tab index.
      * If the dock widget for the given tab is not visible, the this function
      * call will make it visible.
@@ -367,27 +287,16 @@ public:
     void closeArea();
 
     /**
-     * Sets the dock area into auto hide mode or into normal mode.
-     * If the dock area is switched to auto hide mode, then all dock widgets
-     * that are pinable will be added to the sidebar
-     */
-    void setAutoHide(bool enable, SideBarLocation location = SideBarNone, int tabIndex = -1);
-
-    /**
-     * Switches the dock area to auto hide mode or vice versa depending on its
-     * current state.
-     */
-    void toggleAutoHide(SideBarLocation location = SideBarNone);
-
-    /**
      * This function closes all other areas except of this area
      */
     void closeOtherAreas();
 
     /**
-     * Moves the dock area into its own floating widget if the area DockWidgetFloatable flag is true.
+     * Returns the largest minimumSizeHint() of the dock widgets in this
+     * area.
+     * The minimum size hint is updated if a dock widget is removed or added.
      */
-    void setFloating();
+    QSize minimumSizeHint() const override;
 
 signals:
     /**

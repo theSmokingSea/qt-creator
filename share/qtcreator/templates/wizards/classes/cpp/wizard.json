@@ -16,8 +16,8 @@
         { "key": "SrcPath", "value": "%{Path}/%{SrcFileName}" },
         { "key": "CN", "value": "%{JS: Cpp.className(value('Class'))}" },
         { "key": "Base", "value": "%{JS: value('BaseCB') === '' ? value('BaseEdit') : value('BaseCB')}" },
-        { "key": "isQObject", "value": "%{JS: [ 'QObject', 'QWidget', 'QMainWindow', 'QQuickItem'].indexOf(value('Base')) >= 0 }" },
-        { "key": "GUARD", "value": "%{JS: Cpp.headerGuard(value('HdrFileName'))}" },
+        { "key": "isQObject", "value": "%{JS: [ 'QObject', 'QWidget', 'QMainWindow', 'QDeclarativeItem', 'QQuickItem'].indexOf(value('Base')) >= 0 }" },
+        { "key": "GUARD", "value": "%{JS: Cpp.classToHeaderGuard(value('Class'), Util.suffix(value('HdrFileName')))}" },
         { "key": "SharedDataInit", "value": "%{JS: (value('IncludeQSharedData')) ? 'data(new %{CN}Data)' : '' }" },
         { "key": "Dependencies", "value": "%{JS: '' + (value('IncludeQObject') || value('IncludeQSharedData') || value('BaseCB') === 'QObject' ? ':Qt.core' : '') + (value('IncludeQWidget') || value('IncludeQMainWindow') || value('BaseCB') === 'QWidget' || value('BaseCB') === 'QMainWindow' ? ':Qt.widgets' : '') + (value('IncludeQQuickItem') || value('BaseCB') === 'QQuickItem' ? ':Qt.quick' : '')}"}
     ],
@@ -48,7 +48,7 @@
                     "data":
                     {
                         "items": [ { "trKey": "<Custom>", "value": "" },
-                                   "QObject", "QWidget", "QMainWindow", "QQuickItem" ]
+                                   "QObject", "QWidget", "QMainWindow", "QDeclarativeItem", "QQuickItem" ]
                     }
                 },
                 {
@@ -58,8 +58,8 @@
                     "mandatory": false,
                     "data":
                     {
-                        "text": "%{BaseCB}",
-                        "disabledText": "%{BaseCB}",
+                        "trText": "%{BaseCB}",
+                        "trDisabledText": "%{BaseCB}",
                         "completion": "classes"
                     }
                 },
@@ -103,8 +103,19 @@
                     }
                 },
                 {
+                    "name": "IncludeQDeclarativeItem",
+                    "trDisplayName": "Include QDeclarativeItem - Qt Quick 1",
+                    "type": "CheckBox",
+                    "data":
+                    {
+                        "checkedValue": "QDeclarativeItem",
+                        "uncheckedValue": "",
+                        "checked": "%{JS: value('BaseCB') === 'QDeclarativeItem'}"
+                    }
+                },
+                {
                     "name": "IncludeQQuickItem",
-                    "trDisplayName": "Include QQuickItem",
+                    "trDisplayName": "Include QQuickItem - Qt Quick 2",
                     "type": "CheckBox",
                     "data":
                     {
@@ -132,18 +143,7 @@
                     {
                         "checkedValue": "AddQObjectMacro",
                         "uncheckedValue": "",
-                        "checked": "%{JS: [ 'QObject', 'QWidget', 'QMainWindow', 'QQuickItem'].indexOf(value('Base')) >= 0 }"
-                    }
-                },
-                {
-                    "name": "AddQmlElementMacro",
-                    "trDisplayName": "Add QML_ELEMENT",
-                    "type": "CheckBox",
-                    "data":
-                    {
-                        "checkedValue": "AddQmlElementMacro",
-                        "uncheckedValue": "",
-                        "checked": "%{JS: ['QQuickItem'].indexOf(value('Base')) >= 0 }"
+                        "checked": "%{JS: [ 'QObject', 'QWidget', 'QMainWindow', 'QDeclarativeItem', 'QQuickItem'].indexOf(value('Base')) >= 0 }"
                     }
                 },
                 {
@@ -156,14 +156,14 @@
                     "type": "LineEdit",
                     "trDisplayName": "Header file:",
                     "mandatory": true,
-                    "data": { "text": "%{JS: Cpp.classToFileName(value('Class'), Cpp.cxxHeaderSuffix())}" }
+                    "data": { "trText": "%{JS: Cpp.classToFileName(value('Class'), Util.preferredSuffix('text/x-c++hdr'))}" }
                 },
                 {
                     "name": "SrcFileName",
                     "type": "LineEdit",
                     "trDisplayName": "Source file:",
                     "mandatory": true,
-                    "data": { "text": "%{JS: Cpp.classToFileName(value('Class'), Cpp.cxxSourceSuffix())}" }
+                    "data": { "trText": "%{JS: Cpp.classToFileName(value('Class'), Util.preferredSuffix('text/x-c++src'))}" }
                 },
                 {
                     "name": "Path",

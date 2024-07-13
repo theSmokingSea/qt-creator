@@ -1,16 +1,38 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "colorpreviewhoverhandler.h"
 #include "texteditor.h"
 
 #include <coreplugin/icore.h>
+#include <utils/executeondestruction.h>
 #include <utils/tooltip/tooltip.h>
 #include <utils/qtcassert.h>
 
-#include <QColor>
 #include <QPoint>
-#include <QScopeGuard>
+#include <QColor>
 #include <QTextBlock>
 
 using namespace Core;
@@ -33,12 +55,7 @@ static QString extractColorString(const QString &s, int pos)
         QChar c = s[firstPos];
         if (c == QLatin1Char('#'))
             break;
-        // color from string literal, i.e "red", 'red';
-        // strip leading and trailing quotes
-        if (c == QLatin1Char('\"') || c == QLatin1Char('\'')) {
-            firstPos += 1;
-            break;
-        }
+
         if (c == QLatin1Char(':')
                 && (firstPos > 3)
                 && (s.mid(firstPos-3, 4) == QLatin1String("Qt::"))) {
@@ -56,8 +73,6 @@ static QString extractColorString(const QString &s, int pos)
         return QString();
 
     int lastPos = firstPos + 1;
-    if (lastPos >= s.length())
-        return QString();
     do {
         QChar c = s[lastPos];
         if (!(c.isLetterOrNumber() || c == QLatin1Char(':')))
@@ -113,7 +128,7 @@ static QColor checkColorText(const QString &str)
         return fromEnumString(colorStr);
     }
 
-    return QColor::fromString(str);
+    return QColor();
 }
 
 // looks backwards through a string for the opening brace of a function
@@ -217,7 +232,6 @@ static QColor::Spec specForFunc(const QString &func)
     if ((func == QLatin1String("QColor"))
             || (func == QLatin1String("QRgb"))
             || (func == QLatin1String("rgb"))
-            || (func == QLatin1String("rgba"))
             || func.startsWith(QLatin1String("setRgb"))
             || func.startsWith(QLatin1String("setRgba"))){
         return QColor::Rgb;
@@ -226,15 +240,11 @@ static QColor::Spec specForFunc(const QString &func)
     if (func.startsWith(QLatin1String("setCmyk")))
         return QColor::Cmyk;
 
-    if (func.startsWith(QLatin1String("hsva"))
-        || func.startsWith(QLatin1String("setHsv"))) {
+    if (func.startsWith(QLatin1String("setHsv")))
         return QColor::Hsv;
-    }
 
-    if (func.startsWith(QLatin1String("hsla"))
-        || func.startsWith(QLatin1String("setHsl"))) {
+    if (func.startsWith(QLatin1String("setHsl")))
         return QColor::Hsv;
-    }
 
     return QColor::Invalid;
 }
@@ -323,9 +333,6 @@ static QColor colorFromFuncAndArgs(const QString &func, const QStringList &args)
         if (func == QLatin1String("setNamedColor"))
             return QColor(arg0);
 
-        if (func == QLatin1String("color"))
-            return QColor(arg0);
-
         if (arg0.startsWith(QLatin1Char('#')))
             return QColor(arg0);
 
@@ -341,16 +348,17 @@ static QColor colorFromFuncAndArgs(const QString &func, const QStringList &args)
     if (spec == QColor::Invalid)
         return QColor();
 
-    if (func.endsWith(QLatin1Char('F')) || func == QLatin1String("rgba"))
+    if (func.endsWith(QLatin1Char('F')))
         return colorFromArgsF(args, spec);
 
     return colorFromArgs(args, spec);
 }
 
 void ColorPreviewHoverHandler::identifyMatch(TextEditorWidget *editorWidget,
-                                             int pos, ReportPriority report)
+                                             int pos,
+                                             ReportPriority report)
 {
-    const QScopeGuard cleanup([this, report] { report(priority()); });
+    Utils::ExecuteOnDestruction reportPriority([this, report](){ report(priority()); });
 
     if (editorWidget->extraSelectionTooltip(pos).isEmpty()) {
         const QTextBlock tb = editorWidget->document()->findBlock(pos);

@@ -1,9 +1,29 @@
-// Copyright (C) 2022 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "projectfilecontenttools.h"
-
-#include "qmlprojectmanagertr.h"
 
 #include <projectexplorer/project.h>
 
@@ -18,7 +38,7 @@ QRegularExpression qdsVerRegexp(R"x(qdsVersion: "(.*)")x");
 const Utils::FilePaths rootCmakeFiles(ProjectExplorer::Project *project)
 {
     if (!project)
-        project = ProjectExplorer::ProjectManager::startupProject();
+        project = ProjectExplorer::SessionManager::startupProject();
     if (!project)
         return {};
     return project->projectDirectory().dirEntries({QList<QString>({"CMakeLists.txt"}), QDir::Files});
@@ -42,7 +62,7 @@ const QString qdsVersion(const Utils::FilePath &projectFilePath)
             return version;
     }
 
-    return Tr::tr("Unknown");
+    return QObject::tr("Unknown");
 }
 
 QRegularExpression quickRegexp("(quickVersion:)\\s*\"(\\d+.\\d+)\"",
@@ -52,7 +72,7 @@ QRegularExpression qt6Regexp("(qt6Project:)\\s*\"*(true|false)\"*",
 
 const QString qtVersion(const Utils::FilePath &projectFilePath)
 {
-    const QString defaultReturn = Tr::tr("Unknown");
+    const QString defaultReturn = QObject::tr("Unknown");
     const QString data = readFileContents(projectFilePath);
 
     // First check if quickVersion is contained in the project file
@@ -63,8 +83,8 @@ const QString qtVersion(const Utils::FilePath &projectFilePath)
     // If quickVersion wasn't found check for qt6Project
     match = qt6Regexp.match(data);
     if (match.hasMatch())
-        return match.captured(2).contains("true", Qt::CaseInsensitive) ? Tr::tr("Qt 6")
-                                                                       : Tr::tr("Qt 5");
+        return match.captured(2).contains("true", Qt::CaseInsensitive) ? QObject::tr("Qt 6")
+                                                                       : QObject::tr("Qt 5");
 
     return defaultReturn;
 }

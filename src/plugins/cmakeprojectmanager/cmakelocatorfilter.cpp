@@ -1,185 +1,193 @@
-// Copyright (C) 2016 Kläralvdalens Datakonsult AB, a KDAB Group company.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Kläralvdalens Datakonsult AB, a KDAB Group company.
+** Contact: Kläralvdalens Datakonsult AB (info@kdab.com)
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cmakelocatorfilter.h"
 
 #include "cmakebuildstep.h"
 #include "cmakebuildsystem.h"
 #include "cmakeproject.h"
-#include "cmakeprojectmanagertr.h"
 
-#include <coreplugin/locator/ilocatorfilter.h>
-
+#include <coreplugin/editormanager/editormanager.h>
 #include <projectexplorer/buildmanager.h>
 #include <projectexplorer/buildsteplist.h>
-#include <projectexplorer/projectmanager.h>
+#include <projectexplorer/session.h>
 #include <projectexplorer/target.h>
 
 #include <utils/algorithm.h>
 
-using namespace Core;
+using namespace CMakeProjectManager;
+using namespace CMakeProjectManager::Internal;
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace CMakeProjectManager::Internal {
+// --------------------------------------------------------------------
+// CMakeTargetLocatorFilter:
+// --------------------------------------------------------------------
 
-using BuildAcceptor = std::function<void(const FilePath &, const QString &)>;
-
-// CMakeBuildTargetFilter
-
-static LocatorMatcherTasks cmakeMatchers(const BuildAcceptor &acceptor)
+CMakeTargetLocatorFilter::CMakeTargetLocatorFilter()
 {
-    using namespace Tasking;
+    connect(SessionManager::instance(), &SessionManager::projectAdded,
+            this, &CMakeTargetLocatorFilter::projectListUpdated);
+    connect(SessionManager::instance(), &SessionManager::projectRemoved,
+            this, &CMakeTargetLocatorFilter::projectListUpdated);
 
-    Storage<LocatorStorage> storage;
+    // Initialize the filter
+    projectListUpdated();
+}
 
-    const auto onSetup = [storage, acceptor] {
-        const QString input = storage->input();
-        const QRegularExpression regexp
-            = ILocatorFilter::createRegExp(input, ILocatorFilter::caseSensitivity(input));
-        if (!regexp.isValid())
-            return;
-        LocatorFilterEntries entries[int(ILocatorFilter::MatchLevel::Count)];
+void CMakeTargetLocatorFilter::prepareSearch(const QString &entry)
+{
+    m_result.clear();
+    const QList<Project *> projects = SessionManager::projects();
+    for (Project *p : projects) {
+        auto cmakeProject = qobject_cast<const CMakeProject *>(p);
+        if (!cmakeProject || !cmakeProject->activeTarget())
+            continue;
+        auto bs = qobject_cast<CMakeBuildSystem *>(cmakeProject->activeTarget()->buildSystem());
+        if (!bs)
+            continue;
 
-        const QList<Project *> projects = ProjectManager::projects();
-        for (Project *project : projects) {
-            const auto cmakeProject = qobject_cast<const CMakeProject *>(project);
-            if (!cmakeProject || !cmakeProject->activeTarget())
+        const QList<CMakeBuildTarget> buildTargets = bs->buildTargets();
+        for (const CMakeBuildTarget &target : buildTargets) {
+            if (CMakeBuildSystem::filteredOutTarget(target))
                 continue;
-            const auto bs = qobject_cast<CMakeBuildSystem *>(
-                cmakeProject->activeTarget()->buildSystem());
-            if (!bs)
-                continue;
+            const int index = target.title.indexOf(entry);
+            if (index >= 0) {
+                const FilePath path = target.backtrace.isEmpty() ? cmakeProject->projectFilePath()
+                                                                 : target.backtrace.last().path;
+                const int line = target.backtrace.isEmpty() ? -1 : target.backtrace.last().line;
 
-            const QList<CMakeBuildTarget> buildTargets = bs->buildTargets();
-            for (const CMakeBuildTarget &target : buildTargets) {
-                if (CMakeBuildSystem::filteredOutTarget(target))
-                    continue;
-                const QRegularExpressionMatch match = regexp.match(target.title);
-                if (match.hasMatch()) {
-                    const FilePath projectPath = cmakeProject->projectFilePath();
-                    const QString displayName = target.title;
-                    LocatorFilterEntry entry;
-                    entry.displayName = displayName;
-                    if (acceptor) {
-                        entry.acceptor = [projectPath, displayName, acceptor] {
-                            acceptor(projectPath, displayName);
-                            return AcceptResult();
-                        };
-                    }
-                    bool realTarget = false;
-                    if (!target.backtrace.isEmpty() && target.targetType != UtilityType) {
-                        const FilePath path = target.backtrace.last().path;
-                        const int line = target.backtrace.last().line;
-                        entry.linkForEditor = {path, line};
-                        entry.extraInfo = path.shortNativePath();
-                        realTarget = true;
-                    } else {
-                        entry.extraInfo = projectPath.shortNativePath();
-                    }
-                    entry.highlightInfo = ILocatorFilter::highlightInfo(match);
-                    entry.filePath = cmakeProject->projectFilePath();
-                    if (acceptor || realTarget) {
-                        if (match.capturedStart() == 0)
-                            entries[int(ILocatorFilter::MatchLevel::Best)].append(entry);
-                        else if (match.lastCapturedIndex() == 1)
-                            entries[int(ILocatorFilter::MatchLevel::Better)].append(entry);
-                        else
-                            entries[int(ILocatorFilter::MatchLevel::Good)].append(entry);
-                    }
-                }
+                QVariantMap extraData;
+                extraData.insert("project", cmakeProject->projectFilePath().toString());
+                extraData.insert("line", line);
+                extraData.insert("file", path.toString());
+
+                Core::LocatorFilterEntry filterEntry(this, target.title, extraData);
+                filterEntry.extraInfo = path.shortNativePath();
+                filterEntry.highlightInfo = {index, int(entry.length())};
+                filterEntry.filePath = path;
+
+                m_result.append(filterEntry);
             }
         }
-        storage->reportOutput(
-            std::accumulate(std::begin(entries), std::end(entries), LocatorFilterEntries()));
-    };
-    return {{Sync(onSetup), storage}};
+    }
 }
 
-static void setupFilter(ILocatorFilter *filter)
+QList<Core::LocatorFilterEntry> CMakeTargetLocatorFilter::matchesFor(QFutureInterface<Core::LocatorFilterEntry> &future, const QString &entry)
 {
-    const auto projectListUpdated = [filter] {
-        filter->setEnabled(Utils::contains(ProjectManager::projects(),
-                           [](Project *p) { return qobject_cast<CMakeProject *>(p); }));
-    };
-    QObject::connect(ProjectManager::instance(), &ProjectManager::projectAdded,
-                     filter, projectListUpdated);
-    QObject::connect(ProjectManager::instance(), &ProjectManager::projectRemoved,
-                     filter, projectListUpdated);
+    Q_UNUSED(future)
+    Q_UNUSED(entry)
+    return m_result;
 }
 
-static void buildAcceptor(const FilePath &projectPath, const QString &displayName)
+void CMakeTargetLocatorFilter::projectListUpdated()
 {
+    // Enable the filter if there's at least one CMake project
+    setEnabled(Utils::contains(SessionManager::projects(), [](Project *p) { return qobject_cast<CMakeProject *>(p); }));
+}
+
+// --------------------------------------------------------------------
+// BuildCMakeTargetLocatorFilter:
+// --------------------------------------------------------------------
+
+BuildCMakeTargetLocatorFilter::BuildCMakeTargetLocatorFilter()
+{
+    setId("Build CMake target");
+    setDisplayName(tr("Build CMake target"));
+    setDescription(tr("Builds a target of any open CMake project."));
+    setDefaultShortcutString("cm");
+    setPriority(High);
+}
+
+void BuildCMakeTargetLocatorFilter::accept(const Core::LocatorFilterEntry &selection,
+                                           QString *newText,
+                                           int *selectionStart,
+                                           int *selectionLength) const
+{
+    Q_UNUSED(newText)
+    Q_UNUSED(selectionStart)
+    Q_UNUSED(selectionLength)
+
+    const QVariantMap extraData = selection.internalData.toMap();
+    const FilePath projectPath = FilePath::fromString(extraData.value("project").toString());
+
     // Get the project containing the target selected
     const auto cmakeProject = qobject_cast<CMakeProject *>(
-        Utils::findOrDefault(ProjectManager::projects(), [projectPath](Project *p) {
+        Utils::findOrDefault(SessionManager::projects(), [projectPath](Project *p) {
             return p->projectFilePath() == projectPath;
         }));
     if (!cmakeProject || !cmakeProject->activeTarget()
         || !cmakeProject->activeTarget()->activeBuildConfiguration())
         return;
 
-    if (BuildManager::isBuilding(cmakeProject))
-        BuildManager::cancel();
-
     // Find the make step
-    const BuildStepList *buildStepList =
-        cmakeProject->activeTarget()->activeBuildConfiguration()->buildSteps();
-    const auto buildStep = buildStepList->firstOfType<CMakeBuildStep>();
+    BuildStepList *buildStepList =
+            cmakeProject->activeTarget()->activeBuildConfiguration()->buildSteps();
+    auto buildStep = buildStepList->firstOfType<CMakeBuildStep>();
     if (!buildStep)
         return;
 
     // Change the make step to build only the given target
-    const QStringList oldTargets = buildStep->buildTargets();
-    buildStep->setBuildTargets({displayName});
+    QStringList oldTargets = buildStep->buildTargets();
+    buildStep->setBuildTargets({selection.displayName});
 
     // Build
     BuildManager::buildProjectWithDependencies(cmakeProject);
     buildStep->setBuildTargets(oldTargets);
 }
 
-class CMakeBuildTargetFilter final : ILocatorFilter
+// --------------------------------------------------------------------
+// OpenCMakeTargetLocatorFilter:
+// --------------------------------------------------------------------
+
+OpenCMakeTargetLocatorFilter::OpenCMakeTargetLocatorFilter()
 {
-public:
-    CMakeBuildTargetFilter()
-    {
-        setId("Build CMake target");
-        setDisplayName(Tr::tr("Build CMake Target"));
-        setDescription(Tr::tr("Builds a target of any open CMake project."));
-        setDefaultShortcutString("cm");
-        setPriority(High);
-        setupFilter(this);
-    }
-
-private:
-    LocatorMatcherTasks matchers() final { return cmakeMatchers(&buildAcceptor); }
-};
-
-// OpenCMakeTargetLocatorFilter
-
-class CMakeOpenTargetFilter final : ILocatorFilter
-{
-public:
-    CMakeOpenTargetFilter()
-    {
-        setId("Open CMake target definition");
-        setDisplayName(Tr::tr("Open CMake Target"));
-        setDescription(Tr::tr("Locates the definition of a target of any open CMake project."));
-        setDefaultShortcutString("cmo");
-        setPriority(Medium);
-        setupFilter(this);
-    }
-
-private:
-    LocatorMatcherTasks matchers() final { return cmakeMatchers({}); }
-};
-
-// Setup
-
-void setupCMakeLocatorFilters()
-{
-    static CMakeBuildTargetFilter theCMakeBuildTargetFilter;
-    static CMakeOpenTargetFilter theCMakeOpenTargetFilter;
+    setId("Open CMake target definition");
+    setDisplayName(tr("Open CMake target"));
+    setDescription(tr("Jumps to the definition of a target of any open CMake project."));
+    setDefaultShortcutString("cmo");
+    setPriority(Medium);
 }
 
-} // CMakeProjectManager::Internal
+void OpenCMakeTargetLocatorFilter::accept(const Core::LocatorFilterEntry &selection,
+                                          QString *newText,
+                                          int *selectionStart,
+                                          int *selectionLength) const
+{
+    Q_UNUSED(newText)
+    Q_UNUSED(selectionStart)
+    Q_UNUSED(selectionLength)
+
+    const QVariantMap extraData = selection.internalData.toMap();
+    const int line = extraData.value("line").toInt();
+    const auto file = FilePath::fromVariant(extraData.value("file"));
+
+    if (line >= 0)
+        Core::EditorManager::openEditorAt({file, line},
+                                          {},
+                                          Core::EditorManager::AllowExternalEditor);
+    else
+        Core::EditorManager::openEditor(file, {}, Core::EditorManager::AllowExternalEditor);
+}

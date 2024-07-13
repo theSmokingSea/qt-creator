@@ -21,24 +21,31 @@ QtcPlugin {
     files: [
         "baseannotationhighlighter.cpp",
         "baseannotationhighlighter.h",
+        "basevcseditorfactory.cpp",
+        "basevcseditorfactory.h",
+        "basevcssubmiteditorfactory.cpp",
+        "basevcssubmiteditorfactory.h",
         "cleandialog.cpp",
         "cleandialog.h",
+        "cleandialog.ui",
         "commonvcssettings.cpp",
         "commonvcssettings.h",
         "diffandloghighlighter.cpp",
         "diffandloghighlighter.h",
         "nicknamedialog.cpp",
         "nicknamedialog.h",
+        "nicknamedialog.ui",
         "submiteditorfile.cpp",
         "submiteditorfile.h",
         "submiteditorwidget.cpp",
         "submiteditorwidget.h",
+        "submiteditorwidget.ui",
         "submitfieldwidget.cpp",
         "submitfieldwidget.h",
         "submitfilemodel.cpp",
         "submitfilemodel.h",
         "vcsbase.qrc",
-        "vcsbase_global.h", "vcsbasetr.h",
+        "vcsbase_global.h",
         "vcsbaseclient.cpp",
         "vcsbaseclient.h",
         "vcsbaseclientsettings.cpp",
@@ -56,7 +63,6 @@ QtcPlugin {
         "vcsbasesubmiteditor.h",
         "vcscommand.cpp",
         "vcscommand.h",
-        "vcsenums.h",
         "vcsoutputformatter.cpp",
         "vcsoutputformatter.h",
         "vcsoutputwindow.cpp",
@@ -71,5 +77,5 @@ QtcPlugin {
         "wizard/vcsjsextension.h",
     ]
 
-    cpp.defines: base.concat(qtc.withPluginTests ? ['SRC_DIR="' + project.ide_source_tree + '"'] : [])
+    cpp.defines: base.concat(qtc.testsEnabled ? ['SRC_DIR="' + project.ide_source_tree + '"'] : [])
 }

@@ -1,11 +1,32 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "namecontroller.h"
 
+#include <QFileInfo>
 #include <QDebug>
-
-using Utils::FilePath;
 
 namespace qmt {
 
@@ -18,9 +39,10 @@ NameController::~NameController()
 {
 }
 
-QString NameController::convertFileNameToElementName(const FilePath &fileName)
+QString NameController::convertFileNameToElementName(const QString &fileName)
 {
-    QString baseName = fileName.baseName().trimmed();
+    QFileInfo fileInfo(fileName);
+    QString baseName = fileInfo.baseName().trimmed();
     QString elementName;
     bool makeTitlecase = true;
     bool insertSpace = false;
@@ -65,19 +87,13 @@ QString NameController::convertElementNameToBaseFileName(const QString &elementN
     return baseFileName;
 }
 
-FilePath NameController::calcRelativePath(const FilePath &absoluteFileName,
-                                          const FilePath &anchorPath)
+QString NameController::calcRelativePath(const QString &absoluteFileName, const QString &anchorPath)
 {
-    // TODO try using Utils::FilePath::relativePath
-    QString absoluteFilePath = absoluteFileName.path();
-    QString anchorPathString = anchorPath.path();
     int secondLastSlashIndex = -1;
     int slashIndex = -1;
     int i = 0;
-    while (i < absoluteFilePath.size() && i < anchorPathString.size()
-           && absoluteFilePath.at(i) == anchorPathString.at(i))
-    {
-        if (absoluteFilePath.at(i) == QLatin1Char('/')) {
+    while (i < absoluteFileName.size() && i < anchorPath.size() && absoluteFileName.at(i) == anchorPath.at(i)) {
+        if (absoluteFileName.at(i) == QLatin1Char('/')) {
             secondLastSlashIndex = slashIndex;
             slashIndex = i;
         }
@@ -87,45 +103,44 @@ FilePath NameController::calcRelativePath(const FilePath &absoluteFileName,
     QString relativePath;
 
     if (slashIndex < 0) {
-        relativePath = absoluteFilePath;
-    } else if (i >= absoluteFilePath.size()) {
+        relativePath = absoluteFileName;
+    } else if (i >= absoluteFileName.size()) {
         // absoluteFileName is a substring of anchor path.
         if (slashIndex == i - 1) {
             if (secondLastSlashIndex < 0)
-                relativePath = absoluteFilePath;
+                relativePath = absoluteFileName;
             else
-                relativePath = absoluteFilePath.mid(secondLastSlashIndex + 1);
+                relativePath = absoluteFileName.mid(secondLastSlashIndex + 1);
         } else {
-            relativePath = absoluteFilePath.mid(slashIndex + 1);
+            relativePath = absoluteFileName.mid(slashIndex + 1);
         }
     } else {
-        relativePath = absoluteFilePath.mid(slashIndex + 1);
+        relativePath = absoluteFileName.mid(slashIndex + 1);
     }
 
-    return FilePath::fromString(relativePath);
+    return relativePath;
 }
 
 QString NameController::calcElementNameSearchId(const QString &elementName)
 {
     QString searchId;
-    for (const QChar &c : elementName) {
+    foreach (const QChar &c, elementName) {
         if (c.isLetterOrNumber())
             searchId += c.toLower();
     }
     return searchId;
 }
 
-QStringList NameController::buildElementsPath(const FilePath &filePath,
-                                              bool ignoreLastFilePathPart)
+QStringList NameController::buildElementsPath(const QString &filePath, bool ignoreLastFilePathPart)
 {
     QList<QString> relativeElements;
 
-    QStringList split = filePath.toString().split("/");
+    QStringList split = filePath.split("/");
     QStringList::const_iterator splitEnd = split.constEnd();
     if (ignoreLastFilePathPart || split.last().isEmpty())
         --splitEnd;
     for (auto it = split.constBegin(); it != splitEnd; ++it) {
-        QString packageName = qmt::NameController::convertFileNameToElementName(FilePath::fromString(*it));
+        QString packageName = qmt::NameController::convertFileNameToElementName(*it);
         relativeElements.append(packageName);
     }
     return relativeElements;

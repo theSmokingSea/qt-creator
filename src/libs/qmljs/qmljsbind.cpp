@@ -1,14 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmljsbind.h"
-
 #include "parser/qmljsast_p.h"
-
+#include "qmljsutils.h"
 #include "qmljsdocument.h"
 #include "qmljsmodelmanagerinterface.h"
-#include "qmljstr.h"
-#include "qmljsutils.h"
 
 #include <QtCore/QVersionNumber>
 #include <QtCore/QLibraryInfo>
@@ -57,7 +76,7 @@ bool Bind::isJsLibrary() const
     return _isJsLibrary;
 }
 
-const QList<ImportInfo> Bind::imports() const
+QList<ImportInfo> Bind::imports() const
 {
     return _imports;
 }
@@ -89,8 +108,7 @@ bool Bind::usesQmlPrototype(ObjectValue *prototype,
     if (componentName.isEmpty())
         return false;
 
-    QList<const ObjectValue *> values = _qmlObjectsByPrototypeName.values(componentName);
-    for (const ObjectValue *object : values) {
+    foreach (const ObjectValue *object, _qmlObjectsByPrototypeName.values(componentName)) {
         // resolve and check the prototype
         const ObjectValue *resolvedPrototype = object->prototype(context);
         if (resolvedPrototype == prototype)
@@ -167,8 +185,7 @@ ObjectValue *Bind::bindObject(UiQualifiedId *qualifiedTypeNameId, UiObjectInitia
 
 void Bind::throwRecursionDepthError()
 {
-    _diagnosticMessages->append(DiagnosticMessage(Severity::Error, SourceLocation(),
-                                                  Tr::tr("Hit maximal recursion depth in AST visit.")));
+    _diagnosticMessages->append(DiagnosticMessage(Severity::Error, SourceLocation(), tr("Hit maximal recursion depth in AST visit.")));
 }
 
 void Bind::accept(Node *node)
@@ -216,7 +233,7 @@ bool Bind::visit(UiImport *ast)
         }
         if (!version.isValid() && (!qtVersion.isNull() && qtVersion.majorVersion() < 6)) {
             _diagnosticMessages->append(
-                        errorMessage(ast, Tr::tr("package import requires a version number")));
+                        errorMessage(ast, tr("package import requires a version number")));
         }
         const QString importId = ast->importId.toString();
 
@@ -326,27 +343,10 @@ bool Bind::visit(UiInlineComponent *ast)
     if (!_currentComponentName.isEmpty()) {
         _currentComponentName += ".";
         _diagnosticMessages->append(
-            errorMessage(ast, Tr::tr("Nested inline components are not supported.")));
+            errorMessage(ast, tr("Nested inline components are not supported")));
     }
     _currentComponentName += ast->name.toString();
     _rootObjectValue = nullptr;
-    return true;
-}
-
-bool Bind::visit(UiEnumDeclaration *ast)
-{
-    if (_currentObjectValue) {
-        UiEnumValue *value = new UiEnumValue(ast, &_valueOwner, _currentObjectValue->originId());
-        _qmlObjects.insert(ast, value);
-        _currentObjectValue->setMember(ast->name, value);
-        // add enum value's keys as member to its parent object
-        for (auto it = ast->members; it; it = it->next) {
-            const QString name = it->member.toString();
-            _currentObjectValue->setMember(name, _valueOwner.intValue());
-            _currentObjectValue->setPropertyInfo(
-                        name, PropertyInfo(PropertyInfo::Readable | PropertyInfo::ValueType));
-        }
-    }
     return true;
 }
 

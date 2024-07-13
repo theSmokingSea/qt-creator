@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "qmljstypedescriptionreader.h"
 
@@ -9,7 +31,6 @@
 #include "parser/qmljsengine_p.h"
 
 #include "qmljsinterpreter.h"
-#include "qmljstr.h"
 #include "qmljsutils.h"
 
 #include <utils/qtcassert.h>
@@ -70,18 +91,18 @@ QString TypeDescriptionReader::warningMessage() const
 void TypeDescriptionReader::readDocument(UiProgram *ast)
 {
     if (!ast) {
-        addError(SourceLocation(), Tr::tr("Could not parse document."));
+        addError(SourceLocation(), tr("Could not parse document."));
         return;
     }
 
     if (!ast->headers || ast->headers->next || !AST::cast<AST::UiImport *>(ast->headers->headerItem)) {
-        addError(SourceLocation(), Tr::tr("Expected a single import."));
+        addError(SourceLocation(), tr("Expected a single import."));
         return;
     }
 
     UiImport *import = AST::cast<AST::UiImport *>(ast->headers->headerItem);
     if (toString(import->importUri) != QLatin1String("QtQuick.tooling")) {
-        addError(import->importToken, Tr::tr("Expected import of QtQuick.tooling."));
+        addError(import->importToken, tr("Expected import of QtQuick.tooling."));
         return;
     }
 
@@ -89,24 +110,24 @@ void TypeDescriptionReader::readDocument(UiProgram *ast)
     if (UiVersionSpecifier *uiVersion = import->version) {
         version = ComponentVersion(import->version->majorVersion, import->version->minorVersion);
         if (version.majorVersion() != 1) {
-            addError(uiVersion->majorToken, Tr::tr("Major version different from 1 not supported."));
+            addError(uiVersion->majorToken, tr("Major version different from 1 not supported."));
             return;
         }
     }
 
     if (!ast->members || !ast->members->member || ast->members->next) {
-        addError(SourceLocation(), Tr::tr("Expected document to contain a single object definition."));
+        addError(SourceLocation(), tr("Expected document to contain a single object definition."));
         return;
     }
 
     UiObjectDefinition *module = AST::cast<UiObjectDefinition *>(ast->members->member);
     if (!module) {
-        addError(SourceLocation(), Tr::tr("Expected document to contain a single object definition."));
+        addError(SourceLocation(), tr("Expected document to contain a single object definition."));
         return;
     }
 
     if (toString(module->qualifiedTypeNameId) != QLatin1String("Module")) {
-        addError(SourceLocation(), Tr::tr("Expected document to contain a Module {} member."));
+        addError(SourceLocation(), tr("Expected document to contain a Module {} member."));
         return;
     }
 
@@ -162,12 +183,12 @@ void TypeDescriptionReader::readDependencies(UiScriptBinding *ast)
 {
     ExpressionStatement *stmt = AST::cast<ExpressionStatement*>(ast->statement);
     if (!stmt) {
-        addError(ast->statement->firstSourceLocation(), Tr::tr("Expected dependency definitions"));
+        addError(ast->statement->firstSourceLocation(), tr("Expected dependency definitions"));
         return;
     }
     ArrayPattern *exp = AST::cast<ArrayPattern *>(stmt->expression);
     if (!exp) {
-        addError(stmt->expression->firstSourceLocation(), Tr::tr("Expected dependency definitions"));
+        addError(stmt->expression->firstSourceLocation(), tr("Expected dependency definitions"));
         return;
     }
     for (PatternElementList *l = exp->elements; l; l = l->next) {
@@ -197,8 +218,6 @@ void TypeDescriptionReader::readComponent(UiObjectDefinition *ast)
             QString name = toString(script->qualifiedId);
             if (name == QLatin1String("name")) {
                 fmo->setClassName(readStringBinding(script));
-            } else if (name == QLatin1String("file")) {
-                fmo->setFilePath(readStringBinding(script));
             } else if (name == QLatin1String("prototype")) {
                 fmo->setSuperclassName(readStringBinding(script));
             } else if (name == QLatin1String("defaultProperty")) {
@@ -222,7 +241,7 @@ void TypeDescriptionReader::readComponent(UiObjectDefinition *ast)
     }
 
     if (fmo->className().isEmpty()) {
-        addError(ast->firstSourceLocation(), Tr::tr("Component definition is missing a name binding."));
+        addError(ast->firstSourceLocation(), tr("Component definition is missing a name binding."));
         return;
     }
 
@@ -253,7 +272,7 @@ void TypeDescriptionReader::readModuleApi(UiObjectDefinition *ast)
     }
 
     if (!apiInfo.version.isValid()) {
-        addError(ast->firstSourceLocation(), Tr::tr("ModuleApi definition has no or invalid version binding."));
+        addError(ast->firstSourceLocation(), tr("ModuleApi definition has no or invalid version binding."));
         return;
     }
 
@@ -290,7 +309,7 @@ void TypeDescriptionReader::readSignalOrMethod(UiObjectDefinition *ast, bool isM
     }
 
     if (fmm.methodName().isEmpty()) {
-        addError(ast->firstSourceLocation(), Tr::tr("Method or signal is missing a name script binding."));
+        addError(ast->firstSourceLocation(), tr("Method or signal is missing a name script binding."));
         return;
     }
 
@@ -310,7 +329,7 @@ void TypeDescriptionReader::readProperty(UiObjectDefinition *ast, FakeMetaObject
         UiObjectMember *member = it->member;
         UiScriptBinding *script = AST::cast<UiScriptBinding *>(member);
         if (!script) {
-            addWarning(member->firstSourceLocation(), Tr::tr("Expected script binding."));
+            addWarning(member->firstSourceLocation(), tr("Expected script binding."));
             continue;
         }
 
@@ -330,7 +349,7 @@ void TypeDescriptionReader::readProperty(UiObjectDefinition *ast, FakeMetaObject
     }
 
     if (name.isEmpty() || type.isEmpty()) {
-        addError(ast->firstSourceLocation(), Tr::tr("Property object is missing a name or type script binding."));
+        addError(ast->firstSourceLocation(), tr("Property object is missing a name or type script binding."));
         return;
     }
 
@@ -345,7 +364,7 @@ void TypeDescriptionReader::readEnum(UiObjectDefinition *ast, FakeMetaObject::Pt
         UiObjectMember *member = it->member;
         UiScriptBinding *script = AST::cast<UiScriptBinding *>(member);
         if (!script) {
-            addWarning(member->firstSourceLocation(), Tr::tr("Expected script binding."));
+            addWarning(member->firstSourceLocation(), tr("Expected script binding."));
             continue;
         }
 
@@ -368,7 +387,7 @@ void TypeDescriptionReader::readParameter(UiObjectDefinition *ast, FakeMetaMetho
         UiObjectMember *member = it->member;
         UiScriptBinding *script = AST::cast<UiScriptBinding *>(member);
         if (!script) {
-            addWarning(member->firstSourceLocation(), Tr::tr("Expected script binding."));
+            addWarning(member->firstSourceLocation(), tr("Expected script binding."));
             continue;
         }
 
@@ -394,19 +413,19 @@ QString TypeDescriptionReader::readStringBinding(UiScriptBinding *ast)
     QTC_ASSERT(ast, return QString());
 
     if (!ast->statement) {
-        addError(ast->colonToken, Tr::tr("Expected string after colon."));
+        addError(ast->colonToken, tr("Expected string after colon."));
         return QString();
     }
 
     ExpressionStatement *expStmt = AST::cast<ExpressionStatement *>(ast->statement);
     if (!expStmt) {
-        addError(ast->statement->firstSourceLocation(), Tr::tr("Expected string after colon."));
+        addError(ast->statement->firstSourceLocation(), tr("Expected string after colon."));
         return QString();
     }
 
     StringLiteral *stringLit = AST::cast<StringLiteral *>(expStmt->expression);
     if (!stringLit) {
-        addError(expStmt->firstSourceLocation(), Tr::tr("Expected string after colon."));
+        addError(expStmt->firstSourceLocation(), tr("Expected string after colon."));
         return QString();
     }
 
@@ -418,20 +437,20 @@ bool TypeDescriptionReader::readBoolBinding(AST::UiScriptBinding *ast)
     QTC_ASSERT(ast, return false);
 
     if (!ast->statement) {
-        addError(ast->colonToken, Tr::tr("Expected boolean after colon."));
+        addError(ast->colonToken, tr("Expected boolean after colon."));
         return false;
     }
 
     ExpressionStatement *expStmt = AST::cast<ExpressionStatement *>(ast->statement);
     if (!expStmt) {
-        addError(ast->statement->firstSourceLocation(), Tr::tr("Expected boolean after colon."));
+        addError(ast->statement->firstSourceLocation(), tr("Expected boolean after colon."));
         return false;
     }
 
     TrueLiteral *trueLit = AST::cast<TrueLiteral *>(expStmt->expression);
     FalseLiteral *falseLit = AST::cast<FalseLiteral *>(expStmt->expression);
     if (!trueLit && !falseLit) {
-        addError(expStmt->firstSourceLocation(), Tr::tr("Expected true or false after colon."));
+        addError(expStmt->firstSourceLocation(), tr("Expected true or false after colon."));
         return false;
     }
 
@@ -443,19 +462,19 @@ double TypeDescriptionReader::readNumericBinding(AST::UiScriptBinding *ast)
     QTC_ASSERT(ast, return qQNaN());
 
     if (!ast->statement) {
-        addError(ast->colonToken, Tr::tr("Expected numeric literal after colon."));
+        addError(ast->colonToken, tr("Expected numeric literal after colon."));
         return 0;
     }
 
     ExpressionStatement *expStmt = AST::cast<ExpressionStatement *>(ast->statement);
     if (!expStmt) {
-        addError(ast->statement->firstSourceLocation(), Tr::tr("Expected numeric literal after colon."));
+        addError(ast->statement->firstSourceLocation(), tr("Expected numeric literal after colon."));
         return 0;
     }
 
     NumericLiteral *numericLit = AST::cast<NumericLiteral *>(expStmt->expression);
     if (!numericLit) {
-        addError(expStmt->firstSourceLocation(), Tr::tr("Expected numeric literal after colon."));
+        addError(expStmt->firstSourceLocation(), tr("Expected numeric literal after colon."));
         return 0;
     }
 
@@ -467,19 +486,19 @@ ComponentVersion TypeDescriptionReader::readNumericVersionBinding(UiScriptBindin
     ComponentVersion invalidVersion;
 
     if (!ast || !ast->statement) {
-        addError((ast ? ast->colonToken : SourceLocation()), Tr::tr("Expected numeric literal after colon."));
+        addError((ast ? ast->colonToken : SourceLocation()), tr("Expected numeric literal after colon."));
         return invalidVersion;
     }
 
     ExpressionStatement *expStmt = AST::cast<ExpressionStatement *>(ast->statement);
     if (!expStmt) {
-        addError(ast->statement->firstSourceLocation(), Tr::tr("Expected numeric literal after colon."));
+        addError(ast->statement->firstSourceLocation(), tr("Expected numeric literal after colon."));
         return invalidVersion;
     }
 
     NumericLiteral *numericLit = AST::cast<NumericLiteral *>(expStmt->expression);
     if (!numericLit) {
-        addError(expStmt->firstSourceLocation(), Tr::tr("Expected numeric literal after colon."));
+        addError(expStmt->firstSourceLocation(), tr("Expected numeric literal after colon."));
         return invalidVersion;
     }
 
@@ -492,7 +511,7 @@ int TypeDescriptionReader::readIntBinding(AST::UiScriptBinding *ast)
     int i = static_cast<int>(v);
 
     if (i != v) {
-        addError(ast->firstSourceLocation(), Tr::tr("Expected integer after colon."));
+        addError(ast->firstSourceLocation(), tr("Expected integer after colon."));
         return 0;
     }
 
@@ -504,26 +523,26 @@ void TypeDescriptionReader::readExports(UiScriptBinding *ast, FakeMetaObject::Pt
     QTC_ASSERT(ast, return);
 
     if (!ast->statement) {
-        addError(ast->colonToken, Tr::tr("Expected array of strings after colon."));
+        addError(ast->colonToken, tr("Expected array of strings after colon."));
         return;
     }
 
     ExpressionStatement *expStmt = AST::cast<ExpressionStatement *>(ast->statement);
     if (!expStmt) {
-        addError(ast->statement->firstSourceLocation(), Tr::tr("Expected array of strings after colon."));
+        addError(ast->statement->firstSourceLocation(), tr("Expected array of strings after colon."));
         return;
     }
 
     ArrayPattern *arrayLit = AST::cast<ArrayPattern *>(expStmt->expression);
     if (!arrayLit) {
-        addError(expStmt->firstSourceLocation(), Tr::tr("Expected array of strings after colon."));
+        addError(expStmt->firstSourceLocation(), tr("Expected array of strings after colon."));
         return;
     }
 
     for (PatternElementList *it = arrayLit->elements; it; it = it->next) {
         StringLiteral *stringLit = AST::cast<StringLiteral *>(it->element->initializer);
         if (!stringLit) {
-            addError(arrayLit->firstSourceLocation(), Tr::tr("Expected array literal with only string literal members."));
+            addError(arrayLit->firstSourceLocation(), tr("Expected array literal with only string literal members."));
             return;
         }
         QString exp = stringLit->value.toString();
@@ -532,7 +551,7 @@ void TypeDescriptionReader::readExports(UiScriptBinding *ast, FakeMetaObject::Pt
         ComponentVersion version(exp.mid(spaceIdx + 1));
 
         if (spaceIdx == -1 || !version.isValid()) {
-            addError(stringLit->firstSourceLocation(), Tr::tr("Expected string literal to contain 'Package/Name major.minor' or 'Name major.minor'."));
+            addError(stringLit->firstSourceLocation(), tr("Expected string literal to contain 'Package/Name major.minor' or 'Name major.minor'."));
             continue;
         }
         QString package;
@@ -550,19 +569,19 @@ void TypeDescriptionReader::readMetaObjectRevisions(UiScriptBinding *ast, FakeMe
     QTC_ASSERT(ast, return);
 
     if (!ast->statement) {
-        addError(ast->colonToken, Tr::tr("Expected array of numbers after colon."));
+        addError(ast->colonToken, tr("Expected array of numbers after colon."));
         return;
     }
 
     ExpressionStatement *expStmt = AST::cast<ExpressionStatement *>(ast->statement);
     if (!expStmt) {
-        addError(ast->statement->firstSourceLocation(), Tr::tr("Expected array of numbers after colon."));
+        addError(ast->statement->firstSourceLocation(), tr("Expected array of numbers after colon."));
         return;
     }
 
     ArrayPattern *arrayLit = AST::cast<ArrayPattern *>(expStmt->expression);
     if (!arrayLit) {
-        addError(expStmt->firstSourceLocation(), Tr::tr("Expected array of numbers after colon."));
+        addError(expStmt->firstSourceLocation(), tr("Expected array of numbers after colon."));
         return;
     }
 
@@ -571,19 +590,19 @@ void TypeDescriptionReader::readMetaObjectRevisions(UiScriptBinding *ast, FakeMe
     for (PatternElementList *it = arrayLit->elements; it; it = it->next, ++exportIndex) {
         NumericLiteral *numberLit = cast<NumericLiteral *>(it->element->initializer);
         if (!numberLit) {
-            addError(arrayLit->firstSourceLocation(), Tr::tr("Expected array literal with only number literal members."));
+            addError(arrayLit->firstSourceLocation(), tr("Expected array literal with only number literal members."));
             return;
         }
 
         if (exportIndex >= exportCount) {
-            addError(numberLit->firstSourceLocation(), Tr::tr("Meta object revision without matching export."));
+            addError(numberLit->firstSourceLocation(), tr("Meta object revision without matching export."));
             return;
         }
 
         const double v = numberLit->value;
         const int metaObjectRevision = static_cast<int>(v);
         if (metaObjectRevision != v) {
-            addError(numberLit->firstSourceLocation(), Tr::tr("Expected integer."));
+            addError(numberLit->firstSourceLocation(), tr("Expected integer."));
             return;
         }
 
@@ -596,13 +615,13 @@ void TypeDescriptionReader::readEnumValues(AST::UiScriptBinding *ast, LanguageUt
     if (!ast)
         return;
     if (!ast->statement) {
-        addError(ast->colonToken, Tr::tr("Expected object literal after colon."));
+        addError(ast->colonToken, tr("Expected object literal after colon."));
         return;
     }
 
     auto *expStmt = AST::cast<ExpressionStatement *>(ast->statement);
     if (!expStmt) {
-        addError(ast->statement->firstSourceLocation(), Tr::tr("Expected expression after colon."));
+        addError(ast->statement->firstSourceLocation(), tr("Expected expression after colon."));
         return;
     }
 
@@ -614,7 +633,7 @@ void TypeDescriptionReader::readEnumValues(AST::UiScriptBinding *ast, LanguageUt
                     continue;
                 }
             }
-            addError(it->firstSourceLocation(), Tr::tr("Expected strings as enum keys."));
+            addError(it->firstSourceLocation(), tr("Expected strings as enum keys."));
         }
     } else if (auto *arrayLit = AST::cast<ArrayPattern *>(expStmt->expression)) {
         for (PatternElementList *it = arrayLit->elements; it; it = it->next) {
@@ -624,10 +643,10 @@ void TypeDescriptionReader::readEnumValues(AST::UiScriptBinding *ast, LanguageUt
                     continue;
                 }
             }
-            addError(it->firstSourceLocation(), Tr::tr("Expected strings as enum keys."));
+            addError(it->firstSourceLocation(), tr("Expected strings as enum keys."));
         }
     } else {
         addError(ast->statement->firstSourceLocation(),
-                 Tr::tr("Expected either array or object literal as enum definition."));
+                 tr("Expected either array or object literal as enum definition."));
     }
 }

@@ -1,10 +1,31 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "filterkitaspectsdialog.h"
 
 #include "kitmanager.h"
-#include "projectexplorertr.h"
 
 #include <utils/itemviews.h>
 #include <utils/qtcassert.h>
@@ -13,30 +34,21 @@
 #include <QDialogButtonBox>
 #include <QHeaderView>
 #include <QString>
-#include <QTextDocument>
 #include <QVBoxLayout>
 
 using namespace Utils;
 
-namespace ProjectExplorer::Internal {
+namespace ProjectExplorer {
+namespace Internal {
 
 class FilterTreeItem : public TreeItem
 {
 public:
-    FilterTreeItem(const KitAspectFactory *factory, bool enabled) : m_factory(factory), m_enabled(enabled)
+    FilterTreeItem(const KitAspect *aspect, bool enabled) : m_aspect(aspect), m_enabled(enabled)
     { }
 
-    QString displayName() const {
-        if (m_factory->displayName().indexOf('<') < 0)
-            return m_factory->displayName();
-
-        // removing HTML tag because KitAspect::displayName could contain html
-        // e.g. "CMake <a href=\"generator\">generator</a>" (CMakeGeneratorKitAspect)
-        QTextDocument html;
-        html.setHtml(m_factory->displayName());
-        return html.toPlainText();
-    }
-    Utils::Id id() const { return m_factory->id(); }
+    QString displayName() const { return m_aspect->displayName(); }
+    Utils::Id id() const { return m_aspect->id(); }
     bool enabled() const { return m_enabled; }
 
 private:
@@ -47,12 +59,12 @@ private:
             return displayName();
         if (column == 1 && role == Qt::CheckStateRole)
             return m_enabled ? Qt::Checked : Qt::Unchecked;
-        return {};
+        return QVariant();
     }
 
     bool setData(int column, const QVariant &data, int role) override
     {
-        QTC_ASSERT(column == 1 && !m_factory->isEssential(), return false);
+        QTC_ASSERT(column == 1 && !m_aspect->isEssential(), return false);
         if (role == Qt::CheckStateRole) {
             m_enabled = data.toInt() == Qt::Checked;
             return true;
@@ -64,14 +76,14 @@ private:
     {
         QTC_ASSERT(column < 2, return Qt::ItemFlags());
         Qt::ItemFlags flags = Qt::ItemIsSelectable;
-        if (column == 0 || !m_factory->isEssential())
+        if (column == 0 || !m_aspect->isEssential())
             flags |= Qt::ItemIsEnabled;
-        if (column == 1 && !m_factory->isEssential())
+        if (column == 1 && !m_aspect->isEssential())
             flags |= Qt::ItemIsUserCheckable;
         return flags;
     }
 
-    const KitAspectFactory * const m_factory;
+    const KitAspect * const m_aspect;
     bool m_enabled;
 };
 
@@ -80,11 +92,14 @@ class FilterKitAspectsModel : public TreeModel<TreeItem, FilterTreeItem>
 public:
     FilterKitAspectsModel(const Kit *kit, QObject *parent) : TreeModel(parent)
     {
-        setHeader({Tr::tr("Setting"), Tr::tr("Visible")});
-        for (const KitAspectFactory * const factory : KitManager::kitAspectFactories()) {
-            const bool enabled = kit ? kit->isAspectRelevant(factory->id())
-                                     : !KitManager::irrelevantAspects().contains(factory->id());
-            auto * const item = new FilterTreeItem(factory, enabled);
+        setHeader({FilterKitAspectsDialog::tr("Setting"), FilterKitAspectsDialog::tr("Visible")});
+        for (const KitAspect * const aspect : KitManager::kitAspects()) {
+            if (kit && !aspect->isApplicableToKit(kit))
+                continue;
+            const QSet<Utils::Id> irrelevantAspects = kit ? kit->irrelevantAspects()
+                                                         : KitManager::irrelevantAspects();
+            auto * const item = new FilterTreeItem(aspect,
+                                                   !irrelevantAspects.contains(aspect->id()));
             rootItem()->appendChild(item);
         }
         static const auto cmp = [](const TreeItem *item1, const TreeItem *item2) {
@@ -110,7 +125,10 @@ public:
 class FilterTreeView : public TreeView
 {
 public:
-    FilterTreeView(QWidget *parent) : TreeView(parent) {}
+    FilterTreeView(QWidget *parent) : TreeView(parent)
+    {
+        setUniformRowHeights(true);
+    }
 
 private:
     QSize sizeHint() const override
@@ -141,4 +159,5 @@ QSet<Utils::Id> FilterKitAspectsDialog::irrelevantAspects() const
     return static_cast<FilterKitAspectsModel *>(m_model)->disabledItems();
 }
 
-} // ProjectExplorer::Internal
+} // namespace Internal
+} // namespace ProjectExplorer

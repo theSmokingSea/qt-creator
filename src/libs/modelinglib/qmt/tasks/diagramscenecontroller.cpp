@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "diagramscenecontroller.h"
 
@@ -39,9 +61,9 @@
 #include "qmt/tasks/isceneinspector.h"
 #include "qmt/tasks/voidelementtasks.h"
 
-#include "../../modelinglibtr.h"
-
 #include <QMenu>
+#include <QFileInfo>
+#include <QDir>
 #include <QQueue>
 #include <QPair>
 
@@ -163,8 +185,7 @@ void DiagramSceneController::deleteFromDiagram(const DSelection &dselection, MDi
     if (!dselection.isEmpty()) {
         MSelection mselection;
         DSelection remainingDselection;
-        const QList<DSelection::Index> indices = dselection.indices();
-        for (const DSelection::Index &index : indices) {
+        foreach (const DSelection::Index &index, dselection.indices()) {
             DElement *delement = m_diagramController->findElement(index.elementKey(), diagram);
             QMT_ASSERT(delement, return);
             if (delement->modelUid().isValid()) {
@@ -186,7 +207,7 @@ void DiagramSceneController::deleteFromDiagram(const DSelection &dselection, MDi
 void DiagramSceneController::createDependency(DObject *endAObject, DObject *endBObject,
                                               const QList<QPointF> &intermediatePoints, MDiagram *diagram)
 {
-    m_diagramController->undoController()->beginMergeSequence(Tr::tr("Create Dependency"));
+    m_diagramController->undoController()->beginMergeSequence(tr("Create Dependency"));
 
     MObject *endAModelObject = m_modelController->findObject<MObject>(endAObject->modelUid());
     QMT_ASSERT(endAModelObject, return);
@@ -213,7 +234,7 @@ void DiagramSceneController::createDependency(DObject *endAObject, DObject *endB
 void DiagramSceneController::createInheritance(DClass *derivedClass, DClass *baseClass,
                                                const QList<QPointF> &intermediatePoints, MDiagram *diagram)
 {
-    m_diagramController->undoController()->beginMergeSequence(Tr::tr("Create Inheritance"));
+    m_diagramController->undoController()->beginMergeSequence(tr("Create Inheritance"));
 
     MClass *derivedModelClass = m_modelController->findObject<MClass>(derivedClass->modelUid());
     QMT_ASSERT(derivedModelClass, return);
@@ -240,7 +261,7 @@ void DiagramSceneController::createAssociation(DClass *endAClass, DClass *endBCl
                                                const QList<QPointF> &intermediatePoints, MDiagram *diagram,
                                                std::function<void (MAssociation*, DAssociation*)> custom)
 {
-    m_diagramController->undoController()->beginMergeSequence(Tr::tr("Create Association"));
+    m_diagramController->undoController()->beginMergeSequence(tr("Create Association"));
 
     MClass *endAModelObject = m_modelController->findObject<MClass>(endAClass->modelUid());
     QMT_ASSERT(endAModelObject, return);
@@ -277,7 +298,7 @@ void DiagramSceneController::createConnection(const QString &customRelationId,
                                               const QList<QPointF> &intermediatePoints, MDiagram *diagram,
                                               std::function<void (MConnection *, DConnection *)> custom)
 {
-    m_diagramController->undoController()->beginMergeSequence(Tr::tr("Create Connection"));
+    m_diagramController->undoController()->beginMergeSequence(tr("Create Connection"));
 
     MObject *endAModelObject = m_modelController->findObject<MObject>(endAObject->modelUid());
     QMT_CHECK(endAModelObject);
@@ -411,7 +432,7 @@ void DiagramSceneController::dropNewElement(const QString &newElementId, const Q
 void DiagramSceneController::dropNewModelElement(MObject *modelObject, MPackage *parentPackage, const QPointF &pos,
                                                  MDiagram *diagram)
 {
-    m_modelController->undoController()->beginMergeSequence(Tr::tr("Drop Element"));
+    m_modelController->undoController()->beginMergeSequence(tr("Drop Element"));
     m_modelController->addObject(parentPackage, modelObject);
     DElement *element = addObject(modelObject, pos, diagram);
     m_modelController->undoController()->endMergeSequence();
@@ -419,48 +440,10 @@ void DiagramSceneController::dropNewModelElement(MObject *modelObject, MPackage 
         emit newElementCreated(element, diagram);
 }
 
-int DiagramSceneController::countRelatedElements(const DSelection &selection, MDiagram *diagram, std::function<bool (qmt::DObject *, qmt::MObject *, qmt::MRelation *)> filter)
+void DiagramSceneController::addRelatedElements(const DSelection &selection, MDiagram *diagram)
 {
-    int counter = 0;
-    const QList<DSelection::Index> indices = selection.indices();
-    for (const DSelection::Index &index : indices) {
-        DElement *delement = m_diagramController->findElement(index.elementKey(), diagram);
-        QMT_ASSERT(delement, return 0);
-        DObject *dobject = dynamic_cast<DObject *>(delement);
-        if (dobject && dobject->modelUid().isValid()) {
-            MObject *mobject = m_modelController->findElement<MObject>(delement->modelUid());
-            if (mobject) {
-                const QList<MRelation *> relations = m_modelController->findRelationsOfObject(mobject);
-                QList<MRelation *> filteredRelations;
-                const QList<MRelation *> *relationsList = nullptr;
-                if (filter) {
-                    for (MRelation *relation : relations) {
-                        if (filter(dobject, mobject, relation))
-                            filteredRelations.append(relation);
-                    }
-                    relationsList = &filteredRelations;
-                } else {
-                    relationsList = &relations;
-                }
-                for (MRelation *relation : *relationsList) {
-                    if (relation->endAUid() != mobject->uid())
-                        ++counter;
-                    else if (relation->endBUid() != mobject->uid())
-                        ++counter;
-                }
-            }
-        }
-    }
-    return counter;
-}
-
-void DiagramSceneController::addRelatedElements(
-    const DSelection &selection, MDiagram *diagram,
-    std::function<bool (qmt::DObject *dobject, qmt::MObject *mobject, qmt::MRelation *relation)> filter)
-{
-    m_diagramController->undoController()->beginMergeSequence(Tr::tr("Add Related Element"));
-    const QList<DSelection::Index> indices = selection.indices();
-    for (const DSelection::Index &index : indices) {
+    m_diagramController->undoController()->beginMergeSequence(tr("Add Related Element"));
+    foreach (const DSelection::Index &index, selection.indices()) {
         DElement *delement = m_diagramController->findElement(index.elementKey(), diagram);
         QMT_ASSERT(delement, return);
         DObject *dobject = dynamic_cast<DObject *>(delement);
@@ -470,19 +453,8 @@ void DiagramSceneController::addRelatedElements(
                 qreal dAngle = 360.0 / 11.5;
                 qreal dRadius = 100.0;
                 const QList<MRelation *> relations = m_modelController->findRelationsOfObject(mobject);
-                QList<MRelation *> filteredRelations;
-                const QList<MRelation *> *relationsList = nullptr;
-                if (filter) {
-                    for (MRelation *relation : relations) {
-                        if (filter(dobject, mobject, relation))
-                            filteredRelations.append(relation);
-                    }
-                    relationsList = &filteredRelations;
-                } else {
-                    relationsList = &relations;
-                }
                 int count = 0;
-                for (MRelation *relation : *relationsList) {
+                for (MRelation *relation : relations) {
                     if (relation->endAUid() != mobject->uid() || relation->endBUid() != mobject->uid())
                         ++count;
                 }
@@ -492,7 +464,7 @@ void DiagramSceneController::addRelatedElements(
                 }
                 qreal radius = 200.0;
                 qreal angle = 0.0;
-                for (MRelation *relation : *relationsList) {
+                for (MRelation *relation : relations) {
                     QPointF pos(dobject->pos());
                     pos += QPointF(radius * sin(angle / 180 * M_PI), -radius * cos(angle / 180 * M_PI));
                     bool added = false;
@@ -797,8 +769,7 @@ void DiagramSceneController::alignVBorderDistance(const DSelection &selection, M
 void DiagramSceneController::alignPosition(DObject *object, const DSelection &selection,
                                            QPointF (*aligner)(DObject *, DObject *), MDiagram *diagram)
 {
-    const QList<DSelection::Index> indices = selection.indices();
-    for (const DSelection::Index &index : indices) {
+    foreach (const DSelection::Index &index, selection.indices()) {
         DElement *element = m_diagramController->findElement(index.elementKey(), diagram);
         if (auto selectedObject = dynamic_cast<DObject *>(element)) {
             if (selectedObject != object) {
@@ -825,8 +796,7 @@ void DiagramSceneController::alignSize(DObject *object, const DSelection &select
         size.setHeight(minimumSize.height());
     else
         size.setHeight(object->rect().height());
-    const QList<DSelection::Index> indices = selection.indices();
-    for (const DSelection::Index &index : indices) {
+    foreach (const DSelection::Index &index, selection.indices()) {
         DElement *element = m_diagramController->findElement(index.elementKey(), diagram);
         if (auto selectedObject = dynamic_cast<DObject *>(element)) {
             QRectF newRect = aligner(selectedObject, size);
@@ -852,8 +822,7 @@ void DiagramSceneController::alignOnRaster(DElement *element, MDiagram *diagram)
 QList<DObject *> DiagramSceneController::collectObjects(const DSelection &selection, MDiagram *diagram)
 {
     QList<DObject *> list;
-    const QList<DSelection::Index> indices = selection.indices();
-    for (const DSelection::Index &index : indices) {
+    foreach (const DSelection::Index &index, selection.indices()) {
         DObject *object = m_diagramController->findElement<DObject>(index.elementKey(), diagram);
         if (object)
             list.append(object);
@@ -881,7 +850,7 @@ DObject *DiagramSceneController::addObject(MObject *modelObject, const QPointF &
     if (m_diagramController->hasDelegate(modelObject, diagram))
         return nullptr;
 
-    m_diagramController->undoController()->beginMergeSequence(Tr::tr("Add Element"));
+    m_diagramController->undoController()->beginMergeSequence(tr("Add Element"));
 
     DFactory factory;
     modelObject->accept(&factory);
@@ -892,7 +861,7 @@ DObject *DiagramSceneController::addObject(MObject *modelObject, const QPointF &
     alignOnRaster(diagramObject, diagram);
 
     // add all relations between any other element on diagram and new element
-    for (DElement *delement : diagram->diagramElements()) {
+    foreach (DElement *delement, diagram->diagramElements()) {
         if (delement != diagramObject) {
             auto dobject = dynamic_cast<DObject *>(delement);
             if (dobject) {
@@ -978,7 +947,7 @@ DRelation *DiagramSceneController::addRelation(MRelation *modelRelation, const Q
         relationPoints.append(DRelation::IntermediatePoint(i2));
         relationPoints.append(DRelation::IntermediatePoint(i3));
     } else {
-        for (const QPointF &intermediatePoint : intermediatePoints)
+        foreach (const QPointF &intermediatePoint, intermediatePoints)
             relationPoints.append(DRelation::IntermediatePoint(intermediatePoint));
     }
     diagramRelation->setIntermediatePoints(relationPoints);
@@ -1005,13 +974,12 @@ bool DiagramSceneController::relocateRelationEnd(DRelation *relation, DObject *t
         if (visitor.isAccepted()) {
             MObject *currentTargetMObject = m_modelController->findObject((modelRelation->*endUid)());
             QMT_ASSERT(currentTargetMObject, return false);
-            m_modelController->undoController()->beginMergeSequence(Tr::tr("Relocate Relation"));
+            m_modelController->undoController()->beginMergeSequence(tr("Relocate Relation"));
             // move relation into new target if it was a child of the old target
             if (currentTargetMObject == modelRelation->owner())
                 m_modelController->moveRelation(targetMObject, modelRelation);
             // remove relation on all diagrams where the new targe element does not exist
-            const QList<MDiagram *> diagrams = m_diagramController->allDiagrams();
-            for (MDiagram *diagram : diagrams) {
+            foreach (MDiagram *diagram, m_diagramController->allDiagrams()) {
                 if (DElement *diagramRelation = m_diagramController->findDelegate(modelRelation, diagram)) {
                     if (!m_diagramController->findDelegate(targetMObject, diagram)) {
                         m_diagramController->removeElement(diagramRelation, diagram);

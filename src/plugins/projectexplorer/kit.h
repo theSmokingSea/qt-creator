@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -8,9 +30,8 @@
 
 #include <coreplugin/featureprovider.h>
 
-#include <utils/store.h>
-
 #include <QSet>
+#include <QVariant>
 
 #include <memory>
 
@@ -40,8 +61,8 @@ public:
     using Predicate = std::function<bool(const Kit *)>;
     static Predicate defaultPredicate();
 
-    explicit Kit(Utils::Id id = {});
-    explicit Kit(const Utils::Store &data);
+    explicit Kit(Utils::Id id = Utils::Id());
+    explicit Kit(const QVariantMap &data);
     ~Kit();
 
     // Do not trigger evaluations
@@ -116,13 +137,11 @@ public:
     void setMutable(Utils::Id id, bool b);
     bool isMutable(Utils::Id id) const;
 
+    void makeReplacementKit();
     bool isReplacementKit() const;
 
-    void setRelevantAspects(const QSet<Utils::Id> &relevant);
-    QSet<Utils::Id> relevantAspects() const;
     void setIrrelevantAspects(const QSet<Utils::Id> &irrelevant);
     QSet<Utils::Id> irrelevantAspects() const;
-    bool isAspectRelevant(const Utils::Id &aspect) const;
 
     QSet<Utils::Id> supportedPlatforms() const;
     QSet<Utils::Id> availableFeatures() const;
@@ -141,11 +160,11 @@ private:
 
     void kitUpdated();
 
-    Utils::Store toMap() const;
+    QVariantMap toMap() const;
 
     const std::unique_ptr<Internal::KitPrivate> d;
 
-    friend class KitAspectFactory;
+    friend class KitAspect;
     friend class KitManager;
     friend class Internal::KitManagerPrivate;
     friend class Internal::KitModel; // needed for setAutoDetected() when cloning kits

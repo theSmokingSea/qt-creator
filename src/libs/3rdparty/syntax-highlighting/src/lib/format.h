@@ -13,6 +13,12 @@
 
 #include <QExplicitlySharedDataPointer>
 
+QT_BEGIN_NAMESPACE
+class QColor;
+class QString;
+class QXmlStreamReader;
+QT_END_NAMESPACE
+
 namespace KSyntaxHighlighting
 {
 class FormatPrivate;
@@ -48,7 +54,7 @@ public:
      *  the repository is reloaded (which also invalidatess the corresponding
      *  Definition anyway).
      */
-    int id() const;
+    quint16 id() const;
 
     /** Returns the underlying TextStyle of this Format.
      *  Every Theme::TextStyle is visually defined by a Theme. A Format uses one
@@ -186,7 +192,7 @@ private:
 }
 
 QT_BEGIN_NAMESPACE
-Q_DECLARE_TYPEINFO(KSyntaxHighlighting::Format, Q_RELOCATABLE_TYPE);
+Q_DECLARE_TYPEINFO(KSyntaxHighlighting::Format, Q_MOVABLE_TYPE);
 QT_END_NAMESPACE
 
 #endif // KSYNTAXHIGHLIGHTING_FORMAT_H

@@ -1,17 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "editorconfiguration.h"
-
 #include "project.h"
-#include "projectexplorertr.h"
-#include "projectmanager.h"
+#include "projectexplorer.h"
+#include "session.h"
 
 #include <utils/algorithm.h>
 
 #include <coreplugin/icore.h>
 #include <coreplugin/editormanager/editormanager.h>
-
 #include <texteditor/texteditor.h>
 #include <texteditor/textdocument.h>
 #include <texteditor/texteditorsettings.h>
@@ -24,27 +44,28 @@
 #include <texteditor/marginsettings.h>
 #include <texteditor/icodestylepreferencesfactory.h>
 
+#include <QLatin1String>
+#include <QByteArray>
 #include <QTextCodec>
 #include <QDebug>
 
+static const QLatin1String kPrefix("EditorConfiguration.");
+static const QLatin1String kUseGlobal("EditorConfiguration.UseGlobal");
+static const QLatin1String kCodec("EditorConfiguration.Codec");
+static const QLatin1String kCodeStylePrefix("EditorConfiguration.CodeStyle.");
+static const QLatin1String kCodeStyleCount("EditorConfiguration.CodeStyle.Count");
+
 using namespace TextEditor;
-using namespace Utils;
 
 namespace ProjectExplorer {
-
-const Key kPrefix("EditorConfiguration.");
-const Key kUseGlobal("EditorConfiguration.UseGlobal");
-const Key kCodec("EditorConfiguration.Codec");
-const Key kCodeStylePrefix("EditorConfiguration.CodeStyle.");
-const Key kCodeStyleCount("EditorConfiguration.CodeStyle.Count");
 
 struct EditorConfigurationPrivate
 {
     EditorConfigurationPrivate() :
-        m_typingSettings(globalTypingSettings()),
-        m_storageSettings(globalStorageSettings()),
-        m_behaviorSettings(globalBehaviorSettings()),
-        m_extraEncodingSettings(globalExtraEncodingSettings()),
+        m_typingSettings(TextEditorSettings::typingSettings()),
+        m_storageSettings(TextEditorSettings::storageSettings()),
+        m_behaviorSettings(TextEditorSettings::behaviorSettings()),
+        m_extraEncodingSettings(TextEditorSettings::extraEncodingSettings()),
         m_textCodec(Core::EditorManager::defaultTextCodec())
     { }
 
@@ -75,7 +96,7 @@ EditorConfiguration::EditorConfiguration() : d(std::make_unique<EditorConfigurat
         // project prefs can point to the global language pool, which contains also the global language prefs
         preferences->setDelegatingPool(TextEditorSettings::codeStylePool(languageId));
         preferences->setId(languageId.name() + "Project");
-        preferences->setDisplayName(Tr::tr("Project %1", "Settings, %1 is a language (C++ or QML)").arg(factory->displayName()));
+        preferences->setDisplayName(tr("Project %1", "Settings, %1 is a language (C++ or QML)").arg(factory->displayName()));
         // project prefs by default point to global prefs (which in turn can delegate to anything else or not)
         preferences->setCurrentDelegate(originalPreferences);
         d->m_languageCodeStylePreferences.insert(languageId, preferences);
@@ -84,12 +105,12 @@ EditorConfiguration::EditorConfiguration() : d(std::make_unique<EditorConfigurat
     // clone of global prefs (not language specific), for project scope
     d->m_defaultCodeStyle = new SimpleCodeStylePreferences(this);
     d->m_defaultCodeStyle->setDelegatingPool(TextEditorSettings::codeStylePool());
-    d->m_defaultCodeStyle->setDisplayName(Tr::tr("Project", "Settings"));
+    d->m_defaultCodeStyle->setDisplayName(tr("Project", "Settings"));
     d->m_defaultCodeStyle->setId("Project");
     // if setCurrentDelegate is 0 values are read from *this prefs
     d->m_defaultCodeStyle->setCurrentDelegate(TextEditorSettings::codeStyle());
 
-    connect(ProjectManager::instance(), &ProjectManager::aboutToRemoveProject,
+    connect(SessionManager::instance(), &SessionManager::aboutToRemoveProject,
             this, &EditorConfiguration::slotAboutToRemoveProject);
 }
 
@@ -106,10 +127,10 @@ bool EditorConfiguration::useGlobalSettings() const
 void EditorConfiguration::cloneGlobalSettings()
 {
     d->m_defaultCodeStyle->setTabSettings(TextEditorSettings::codeStyle()->tabSettings());
-    setTypingSettings(globalTypingSettings());
-    setStorageSettings(globalStorageSettings());
-    setBehaviorSettings(globalBehaviorSettings());
-    setExtraEncodingSettings(globalExtraEncodingSettings());
+    setTypingSettings(TextEditorSettings::typingSettings());
+    setStorageSettings(TextEditorSettings::storageSettings());
+    setBehaviorSettings(TextEditorSettings::behaviorSettings());
+    setExtraEncodingSettings(TextEditorSettings::extraEncodingSettings());
     setMarginSettings(TextEditorSettings::marginSettings());
     d->m_textCodec = Core::EditorManager::defaultTextCodec();
 }
@@ -159,15 +180,15 @@ QMap<Utils::Id, ICodeStylePreferences *> EditorConfiguration::codeStyles() const
     return d->m_languageCodeStylePreferences;
 }
 
-static void toMapWithPrefix(Store *map, const Store &source)
+static void toMapWithPrefix(QVariantMap *map, const QVariantMap &source)
 {
     for (auto it = source.constBegin(), end = source.constEnd(); it != end; ++it)
         map->insert(kPrefix + it.key(), it.value());
 }
 
-Store EditorConfiguration::toMap() const
+QVariantMap EditorConfiguration::toMap() const
 {
-    Store map = {
+    QVariantMap map = {
         {kUseGlobal, d->m_useGlobal},
         {kCodec, d->m_textCodec->name()},
         {kCodeStyleCount, d->m_languageCodeStylePreferences.count()}
@@ -177,11 +198,11 @@ Store EditorConfiguration::toMap() const
     for (auto itCodeStyle = d->m_languageCodeStylePreferences.cbegin(),
                end = d->m_languageCodeStylePreferences.cend();
             itCodeStyle != end; ++itCodeStyle) {
-        const Store settingsIdMap = {
-            {"language", QVariant::fromValue(itCodeStyle.key().toSetting())},
-            {"value", QVariant::fromValue(itCodeStyle.value()->toMap())}
+        const QVariantMap settingsIdMap = {
+            {"language", itCodeStyle.key().toSetting()},
+            {"value", itCodeStyle.value()->toMap()}
         };
-        map.insert(numberedKey(kCodeStylePrefix, i), variantFromStore(settingsIdMap));
+        map.insert(kCodeStylePrefix + QString::number(i), settingsIdMap);
         i++;
     }
 
@@ -195,7 +216,7 @@ Store EditorConfiguration::toMap() const
     return map;
 }
 
-void EditorConfiguration::fromMap(const Store &map)
+void EditorConfiguration::fromMap(const QVariantMap &map)
 {
     const QByteArray &codecName = map.value(kCodec, d->m_textCodec->name()).toByteArray();
     d->m_textCodec = QTextCodec::codecForName(codecName);
@@ -204,22 +225,22 @@ void EditorConfiguration::fromMap(const Store &map)
 
     const int codeStyleCount = map.value(kCodeStyleCount, 0).toInt();
     for (int i = 0; i < codeStyleCount; ++i) {
-        Store settingsIdMap = storeFromVariant(map.value(numberedKey(kCodeStylePrefix, i)));
+        QVariantMap settingsIdMap = map.value(kCodeStylePrefix + QString::number(i)).toMap();
         if (settingsIdMap.isEmpty()) {
             qWarning() << "No data for code style settings list" << i << "found!";
             continue;
         }
-        Id languageId = Id::fromSetting(settingsIdMap.value("language"));
-        Store value = storeFromVariant(settingsIdMap.value("value"));
+        Utils::Id languageId = Utils::Id::fromSetting(settingsIdMap.value(QLatin1String("language")));
+        QVariantMap value = settingsIdMap.value(QLatin1String("value")).toMap();
         ICodeStylePreferences *preferences = d->m_languageCodeStylePreferences.value(languageId);
         if (preferences)
              preferences->fromMap(value);
     }
 
-    Store submap;
+    QVariantMap submap;
     for (auto it = map.constBegin(), end = map.constEnd(); it != end; ++it) {
-        if (it.key().view().startsWith(kPrefix.view()))
-            submap.insert(it.key().toByteArray().mid(kPrefix.view().size()), it.value());
+        if (it.key().startsWith(kPrefix))
+            submap.insert(it.key().mid(kPrefix.size()), it.value());
     }
     d->m_defaultCodeStyle->fromMap(submap);
     d->m_typingSettings.fromMap(submap);
@@ -264,7 +285,7 @@ void EditorConfiguration::setUseGlobalSettings(bool use)
     const QList<Core::IEditor *> editors = Core::DocumentModel::editorsForOpenedDocuments();
     for (Core::IEditor *editor : editors) {
         if (auto widget = TextEditorWidget::fromEditor(editor)) {
-            Project *project = ProjectManager::projectForFile(editor->document()->filePath());
+            Project *project = SessionManager::projectForFile(editor->document()->filePath());
             if (project && project->editorConfiguration() == this)
                 switchSettings(widget);
         }
@@ -302,10 +323,10 @@ void EditorConfiguration::switchSettings(TextEditorWidget *widget) const
 {
     if (d->m_useGlobal) {
         widget->setMarginSettings(TextEditorSettings::marginSettings());
-        widget->setTypingSettings(globalTypingSettings());
-        widget->setStorageSettings(globalStorageSettings());
-        widget->setBehaviorSettings(globalBehaviorSettings());
-        widget->setExtraEncodingSettings(globalExtraEncodingSettings());
+        widget->setTypingSettings(TextEditorSettings::typingSettings());
+        widget->setStorageSettings(TextEditorSettings::storageSettings());
+        widget->setBehaviorSettings(TextEditorSettings::behaviorSettings());
+        widget->setExtraEncodingSettings(TextEditorSettings::extraEncodingSettings());
         switchSettings_helper(TextEditorSettings::instance(), this, widget);
     } else {
         widget->setMarginSettings(marginSettings());
@@ -362,14 +383,6 @@ void EditorConfiguration::setShowWrapColumn(bool onoff)
     }
 }
 
-void EditorConfiguration::setTintMarginArea(bool onoff)
-{
-    if (d->m_marginSettings.m_tintMarginArea != onoff) {
-        d->m_marginSettings.m_tintMarginArea = onoff;
-        emit marginSettingsChanged(d->m_marginSettings);
-    }
-}
-
 void EditorConfiguration::setUseIndenter(bool onoff)
 {
     if (d->m_marginSettings.m_useIndenter != onoff) {
@@ -391,7 +404,7 @@ void EditorConfiguration::slotAboutToRemoveProject(Project *project)
     if (project->editorConfiguration() != this)
         return;
 
-    for (BaseTextEditor *editor : std::as_const(d->m_editors))
+    for (BaseTextEditor *editor : qAsConst(d->m_editors))
         deconfigureEditor(editor);
 }
 
@@ -400,7 +413,7 @@ TabSettings actualTabSettings(const Utils::FilePath &file,
 {
     if (baseTextdocument)
         return baseTextdocument->tabSettings();
-    if (Project *project = ProjectManager::projectForFile(file))
+    if (Project *project = SessionManager::projectForFile(file))
         return project->editorConfiguration()->codeStyle()->tabSettings();
     return TextEditorSettings::codeStyle()->tabSettings();
 }

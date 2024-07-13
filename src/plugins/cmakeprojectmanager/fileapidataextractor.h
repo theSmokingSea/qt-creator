@@ -1,24 +1,46 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "cmakebuildtarget.h"
 #include "cmakeprojectnodes.h"
-#include "3rdparty/cmake/cmListFileCache.h"
 
 #include <projectexplorer/rawprojectpart.h>
 
-#include <utils/filepath.h>
+#include <utils/fileutils.h>
+#include <utils/optional.h>
 
 #include <QList>
 #include <QSet>
 #include <QString>
 
 #include <memory>
-#include <optional>
 
-namespace CMakeProjectManager::Internal {
+namespace CMakeProjectManager {
+namespace Internal {
 
 class FileApiData;
 
@@ -26,16 +48,13 @@ class CMakeFileInfo
 {
 public:
     bool operator==(const CMakeFileInfo& other) const { return path == other.path; }
-    friend size_t qHash(const CMakeFileInfo &info, uint seed = 0) { return qHash(info.path, seed); }
-
-    bool operator<(const CMakeFileInfo &other) const { return path < other.path; }
+    friend auto qHash(const CMakeFileInfo &info, uint seed = 0) { return info.path.hash(seed); }
 
     Utils::FilePath path;
     bool isCMake = false;
     bool isCMakeListsDotTxt = false;
     bool isExternal = false;
     bool isGenerated = false;
-    cmListFile cmakeListFile;
 };
 
 class FileApiQtcData
@@ -52,7 +71,9 @@ public:
     bool usesAllCapsTargets = false;
 };
 
-FileApiQtcData extractData(const QFuture<void> &cancelFuture, FileApiData &input,
-                           const Utils::FilePath &sourceDir, const Utils::FilePath &buildDir);
+FileApiQtcData extractData(FileApiData &data,
+                           const Utils::FilePath &sourceDirectory,
+                           const Utils::FilePath &buildDirectory);
 
-} // CMakeProjectManager::Internal
+} // namespace Internal
+} // namespace CMakeProjectManager

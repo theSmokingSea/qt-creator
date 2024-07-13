@@ -1,11 +1,33 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "launchersockethandler.h"
-#include "launcherlogging.h"
 
-#include <utils/processhelper.h>
-#include <utils/processreaper.h>
+#include "launcherlogging.h"
+#include "processreaper.h"
+#include "processutils.h"
 
 #include <QCoreApplication>
 #include <QLocalSocket>
@@ -14,11 +36,11 @@
 namespace Utils {
 namespace Internal {
 
-class ProcessWithToken : public ProcessHelper
+class Process : public ProcessHelper
 {
     Q_OBJECT
 public:
-    ProcessWithToken(quintptr token, QObject *parent = nullptr) :
+    Process(quintptr token, QObject *parent = nullptr) :
         ProcessHelper(parent), m_token(token) { }
 
     quintptr token() const { return m_token; }
@@ -41,7 +63,7 @@ LauncherSocketHandler::LauncherSocketHandler(QString serverPath, QObject *parent
 LauncherSocketHandler::~LauncherSocketHandler()
 {
     for (auto it = m_processes.cbegin(); it != m_processes.cend(); ++it) {
-        ProcessWithToken *p = it.value();
+        Process *p = it.value();
         if (p->state() != QProcess::NotRunning)
             logWarn(QStringLiteral("Shutting down while process %1 is running").arg(p->program()));
         ProcessReaper::reap(p);
@@ -84,8 +106,8 @@ void LauncherSocketHandler::handleSocketData()
     case LauncherPacketType::WriteIntoProcess:
         handleWritePacket();
         break;
-    case LauncherPacketType::ControlProcess:
-        handleControlPacket();
+    case LauncherPacketType::StopProcess:
+        handleStopPacket();
         break;
     case LauncherPacketType::Shutdown:
         handleShutdownPacket();
@@ -114,7 +136,7 @@ void LauncherSocketHandler::handleSocketClosed()
     qApp->quit();
 }
 
-void LauncherSocketHandler::handleProcessError(ProcessWithToken *process)
+void LauncherSocketHandler::handleProcessError(Process *process)
 {
     // In case of FailedToStart we won't receive finished signal, so we send the error
     // packet and remove the process here and now. For all other errors we should expect
@@ -124,7 +146,7 @@ void LauncherSocketHandler::handleProcessError(ProcessWithToken *process)
         handleProcessFinished(process);
 }
 
-void LauncherSocketHandler::handleProcessStarted(ProcessWithToken *process)
+void LauncherSocketHandler::handleProcessStarted(Process *process)
 {
     ProcessStartedPacket packet(process->token());
     packet.processId = process->processId();
@@ -132,21 +154,21 @@ void LauncherSocketHandler::handleProcessStarted(ProcessWithToken *process)
     sendPacket(packet);
 }
 
-void LauncherSocketHandler::handleReadyReadStandardOutput(ProcessWithToken *process)
+void LauncherSocketHandler::handleReadyReadStandardOutput(Process *process)
 {
     ReadyReadStandardOutputPacket packet(process->token());
     packet.standardChannel = process->readAllStandardOutput();
     sendPacket(packet);
 }
 
-void LauncherSocketHandler::handleReadyReadStandardError(ProcessWithToken *process)
+void LauncherSocketHandler::handleReadyReadStandardError(Process *process)
 {
     ReadyReadStandardErrorPacket packet(process->token());
     packet.standardChannel = process->readAllStandardError();
     sendPacket(packet);
 }
 
-void LauncherSocketHandler::handleProcessFinished(ProcessWithToken *process)
+void LauncherSocketHandler::handleProcessFinished(Process *process)
 {
     ProcessDonePacket packet(process->token());
     packet.exitCode = process->exitCode();
@@ -162,7 +184,7 @@ void LauncherSocketHandler::handleProcessFinished(ProcessWithToken *process)
 
 void LauncherSocketHandler::handleStartPacket()
 {
-    ProcessWithToken *& process = m_processes[m_packetParser.token()];
+    Process *& process = m_processes[m_packetParser.token()];
     if (!process)
         process = setupProcess(m_packetParser.token());
     if (process->state() != QProcess::NotRunning) {
@@ -172,7 +194,6 @@ void LauncherSocketHandler::handleStartPacket()
     const auto packet = LauncherPacket::extractPacket<StartProcessPacket>(
                 m_packetParser.token(),
                 m_packetParser.packetData());
-
     process->setEnvironment(packet.env);
     process->setWorkingDirectory(packet.workingDir);
     // Forwarding is handled by the LauncherInterface
@@ -180,11 +201,10 @@ void LauncherSocketHandler::handleStartPacket()
                                    ? QProcess::MergedChannels : QProcess::SeparateChannels);
     process->setStandardInputFile(packet.standardInputFile);
     ProcessStartHandler *handler = process->processStartHandler();
-    handler->setWindowsSpecificStartupFlags(packet.belowNormalPriority,
-                                            packet.createConsoleOnWindows,
-                                            packet.forceDefaultErrorMode);
     handler->setProcessMode(packet.processMode);
     handler->setWriteData(packet.writeData);
+    if (packet.belowNormalPriority)
+        handler->setBelowNormalPriority();
     handler->setNativeArguments(packet.nativeArguments);
     if (packet.lowPriority)
         process->setLowPriority();
@@ -198,7 +218,7 @@ void LauncherSocketHandler::handleStartPacket()
 
 void LauncherSocketHandler::handleWritePacket()
 {
-    ProcessWithToken * const process = m_processes.value(m_packetParser.token());
+    Process * const process = m_processes.value(m_packetParser.token());
     if (!process) {
         logWarn("Got write request for unknown process");
         return;
@@ -213,31 +233,28 @@ void LauncherSocketHandler::handleWritePacket()
     process->write(packet.inputData);
 }
 
-void LauncherSocketHandler::handleControlPacket()
+void LauncherSocketHandler::handleStopPacket()
 {
-    ProcessWithToken * const process = m_processes.value(m_packetParser.token());
+    Process * const process = m_processes.value(m_packetParser.token());
     if (!process) {
         // This can happen when the process finishes on its own at about the same time the client
         // sends the request. In this case the process was already deleted.
         logDebug("Got stop request for unknown process");
         return;
     }
-    const auto packet = LauncherPacket::extractPacket<ControlProcessPacket>(
+    const auto packet = LauncherPacket::extractPacket<StopProcessPacket>(
                 m_packetParser.token(),
                 m_packetParser.packetData());
 
     switch (packet.signalType) {
-    case ControlProcessPacket::SignalType::Terminate:
+    case StopProcessPacket::SignalType::Terminate:
         process->terminate();
         break;
-    case ControlProcessPacket::SignalType::Kill:
+    case StopProcessPacket::SignalType::Kill:
         process->kill();
         break;
-    case ControlProcessPacket::SignalType::Close:
+    case StopProcessPacket::SignalType::Close:
         removeProcess(process->token());
-        break;
-    case ControlProcessPacket::SignalType::CloseWriteChannel:
-        process->closeWriteChannel();
         break;
     }
 }
@@ -254,12 +271,13 @@ void LauncherSocketHandler::sendPacket(const LauncherPacket &packet)
     m_socket->write(packet.serialize());
 }
 
-ProcessWithToken *LauncherSocketHandler::setupProcess(quintptr token)
+Process *LauncherSocketHandler::setupProcess(quintptr token)
 {
-    const auto p = new ProcessWithToken(token, this);
+    const auto p = new Process(token, this);
     connect(p, &QProcess::started, this, [this, p] { handleProcessStarted(p); });
     connect(p, &QProcess::errorOccurred, this, [this, p] { handleProcessError(p); });
-    connect(p, &QProcess::finished, this, [this, p] { handleProcessFinished(p); });
+    connect(p, static_cast<void (QProcess::*)(int, QProcess::ExitStatus)>(&QProcess::finished),
+            this, [this, p] { handleProcessFinished(p); });
     connect(p, &QProcess::readyReadStandardOutput,
             this, [this, p] { handleReadyReadStandardOutput(p); });
     connect(p, &QProcess::readyReadStandardError,
@@ -273,12 +291,12 @@ void LauncherSocketHandler::removeProcess(quintptr token)
     if (it == m_processes.constEnd())
         return;
 
-    ProcessWithToken *process = it.value();
+    Process *process = it.value();
     m_processes.erase(it);
-    ProcessReaper::reap(process, std::chrono::milliseconds(process->reaperTimeout()));
+    ProcessReaper::reap(process, process->reaperTimeout());
 }
 
 } // namespace Internal
 } // namespace Utils
 
-#include "launchersockethandler.moc"
+#include <launchersockethandler.moc>

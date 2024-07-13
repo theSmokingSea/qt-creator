@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -10,7 +32,7 @@
 #include "ieditor.h"
 #include "ieditorfactory.h"
 
-#include "../idocument.h"
+#include <coreplugin/idocument.h>
 
 #include <QList>
 #include <QObject>
@@ -37,6 +59,7 @@ namespace Internal {
 
 class EditorWindow;
 class MainWindow;
+class OpenEditorsViewFactory;
 class OpenEditorsWindow;
 
 enum MakeWritableResult { OpenedWithVersionControl, MadeWritable, SavedAs, Failed };
@@ -61,7 +84,6 @@ public:
     static EditorArea *mainEditorArea();
     static EditorView *currentEditorView();
     static QList<EditorView *> allEditorViews();
-    static bool hasMoreThanOneview();
     static void setCurrentEditor(IEditor *editor, bool ignoreNavigationHistory = false);
     static IEditor *openEditor(EditorView *view,
                                const Utils::FilePath &filePath,
@@ -96,12 +118,27 @@ public:
 
     static void saveSettings();
     static void readSettings();
-    static Qt::CaseSensitivity readFileSystemSensitivity(Utils::QtcSettings *settings);
+    static Qt::CaseSensitivity readFileSystemSensitivity(QSettings *settings);
     static void writeFileSystemSensitivity(Utils::QtcSettings *settings,
                                            Qt::CaseSensitivity sensitivity);
+    static void setAutoSaveEnabled(bool enabled);
+    static bool autoSaveEnabled();
+    static void setAutoSaveInterval(int interval);
+    static int autoSaveInterval();
+    static void setAutoSaveAfterRefactoring(bool enabled);
+    static bool autoSaveAfterRefactoring();
+    static void setAutoSuspendEnabled(bool enabled);
+    static bool autoSuspendEnabled();
+    static void setAutoSuspendMinDocumentCount(int count);
+    static int autoSuspendMinDocumentCount();
+    static void setWarnBeforeOpeningBigFilesEnabled(bool enabled);
+    static bool warnBeforeOpeningBigFilesEnabled();
+    static void setBigFileSizeLimit(int limitInMB);
+    static int bigFileSizeLimit();
+    static void setMaxRecentFiles(int count);
+    static int maxRecentFiles();
 
     static EditorWindow *createEditorWindow();
-    static void addEditorArea(EditorArea *area);
     static void splitNewWindow(Internal::EditorView *view);
     static void closeView(Internal::EditorView *view);
     static const QList<IEditor *> emptyView(Internal::EditorView *view);
@@ -117,15 +154,6 @@ public:
     static void setPlaceholderText(const QString &text);
     static QString placeholderText();
 
-    static void updateAutoSave();
-
-    static void handleFileRenamed(
-        const Utils::FilePath &originalFilePath,
-        const Utils::FilePath &newFilePath,
-        Utils::Id originalType = {});
-
-    static void addClosedDocumentToCloseHistory(IEditor *editor);
-
 public slots:
     static bool saveDocument(Core::IDocument *document);
     static bool saveDocumentAs(Core::IDocument *document);
@@ -135,15 +163,11 @@ public slots:
     static void gotoPreviousSplit();
     static void gotoNextSplit();
 
-    static void reopenLastClosedDocument();
-
-    void handleDocumentStateChange(Core::IDocument *document);
+    void handleDocumentStateChange();
     void editorAreaDestroyed(QObject *area);
 
 signals:
     void placeholderTextChanged(const QString &text);
-    void currentViewChanged();
-    void viewCountChanged();
 
 private:
     static void gotoNextDocHistory();
@@ -179,7 +203,7 @@ private:
     static OpenEditorsWindow *windowPopup();
     static void showPopupOrSelectDocument();
 
-    static EditorFactories findFactories(Utils::Id editorId, const Utils::FilePath &filePath);
+    static EditorFactoryList findFactories(Utils::Id editorId, const Utils::FilePath &filePath);
     static IEditor *createEditor(IEditorFactory *factory, const Utils::FilePath &filePath);
     static void addEditor(IEditor *editor);
     static void removeEditor(IEditor *editor, bool removeSusependedEntry);
@@ -189,6 +213,7 @@ private:
     static EditorArea *findEditorArea(const EditorView *view, int *areaIndex = nullptr);
     static IEditor *pickUnusedEditor(Internal::EditorView **foundView = nullptr);
     static void addDocumentToRecentFiles(IDocument *document);
+    static void updateAutoSave();
     static void updateMakeWritableWarning();
     static void setupSaveActions(IDocument *document, QAction *saveAction,
                                  QAction *saveAsAction, QAction *revertToSavedAction);
@@ -205,48 +230,47 @@ private:
     QList<EditorArea *> m_editorAreas;
     QPointer<IEditor> m_currentEditor;
     QPointer<IEditor> m_scheduledCurrentEditor;
-    QList<QPointer<EditorView>> m_currentView;
+    QPointer<EditorView> m_currentView;
     QTimer *m_autoSaveTimer = nullptr;
 
     // actions
-    QAction *m_revertToSavedAction = nullptr;
-    QAction *m_saveAction = nullptr;
-    QAction *m_saveAsAction = nullptr;
-    QAction *m_closeCurrentEditorAction = nullptr;
-    QAction *m_closeAllEditorsAction = nullptr;
-    QAction *m_closeOtherDocumentsAction = nullptr;
-    QAction *m_closeAllEditorsExceptVisibleAction = nullptr;
-    QAction *m_gotoNextDocHistoryAction = nullptr;
-    QAction *m_gotoPreviousDocHistoryAction = nullptr;
-    QAction *m_goBackAction = nullptr;
-    QAction *m_goForwardAction = nullptr;
-    QAction *m_reopenLastClosedDocumenAction = nullptr;
-    QAction *m_gotoLastEditAction = nullptr;
-    QAction *m_splitAction = nullptr;
-    QAction *m_splitSideBySideAction = nullptr;
-    QAction *m_splitNewWindowAction = nullptr;
-    QAction *m_removeCurrentSplitAction = nullptr;
-    QAction *m_removeAllSplitsAction = nullptr;
-    QAction *m_gotoPreviousSplitAction = nullptr;
-    QAction *m_gotoNextSplitAction = nullptr;
+    QAction *m_revertToSavedAction;
+    QAction *m_saveAction;
+    QAction *m_saveAsAction;
+    QAction *m_closeCurrentEditorAction;
+    QAction *m_closeAllEditorsAction;
+    QAction *m_closeOtherDocumentsAction;
+    QAction *m_closeAllEditorsExceptVisibleAction;
+    QAction *m_gotoNextDocHistoryAction;
+    QAction *m_gotoPreviousDocHistoryAction;
+    QAction *m_goBackAction;
+    QAction *m_goForwardAction;
+    QAction *m_gotoLastEditAction;
+    QAction *m_splitAction;
+    QAction *m_splitSideBySideAction;
+    QAction *m_splitNewWindowAction;
+    QAction *m_removeCurrentSplitAction;
+    QAction *m_removeAllSplitsAction;
+    QAction *m_gotoPreviousSplitAction;
+    QAction *m_gotoNextSplitAction;
 
-    QAction *m_copyFilePathContextAction = nullptr;
-    QAction *m_copyLocationContextAction = nullptr; // Copy path and line number.
-    QAction *m_copyFileNameContextAction = nullptr;
-    QAction *m_saveCurrentEditorContextAction = nullptr;
-    QAction *m_saveAsCurrentEditorContextAction = nullptr;
-    QAction *m_revertToSavedCurrentEditorContextAction = nullptr;
+    QAction *m_copyFilePathContextAction;
+    QAction *m_copyLocationContextAction; // Copy path and line number.
+    QAction *m_copyFileNameContextAction;
+    QAction *m_saveCurrentEditorContextAction;
+    QAction *m_saveAsCurrentEditorContextAction;
+    QAction *m_revertToSavedCurrentEditorContextAction;
 
-    QAction *m_closeCurrentEditorContextAction = nullptr;
-    QAction *m_closeAllEditorsContextAction = nullptr;
-    QAction *m_closeOtherDocumentsContextAction = nullptr;
-    QAction *m_closeAllEditorsExceptVisibleContextAction = nullptr;
-    QAction *m_openGraphicalShellAction = nullptr;
-    QAction *m_openGraphicalShellContextAction = nullptr;
-    QAction *m_showInFileSystemViewAction = nullptr;
-    QAction *m_showInFileSystemViewContextAction = nullptr;
-    QAction *m_openTerminalAction = nullptr;
-    QAction *m_findInDirectoryAction = nullptr;
+    QAction *m_closeCurrentEditorContextAction;
+    QAction *m_closeAllEditorsContextAction;
+    QAction *m_closeOtherDocumentsContextAction;
+    QAction *m_closeAllEditorsExceptVisibleContextAction;
+    QAction *m_openGraphicalShellAction;
+    QAction *m_openGraphicalShellContextAction;
+    QAction *m_showInFileSystemViewAction;
+    QAction *m_showInFileSystemViewContextAction;
+    QAction *m_openTerminalAction;
+    QAction *m_findInDirectoryAction;
     QAction *m_filePropertiesAction = nullptr;
     QAction *m_pinAction = nullptr;
     DocumentModel::Entry *m_contextMenuEntry = nullptr;
@@ -255,11 +279,29 @@ private:
     OpenEditorsWindow *m_windowPopup = nullptr;
 
     QMap<QString, QVariant> m_editorStates;
+    OpenEditorsViewFactory *m_openEditorsFactory = nullptr;
 
     EditorManager::WindowTitleHandler m_titleAdditionHandler;
     EditorManager::WindowTitleHandler m_sessionTitleHandler;
     EditorManager::WindowTitleHandler m_titleVcsTopicHandler;
 
+    struct Settings
+    {
+        IDocument::ReloadSetting reloadSetting = IDocument::AlwaysAsk;
+
+        bool autoSaveEnabled = true;
+        int autoSaveInterval = 5;
+
+        bool autoSuspendEnabled = true;
+        int autoSuspendMinDocumentCount = 10;
+
+        bool autoSaveAfterRefactoring = true;
+        bool warnBeforeOpeningBigFilesEnabled = true;
+        int bigFileSizeLimitInMB = 5;
+        int maxRecentFiles = 8;
+    };
+
+    Settings m_settings;
     QString m_placeholderText;
     QList<std::function<bool(IEditor *)>> m_closeEditorListeners;
 };

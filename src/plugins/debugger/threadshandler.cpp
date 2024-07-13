@@ -1,13 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "threadshandler.h"
 
 #include "debuggeractions.h"
+#include "debuggercore.h"
 #include "debuggerengine.h"
 #include "debuggericons.h"
 #include "debuggerprotocol.h"
-#include "debuggertr.h"
 #include "watchutils.h"
 
 #include <utils/algorithm.h>
@@ -21,7 +43,14 @@
 
 using namespace Utils;
 
-namespace Debugger::Internal {
+namespace Debugger {
+namespace Internal {
+
+////////////////////////////////////////////////////////////////////////
+//
+// ThreadItem
+//
+///////////////////////////////////////////////////////////////////////
 
 // ThreadItem
 
@@ -57,25 +86,25 @@ QString ThreadItem::threadToolTip() const
     QString rc;
     QTextStream str(&rc);
     str << "<html><head/><body><table>"
-        << start << Tr::tr("Thread&nbsp;id:")
+        << start << ThreadsHandler::tr("Thread&nbsp;id:")
         << sep << threadData.id << end;
     if (!threadData.targetId.isEmpty())
-        str << start << Tr::tr("Target&nbsp;id:")
+        str << start << ThreadsHandler::tr("Target&nbsp;id:")
             << sep << threadData.targetId << end;
     if (!threadData.groupId.isEmpty())
-        str << start << Tr::tr("Group&nbsp;id:")
+        str << start << ThreadsHandler::tr("Group&nbsp;id:")
             << sep << threadData.groupId << end;
     if (!threadData.name.isEmpty())
-        str << start << Tr::tr("Name:")
+        str << start << ThreadsHandler::tr("Name:")
             << sep << threadData.name << end;
     if (!threadData.state.isEmpty())
-        str << start << Tr::tr("State:")
+        str << start << ThreadsHandler::tr("State:")
             << sep << threadData.state << end;
     if (!threadData.core.isEmpty())
-        str << start << Tr::tr("Core:")
+        str << start << ThreadsHandler::tr("Core:")
             << sep << threadData.core << end;
     if (threadData.address) {
-        str << start << Tr::tr("Stopped&nbsp;at:") << sep;
+        str << start << ThreadsHandler::tr("Stopped&nbsp;at:") << sep;
         if (!threadData.function.isEmpty())
             str << threadData.function << "<br>";
         if (!threadData.fileName.isEmpty())
@@ -186,9 +215,10 @@ ThreadsHandler::ThreadsHandler(DebuggerEngine *engine)
     : m_engine(engine)
 {
     setObjectName("ThreadsModel");
-    setHeader({"  " + Tr::tr("ID") + "  ",
-               Tr::tr("Address"), Tr::tr("Function"), Tr::tr("File"), Tr::tr("Line"), Tr::tr("State"),
-               Tr::tr("Name"), Tr::tr("Target ID"), Tr::tr("Details"), Tr::tr("Core"),
+    setHeader({
+                  "  " + tr("ID") + "  ",
+                  tr("Address"), tr("Function"), tr("File"), tr("Line"), tr("State"),
+                  tr("Name"), tr("Target ID"), tr("Details"), tr("Core"),
               });
 }
 
@@ -227,7 +257,7 @@ bool ThreadsHandler::setData(const QModelIndex &idx, const QVariant &data, int r
 
         if (ev.as<QContextMenuEvent>()) {
             auto menu = new QMenu;
-            menu->addAction(settings().settingsDialog.action());
+            menu->addAction(debuggerSettings()->settingsDialog.action());
             menu->popup(ev.globalPos());
             return true;
         }
@@ -244,9 +274,9 @@ void ThreadsHandler::sort(int column, Qt::SortOrder order)
         if (v1 == v2)
             return false;
         if (column == 0)
-            return (v1.toInt() < v2.toInt()) != (order == Qt::DescendingOrder);
+            return (v1.toInt() < v2.toInt()) ^ (order == Qt::DescendingOrder);
         // FIXME: Use correct toXXX();
-        return (v1.toString() < v2.toString()) != (order == Qt::DescendingOrder);
+        return (v1.toString() < v2.toString()) ^ (order == Qt::DescendingOrder);
     });
 }
 
@@ -268,7 +298,6 @@ void ThreadsHandler::setCurrentThread(const Thread &thread)
 
     m_currentThread = thread;
     thread->update();
-    threadSwitcher()->setCurrentIndex(thread->index().row());
 }
 
 void ThreadsHandler::notifyGroupCreated(const QString &groupId, const QString &pid)
@@ -302,7 +331,7 @@ bool ThreadsHandler::notifyGroupExited(const QString &groupId)
         if (item->threadData.groupId == groupId)
             list.append(item);
     });
-    for (ThreadItem *item : std::as_const(list))
+    for (ThreadItem *item : qAsConst(list))
         destroyItem(item);
 
     m_pidForGroupId.remove(groupId);
@@ -338,7 +367,7 @@ QPointer<QComboBox> ThreadsHandler::threadSwitcher()
         m_comboBox = new QComboBox;
         m_comboBox->setSizeAdjustPolicy(QComboBox::AdjustToContents);
         m_comboBox->setModel(this);
-        connect(m_comboBox, &QComboBox::activated, this, [this](int row) {
+        connect(m_comboBox, QOverload<int>::of(&QComboBox::activated), this, [this](int row) {
             setData(index(row, 0), {}, BaseTreeView::ItemActivatedRole);
         });
     }
@@ -390,4 +419,5 @@ QAbstractItemModel *ThreadsHandler::model()
     return this;
 }
 
-} // Debugger::Internal
+} // namespace Internal
+} // namespace Debugger

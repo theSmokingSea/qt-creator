@@ -1,30 +1,50 @@
-// Copyright (C) 2023 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2022 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
-import QtQuick
-import QtQuick.Templates as T
+import QtQuick 2.15
+import QtQuick.Templates 2.15 as T
 import StudioTheme 1.0 as StudioTheme
 
 T.Switch {
-    id: control
-
-    property StudioTheme.ControlStyle style: StudioTheme.Values.controlStyle
+    id: root
 
     property alias actionIndicator: actionIndicator
 
     // This property is used to indicate the global hover state
-    property bool hover: control.hovered && control.enabled
+    property bool hover: root.hovered && root.enabled
     property bool edit: false
 
     property alias actionIndicatorVisible: actionIndicator.visible
-    property real __actionIndicatorWidth: control.style.actionIndicatorSize.width
-    property real __actionIndicatorHeight: control.style.actionIndicatorSize.height
+    property real __actionIndicatorWidth: StudioTheme.Values.actionIndicatorWidth
+    property real __actionIndicatorHeight: StudioTheme.Values.actionIndicatorHeight
 
-    property alias labelVisible: label.visible
-    property alias labelColor: label.color
+    property alias labelVisible: switchLabel.visible
+    property alias labelColor: switchLabel.color
 
-    property alias fontFamily: label.font.family
-    property alias fontPixelSize: label.font.pixelSize
+    property alias fontFamily: switchLabel.font.family
+    property alias fontPixelSize: switchLabel.font.pixelSize
 
     font.pixelSize: StudioTheme.Values.myFontSize
 
@@ -34,16 +54,15 @@ T.Switch {
                              implicitContentHeight + topPadding + bottomPadding,
                              implicitIndicatorHeight + topPadding + bottomPadding)
 
-    spacing: label.visible ? control.style.controlSpacing : 0
+    spacing: StudioTheme.Values.switchSpacing
     hoverEnabled: true
     activeFocusOnTab: false
 
     ActionIndicator {
         id: actionIndicator
-        style: control.style
-        __parentControl: control
-        width: actionIndicator.visible ? control.__actionIndicatorWidth : 0
-        height: actionIndicator.visible ? control.__actionIndicatorHeight : 0
+        myControl: root
+        width: actionIndicator.visible ? root.__actionIndicatorWidth : 0
+        height: actionIndicator.visible ? root.__actionIndicatorHeight : 0
     }
 
     indicator: Rectangle {
@@ -51,12 +70,12 @@ T.Switch {
         x: actionIndicator.width
         y: 0
         z: 5
-        implicitWidth: control.style.squareControlSize.width * 2
-        implicitHeight: control.style.squareControlSize.height
-        radius: control.style.squareControlSize.height * 0.5
-        color: control.style.background.idle
-        border.color: control.style.border.idle
-        border.width: control.style.borderWidth
+        implicitWidth: StudioTheme.Values.height * 2
+        implicitHeight: StudioTheme.Values.height
+        radius: StudioTheme.Values.height * 0.5
+        color: StudioTheme.Values.themeControlBackground
+        border.width: StudioTheme.Values.border
+        border.color: StudioTheme.Values.themeControlOutline
 
         Rectangle {
             id: switchIndicator
@@ -64,142 +83,142 @@ T.Switch {
             readonly property real gap: 5
             property real size: switchBackground.implicitHeight - switchIndicator.gap * 2
 
-            x: control.checked ? parent.width - width - switchIndicator.gap
+            x: root.checked ? parent.width - width - switchIndicator.gap
                             : switchIndicator.gap
             y: switchIndicator.gap
             width: switchIndicator.size
             height: switchIndicator.size
             radius: switchIndicator.size * 0.5
-            color: control.style.icon.idle
+            color: StudioTheme.Values.themeTextColor
             border.width: 0
         }
     }
 
     contentItem: T.Label {
-        id: label
-        leftPadding: switchBackground.x + switchBackground.width + control.spacing
+        id: switchLabel
+        leftPadding: switchBackground.x + switchBackground.width + root.spacing
         rightPadding: 0
         verticalAlignment: Text.AlignVCenter
-        text: control.text
-        font: control.font
-        color: control.style.text.idle
-        visible: control.text !== ""
+        text: root.text
+        font: root.font
+        color: StudioTheme.Values.themeTextColor
+        visible: text !== ""
     }
 
-    property bool __default: control.enabled && !control.hover && !actionIndicator.hover && !control.pressed
-    property bool __globalHover: control.enabled && actionIndicator.hover && !control.pressed
-    property bool __hover: control.hover && !actionIndicator.hover && !control.pressed
-    property bool __press: control.hover && control.pressed
+    property bool __default: root.enabled && !root.hover && !actionIndicator.hover && !root.pressed
+    property bool __globalHover: root.enabled && actionIndicator.hover && !root.pressed
+    property bool __hover: root.hover && !actionIndicator.hover && !root.pressed
+    property bool __press: root.hover && root.pressed
 
     states: [
         State {
             name: "default"
-            when: control.__default && !control.checked
+            when: root.__default && !root.checked
             PropertyChanges {
                 target: switchBackground
-                color: control.style.background.idle
-                border.color: control.style.border.idle
+                color: StudioTheme.Values.themeControlBackground
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
                 target: switchIndicator
-                color: control.style.icon.idle
+                color: StudioTheme.Values.themeTextColor
             }
         },
         State {
             name: "globalHover"
-            when: control.__globalHover && !control.checked
+            when: root.__globalHover && !root.checked
             PropertyChanges {
                 target: switchBackground
-                color: control.style.background.globalHover
-                border.color: control.style.border.idle
+                color: StudioTheme.Values.themeControlBackgroundGlobalHover
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
                 target: switchIndicator
-                color: control.style.icon.idle
+                color: StudioTheme.Values.themeTextColor
             }
         },
         State {
             name: "hover"
-            when: control.__hover && !control.checked
+            when: root.__hover && !root.checked
             PropertyChanges {
                 target: switchBackground
-                color: control.style.background.hover
-                border.color: control.style.border.hover
+                color: StudioTheme.Values.themeControlBackgroundHover
+                border.color: StudioTheme.Values.themeControlOutline
             }
             PropertyChanges {
                 target: switchIndicator
-                color: control.style.icon.hover
+                color: StudioTheme.Values.themeTextColor
             }
         },
         State {
             name: "press"
-            when: control.__press && !control.checked
+            when: root.__press && !root.checked
             PropertyChanges {
                 target: switchBackground
-                color: control.style.background.interaction
-                border.color: control.style.border.interaction
+                color: StudioTheme.Values.themeControlBackgroundInteraction
+                border.color: StudioTheme.Values.themeControlOutlineInteraction
             }
             PropertyChanges {
                 target: switchIndicator
-                color: control.style.interaction
+                color: StudioTheme.Values.themeInteraction
             }
         },
         State {
             name: "disable"
-            when: !control.enabled && !control.checked
+            when: !root.enabled && !root.checked
             PropertyChanges {
                 target: switchBackground
-                color: control.style.background.disabled
-                border.color: control.style.border.disabled
+                color: StudioTheme.Values.themeControlBackgroundDisabled
+                border.color: StudioTheme.Values.themeControlOutlineDisabled
             }
             PropertyChanges {
                 target: switchIndicator
-                color: control.style.icon.disabled
+                color: StudioTheme.Values.themeTextColorDisabled
             }
             PropertyChanges {
-                target: label
-                color: control.style.text.disabled
+                target: switchLabel
+                color: StudioTheme.Values.themeTextColorDisabled
             }
         },
 
         State {
             name: "defaultChecked"
-            when: control.__default && control.checked
+            when: root.__default && root.checked
             extend: "default"
             PropertyChanges {
                 target: switchBackground
-                color: control.style.interaction
-                border.color: control.style.interaction
+                color: StudioTheme.Values.themeInteraction
+                border.color: StudioTheme.Values.themeInteraction
             }
         },
         State {
             name: "globalHoverChecked"
-            when: control.__globalHover && control.checked
+            when: root.__globalHover && root.checked
             extend: "globalHover"
             PropertyChanges {
                 target: switchBackground
-                color: control.style.interactionHover
-                border.color: control.style.interactionHover
+                color: StudioTheme.Values.themeInteractionHover
+                border.color: StudioTheme.Values.themeInteractionHover
             }
         },
         State {
             name: "hoverChecked"
-            when: control.__hover && control.checked
+            when: root.__hover && root.checked
             extend: "hover"
             PropertyChanges {
                 target: switchBackground
-                color: control.style.interactionHover
-                border.color: control.style.interactionHover
+                color: StudioTheme.Values.themeInteractionHover
+                border.color: StudioTheme.Values.themeInteractionHover
             }
         },
         State {
             name: "pressChecked"
-            when: control.__press && control.checked
+            when: root.__press && root.checked
             extend: "press"
         },
         State {
             name: "disableChecked"
-            when: !control.enabled && control.checked
+            when: !root.enabled && root.checked
             extend: "disable"
         }
     ]

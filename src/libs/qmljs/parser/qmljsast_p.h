@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -19,13 +41,11 @@
 
 #include "qmljs/parser/qmljsmemorypool_p.h"
 
-#include <QtCore/qtaggedpointer.h>
 #include <QtCore/qversionnumber.h>
 
 QT_BEGIN_NAMESPACE
 class QString;
 QT_END_NAMESPACE
-#include <type_traits>
 
 QT_QML_BEGIN_NAMESPACE
 
@@ -98,10 +118,10 @@ enum class VariableScope {
 template <typename T1, typename T2>
 T1 cast(T2 *ast)
 {
-    if (ast && ast->kind == std::remove_pointer_t<T1>::K)
+    if (ast && ast->kind == static_cast<T1>(0)->K)
         return static_cast<T1>(ast);
 
-    return nullptr;
+    return 0;
 }
 
 FunctionExpression *asAnonymousFunctionDefinition(AST::Node *n);
@@ -211,7 +231,7 @@ public:
         Kind_PatternProperty,
         Kind_PatternPropertyList,
         Kind_Type,
-        Kind_TypeArgument,
+        Kind_TypeArgumentList,
         Kind_TypeAnnotation,
 
         Kind_UiArrayBinding,
@@ -329,22 +349,6 @@ public:
     SourceLocation lastSourceLocation() const override
     { return lastListElement(this)->identifierToken; }
 
-    QString toString() const
-    {
-        QString result;
-        toString(&result);
-        return result;
-    }
-
-    void toString(QString *out) const
-    {
-        for (const UiQualifiedId *it = this; it; it = it->next) {
-            out->append(it->name);
-            if (it->next)
-                out->append(QLatin1Char('.'));
-        }
-    }
-
 // attributes
     UiQualifiedId *next;
     QStringView name;
@@ -356,9 +360,9 @@ class QML_PARSER_EXPORT Type: public Node
 public:
     QMLJS_DECLARE_AST_NODE(Type)
 
-    Type(UiQualifiedId *typeId, Type *typeArgument = nullptr)
+    Type(UiQualifiedId *typeId, Node *typeArguments = nullptr)
         : typeId(typeId)
-        , typeArgument(typeArgument ? typeArgument->typeId : nullptr)
+        , typeArguments(typeArguments)
     { kind = K; }
 
     void accept0(BaseVisitor *visitor) override;
@@ -367,16 +371,53 @@ public:
     { return typeId->firstSourceLocation(); }
 
     SourceLocation lastSourceLocation() const override
-    {
-        return typeArgument ? typeArgument->lastSourceLocation() : typeId->lastSourceLocation();
-    }
+    { return typeArguments ? typeArguments->lastSourceLocation() : typeId->lastSourceLocation(); }
 
     QString toString() const;
     void toString(QString *out) const;
 
 // attributes
     UiQualifiedId *typeId;
-    UiQualifiedId *typeArgument;
+    Node *typeArguments; // TypeArgumentList
+};
+
+
+class QML_PARSER_EXPORT TypeArgumentList: public Node
+{
+public:
+    QMLJS_DECLARE_AST_NODE(TypeArgumentList)
+
+    TypeArgumentList(Type *typeId)
+        : typeId(typeId)
+        , next(nullptr)
+    { kind = K; }
+
+    TypeArgumentList(TypeArgumentList *previous, Type *typeId)
+        : typeId(typeId)
+    {
+        kind = K;
+        next = previous->next;
+        previous->next = this;
+    }
+
+    void accept0(BaseVisitor *visitor) override;
+
+    SourceLocation firstSourceLocation() const override
+    { return typeId->firstSourceLocation(); }
+
+    SourceLocation lastSourceLocation() const override
+    { return lastListElement(this)->typeId->lastSourceLocation(); }
+
+    inline TypeArgumentList *finish()
+    {
+        TypeArgumentList *front = next;
+        next = nullptr;
+        return front;
+    }
+
+// attributes
+    Type *typeId;
+    TypeArgumentList *next;
 };
 
 class QML_PARSER_EXPORT TypeAnnotation: public Node
@@ -842,14 +883,14 @@ struct QML_PARSER_EXPORT BoundName
     };
 
     QString id;
-    QTaggedPointer<TypeAnnotation, Type> typeAnnotation;
+    TypeAnnotation *typeAnnotation;
+    Type typeAnnotationType;
     BoundName(const QString &id, TypeAnnotation *typeAnnotation, Type type = Declared)
-        : id(id)
-        , typeAnnotation(typeAnnotation, type)
+    : id(id), typeAnnotation(typeAnnotation), typeAnnotationType(type)
     {}
     BoundName() = default;
-
-    bool isInjected() const { return typeAnnotation.tag() == Injected; }
+    QString typeName() const { return typeAnnotation ? typeAnnotation->type->toString() : QString(); }
+    bool isInjected() const { return typeAnnotation && typeAnnotationType == Injected; }
 };
 
 struct BoundNames : public QVector<BoundName>
@@ -3274,17 +3315,12 @@ class QML_PARSER_EXPORT UiParameterList: public Node
 public:
     QMLJS_DECLARE_AST_NODE(UiParameterList)
 
-    UiParameterList(Type *t, QStringView n)
-        : type(t)
-        , name(n)
-        , next(this)
-    {
-        kind = K;
-    }
+    UiParameterList(UiQualifiedId *t, QStringView n):
+        type (t), name (n), next (this)
+        { kind = K; }
 
-    UiParameterList(UiParameterList *previous, Type *t, QStringView n)
-        : type(t)
-        , name(n)
+    UiParameterList(UiParameterList *previous, UiQualifiedId *t, QStringView n):
+        type (t), name (n)
     {
         kind = K;
         next = previous->next;
@@ -3310,7 +3346,7 @@ public:
     }
 
 // attributes
-    Type *type;
+    UiQualifiedId *type;
     QStringView name;
     UiParameterList *next;
     SourceLocation commaToken;
@@ -3702,8 +3738,6 @@ public:
 
 // attributes
     SourceLocation enumToken;
-    SourceLocation identifierToken;
-    SourceLocation lbraceToken;
     SourceLocation rbraceToken;
     QStringView name;
     UiEnumMemberList *members;

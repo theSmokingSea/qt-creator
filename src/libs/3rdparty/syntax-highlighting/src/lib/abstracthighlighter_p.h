@@ -14,7 +14,6 @@ namespace KSyntaxHighlighting
 {
 class ContextSwitch;
 class StateData;
-class State;
 
 class AbstractHighlighterPrivate
 {
@@ -23,7 +22,7 @@ public:
     virtual ~AbstractHighlighterPrivate();
 
     void ensureDefinitionLoaded();
-    bool switchContext(StateData *&data, const ContextSwitch &contextSwitch, QStringList &&captures, State &state, bool &isSharedData);
+    bool switchContext(StateData *data, const ContextSwitch &contextSwitch, const QStringList &captures);
 
     Definition m_definition;
     Theme m_theme;

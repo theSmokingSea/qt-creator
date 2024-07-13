@@ -1,14 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "breakpoint.h"
 
+#include "debuggeractions.h"
+#include "debuggercore.h"
 #include "debuggerprotocol.h"
 
 #include <projectexplorer/abi.h>
-
-#include <utils/environment.h>
-#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
 #include <utils/stringutils.h>
 
@@ -27,7 +48,7 @@ namespace Internal {
 
 BreakpointParameters::BreakpointParameters(BreakpointType t)
   : type(t), enabled(true), pathUsage(BreakpointPathUsageEngineDefault),
-    ignoreCount(0),  address(0), size(0),
+    ignoreCount(0), lineNumber(0), address(0), size(0),
     bitpos(0), bitsize(0), threadSpec(-1),
     tracepoint(false), oneShot(false)
 {}
@@ -48,7 +69,7 @@ BreakpointParts BreakpointParameters::differencesTo
         parts |= ConditionPart;
     if (ignoreCount != rhs.ignoreCount)
         parts |= IgnoreCountPart;
-    if (textPosition != rhs.textPosition)
+    if (lineNumber != rhs.lineNumber)
         parts |= FileAndLinePart;
     if (address != rhs.address)
         parts |= AddressPart;
@@ -73,7 +94,7 @@ bool BreakpointParameters::isValid() const
 {
     switch (type) {
     case BreakpointByFileAndLine:
-        return !fileName.isEmpty() && textPosition.line > 0;
+        return !fileName.isEmpty() && lineNumber > 0;
     case BreakpointByFunction:
         return !functionName.isEmpty();
     case WatchpointAtAddress:
@@ -116,7 +137,7 @@ void BreakpointParameters::updateLocation(const QString &location)
 {
     if (!location.isEmpty()) {
         int pos = location.indexOf(':');
-        textPosition.line = location.mid(pos + 1).toInt();  // FIXME: Handle column
+        lineNumber = location.mid(pos + 1).toInt();
         QString file = location.left(pos);
         if (file.startsWith('"') && file.endsWith('"'))
             file = file.mid(1, file.size() - 2);
@@ -131,7 +152,7 @@ bool BreakpointParameters::isQmlFileAndLineBreakpoint() const
     if (type != BreakpointByFileAndLine)
         return false;
 
-    QString qmlExtensionString = Utils::qtcEnvironmentVariable("QTC_QMLDEBUGGER_FILEEXTENSIONS");
+    QString qmlExtensionString = QString::fromLocal8Bit(qgetenv("QTC_QMLDEBUGGER_FILEEXTENSIONS"));
     if (qmlExtensionString.isEmpty())
         qmlExtensionString = ".qml;.js;.mjs";
 
@@ -164,8 +185,8 @@ QString BreakpointParameters::toString() const
     ts << "Type: " << type;
     switch (type) {
     case BreakpointByFileAndLine:
-        ts << " FileName: " << fileName << ':' << textPosition.line;
-        ts << " PathUsage: " << pathUsage;
+        ts << " FileName: " << fileName << ':' << lineNumber
+           << " PathUsage: " << pathUsage;
         break;
     case BreakpointByFunction:
     case BreakpointOnQmlSignalEmit:
@@ -207,8 +228,7 @@ QString BreakpointParameters::toString() const
         ts << " [pending]";
     if (!functionName.isEmpty())
         ts << " Function: " << functionName;
-    if (hitCount)
-        ts << " Hit: " << *hitCount << " times";
+    ts << " Hit: " << hitCount << " times";
     ts << ' ';
 
     return result;
@@ -266,8 +286,7 @@ static QString cleanupFullName(const QString &fileName)
 
     return cleanFilePath;
 }
-
-void BreakpointParameters::updateFromGdbOutput(const GdbMi &bkpt, const Utils::FilePath &fileRoot)
+void BreakpointParameters::updateFromGdbOutput(const GdbMi &bkpt)
 {
     QTC_ASSERT(bkpt.isValid(), return);
 
@@ -296,7 +315,7 @@ void BreakpointParameters::updateFromGdbOutput(const GdbMi &bkpt, const Utils::F
         } else if (child.hasName("fullname")) {
             fullName = child.data();
         } else if (child.hasName("line")) {
-            textPosition.line = child.toInt();
+            lineNumber = child.toInt();
         } else if (child.hasName("cond")) {
             // gdb 6.3 likes to "rewrite" conditions. Just accept that fact.
             condition = child.data();
@@ -360,7 +379,7 @@ void BreakpointParameters::updateFromGdbOutput(const GdbMi &bkpt, const Utils::F
     QString name;
     if (!fullName.isEmpty()) {
         name = cleanupFullName(fullName);
-        fileName = fileRoot.withNewPath(name);
+        fileName = Utils::FilePath::fromString(name);
         //if (data->markerFileName().isEmpty())
         //    data->setMarkerFileName(name);
     } else {
@@ -369,7 +388,7 @@ void BreakpointParameters::updateFromGdbOutput(const GdbMi &bkpt, const Utils::F
         // gdb's own. No point in assigning markerFileName for now.
     }
     if (!name.isEmpty())
-        fileName = fileRoot.withNewPath(name);
+        fileName = Utils::FilePath::fromString(name);
 
     if (fileName.isEmpty())
         updateLocation(originalLocation);

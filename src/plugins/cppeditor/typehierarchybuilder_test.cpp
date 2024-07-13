@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "typehierarchybuilder_test.h"
 
@@ -16,8 +38,6 @@
 #include <QtTest>
 
 using namespace CPlusPlus;
-using namespace Utils;
-
 using CppEditor::Internal::Tests::CppTestDocument;
 
 Q_DECLARE_METATYPE(QList<CppTestDocument>)
@@ -31,12 +51,12 @@ QString toString(const TypeHierarchy &hierarchy, int indent = 0)
     QString result = QString(indent, QLatin1Char(' '))
         + Overview().prettyName(symbol->name()) + QLatin1Char('\n');
 
+    QList<TypeHierarchy> sortedHierarchy = hierarchy.hierarchy();
     Overview oo;
-    const QList<TypeHierarchy> sortedHierarchy = Utils::sorted(hierarchy.hierarchy(),
-            [&oo](const TypeHierarchy &h1, const TypeHierarchy &h2) -> bool {
+    Utils::sort(sortedHierarchy, [&oo](const TypeHierarchy &h1, const TypeHierarchy &h2) -> bool {
         return oo.prettyName(h1.symbol()->name()) < oo.prettyName(h2.symbol()->name());
     });
-    for (const TypeHierarchy &childHierarchy : std::as_const(sortedHierarchy))
+    for (const TypeHierarchy &childHierarchy : qAsConst(sortedHierarchy))
         result += toString(childHierarchy, indent + 2);
     return result;
 }
@@ -84,7 +104,7 @@ public:
         QList<CppTestDocument> documents_ = documents;
 
         // Write files
-        QSet<FilePath> filePaths;
+        QSet<QString> filePaths;
         for (auto &document : documents_) {
             document.setBaseDirectory(temporaryDir.path());
             QVERIFY(document.writeToDisk());

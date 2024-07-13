@@ -1,13 +1,35 @@
-// Copyright (C) 2018 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2018 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "sshsettings.h"
 
 #include <utils/environment.h>
 #include <utils/hostosinfo.h>
-#include <utils/qtcsettings.h>
 
 #include <QReadWriteLock>
+#include <QSettings>
 
 using namespace Utils;
 
@@ -33,23 +55,23 @@ Q_GLOBAL_STATIC(Internal::SshSettings, sshSettings)
 class AccessSettingsGroup
 {
 public:
-    AccessSettingsGroup(QtcSettings *settings) : m_settings(settings)
+    AccessSettingsGroup(QSettings *settings) : m_settings(settings)
     {
         settings->beginGroup("SshSettings");
     }
     ~AccessSettingsGroup() { m_settings->endGroup(); }
 private:
-    QtcSettings * const m_settings;
+    QSettings * const m_settings;
 };
 
-static Key connectionSharingKey() { return Key("UseConnectionSharing"); }
-static Key connectionSharingTimeoutKey() { return Key("ConnectionSharingTimeout"); }
-static Key sshFilePathKey() { return Key("SshFilePath"); }
-static Key sftpFilePathKey() { return Key("SftpFilePath"); }
-static Key askPassFilePathKey() { return Key("AskpassFilePath"); }
-static Key keygenFilePathKey() { return Key("KeygenFilePath"); }
+static QString connectionSharingKey() { return QString("UseConnectionSharing"); }
+static QString connectionSharingTimeoutKey() { return QString("ConnectionSharingTimeout"); }
+static QString sshFilePathKey() { return QString("SshFilePath"); }
+static QString sftpFilePathKey() { return QString("SftpFilePath"); }
+static QString askPassFilePathKey() { return QString("AskpassFilePath"); }
+static QString keygenFilePathKey() { return QString("KeygenFilePath"); }
 
-void SshSettings::loadSettings(QtcSettings *settings)
+void SshSettings::loadSettings(QSettings *settings)
 {
     QWriteLocker locker(&sshSettings->lock);
     AccessSettingsGroup g(settings);
@@ -67,7 +89,7 @@ void SshSettings::loadSettings(QtcSettings *settings)
                 settings->value(keygenFilePathKey()).toString());
 }
 
-void SshSettings::storeSettings(QtcSettings *settings)
+void SshSettings::storeSettings(QSettings *settings)
 {
     QReadLocker locker(&sshSettings->lock);
     AccessSettingsGroup g(settings);
@@ -107,14 +129,14 @@ static FilePath filePathValue(const FilePath &value, const QStringList &candidat
 {
     if (!value.isEmpty())
         return value;
-    Environment env = Environment::systemEnvironment();
-    env.prependToPath(sshSettings->searchPathRetriever());
+    const QList<FilePath> additionalSearchPaths = sshSettings->searchPathRetriever();
     for (const QString &candidate : candidateFileNames) {
-        const FilePath filePath = env.searchInPath(candidate);
+        const FilePath filePath = Environment::systemEnvironment()
+                .searchInPath(candidate, additionalSearchPaths);
         if (!filePath.isEmpty())
             return filePath;
     }
-    return {};
+    return FilePath();
 }
 
 // Keep read locker locked while calling this method

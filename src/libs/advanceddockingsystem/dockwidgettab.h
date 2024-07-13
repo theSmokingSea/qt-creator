@@ -1,5 +1,37 @@
-// Copyright (C) 2020 Uwe Kindler
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR LGPL-2.1-or-later OR GPL-3.0-or-later
+/****************************************************************************
+**
+** Copyright (C) 2020 Uwe Kindler
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU Lesser General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU Lesser
+** General Public License version 2.1 or (at your option) any later version.
+** The licenses are as published by the Free Software Foundation
+** and appearing in the file LICENSE.LGPLv21 included in the packaging
+** of this file. Please review the following information to ensure
+** the GNU Lesser General Public License version 2.1 requirements
+** will be met: https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 or (at your option) any later version
+** approved by the KDE Free Qt Foundation. The licenses are as published by
+** the Free Software Foundation and appearing in the file LICENSE.GPL3
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -35,26 +67,24 @@ private:
     bool m_focus;
 };
 
+
 /**
  * A dock widget tab that shows a title and an icon.
- * The dock widget tab is shown in the dock area title bar to switch between tabbed dock widgets.
+ * The dock widget tab is shown in the dock area title bar to switch between
+ * tabbed dock widgets
  */
 class ADS_EXPORT DockWidgetTab : public QFrame
 {
     Q_OBJECT
     Q_PROPERTY(bool activeTab READ isActiveTab WRITE setActiveTab NOTIFY activeTabChanged)
-    Q_PROPERTY(QSize iconSize READ iconSize WRITE setIconSize NOTIFY iconSizeChanged)
 
 private:
     DockWidgetTabPrivate *d; ///< private data (pimpl)
     friend class DockWidgetTabPrivate;
     friend class DockWidget;
     friend class DockManager;
-    friend class AutoHideDockContainer;
-
     void onDockWidgetFeaturesChanged();
     void detachDockWidget();
-    void autoHideDockWidget();
 
 protected:
     void mousePressEvent(QMouseEvent *event) override;
@@ -97,7 +127,8 @@ public:
     DockWidget *dockWidget() const;
 
     /**
-     * Sets the dock area widget the dockWidget returned by dockWidget() function belongs to.
+     * Sets the dock area widget the dockWidget returned by dockWidget()
+     * function belongs to.
      */
     void setDockAreaWidget(DockAreaWidget *dockArea);
 
@@ -153,19 +184,6 @@ public:
      */
     void updateStyle();
 
-    /**
-     * Returns the icon size.
-     * If no explicit icon size has been set, the function returns an invalid QSize.
-     */
-    QSize iconSize() const;
-
-    /**
-     * Set an explicit icon size.
-     * If no icon size has been set explicitly, than the tab sets the icon size depending
-     * on the style.
-     */
-    void setIconSize(const QSize &size);
-
     void setVisible(bool visible) override;
 
 signals:
@@ -175,7 +193,6 @@ signals:
     void closeOtherTabsRequested();
     void moved(const QPoint &globalPosition);
     void elidedChanged(bool elided);
-    void iconSizeChanged();
 }; // class DockWidgetTab
 
 } // namespace ADS

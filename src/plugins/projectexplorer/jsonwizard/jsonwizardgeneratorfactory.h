@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -16,13 +38,13 @@ namespace Utils { class MacroExpander; }
 
 namespace ProjectExplorer {
 
-class PROJECTEXPLORER_EXPORT JsonWizardGenerator
+class JsonWizardGenerator
 {
 public:
     virtual ~JsonWizardGenerator() = default;
 
     virtual Core::GeneratedFiles fileList(Utils::MacroExpander *expander,
-                                          const Utils::FilePath &wizardDir, const Utils::FilePath &projectDir,
+                                          const QString &baseDir, const QString &projectDir,
                                           QString *errorMessage) = 0;
     virtual bool formatFile(const JsonWizard *wizard, Core::GeneratedFile *file, QString *errorMessage);
     virtual bool writeFile(const JsonWizard *wizard, Core::GeneratedFile *file, QString *errorMessage);
@@ -42,14 +64,11 @@ public:
     static bool allDone(const JsonWizard *wizard, JsonWizard::GeneratorFiles *files, QString *errorMessage);
 };
 
-class PROJECTEXPLORER_EXPORT JsonWizardGeneratorFactory : public QObject
+class JsonWizardGeneratorFactory : public QObject
 {
     Q_OBJECT
 
 public:
-    JsonWizardGeneratorFactory();
-    ~JsonWizardGeneratorFactory() override;
-
     bool canCreate(Utils::Id typeId) const { return m_typeIds.contains(typeId); }
     QList<Utils::Id> supportedIds() const { return m_typeIds; }
 
@@ -69,4 +88,33 @@ private:
     QList<Utils::Id> m_typeIds;
 };
 
+namespace Internal {
+
+class FileGeneratorFactory : public JsonWizardGeneratorFactory
+{
+    Q_OBJECT
+
+public:
+    FileGeneratorFactory();
+
+    JsonWizardGenerator *create(Utils::Id typeId, const QVariant &data,
+                                const QString &path, Utils::Id platform,
+                                const QVariantMap &variables) override;
+    bool validateData(Utils::Id typeId, const QVariant &data, QString *errorMessage) override;
+};
+
+class ScannerGeneratorFactory : public JsonWizardGeneratorFactory
+{
+    Q_OBJECT
+
+public:
+    ScannerGeneratorFactory();
+
+    JsonWizardGenerator *create(Utils::Id typeId, const QVariant &data,
+                                const QString &path, Utils::Id platform,
+                                const QVariantMap &variables) override;
+    bool validateData(Utils::Id typeId, const QVariant &data, QString *errorMessage) override;
+};
+
+} // namespace Internal
 } // namespace ProjectExplorer

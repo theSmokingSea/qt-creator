@@ -3,7 +3,7 @@
     "supportedProjectTypes": [ "MesonProjectManager.MesonProject", "CMakeProjectManager.CMakeProject", "Qbs.QbsProject", "Qt4ProjectManager.Qt4Project" ],
     "id": "E.QtCore",
     "category": "D.ApplicationQt",
-    "trDescription": "Creates a project containing a single main.cpp file with a stub implementation and no graphical UI.\n\nPreselects a desktop Qt for building the application if available.",
+    "trDescription": "Creates a project containing a single main.cpp file with a stub implementation.\n\nPreselects a desktop Qt for building the application if available.",
     "trDisplayName": "Qt Console Application",
     "trDisplayCategory": "Application (Qt)",
     "icon": "../../global/consoleapplication.png",
@@ -13,7 +13,7 @@
 
     "options":
     [
-        { "key": "ProjectFile", "value": "%{JS: value(\\{qmake: 'ProFile', cmake: 'CMakeFile', meson: 'MesonFile', qbs: 'QbsFile', 'cmake-qt6': 'CMakeFile'\\}[value('BuildSystem')]) }" },
+        { "key": "ProjectFile", "value": "%{JS: value('BuildSystem') === 'qmake' ? value('ProFile') : (value('BuildSystem') === 'cmake' ? value('CMakeFile') : (value('BuildSystem') === 'meson' ? value('MesonFile') : value('QbsFile')))}" },
         { "key": "ProFile", "value": "%{JS: Util.fileName(value('ProjectDirectory') + '/' + value('ProjectName'), 'pro')}" },
         { "key": "QbsFile", "value": "%{JS: Util.fileName(value('ProjectDirectory') + '/' + value('ProjectName'), 'qbs')}" },
         { "key": "CMakeFile", "value": "%{ProjectDirectory}/CMakeLists.txt" },
@@ -34,7 +34,7 @@
             "trDisplayName": "Define Build System",
             "trShortTitle": "Build System",
             "typeId": "Fields",
-            "skipForSubprojects": true,
+            "enabled": "%{JS: !value('IsSubproject')}",
             "data":
             [
                 {
@@ -55,11 +55,6 @@
                             {
                                 "trKey": "CMake",
                                 "value": "cmake",
-                                "condition": "%{JS: value('Plugins').indexOf('CMakeProjectManager') >= 0}"
-                            },
-                            {
-                                "trKey": "CMake for Qt 6",
-                                "value": "cmake-qt6",
                                 "condition": "%{JS: value('Plugins').indexOf('CMakeProjectManager') >= 0}"
                             },
                             {
@@ -86,6 +81,7 @@
             "trDisplayName": "Kit Selection",
             "trShortTitle": "Kits",
             "typeId": "Kits",
+            "enabled": "%{JS: !value('IsSubproject')}",
             "data": { "projectFilePath": "%{ProjectFile}" }
         },
         {
@@ -110,12 +106,6 @@
                     "source": "CMakeLists.txt",
                     "openAsProject": true,
                     "condition": "%{JS: value('BuildSystem') === 'cmake'}"
-                },
-                {
-                    "source": "CMakeLists-Qt6.txt",
-                    "target": "CMakeLists.txt",
-                    "openAsProject": true,
-                    "condition": "%{JS: value('BuildSystem') === 'cmake-qt6'}"
                 },
                 {
                     "source": "file.qbs",

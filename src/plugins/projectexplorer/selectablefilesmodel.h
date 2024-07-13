@@ -1,15 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "projectexplorer_export.h"
 
-#include <utils/filepath.h>
-#include <utils/storekey.h>
+#include <utils/fileutils.h>
 
 #include <QAbstractItemModel>
 #include <QDialog>
+#include <QFutureInterface>
 #include <QFutureWatcher>
 #include <QLabel>
 #include <QRegularExpression>
@@ -20,6 +42,10 @@ namespace Utils {
 class FancyLineEdit;
 class PathChooser;
 }
+
+QT_BEGIN_NAMESPACE
+class QVBoxLayout;
+QT_END_NAMESPACE
 
 namespace ProjectExplorer {
 
@@ -121,6 +147,7 @@ private:
     void selectAllFiles(Tree *root);
 
 protected:
+    bool m_allFiles = true;
     QSet<Utils::FilePath> m_outOfBaseDirFiles;
     QSet<Utils::FilePath> m_files;
     Tree *m_root = nullptr;
@@ -146,9 +173,11 @@ signals:
     void parsingProgress(const Utils::FilePath &fileName);
 
 private:
-    void buildTree(const Utils::FilePath &baseDir, Tree *tree, QPromise<void> &promise,
+    void buildTree(const Utils::FilePath &baseDir,
+                   Tree *tree,
+                   QFutureInterface<void> &fi,
                    int symlinkDepth);
-    void run(QPromise<void> &promise);
+    void run(QFutureInterface<void> &fi);
     void buildTreeFinished();
 
     // Used in the future thread need to all not used after calling startParsing
@@ -178,7 +207,7 @@ public:
     void resetModel(const Utils::FilePath &path, const Utils::FilePaths &files);
     void cancelParsing();
 
-    void enableFilterHistoryCompletion(const Utils::Key &keyPrefix);
+    void enableFilterHistoryCompletion(const QString &keyPrefix);
 
 signals:
     void selectedFilesChanged();

@@ -1,17 +1,36 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "storagesettings.h"
 
-#include "texteditorsettings.h"
-
-#include <coreplugin/icore.h>
-
 #include <utils/hostosinfo.h>
+#include <utils/settingsutils.h>
 
 #include <QRegularExpression>
-
-using namespace Utils;
+#include <QSettings>
+#include <QString>
 
 namespace TextEditor {
 
@@ -21,6 +40,7 @@ static const char addFinalNewLineKey[] = "addFinalNewLine";
 static const char cleanIndentationKey[] = "cleanIndentation";
 static const char skipTrailingWhitespaceKey[] = "skipTrailingWhitespace";
 static const char ignoreFileTypesKey[] = "ignoreFileTypes";
+static const char groupPostfix[] = "StorageSettings";
 static const char defaultTrailingWhitespaceBlacklist[] = "*.md, *.MD, Makefile";
 
 StorageSettings::StorageSettings()
@@ -33,7 +53,18 @@ StorageSettings::StorageSettings()
 {
 }
 
-Store StorageSettings::toMap() const
+void StorageSettings::toSettings(const QString &category, QSettings *s) const
+{
+    Utils::toSettings(QLatin1String(groupPostfix), category, s, this);
+}
+
+void StorageSettings::fromSettings(const QString &category, QSettings *s)
+{
+    *this = StorageSettings();
+    Utils::fromSettings(QLatin1String(groupPostfix), category, s, this);
+}
+
+QVariantMap StorageSettings::toMap() const
 {
     return {
         {cleanWhitespaceKey, m_cleanWhitespace},
@@ -45,7 +76,7 @@ Store StorageSettings::toMap() const
     };
 }
 
-void StorageSettings::fromMap(const Store &map)
+void StorageSettings::fromMap(const QVariantMap &map)
 {
     m_cleanWhitespace = map.value(cleanWhitespaceKey, m_cleanWhitespace).toBool();
     m_inEntireDocument = map.value(inEntireDocumentKey, m_inEntireDocument).toBool();
@@ -94,30 +125,6 @@ bool StorageSettings::equals(const StorageSettings &ts) const
         && m_cleanIndentation == ts.m_cleanIndentation
         && m_skipTrailingWhitespace == ts.m_skipTrailingWhitespace
         && m_ignoreFileTypes == ts.m_ignoreFileTypes;
-}
-
-StorageSettings &globalStorageSettings()
-{
-    static StorageSettings theGlobalStorageSettings;
-    return theGlobalStorageSettings;
-}
-
-const char storageGroup[] = "textStorageSettings";
-
-void updateGlobalStorageSettings(const StorageSettings &newStorageSettings)
-{
-    if (newStorageSettings.equals(globalStorageSettings()))
-        return;
-
-    globalStorageSettings() = newStorageSettings;
-    storeToSettings(storageGroup, Core::ICore::settings(), globalStorageSettings().toMap());
-
-    emit TextEditorSettings::instance()->storageSettingsChanged(newStorageSettings);
-}
-
-void setupStorageSettings()
-{
-    globalStorageSettings().fromMap(storeFromSettings(storageGroup, Core::ICore::settings()));
 }
 
 } // namespace TextEditor

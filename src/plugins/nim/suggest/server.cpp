@@ -1,27 +1,56 @@
-// Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) Filippo Cucchetto <filippocucchetto@gmail.com>
+** Contact: http://www.qt.io/licensing
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "server.h"
 
 using namespace Utils;
 
-namespace Nim::Suggest {
+namespace Nim {
+namespace Suggest {
 
 NimSuggestServer::NimSuggestServer(QObject *parent) : QObject(parent)
 {
-    connect(&m_process, &Process::done, this, &NimSuggestServer::onDone);
-    connect(&m_process, &Process::readyReadStandardOutput, this,
+    connect(&m_process, &QtcProcess::done, this, &NimSuggestServer::onDone);
+    connect(&m_process, &QtcProcess::readyReadStandardOutput, this,
             &NimSuggestServer::onStandardOutputAvailable);
 }
 
-bool NimSuggestServer::start(const FilePath &executablePath, const FilePath &projectFilePath)
+QString NimSuggestServer::executablePath() const
 {
-    if (!executablePath.exists()) {
+    return m_executablePath;
+}
+
+bool NimSuggestServer::start(const QString &executablePath,
+                             const QString &projectFilePath)
+{
+    if (!QFile::exists(executablePath)) {
         qWarning() << "NimSuggest executable path" << executablePath << "does not exist";
         return false;
     }
 
-    if (!projectFilePath.exists()) {
+    if (!QFile::exists(projectFilePath)) {
         qWarning() << "Project file" << projectFilePath << "doesn't exist";
         return false;
     }
@@ -29,7 +58,7 @@ bool NimSuggestServer::start(const FilePath &executablePath, const FilePath &pro
     stop();
     m_executablePath = executablePath;
     m_projectFilePath = projectFilePath;
-    m_process.setCommand({executablePath, {"--epc", m_projectFilePath.path()}});
+    m_process.setCommand({FilePath::fromString(executablePath), {"--epc", m_projectFilePath}});
     m_process.start();
     return true;
 }
@@ -45,15 +74,20 @@ quint16 NimSuggestServer::port() const
     return m_port;
 }
 
+QString NimSuggestServer::projectFilePath() const
+{
+    return m_projectFilePath;
+}
+
 void NimSuggestServer::onStandardOutputAvailable()
 {
     if (!m_portAvailable) {
-        const QString output = m_process.readAllStandardOutput();
+        const QString output = QString::fromUtf8(m_process.readAllStandardOutput());
         m_port = static_cast<uint16_t>(output.toUInt());
         m_portAvailable = true;
         emit started();
     } else {
-        qDebug() << m_process.readAllRawStandardOutput();
+        qDebug() << m_process.readAllStandardOutput();
     }
 }
 
@@ -69,4 +103,5 @@ void NimSuggestServer::clearState()
     m_port = 0;
 }
 
-} // namespace Nim::Suggest
+} // namespace Suggest
+} // namespace Nim

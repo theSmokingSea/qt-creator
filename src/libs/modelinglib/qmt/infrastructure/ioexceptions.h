@@ -1,11 +1,31 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include "exceptions.h"
-
-#include <utils/filepath.h>
 
 namespace qmt {
 
@@ -18,51 +38,51 @@ public:
 class FileIOException : public IOException
 {
 public:
-    explicit FileIOException(const QString &errorMsg, const Utils::FilePath &fileName = {},
+    explicit FileIOException(const QString &errorMsg, const QString &fileName = QString(),
                              int lineNumber = -1);
 
-    Utils::FilePath fileName() const { return m_fileName; }
+    QString fileName() const { return m_fileName; }
     int lineNumber() const { return m_lineNumber; }
 
 private:
-    Utils::FilePath m_fileName;
+    QString m_fileName;
     int m_lineNumber = -1;
 };
 
 class FileNotFoundException : public FileIOException
 {
 public:
-    explicit FileNotFoundException(const Utils::FilePath &fileName);
+    explicit FileNotFoundException(const QString &fileName);
 };
 
 class FileCreationException : public FileIOException
 {
 public:
-    explicit FileCreationException(const Utils::FilePath &fileName);
+    explicit FileCreationException(const QString &fileName);
 };
 
 class FileWriteError : public FileIOException
 {
 public:
-    explicit FileWriteError(const Utils::FilePath &fileName, int lineNumber = -1);
+    explicit FileWriteError(const QString &fileName, int lineNumber = -1);
 };
 
 class FileReadError : public FileIOException
 {
 public:
-    explicit FileReadError(const Utils::FilePath &fileName, int lineNumber = -1);
+    explicit FileReadError(const QString &fileName, int lineNumber = -1);
 };
 
 class IllegalXmlFile : public FileIOException
 {
 public:
-    explicit IllegalXmlFile(const Utils::FilePath &fileName, int lineNumber = -1);
+    explicit IllegalXmlFile(const QString &fileName, int lineNumber = -1);
 };
 
 class UnknownFileVersion : public FileIOException
 {
 public:
-    UnknownFileVersion(int version, const Utils::FilePath &fileName, int lineNumber = -1);
+    UnknownFileVersion(int version, const QString &fileName, int lineNumber = -1);
 };
 
 } // namespace qmt

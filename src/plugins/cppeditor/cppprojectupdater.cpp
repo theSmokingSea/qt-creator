@@ -1,129 +1,186 @@
-// Copyright (C) 2017 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2017 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cppprojectupdater.h"
 
-#include "cppeditortr.h"
 #include "cppmodelmanager.h"
 #include "cppprojectinfogenerator.h"
 #include "generatedcodemodelsupport.h"
 
-#include <coreplugin/progressmanager/taskprogress.h>
+#include <coreplugin/progressmanager/progressmanager.h>
 
-#include <projectexplorer/extracompiler.h>
-#include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/projectupdater.h>
-#include <projectexplorer/rawprojectpart.h>
-
-#include <solutions/tasking/tasktreerunner.h>
+#include <projectexplorer/toolchainmanager.h>
 
 #include <utils/algorithm.h>
-#include <utils/async.h>
-#include <utils/futuresynchronizer.h>
+#include <utils/fileutils.h>
 #include <utils/qtcassert.h>
+#include <utils/runextensions.h>
+
+#include <QFutureInterface>
 
 using namespace ProjectExplorer;
-using namespace Tasking;
-using namespace Utils;
 
-namespace CppEditor::Internal {
+namespace CppEditor {
 
-class CppProjectUpdater final : public ProjectUpdater
+CppProjectUpdater::CppProjectUpdater()
 {
-public:
-    void update(const ProjectUpdateInfo &projectUpdateInfo,
-                const QList<ExtraCompiler *> &extraCompilers) final;
-    void cancel() final;
+    connect(&m_generateFutureWatcher,
+            &QFutureWatcher<ProjectInfo>::finished,
+            this,
+            &CppProjectUpdater::onProjectInfoGenerated);
+    m_futureSynchronizer.setCancelOnWait(true);
+}
 
-private:
-    FutureSynchronizer m_futureSynchronizer;
-    TaskTreeRunner m_taskTreeRunner;
-};
+CppProjectUpdater::~CppProjectUpdater()
+{
+    cancel();
+}
+
+void CppProjectUpdater::update(const ProjectUpdateInfo &projectUpdateInfo)
+{
+    update(projectUpdateInfo, {});
+}
 
 void CppProjectUpdater::update(const ProjectUpdateInfo &projectUpdateInfo,
-                               const QList<ExtraCompiler *> &extraCompilers)
+                               const QList<ProjectExplorer::ExtraCompiler *> &extraCompilers)
 {
     // Stop previous update.
     cancel();
 
-    const QList<QPointer<ExtraCompiler>> compilers =
-        Utils::transform(extraCompilers, [](ExtraCompiler *compiler) {
-            return QPointer<ExtraCompiler>(compiler);
-        });
+    m_extraCompilers = Utils::transform(extraCompilers, [](ExtraCompiler *compiler) {
+        return QPointer<ExtraCompiler>(compiler);
+    });
+    m_projectUpdateInfo = projectUpdateInfo;
+
+    using namespace ProjectExplorer;
 
     // Run the project info generator in a worker thread and continue if that one is finished.
-    const auto infoGenerator = [=](QPromise<ProjectInfo::ConstPtr> &promise) {
+    auto generateFuture = Utils::runAsync([=](QFutureInterface<ProjectInfo::ConstPtr> &futureInterface) {
         ProjectUpdateInfo fullProjectUpdateInfo = projectUpdateInfo;
         if (fullProjectUpdateInfo.rppGenerator)
             fullProjectUpdateInfo.rawProjectParts = fullProjectUpdateInfo.rppGenerator();
-        Internal::ProjectInfoGenerator generator(fullProjectUpdateInfo);
-        promise.addResult(generator.generate(promise));
-    };
+        Internal::ProjectInfoGenerator generator(futureInterface, fullProjectUpdateInfo);
+        futureInterface.reportResult(generator.generate());
+    });
+    m_generateFutureWatcher.setFuture(generateFuture);
+    m_futureSynchronizer.addFuture(generateFuture);
 
-    struct UpdateStorage {
-        ProjectInfo::ConstPtr projectInfo = nullptr;
-    };
-    const Storage<UpdateStorage> storage;
-    const auto onInfoGeneratorSetup = [this, infoGenerator](Async<ProjectInfo::ConstPtr> &async) {
-        async.setConcurrentCallData(infoGenerator);
-        async.setFutureSynchronizer(&m_futureSynchronizer);
-    };
-    const auto onInfoGeneratorDone = [storage](const Async<ProjectInfo::ConstPtr> &async) {
-        if (async.isResultAvailable())
-            storage->projectInfo = async.result();
-    };
-    QList<GroupItem> tasks{parallel};
-    tasks.append(AsyncTask<ProjectInfo::ConstPtr>(onInfoGeneratorSetup, onInfoGeneratorDone,
-                                                  CallDoneIf::Success));
-    for (QPointer<ExtraCompiler> compiler : compilers) {
-        if (compiler && compiler->isDirty())
-            tasks.append(compiler->compileFileItem());
+    // extra compilers
+    for (QPointer<ExtraCompiler> compiler : qAsConst(m_extraCompilers)) {
+        if (compiler->isDirty()) {
+            QPointer<QFutureWatcher<void>> watcher = new QFutureWatcher<void>;
+            // queued connection to delay after the extra compiler updated its result contents,
+            // which is also done in the main thread when compiler->run() finished
+            connect(watcher, &QFutureWatcherBase::finished,
+                    this, [this, watcher] {
+                        // In very unlikely case the CppProjectUpdater::cancel() could have been
+                        // invoked after posting the finished() signal and before this handler
+                        // gets called. In this case the watcher is already deleted.
+                        if (!watcher)
+                            return;
+                        m_projectUpdateFutureInterface->setProgressValue(
+                            m_projectUpdateFutureInterface->progressValue() + 1);
+                        m_extraCompilersFutureWatchers.remove(watcher);
+                        watcher->deleteLater();
+                        if (!watcher->isCanceled())
+                            checkForExtraCompilersFinished();
+                    },
+                    Qt::QueuedConnection);
+            m_extraCompilersFutureWatchers += watcher;
+            watcher->setFuture(QFuture<void>(compiler->run()));
+            m_futureSynchronizer.addFuture(watcher->future());
+        }
     }
 
-    const auto onDone = [this, storage, compilers] {
-        QList<ExtraCompiler *> extraCompilers;
-        QSet<FilePath> compilerFiles;
-        for (const QPointer<ExtraCompiler> &compiler : compilers) {
-            if (compiler) {
-                extraCompilers += compiler.data();
-                compilerFiles += Utils::toSet(compiler->targets());
-            }
-        }
-        GeneratedCodeModelSupport::update(extraCompilers);
-        auto updateFuture = CppModelManager::updateProjectInfo(storage->projectInfo, compilerFiles);
-        m_futureSynchronizer.addFuture(updateFuture);
-    };
-
-    const Group root {
-        storage,
-        Group(tasks),
-        onGroupDone(onDone, CallDoneIf::Success)
-    };
-    m_taskTreeRunner.start(root, [](TaskTree *taskTree) {
-        auto progress = new Core::TaskProgress(taskTree);
-        progress->setDisplayName(Tr::tr("Preparing C++ Code Model"));
-    });
+    m_projectUpdateFutureInterface.reset(new QFutureInterface<void>);
+    m_projectUpdateFutureInterface->setProgressRange(0, m_extraCompilersFutureWatchers.size()
+                                                        + 1 /*generateFuture*/);
+    m_projectUpdateFutureInterface->setProgressValue(0);
+    m_projectUpdateFutureInterface->reportStarted();
+    Core::ProgressManager::addTask(m_projectUpdateFutureInterface->future(),
+                                   tr("Preparing C++ Code Model"),
+                                   "CppProjectUpdater");
 }
 
 void CppProjectUpdater::cancel()
 {
-    m_taskTreeRunner.reset();
+    if (m_projectUpdateFutureInterface && m_projectUpdateFutureInterface->isRunning())
+        m_projectUpdateFutureInterface->reportFinished();
+    m_generateFutureWatcher.setFuture({});
+    m_isProjectInfoGenerated = false;
+    qDeleteAll(m_extraCompilersFutureWatchers);
+    m_extraCompilersFutureWatchers.clear();
+    m_extraCompilers.clear();
     m_futureSynchronizer.cancelAllFutures();
 }
 
-class CppProjectUpdaterFactory final : public ProjectUpdaterFactory
+void CppProjectUpdater::onProjectInfoGenerated()
 {
-public:
-    CppProjectUpdaterFactory()
-    {
-        setLanguage(Constants::CXX_LANGUAGE_ID);
-        setCreator([] { return new CppProjectUpdater; });
-    }
-};
+    if (m_generateFutureWatcher.isCanceled() || m_generateFutureWatcher.future().resultCount() < 1)
+        return;
 
-void setupCppProjectUpdater()
-{
-    static CppProjectUpdaterFactory theCppProjectUpdaterFactory;
+    m_projectUpdateFutureInterface->setProgressValue(m_projectUpdateFutureInterface->progressValue()
+                                                     + 1);
+    m_isProjectInfoGenerated = true;
+    checkForExtraCompilersFinished();
 }
 
-} //  CppEditor::Internal
+void CppProjectUpdater::checkForExtraCompilersFinished()
+{
+    if (!m_extraCompilersFutureWatchers.isEmpty() || !m_isProjectInfoGenerated)
+        return; // still need to wait
+
+    m_projectUpdateFutureInterface->reportFinished();
+    m_projectUpdateFutureInterface.reset();
+
+    QList<ExtraCompiler *> extraCompilers;
+    QSet<QString> compilerFiles;
+    for (const QPointer<ExtraCompiler> &compiler : qAsConst(m_extraCompilers)) {
+        if (compiler) {
+            extraCompilers += compiler.data();
+            compilerFiles += Utils::transform<QSet>(compiler->targets(), &Utils::FilePath::toString);
+        }
+    }
+    GeneratedCodeModelSupport::update(extraCompilers);
+    m_extraCompilers.clear();
+
+    auto updateFuture = CppModelManager::instance()
+                            ->updateProjectInfo(m_generateFutureWatcher.result(), compilerFiles);
+    m_futureSynchronizer.addFuture(updateFuture);
+}
+
+namespace Internal {
+CppProjectUpdaterFactory::CppProjectUpdaterFactory()
+{
+    setObjectName("CppProjectUpdaterFactory");
+}
+
+CppProjectUpdaterInterface *CppProjectUpdaterFactory::create()
+{
+    return new CppProjectUpdater;
+}
+} // namespace Internal
+
+} // namespace CppEditor

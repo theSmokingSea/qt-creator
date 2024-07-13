@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "diagramserializer.h"
 
@@ -29,34 +51,9 @@
 #include "qark/qxmlinarchive.h"
 #include "qark/serialize.h"
 
-#include <QBuffer>
-
 using namespace qmt;
 
 namespace qark {
-
-template<class Archive>
-inline void save(Archive &archive, const QImage &image)
-{
-    QByteArray a;
-    QBuffer buffer(&a);
-    buffer.open(QIODevice::WriteOnly);
-    image.save(&buffer, "PNG");
-    // TODO add write(const QByteArray &)
-    archive.write(QString::fromLatin1(a.toBase64()));
-}
-
-template<class Archive>
-inline void load(Archive &archive, QImage &image)
-{
-    QString s;
-    // TODO add read(QByteArray &)
-    archive.read(&s);
-    QByteArray a = QByteArray::fromBase64(s.toLatin1());
-    QBuffer buffer(&a);
-    buffer.open(QIODevice::ReadOnly);
-    image.load(&buffer, "PNG");
-}
 
 // DElement
 
@@ -127,10 +124,7 @@ inline void Access<Archive, DObject>::serialize(Archive &archive, DObject &objec
             || attr("visual-role", object, &visualRole, &setVisualRole)
             || attr("visual-role2", object, &DObject::visualSecondaryRole, &DObject::setVisualSecondaryRole)
             || attr("visual-emphasized", object, &DObject::isVisualEmphasized, &DObject::setVisualEmphasized)
-            || attr("linkedfile", object, &DObject::hasLinkedFile, &DObject::setLinkedFile)
             || attr("stereotype-display", object, &DObject::stereotypeDisplay, &DObject::setStereotypeDisplay)
-            || attr("image-path", object, &DObject::imagePath, &DObject::setImagePath)
-            || attr("image", object, &DObject::image, &DObject::setImage)
             // depth is not persistent
             || end;
 }
@@ -248,9 +242,6 @@ inline void Access<Archive, DRelation>::serialize(Archive &archive, DRelation &r
             || attr("b", relation, &DRelation::endBUid, &DRelation::setEndBUid)
             || attr("name", relation, &DRelation::name, &DRelation::setName)
             || attr("points", relation, &DRelation::intermediatePoints, &DRelation::setIntermediatePoints)
-            || attr("visualPrimaryRole", relation, &DRelation::visualPrimaryRole, &DRelation::setVisualPrimaryRole)
-            || attr("visualSecondaryRole", relation, &DRelation::visualSecondaryRole, &DRelation::setVisualSecondaryRole)
-            || attr("thickness", relation, &DRelation::thickness, &DRelation::setThickness)
             || end;
 }
 

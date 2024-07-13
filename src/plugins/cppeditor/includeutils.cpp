@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "includeutils.h"
 
@@ -15,6 +37,7 @@
 #include "cppmodelmanager.h"
 #include "cppsourceprocessertesthelper.h"
 #include "cppsourceprocessor.h"
+#include "cpptoolstestcase.h"
 #include <QtTest>
 #endif // WITH_TESTS
 
@@ -29,52 +52,14 @@
 using namespace CPlusPlus;
 using namespace Utils;
 
-namespace CppEditor::Internal {
+namespace CppEditor {
+namespace IncludeUtils {
+namespace {
 
-using Include = CPlusPlus::Document::Include;
-using IncludeType = CPlusPlus::Client::IncludeType;
+bool includeFileNamelessThen(const Include & left, const Include & right)
+{ return left.unresolvedFileName() < right.unresolvedFileName(); }
 
-class IncludeGroup
-{
-public:
-    static QList<IncludeGroup> detectIncludeGroupsByNewLines(QList<Include> &includes);
-    static QList<IncludeGroup> detectIncludeGroupsByIncludeDir(const QList<Include> &includes);
-    static QList<IncludeGroup> detectIncludeGroupsByIncludeType(const QList<Include> &includes);
-
-    static QList<IncludeGroup> filterMixedIncludeGroups(const QList<IncludeGroup> &groups);
-    static QList<IncludeGroup> filterIncludeGroups(const QList<IncludeGroup> &groups,
-                                                   CPlusPlus::Client::IncludeType includeType);
-
-public:
-    explicit IncludeGroup(const QList<Include> &includes) : m_includes(includes) {}
-
-    QList<Include> includes() const { return m_includes; }
-    Include first() const { return m_includes.first(); }
-    Include last() const { return m_includes.last(); }
-    int size() const { return m_includes.size(); }
-    bool isEmpty() const { return m_includes.isEmpty(); }
-
-    QString commonPrefix() const;
-    QString commonIncludeDir() const; /// only valid if hasCommonDir() == true
-    bool hasCommonIncludeDir() const;
-    bool hasOnlyIncludesOfType(CPlusPlus::Client::IncludeType includeType) const;
-    bool isSorted() const; /// name-wise
-
-    int lineForNewInclude(const QString &newIncludeFileName,
-                          CPlusPlus::Client::IncludeType newIncludeType) const;
-
-private:
-    QStringList filesNames() const;
-
-    QList<Include> m_includes;
-};
-
-static bool includeFileNamelessThen(const Include & left, const Include & right)
-{
-    return left.unresolvedFileName() < right.unresolvedFileName();
-}
-
-static int lineForAppendedIncludeGroup(const QList<IncludeGroup> &groups,
+int lineForAppendedIncludeGroup(const QList<IncludeGroup> &groups,
                                 unsigned *newLinesToPrepend)
 {
     if (newLinesToPrepend)
@@ -82,7 +67,7 @@ static int lineForAppendedIncludeGroup(const QList<IncludeGroup> &groups,
     return groups.last().last().line() + 1;
 }
 
-static int lineForPrependedIncludeGroup(const QList<IncludeGroup> &groups,
+int lineForPrependedIncludeGroup(const QList<IncludeGroup> &groups,
                                  unsigned *newLinesToAppend)
 {
     if (newLinesToAppend)
@@ -90,7 +75,7 @@ static int lineForPrependedIncludeGroup(const QList<IncludeGroup> &groups,
     return groups.first().first().line();
 }
 
-static QString includeDir(const QString &include)
+QString includeDir(const QString &include)
 {
     QString dirPrefix = QFileInfo(include).dir().path();
     if (dirPrefix == QLatin1String("."))
@@ -99,7 +84,7 @@ static QString includeDir(const QString &include)
     return dirPrefix;
 }
 
-static int lineAfterFirstComment(const QTextDocument *textDocument)
+int lineAfterFirstComment(const QTextDocument *textDocument)
 {
     int insertLine = -1;
 
@@ -138,49 +123,23 @@ static int lineAfterFirstComment(const QTextDocument *textDocument)
     return insertLine;
 }
 
-class LineForNewIncludeDirective
-{
-public:
-    LineForNewIncludeDirective(const FilePath &filePath, const QTextDocument *textDocument,
-                               const CPlusPlus::Document::Ptr cppDocument,
-                               MocIncludeMode mocIncludeMode,
-                               IncludeStyle includeStyle);
+} // anonymous namespace
 
-    /// Returns the line (1-based) at which the include directive should be inserted.
-    /// On error, -1 is returned.
-    int run(const QString &newIncludeFileName, unsigned *newLinesToPrepend = nullptr,
-                   unsigned *newLinesToAppend = nullptr);
-
-private:
-    int findInsertLineForVeryFirstInclude(unsigned *newLinesToPrepend, unsigned *newLinesToAppend);
-    QList<IncludeGroup> getGroupsByIncludeType(const QList<IncludeGroup> &groups,
-                                               IncludeType includeType);
-
-    const FilePath m_filePath;
-    const QTextDocument *m_textDocument;
-    const CPlusPlus::Document::Ptr m_cppDocument;
-
-    IncludeStyle m_includeStyle;
-    QList<Include> m_includes;
-};
-
-LineForNewIncludeDirective::LineForNewIncludeDirective(const FilePath &filePath,
-                                                       const QTextDocument *textDocument,
+LineForNewIncludeDirective::LineForNewIncludeDirective(const QTextDocument *textDocument,
                                                        const Document::Ptr cppDocument,
                                                        MocIncludeMode mocIncludeMode,
                                                        IncludeStyle includeStyle)
-    : m_filePath(filePath)
-    , m_textDocument(textDocument)
+    : m_textDocument(textDocument)
     , m_cppDocument(cppDocument)
     , m_includeStyle(includeStyle)
 {
-    const QList<Document::Include> includes = Utils::sorted(
-                cppDocument->resolvedIncludes() + cppDocument->unresolvedIncludes(),
-                &Include::line);
+    QList<Document::Include> includes
+        = cppDocument->resolvedIncludes() + cppDocument->unresolvedIncludes();
+    Utils::sort(includes, &Include::line);
 
     // Ignore *.moc includes if requested
     if (mocIncludeMode == IgnoreMocIncludes) {
-        for (const Document::Include &include : includes) {
+        for (const Document::Include &include : qAsConst(includes)) {
             if (!include.unresolvedFileName().endsWith(QLatin1String(".moc")))
                 m_includes << include;
         }
@@ -216,22 +175,16 @@ int LineForNewIncludeDirective::findInsertLineForVeryFirstInclude(unsigned *newL
 {
     int insertLine = 1;
 
-    const auto appendAndPrependNewline = [&] {
-        if (newLinesToPrepend)
-            *newLinesToPrepend = 1;
-        if (newLinesToAppend)
-            *newLinesToAppend += 1;
-    };
-
-    // If there is an include guard or a "#pragma once", insert right after that one
-    if (const int pragmaOnceLine = m_cppDocument->pragmaOnceLine(); pragmaOnceLine != -1) {
-        appendAndPrependNewline();
-        insertLine = pragmaOnceLine + 1;
-    } else if (const QByteArray includeGuardMacroName = m_cppDocument->includeGuardMacroName();
-               !includeGuardMacroName.isEmpty()) {
-        for (const Macro &definedMacro :  m_cppDocument->definedMacros()) {
+    // If there is an include guard, insert right after that one
+    const QByteArray includeGuardMacroName = m_cppDocument->includeGuardMacroName();
+    if (!includeGuardMacroName.isEmpty()) {
+        const QList<Macro> definedMacros = m_cppDocument->definedMacros();
+        for (const Macro &definedMacro : definedMacros) {
             if (definedMacro.name() == includeGuardMacroName) {
-                appendAndPrependNewline();
+                if (newLinesToPrepend)
+                    *newLinesToPrepend = 1;
+                if (newLinesToAppend)
+                    *newLinesToAppend += 1;
                 insertLine = definedMacro.line() + 1;
             }
         }
@@ -254,9 +207,9 @@ int LineForNewIncludeDirective::findInsertLineForVeryFirstInclude(unsigned *newL
     return insertLine;
 }
 
-int LineForNewIncludeDirective::run(const QString &newIncludeFileName,
-                                    unsigned *newLinesToPrepend,
-                                    unsigned *newLinesToAppend)
+int LineForNewIncludeDirective::operator()(const QString &newIncludeFileName,
+                                           unsigned *newLinesToPrepend,
+                                           unsigned *newLinesToAppend)
 {
     if (newLinesToPrepend)
         *newLinesToPrepend = false;
@@ -274,31 +227,7 @@ int LineForNewIncludeDirective::run(const QString &newIncludeFileName,
 
     using IncludeGroups = QList<IncludeGroup>;
 
-    IncludeGroups groupsNewline = IncludeGroup::detectIncludeGroupsByNewLines(m_includes);
-
-    // If the first group consists only of the header(s) for the including source file,
-    // then it must stay as it is.
-    if (groupsNewline.first().size() <= 2) {
-        bool firstGroupIsSpecial = true;
-        const QString baseName = m_filePath.baseName();
-        const QString privBaseName = baseName + "_p";
-        for (const auto &include : groupsNewline.first().includes()) {
-            const QString inclBaseName = FilePath::fromString(include.unresolvedFileName())
-                                             .baseName();
-            if (inclBaseName != baseName && inclBaseName != privBaseName) {
-                firstGroupIsSpecial = false;
-                break;
-            }
-        }
-        if (firstGroupIsSpecial) {
-            if (groupsNewline.size() == 1) {
-                *newLinesToPrepend = 1;
-                return groupsNewline.first().last().line() + 1;
-            }
-            groupsNewline.removeFirst();
-        }
-    }
-
+    const IncludeGroups groupsNewline = IncludeGroup::detectIncludeGroupsByNewLines(m_includes);
     const bool includeAtTop
         = (newIncludeType == Client::IncludeLocal && m_includeStyle == LocalBeforeGlobal)
             || (newIncludeType == Client::IncludeGlobal && m_includeStyle == GlobalBeforeLocal);
@@ -327,7 +256,7 @@ int LineForNewIncludeDirective::run(const QString &newIncludeFileName,
 
     IncludeGroups groupsSameIncludeDir;
     IncludeGroups groupsMixedIncludeDirs;
-    for (const IncludeGroup &group : std::as_const(groupsMatchingIncludeType)) {
+    for (const IncludeGroup &group : qAsConst(groupsMatchingIncludeType)) {
         if (group.hasCommonIncludeDir())
             groupsSameIncludeDir << group;
         else
@@ -335,7 +264,7 @@ int LineForNewIncludeDirective::run(const QString &newIncludeFileName,
     }
 
     IncludeGroups groupsMatchingIncludeDir;
-    for (const IncludeGroup &group : std::as_const(groupsSameIncludeDir)) {
+    for (const IncludeGroup &group : qAsConst(groupsSameIncludeDir)) {
         if (group.commonIncludeDir() == includeDir(pureIncludeFileName))
             groupsMatchingIncludeDir << group;
     }
@@ -345,7 +274,7 @@ int LineForNewIncludeDirective::run(const QString &newIncludeFileName,
     if (!groupsMatchingIncludeDir.isEmpty()) {
         // The group with the longest common matching prefix is the best group
         int longestPrefixSoFar = 0;
-        for (const IncludeGroup &group : std::as_const(groupsMatchingIncludeDir)) {
+        for (const IncludeGroup &group : qAsConst(groupsMatchingIncludeDir)) {
             const int groupPrefixLength = group.commonPrefix().length();
             if (groupPrefixLength >= longestPrefixSoFar) {
                 bestGroup = group;
@@ -366,12 +295,12 @@ int LineForNewIncludeDirective::run(const QString &newIncludeFileName,
         //       group with mixed include dirs
         } else {
             IncludeGroups groupsIncludeDir;
-            for (const IncludeGroup &group : std::as_const(groupsMixedIncludeDirs)) {
+            for (const IncludeGroup &group : qAsConst(groupsMixedIncludeDirs)) {
                 groupsIncludeDir.append(
                             IncludeGroup::detectIncludeGroupsByIncludeDir(group.includes()));
             }
             IncludeGroup localBestIncludeGroup = IncludeGroup(QList<Include>());
-            for (const IncludeGroup &group : std::as_const(groupsIncludeDir)) {
+            for (const IncludeGroup &group : qAsConst(groupsIncludeDir)) {
                 if (group.commonIncludeDir() == includeDir(pureIncludeFileName))
                     localBestIncludeGroup = group;
             }
@@ -393,19 +322,6 @@ QList<IncludeGroup> LineForNewIncludeDirective::getGroupsByIncludeType(
         : IncludeGroup::filterIncludeGroups(groups, Client::IncludeGlobal);
 }
 
-int lineForNewIncludeDirective(const Utils::FilePath &filePath, const QTextDocument *textDocument,
-                               const CPlusPlus::Document::Ptr cppDocument,
-                               MocIncludeMode mocIncludeMode,
-                               IncludeStyle includeStyle,
-                               const QString &newIncludeFileName,
-                               unsigned *newLinesToPrepend,
-                               unsigned *newLinesToAppend)
-{
-    return LineForNewIncludeDirective(filePath, textDocument, cppDocument,
-                                      mocIncludeMode, includeStyle)
-          .run(newIncludeFileName, newLinesToPrepend, newLinesToAppend);
-}
-
 /// includes will be modified!
 QList<IncludeGroup> IncludeGroup::detectIncludeGroupsByNewLines(QList<Document::Include> &includes)
 {
@@ -414,7 +330,7 @@ QList<IncludeGroup> IncludeGroup::detectIncludeGroupsByNewLines(QList<Document::
     int lastLine = 0;
     QList<Include> currentIncludes;
     bool isFirst = true;
-    for (const Include &include : std::as_const(includes)) {
+    for (const Include &include : qAsConst(includes)) {
         // First include...
         if (isFirst) {
             isFirst = false;
@@ -531,7 +447,7 @@ QList<IncludeGroup> IncludeGroup::filterMixedIncludeGroups(const QList<IncludeGr
 
 bool IncludeGroup::hasOnlyIncludesOfType(Client::IncludeType includeType) const
 {
-    for (const Include &include : std::as_const(m_includes)) {
+    for (const Include &include : qAsConst(m_includes)) {
         if (include.type() != includeType)
             return false;
     }
@@ -557,7 +473,7 @@ int IncludeGroup::lineForNewInclude(const QString &newIncludeFileName,
         return -1;
 
     if (isSorted()) {
-        const Include newInclude(newIncludeFileName, FilePath(), 0, newIncludeType);
+        const Include newInclude(newIncludeFileName, QString(), 0, newIncludeType);
         const QList<Include>::const_iterator it = std::lower_bound(m_includes.begin(),
             m_includes.end(), newInclude, includeFileNamelessThen);
         if (it == m_includes.end())
@@ -574,7 +490,7 @@ int IncludeGroup::lineForNewInclude(const QString &newIncludeFileName,
 QStringList IncludeGroup::filesNames() const
 {
     QStringList names;
-    for (const Include &include : std::as_const(m_includes))
+    for (const Include &include : qAsConst(m_includes))
         names << include.unresolvedFileName();
     return names;
 }
@@ -607,40 +523,31 @@ bool IncludeGroup::hasCommonIncludeDir() const
     return true;
 }
 
-} // CppEditor::Internal
+} // namespace IncludeUtils
 
 #ifdef WITH_TESTS
-
-namespace CppEditor::Internal {
-
 using namespace Tests;
+using namespace IncludeUtils;
 using Tests::Internal::TestIncludePaths;
 
-class IncludeGroupsTest : public QObject
-{
-    Q_OBJECT
+namespace Internal {
 
-private slots:
-    void testDetectIncludeGroupsByNewLines();
-    void testDetectIncludeGroupsByIncludeDir();
-    void testDetectIncludeGroupsByIncludeType();
-};
-
-static QList<Include> includesForSource(const FilePath &filePath)
+static QList<Include> includesForSource(const QString &filePath)
 {
-    CppModelManager::GC();
+    CppModelManager *cmm = CppModelManager::instance();
+    cmm->GC();
     QScopedPointer<CppSourceProcessor> sourceProcessor(CppModelManager::createSourceProcessor());
     sourceProcessor->setHeaderPaths({ProjectExplorer::HeaderPath::makeUser(
                                      TestIncludePaths::globalIncludePath())});
     sourceProcessor->run(filePath);
 
-    Document::Ptr document = CppModelManager::document(filePath);
+    Document::Ptr document = cmm->document(filePath);
     return document->resolvedIncludes();
 }
 
 void IncludeGroupsTest::testDetectIncludeGroupsByNewLines()
 {
-    const FilePath testFilePath = TestIncludePaths::testFilePath(
+    const QString testFilePath = TestIncludePaths::testFilePath(
                 QLatin1String("test_main_detectIncludeGroupsByNewLines.cpp"));
 
     QList<Include> includes = includesForSource(testFilePath);
@@ -682,7 +589,7 @@ void IncludeGroupsTest::testDetectIncludeGroupsByNewLines()
 
 void IncludeGroupsTest::testDetectIncludeGroupsByIncludeDir()
 {
-    const FilePath testFilePath = TestIncludePaths::testFilePath(
+    const QString testFilePath = TestIncludePaths::testFilePath(
                 QLatin1String("test_main_detectIncludeGroupsByIncludeDir.cpp"));
 
     QList<Include> includes = includesForSource(testFilePath);
@@ -706,7 +613,7 @@ void IncludeGroupsTest::testDetectIncludeGroupsByIncludeDir()
 
 void IncludeGroupsTest::testDetectIncludeGroupsByIncludeType()
 {
-    const FilePath testFilePath = TestIncludePaths::testFilePath(
+    const QString testFilePath = TestIncludePaths::testFilePath(
                 QLatin1String("test_main_detectIncludeGroupsByIncludeType.cpp"));
 
     QList<Include> includes = includesForSource(testFilePath);
@@ -728,13 +635,8 @@ void IncludeGroupsTest::testDetectIncludeGroupsByIncludeType()
     QVERIFY(includeGroups.at(3).hasOnlyIncludesOfType(Client::IncludeGlobal));
 }
 
-QObject *createIncludeGroupsTest()
-{
-    return new IncludeGroupsTest;
-}
-
-} // CppEditor::Internal
-
-#include "includeutils.moc"
+} // namespace Internal
 
 #endif // WITH_TESTS
+
+} // namespace CppEditor

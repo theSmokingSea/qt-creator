@@ -19,7 +19,7 @@ Module {
         property bool hasRepo
 
         configure: {
-            repoDir = FileInfo.cleanPath(path + "/../../../src/libs/3rdparty/googletest");
+            repoDir = FileInfo.cleanPath(path + "/../../../tests/unit/unittest/3rdparty/googletest");
             gtestDir = FileInfo.joinPaths(repoDir, "googletest");
             gmockDir = FileInfo.joinPaths(repoDir, "googlemock");
             hasRepo = File.exists(gtestDir);
@@ -49,15 +49,15 @@ Module {
     }
 
     Properties {
-        condition: useRepo
+        condition: qtc_gtest_gmock.useRepo
         cpp.includePaths: [
-            FileInfo.joinPaths(gtestDir, "include"),
-            FileInfo.joinPaths(gmockDir, "include"),
+            FileInfo.joinPaths(qtc_gtest_gmock.gtestDir, "include"),
+            FileInfo.joinPaths(qtc_gtest_gmock.gmockDir, "include"),
         ]
     }
 
     validate: {
-        if (!externalLibsPresent && !gtestProbe.found) {
+        if (!qtc_gtest_gmock.externalLibsPresent && !gtestProbe.found) {
             console.warn("No GTest found.");
             throw new Error();
         }

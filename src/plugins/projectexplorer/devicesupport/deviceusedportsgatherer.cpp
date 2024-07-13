@@ -1,19 +1,37 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "deviceusedportsgatherer.h"
 
-#include "idevice.h"
 #include "sshparameters.h"
-#include "../projectexplorertr.h"
 
-// #include <remotelinux/remotelinux_constants.h>
-
+#include <projectexplorer/devicesupport/idevice.h>
 #include <utils/port.h>
 #include <utils/portlist.h>
-#include <utils/qtcprocess.h>
 #include <utils/qtcassert.h>
-#include <utils/stringutils.h>
+#include <utils/qtcprocess.h>
 #include <utils/url.h>
 
 using namespace Utils;
@@ -23,20 +41,21 @@ namespace Internal {
 
 class DeviceUsedPortsGathererPrivate
 {
-public:
-    std::unique_ptr<Process> process;
+ public:
+    std::unique_ptr<QtcProcess> process;
     QList<Port> usedPorts;
+    QByteArray remoteStdout;
+    QByteArray remoteStderr;
     IDevice::ConstPtr device;
     PortsGatheringMethod portsGatheringMethod;
-    QString m_errorString;
 };
 
 } // namespace Internal
 
-DeviceUsedPortsGatherer::DeviceUsedPortsGatherer(QObject *parent)
-    : QObject(parent)
-    , d(new Internal::DeviceUsedPortsGathererPrivate)
-{}
+DeviceUsedPortsGatherer::DeviceUsedPortsGatherer(QObject *parent) :
+    QObject(parent), d(new Internal::DeviceUsedPortsGathererPrivate)
+{
+}
 
 DeviceUsedPortsGatherer::~DeviceUsedPortsGatherer()
 {
@@ -44,59 +63,50 @@ DeviceUsedPortsGatherer::~DeviceUsedPortsGatherer()
     delete d;
 }
 
-void DeviceUsedPortsGatherer::start()
+void DeviceUsedPortsGatherer::start(const IDevice::ConstPtr &device)
 {
-    const auto emitError = [this](const QString &errorString) {
-        d->m_errorString = errorString;
-        emit done(false);
-    };
-
     d->usedPorts.clear();
-    d->m_errorString.clear();
-    QTC_ASSERT(d->device, emitError("No device given"); return);
+    d->device = device;
+    QTC_ASSERT(d->device, emit error("No device given"); return);
 
     d->portsGatheringMethod = d->device->portsGatheringMethod();
-    QTC_ASSERT(d->portsGatheringMethod.commandLine, emitError("Not implemented"); return);
-    QTC_ASSERT(d->portsGatheringMethod.parsePorts, emitError("Not implemented"); return);
+    QTC_ASSERT(d->portsGatheringMethod.commandLine, emit error("Not implemented"); return);
+    QTC_ASSERT(d->portsGatheringMethod.parsePorts, emit error("Not implemented"); return);
 
     const QAbstractSocket::NetworkLayerProtocol protocol = QAbstractSocket::AnyIPProtocol;
 
-    d->process.reset(new Process);
+    d->process.reset(new QtcProcess);
     d->process->setCommand(d->portsGatheringMethod.commandLine(protocol));
 
-    connect(d->process.get(), &Process::done, this, [this, emitError] {
-        if (d->process->result() == ProcessResult::FinishedWithSuccess) {
-            d->usedPorts.clear();
-            const QList<Port> usedPorts = d->portsGatheringMethod.parsePorts(
-                d->process->rawStdOut());
-            for (const Port port : usedPorts) {
-                if (d->device->freePorts().contains(port))
-                    d->usedPorts << port;
-            }
-            emit done(true);
-        } else {
-            const QString errorString = d->process->errorString();
-            const QString stdErr = d->process->readAllStandardError();
-            const QString outputString
-                = stdErr.isEmpty() ? stdErr : Tr::tr("Remote error output was: %1").arg(stdErr);
-            emitError(Utils::joinStrings({errorString, outputString}, '\n'));
-        }
-        stop();
-    });
+    connect(d->process.get(), &QtcProcess::done,
+            this, &DeviceUsedPortsGatherer::handleProcessDone);
+    connect(d->process.get(), &QtcProcess::readyReadStandardOutput,
+            this, [this] { d->remoteStdout += d->process->readAllStandardOutput(); });
+    connect(d->process.get(), &QtcProcess::readyReadStandardError,
+            this, [this] { d->remoteStderr += d->process->readAllStandardError(); });
+
+
     d->process->start();
 }
 
 void DeviceUsedPortsGatherer::stop()
 {
+    d->remoteStdout.clear();
+    d->remoteStderr.clear();
     if (d->process) {
         d->process->disconnect();
         d->process.release()->deleteLater();
     }
 }
 
-void DeviceUsedPortsGatherer::setDevice(const IDeviceConstPtr &device)
+Port DeviceUsedPortsGatherer::getNextFreePort(PortList *freePorts) const
 {
-    d->device = device;
+    while (freePorts->hasMore()) {
+        const Port port = freePorts->getNext();
+        if (!d->usedPorts.contains(port))
+            return port;
+    }
+    return Port();
 }
 
 QList<Port> DeviceUsedPortsGatherer::usedPorts() const
@@ -104,9 +114,49 @@ QList<Port> DeviceUsedPortsGatherer::usedPorts() const
     return d->usedPorts;
 }
 
-QString DeviceUsedPortsGatherer::errorString() const
+void DeviceUsedPortsGatherer::setupUsedPorts()
 {
-    return d->m_errorString;
+    d->usedPorts.clear();
+    const QList<Port> usedPorts = d->portsGatheringMethod.parsePorts(d->remoteStdout);
+    for (const Port port : usedPorts) {
+        if (d->device->freePorts().contains(port))
+            d->usedPorts << port;
+    }
+    emit portListReady();
+}
+
+void DeviceUsedPortsGatherer::handleProcessDone()
+{
+    if (d->process->error() != QProcess::UnknownError) {
+        emit error(tr("Connection error: %1").arg(d->process->errorString()));
+        stop();
+        return;
+    }
+
+    QString errMsg;
+    switch (d->process->exitStatus()) {
+    case QProcess::CrashExit:
+        errMsg = tr("Remote process crashed: %1").arg(d->process->errorString());
+        break;
+    case QProcess::NormalExit:
+        if (d->process->exitCode() == 0)
+            setupUsedPorts();
+        else
+            errMsg = tr("Remote process failed; exit code was %1.").arg(d->process->exitCode());
+        break;
+    default:
+        Q_ASSERT_X(false, Q_FUNC_INFO, "Invalid exit status");
+    }
+
+    if (!errMsg.isEmpty()) {
+        if (!d->remoteStderr.isEmpty()) {
+            errMsg += QLatin1Char('\n');
+            errMsg += tr("Remote error output was: %1")
+                .arg(QString::fromUtf8(d->remoteStderr));
+        }
+        emit error(errMsg);
+    }
+    stop();
 }
 
 // PortGatherer
@@ -116,23 +166,20 @@ PortsGatherer::PortsGatherer(RunControl *runControl)
 {
     setId("PortGatherer");
 
-    connect(&m_portsGatherer, &DeviceUsedPortsGatherer::done, this, [this](bool success) {
-        if (success) {
-            m_portList = device()->freePorts();
-            appendMessage(Tr::tr("Found %n free ports.", nullptr, m_portList.count()),
-                          NormalMessageFormat);
-            reportStarted();
-        } else {
-            reportFailure(m_portsGatherer.errorString());
-        }
+    connect(&m_portsGatherer, &DeviceUsedPortsGatherer::error, this, &PortsGatherer::reportFailure);
+    connect(&m_portsGatherer, &DeviceUsedPortsGatherer::portListReady, this, [this] {
+        m_portList = device()->freePorts();
+        appendMessage(tr("Found %n free ports.", nullptr, m_portList.count()), NormalMessageFormat);
+        reportStarted();
     });
 }
 
+PortsGatherer::~PortsGatherer() = default;
+
 void PortsGatherer::start()
 {
-    appendMessage(Tr::tr("Checking available ports..."), NormalMessageFormat);
-    m_portsGatherer.setDevice(device());
-    m_portsGatherer.start();
+    appendMessage(tr("Checking available ports..."), NormalMessageFormat);
+    m_portsGatherer.start(device());
 }
 
 QUrl PortsGatherer::findEndPoint()
@@ -140,7 +187,7 @@ QUrl PortsGatherer::findEndPoint()
     QUrl result;
     result.setScheme(urlTcpScheme());
     result.setHost(device()->sshParameters().host());
-    result.setPort(m_portList.getNextFreePort(m_portsGatherer.usedPorts()).number());
+    result.setPort(m_portsGatherer.getNextFreePort(&m_portList).number());
     return result;
 }
 
@@ -148,6 +195,30 @@ void PortsGatherer::stop()
 {
     m_portsGatherer.stop();
     reportStopped();
+}
+
+
+// ChannelForwarder
+
+/*!
+    \class ProjectExplorer::ChannelForwarder
+
+    \internal
+
+    \brief The class provides a \c RunWorker handling the forwarding
+    from one device to another.
+
+    Both endpoints are specified by \c{QUrl}s, typically with
+    a "tcp" or "socket" scheme.
+*/
+
+ChannelForwarder::ChannelForwarder(RunControl *runControl)
+    : RunWorker(runControl)
+{}
+
+void ChannelForwarder::setFromUrlGetter(const UrlGetter &urlGetter)
+{
+    m_fromUrlGetter = urlGetter;
 }
 
 namespace Internal {
@@ -163,6 +234,9 @@ namespace Internal {
     use port forwarding for one SubChannel in the ChannelProvider
     implementation.
 
+    A device implementation can provide a  "ChannelForwarder"
+    RunWorker non-trivial implementation if needed.
+
     By default it is assumed that no forwarding is needed, i.e.
     end points provided by the shared endpoint resource provider
     are directly accessible.
@@ -171,21 +245,33 @@ namespace Internal {
 class SubChannelProvider : public RunWorker
 {
 public:
-    SubChannelProvider(RunControl *runControl, PortsGatherer *portsGatherer)
+    SubChannelProvider(RunControl *runControl, RunWorker *sharedEndpointGatherer)
         : RunWorker(runControl)
-        , m_portGatherer(portsGatherer)
     {
         setId("SubChannelProvider");
+
+        m_portGatherer = qobject_cast<PortsGatherer *>(sharedEndpointGatherer);
+        if (m_portGatherer) {
+            if (auto forwarder = runControl->createWorker("ChannelForwarder")) {
+                m_channelForwarder = qobject_cast<ChannelForwarder *>(forwarder);
+                if (m_channelForwarder) {
+                    m_channelForwarder->addStartDependency(m_portGatherer);
+                    m_channelForwarder->setFromUrlGetter([this] {
+                        return m_portGatherer->findEndPoint();
+                    });
+                    addStartDependency(m_channelForwarder);
+                }
+            }
+        }
     }
 
     void start() final
     {
         m_channel.setScheme(urlTcpScheme());
-        // if (device()->extraData(RemoteLinux::Constants::SshForwardDebugServerPort).toBool())
-        //     m_channel.setHost("localhost");
-        // else
-            m_channel.setHost(device()->toolControlChannel(IDevice::ControlChannelHint()).host());
-        if (m_portGatherer)
+        m_channel.setHost(device()->toolControlChannel(IDevice::ControlChannelHint()).host());
+        if (m_channelForwarder)
+            m_channel.setPort(m_channelForwarder->recordedData("LocalPort").toUInt());
+        else if (m_portGatherer)
             m_channel.setPort(m_portGatherer->findEndPoint().port());
         reportStarted();
     }
@@ -195,6 +281,7 @@ public:
 private:
     QUrl m_channel;
     PortsGatherer *m_portGatherer = nullptr;
+    ChannelForwarder *m_channelForwarder = nullptr;
 };
 
 } // Internal
@@ -235,10 +322,15 @@ ChannelProvider::ChannelProvider(RunControl *runControl, int requiredChannels)
    : RunWorker(runControl)
 {
     setId("ChannelProvider");
-    auto portsGatherer = new PortsGatherer(runControl);
+
+    RunWorker *sharedEndpoints = runControl->createWorker("SharedEndpointGatherer");
+    if (!sharedEndpoints) {
+        // null is a legit value indicating 'no need to share'.
+        sharedEndpoints = new PortsGatherer(runControl);
+    }
 
     for (int i = 0; i < requiredChannels; ++i) {
-        auto channelProvider = new Internal::SubChannelProvider(runControl, portsGatherer);
+        auto channelProvider = new Internal::SubChannelProvider(runControl, sharedEndpoints);
         m_channelProviders.append(channelProvider);
         addStartDependency(channelProvider);
     }
@@ -250,7 +342,7 @@ QUrl ChannelProvider::channel(int i) const
 {
     if (Internal::SubChannelProvider *provider = m_channelProviders.value(i))
         return provider->channel();
-    return {};
+    return QUrl();
 }
 
 } // namespace ProjectExplorer

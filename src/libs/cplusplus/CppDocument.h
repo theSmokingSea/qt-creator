@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -11,14 +33,19 @@
 
 #include <utils/filepath.h>
 
-#include <QAtomicInt>
-#include <QByteArrayList>
-#include <QDateTime>
-#include <QFuture>
-#include <QHash>
 #include <QSharedPointer>
+#include <QDateTime>
+#include <QHash>
+#include <QFileInfo>
+#include <QAtomicInt>
+
+QT_BEGIN_NAMESPACE
+class QFutureInterfaceBase;
+QT_END_NAMESPACE
 
 namespace CPlusPlus {
+
+class Macro;
 class MacroArgumentReference;
 class LookupContext;
 
@@ -27,7 +54,7 @@ class CPLUSPLUS_EXPORT Document
     Document(const Document &other);
     void operator =(const Document &other);
 
-    Document(const Utils::FilePath &filePath);
+    Document(const QString &fileName);
 
 public:
     typedef QSharedPointer<Document> Ptr;
@@ -35,16 +62,16 @@ public:
 public:
     ~Document();
 
-    unsigned revision() const { return _revision; }
-    void setRevision(unsigned revision) { _revision = revision; }
+    unsigned revision() const;
+    void setRevision(unsigned revision);
 
-    unsigned editorRevision() const { return _editorRevision; }
-    void setEditorRevision(unsigned editorRevision) { _editorRevision = editorRevision; }
+    unsigned editorRevision() const;
+    void setEditorRevision(unsigned editorRevision);
 
-    const QDateTime &lastModified() const { return _lastModified; }
+    QDateTime lastModified() const;
     void setLastModified(const QDateTime &lastModified);
 
-    const Utils::FilePath &filePath() const { return _filePath; }
+    QString fileName() const;
 
     void appendMacro(const Macro &macro);
     void addMacroUse(const Macro &macro,
@@ -54,12 +81,9 @@ public:
     void addUndefinedMacroUse(const QByteArray &name,
                               int bytesOffset, int utf16charsOffset);
 
-    void appendPragma(const Pragma &pragma) { _pragmas << pragma; }
-    int pragmaOnceLine() const;
-
-    Control *control() const { return _control; }
+    Control *control() const;
     Control *swapControl(Control *newControl);
-    TranslationUnit *translationUnit() const { return _translationUnit; }
+    TranslationUnit *translationUnit() const;
 
     bool skipFunctionBody() const;
     void setSkipFunctionBody(bool skipFunctionBody);
@@ -67,21 +91,23 @@ public:
     int globalSymbolCount() const;
     Symbol *globalSymbolAt(int index) const;
 
-    Namespace *globalNamespace() const { return _globalNamespace; }
+    Namespace *globalNamespace() const;
     void setGlobalNamespace(Namespace *globalNamespace); // ### internal
 
-    const QList<Macro> &definedMacros() const { return _definedMacros; }
+    QList<Macro> definedMacros() const
+    { return _definedMacros; }
 
     QString functionAt(int line, int column, int *lineOpeningDeclaratorParenthesis = nullptr,
                        int *lineClosingBrace = nullptr) const;
     Symbol *lastVisibleSymbolAt(int line, int column = 0) const;
     Scope *scopeAt(int line, int column = 0);
 
-    const QByteArray &utf8Source() const { return _source; }
+    QByteArray utf8Source() const;
     void setUtf8Source(const QByteArray &utf8Source);
 
-    const QByteArray &fingerprint() const { return m_fingerprint; }
-    void setFingerprint(const QByteArray &fingerprint) { m_fingerprint = fingerprint; }
+    QByteArray fingerprint() const { return m_fingerprint; }
+    void setFingerprint(const QByteArray &fingerprint)
+    { m_fingerprint = fingerprint; }
 
     LanguageFeatures languageFeatures() const;
     void setLanguageFeatures(LanguageFeatures features);
@@ -111,7 +137,7 @@ public:
 
     void check(CheckMode mode = FullCheck);
 
-    static Ptr create(const Utils::FilePath &filePath);
+    static Ptr create(const QString &fileName);
 
     class CPLUSPLUS_EXPORT DiagnosticMessage
     {
@@ -123,13 +149,13 @@ public:
         };
 
     public:
-        DiagnosticMessage(int level, const Utils::FilePath &filePath,
+        DiagnosticMessage(int level, const QString &fileName,
                           int line, int column,
                           const QString &text,
                           int length = 0)
             : _level(level),
               _line(line),
-              _filePath(filePath),
+              _fileName(fileName),
               _column(column),
               _length(length),
               _text(text)
@@ -147,8 +173,8 @@ public:
         bool isFatal() const
         { return _level == Fatal; }
 
-        const Utils::FilePath &filePath() const
-        { return _filePath; }
+        QString fileName() const
+        { return _fileName; }
 
         int line() const
         { return _line; }
@@ -159,7 +185,7 @@ public:
         int length() const
         { return _length; }
 
-        const QString &text() const
+        QString text() const
         { return _text; }
 
         bool operator==(const DiagnosticMessage &other) const;
@@ -168,7 +194,7 @@ public:
     private:
         int _level;
         int _line;
-        Utils::FilePath _filePath;
+        QString _fileName;
         int _column;
         int _length;
         QString _text;
@@ -180,7 +206,7 @@ public:
     void clearDiagnosticMessages()
     { _diagnosticMessages.clear(); }
 
-    const QList<DiagnosticMessage> &diagnosticMessages() const
+    QList<DiagnosticMessage> diagnosticMessages() const
     { return _diagnosticMessages; }
 
     class Block
@@ -216,13 +242,13 @@ public:
     };
 
     class Include {
-        Utils::FilePath _resolvedFileName;
+        QString _resolvedFileName;
         QString _unresolvedFileName;
         int _line;
         Client::IncludeType _type;
 
     public:
-        Include(const QString &unresolvedFileName, const Utils::FilePath &resolvedFileName, int line,
+        Include(const QString &unresolvedFileName, const QString &resolvedFileName, int line,
                 Client::IncludeType type)
             : _resolvedFileName(resolvedFileName)
             , _unresolvedFileName(unresolvedFileName)
@@ -230,10 +256,10 @@ public:
             , _type(type)
         { }
 
-        const Utils::FilePath &resolvedFileName() const
+        QString resolvedFileName() const
         { return _resolvedFileName; }
 
-        const QString &unresolvedFileName() const
+        QString unresolvedFileName() const
         { return _unresolvedFileName; }
 
         int line() const
@@ -264,7 +290,7 @@ public:
         bool isFunctionLike() const
         { return _macro.isFunctionLike(); }
 
-        const QVector<Block> &arguments() const
+        QVector<Block> arguments() const
         { return _arguments; }
 
         int beginLine() const
@@ -298,27 +324,22 @@ public:
         }
     };
 
-    enum class Duplicates {
-        Remove,
-        Keep,
-    };
-
-    Utils::FilePaths includedFiles(Duplicates duplicates = Duplicates::Remove) const;
+    QStringList includedFiles() const;
     void addIncludeFile(const Include &include);
 
-    const QList<Include> &resolvedIncludes() const
+    QList<Include> resolvedIncludes() const
     { return _resolvedIncludes; }
 
-    const QList<Include> &unresolvedIncludes() const
+    QList<Include> unresolvedIncludes() const
     { return _unresolvedIncludes; }
 
-    const QList<Block> &skippedBlocks() const
+    QList<Block> skippedBlocks() const
     { return _skippedBlocks; }
 
-    const QList<MacroUse> macroUses() const
+    QList<MacroUse> macroUses() const
     { return _macroUses; }
 
-    const QList<UndefinedMacroUse> &undefinedMacroUses() const
+    QList<UndefinedMacroUse> undefinedMacroUses() const
     { return _undefinedMacroUses; }
 
     void setIncludeGuardMacroName(const QByteArray &includeGuardMacroName)
@@ -337,7 +358,7 @@ public:
     { return static_cast<CheckMode>(_checkMode); }
 
 private:
-    Utils::FilePath _filePath;
+    QString _fileName;
     Control *_control;
     TranslationUnit *_translationUnit;
     Namespace *_globalNamespace;
@@ -354,8 +375,6 @@ private:
 
      /// the macro name of the include guard, if there is one.
     QByteArray _includeGuardMacroName;
-
-    QList<Pragma> _pragmas;
 
     QByteArray m_fingerprint;
 
@@ -385,33 +404,42 @@ public:
     bool isEmpty() const;
 
     void insert(Document::Ptr doc); // ### remove
-    void remove(const Utils::FilePath &filePath); // ### remove
+    void remove(const Utils::FilePath &fileName); // ### remove
+    void remove(const QString &fileName)
+    { remove(Utils::FilePath::fromString(fileName)); }
 
     const_iterator begin() const { return _documents.begin(); }
     const_iterator end() const { return _documents.end(); }
 
-    bool contains(const Utils::FilePath &filePath) const;
+    bool contains(const Utils::FilePath &fileName) const;
+    bool contains(const QString &fileName) const
+    { return contains(Utils::FilePath::fromString(fileName)); }
 
-    Document::Ptr document(const Utils::FilePath &filePath) const;
+    Document::Ptr document(const Utils::FilePath &fileName) const;
+    Document::Ptr document(const QString &fileName) const
+    { return document(Utils::FilePath::fromString(fileName)); }
 
-    const_iterator find(const Utils::FilePath &filePath) const;
+    const_iterator find(const Utils::FilePath &fileName) const;
+    const_iterator find(const QString &fileName) const
+    { return find(Utils::FilePath::fromString(fileName)); }
 
     Snapshot simplified(Document::Ptr doc) const;
 
     Document::Ptr preprocessedDocument(const QByteArray &source,
-                                       const Utils::FilePath &filePath,
+                                       const Utils::FilePath &fileName,
                                        int withDefinedMacrosFromDocumentUntilLine = -1) const;
 
     Document::Ptr documentFromSource(const QByteArray &preprocessedDocument,
-                                     const Utils::FilePath &filePath) const;
+                                     const QString &fileName) const;
 
-    QSet<Utils::FilePath> allIncludesForDocument(const Utils::FilePath &filePath) const;
+    QSet<QString> allIncludesForDocument(const QString &fileName) const;
+    QList<IncludeLocation> includeLocationsOfDocument(const QString &fileName) const;
 
-    QList<IncludeLocation> includeLocationsOfDocument(const Utils::FilePath &fileNameOrPath) const;
-
-    Utils::FilePaths filesDependingOn(const Utils::FilePath &filePath) const;
-
-    void updateDependencyTable(const std::optional<QFuture<void>> &future = {}) const;
+    Utils::FilePaths filesDependingOn(const Utils::FilePath &fileName) const;
+    Utils::FilePaths filesDependingOn(const QString &fileName) const
+    { return filesDependingOn(Utils::FilePath::fromString(fileName)); }
+    void updateDependencyTable() const;
+    void updateDependencyTable(QFutureInterfaceBase &futureInterface) const;
 
     bool operator==(const Snapshot &other) const;
 

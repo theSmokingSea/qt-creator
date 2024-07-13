@@ -1,11 +1,31 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
 #include <coreplugin/find/textfindconstants.h>
-
-#include <utils/filesearch.h>
 
 #include <QFont>
 #include <QMenu>
@@ -32,7 +52,6 @@ public:
     ~HelpViewer() override;
 
     virtual void setViewerFont(const QFont &font) = 0;
-    virtual void setAntialias(bool on);
 
     virtual void setScale(qreal scale) = 0;
 
@@ -55,7 +74,7 @@ public:
     void setActionVisible(Action action, bool visible);
     bool isActionVisible(Action action);
 
-    virtual bool findText(const QString &text, Utils::FindFlags flags,
+    virtual bool findText(const QString &text, Core::FindFlags flags,
         bool incremental, bool fromSearch, bool *wrapped = nullptr) = 0;
 
     bool handleForwardBackwardMouseButtons(QMouseEvent *e);

@@ -10,11 +10,10 @@
 #include "abstracthighlighter.h"
 #include "ksyntaxhighlighting_export.h"
 
+#include <QIODevice>
 #include <QString>
 
-QT_BEGIN_NAMESPACE
-class QIODevice;
-QT_END_NAMESPACE
+#include <memory>
 
 namespace KSyntaxHighlighting
 {
@@ -36,7 +35,7 @@ protected:
     void applyFormat(int offset, int length, const Format &format) override;
 
 private:
-    Q_DECLARE_PRIVATE(HtmlHighlighter)
+    std::unique_ptr<HtmlHighlighterPrivate> d;
 };
 }
 

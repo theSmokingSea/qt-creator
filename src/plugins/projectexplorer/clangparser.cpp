@@ -1,14 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "clangparser.h"
 #include "ldparser.h"
 #include "lldparser.h"
 #include "projectexplorerconstants.h"
 
+using namespace ProjectExplorer;
 using namespace Utils;
-
-namespace ProjectExplorer {
 
 static Task::TaskType taskType(const QString &capture)
 {
@@ -65,7 +86,7 @@ OutputLineParser::Result ClangParser::handleLine(const QString &line, OutputForm
         const int lineNo = match.captured(3).toInt();
         const int column = 0;
         LinkSpecs linkSpecs;
-        addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, column, match, 2);
+        addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, match, 2);
         createOrAmendTask(Task::Unknown, lne.trimmed(), lne, false,
                           filePath, lineNo, column, linkSpecs);
         return {Status::InProgress, linkSpecs};
@@ -84,7 +105,7 @@ OutputLineParser::Result ClangParser::handleLine(const QString &line, OutputForm
 
         const FilePath filePath = absoluteFilePath(FilePath::fromUserInput(match.captured(1)));
         LinkSpecs linkSpecs;
-        addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, column, match, 1);
+        addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, match, 1);
         createOrAmendTask(taskType(match.captured(8)), match.captured(9), lne, false,
                           filePath, lineNo, column, linkSpecs);
         return {Status::InProgress, linkSpecs};
@@ -110,19 +131,15 @@ Utils::Id ClangParser::id()
     return Utils::Id("ProjectExplorer.OutputParser.Clang");
 }
 
-} // ProjectExplorer
-
 // Unit tests:
 
 #ifdef WITH_TESTS
 #   include <QTest>
 
-#   include "projectexplorer_test.h"
+#   include "projectexplorer.h"
 #   include "outputparser_test.h"
 
-namespace ProjectExplorer::Internal {
-
-void ProjectExplorerTest::testClangOutputParser_data()
+void ProjectExplorerPlugin::testClangOutputParser_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<OutputParserTester::Channel>("inputChannel");
@@ -235,7 +252,7 @@ void ProjectExplorerTest::testClangOutputParser_data()
                                    68, 10,
                                    QVector<QTextLayout::FormatRange>()
                                        << formatRange(34, 0)
-                                       << formatRange(34, 28, "olpfile:///usr/include/c++/4.6/utility::68::10")
+                                       << formatRange(34, 28, "olpfile:///usr/include/c++/4.6/utility::68::-1")
                                        << formatRange(62, 93)))
                 << QString();
 
@@ -255,7 +272,7 @@ void ProjectExplorerTest::testClangOutputParser_data()
                                    567, 51,
                                    QVector<QTextLayout::FormatRange>()
                                        << formatRange(74, 0)
-                                       << formatRange(74, 64, "olpfile:///home/code/src/creator/src/plugins/coreplugin/manhattanstyle.cpp::567::51")
+                                       << formatRange(74, 64, "olpfile:///home/code/src/creator/src/plugins/coreplugin/manhattanstyle.cpp::567::-1")
                                        << formatRange(138, 202)))
                 << QString();
 
@@ -273,7 +290,7 @@ void ProjectExplorerTest::testClangOutputParser_data()
                 << QString();
 }
 
-void ProjectExplorerTest::testClangOutputParser()
+void ProjectExplorerPlugin::testClangOutputParser()
 {
     OutputParserTester testbench;
     testbench.setLineParsers(ClangParser::clangParserSuite());
@@ -288,7 +305,4 @@ void ProjectExplorerTest::testClangOutputParser()
                           tasks, childStdOutLines, childStdErrLines,
                           outputLines);
 }
-
-} // ProjectExplorer::Internal
-
-#endif // WITH_TESTS
+#endif

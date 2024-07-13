@@ -1,5 +1,27 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -52,6 +74,8 @@ class ObjectItem :
         public IAlignable,
         public IEditable
 {
+    Q_DECLARE_TR_FUNCTIONS(qmt::ObjectItem)
+
 protected:
     enum ResizeFlags {
         ResizeUnlocked,
@@ -120,12 +144,8 @@ protected:
                            StereotypeIcon::Display stereotypeDisplay, const Style *style);
     StereotypesItem *stereotypesItem() const { return m_stereotypesItem; }
     CustomIconItem *stereotypeIconItem() const { return m_stereotypeIcon; }
-    CustomIconItem *customIconItem() const { return m_customIcon; }
-    QSizeF customIconItemMinimumSize(const CustomIconItem* customIconItem, qreal minimumWidth,
+    QSizeF stereotypeIconMinimumSize(const StereotypeIcon &stereotypeIcon, qreal minimumWidth,
                                      qreal minimumHeight) const;
-    void correctAutoSize(const CustomIconItem *customIconItem, qreal& width, qreal& height,
-                           qreal minimumWidth, qreal minimumHeight) const;
-    void updateCustomIcon(const Style* style);
     bool suppressTextDisplay() const;
     void updateNameItem(const Style *style);
     EditableTextItem *nameItem() const { return m_nameItem; }
@@ -134,7 +154,7 @@ protected:
     void setObjectName(const QString &objectName);
 
     void updateDepth();
-    void updateSelectionMarker(const CustomIconItem* customIconItem);
+    void updateSelectionMarker(CustomIconItem *customIconItem);
     void updateSelectionMarker(ResizeFlags resizeFlags);
     void updateSelectionMarkerGeometry(const QRectF &objectRect);
     void updateRelationStarter();
@@ -173,7 +193,6 @@ private:
     StereotypeIcon::Display m_stereotypeIconDisplay = StereotypeIcon::DisplayLabel;
     StereotypesItem *m_stereotypesItem = nullptr;
     CustomIconItem *m_stereotypeIcon = nullptr;
-    CustomIconItem *m_customIcon = nullptr;
     EditableTextItem *m_nameItem = nullptr;
     RectangularSelectionItem *m_selectionMarker = nullptr;
     RelationStarter *m_relationStarter = nullptr;

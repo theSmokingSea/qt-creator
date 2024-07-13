@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "linuxiccparser.h"
 #include "ldparser.h"
@@ -8,11 +30,11 @@
 
 #include <utils/qtcassert.h>
 
+using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace ProjectExplorer {
-
-LinuxIccParser::LinuxIccParser()
+LinuxIccParser::LinuxIccParser() :
+    m_temporary(Task())
 {
     setObjectName(QLatin1String("LinuxIccParser"));
     // main.cpp(53): error #308: function \"AClass::privatefunc\" (declared at line 4 of \"main.h\") is inaccessible
@@ -50,6 +72,7 @@ OutputLineParser::Result LinuxIccParser::handleLine(const QString &line, OutputF
     if (m_expectFirstLine) {
         const QRegularExpressionMatch match = m_firstLine.match(line);
         if (match.hasMatch()) {
+            // Clear out old task
             Task::TaskType type = Task::Unknown;
             QString category = match.captured(4);
             if (category == QLatin1String("error"))
@@ -59,8 +82,10 @@ OutputLineParser::Result LinuxIccParser::handleLine(const QString &line, OutputF
             const FilePath filePath = absoluteFilePath(FilePath::fromUserInput(match.captured(1)));
             const int lineNo = match.captured(2).toInt();
             LinkSpecs linkSpecs;
-            addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, -1, match, 1);
-            createOrAmendTask(type, match.captured(6).trimmed(), line, false, filePath, lineNo);
+            addLinkSpecForAbsoluteFilePath(linkSpecs, filePath, lineNo, match, 1);
+            m_temporary = CompileTask(type, match.captured(6).trimmed(), filePath, lineNo);
+
+            m_lines = 1;
             m_expectFirstLine = false;
             return Status::InProgress;
         }
@@ -71,14 +96,17 @@ OutputLineParser::Result LinuxIccParser::handleLine(const QString &line, OutputF
     }
     if (!m_expectFirstLine && line.trimmed().isEmpty()) { // last Line
         m_expectFirstLine = true;
-        flush();
+        scheduleTask(m_temporary, m_lines);
+        m_temporary = Task();
         return Status::Done;
     }
     const QRegularExpressionMatch match = m_continuationLines.match(line);
     if (!m_expectFirstLine && match.hasMatch()) {
-        createOrAmendTask(Task::Unknown, {}, line, true);
+        m_temporary.details.append(match.captured(1).trimmed());
+        ++m_lines;
         return Status::InProgress;
     }
+    QTC_CHECK(m_temporary.isNull());
     return Status::NotHandled;
 }
 
@@ -92,16 +120,23 @@ QList<OutputLineParser *> LinuxIccParser::iccParserSuite()
     return {new LinuxIccParser, new Internal::LldParser, new LdParser};
 }
 
-} // ProjectExplorer
+void LinuxIccParser::flush()
+{
+    if (m_temporary.isNull())
+        return;
+
+    setDetailsFormat(m_temporary);
+    Task t = m_temporary;
+    m_temporary.clear();
+    scheduleTask(t, m_lines, 1);
+}
 
 #ifdef WITH_TESTS
 #   include <QTest>
-#   include "projectexplorer_test.h"
+#   include "projectexplorer.h"
 #   include "outputparser_test.h"
 
-namespace ProjectExplorer::Internal {
-
-void ProjectExplorerTest::testLinuxIccOutputParsers_data()
+void ProjectExplorerPlugin::testLinuxIccOutputParsers_data()
 {
     QTest::addColumn<QString>("input");
     QTest::addColumn<OutputParserTester::Channel>("inputChannel");
@@ -137,10 +172,8 @@ void ProjectExplorerTest::testLinuxIccOutputParsers_data()
             << QString() << QString::fromLatin1("\n")
             << (Tasks()
                 << CompileTask(Task::Error,
-                           "identifier \"f\" is undefined\n"
-                           "main.cpp(13): error: identifier \"f\" is undefined\n"
-                           "      f(0);",
-                           FilePath::fromUserInput(QLatin1String("main.cpp")), 13))
+                               "identifier \"f\" is undefined\nf(0);",
+                               FilePath::fromUserInput(QLatin1String("main.cpp")), 13))
             << QString();
 
     // same, with PCH remark
@@ -154,10 +187,8 @@ void ProjectExplorerTest::testLinuxIccOutputParsers_data()
             << QString() << QString::fromLatin1("\n")
             << (Tasks()
                 << CompileTask(Task::Error,
-                           "identifier \"f\" is undefined\n"
-                           "main.cpp(13): error: identifier \"f\" is undefined\n"
-                           "      f(0);",
-                           FilePath::fromUserInput("main.cpp"), 13))
+                               "identifier \"f\" is undefined\nf(0);",
+                               FilePath::fromUserInput("main.cpp"), 13))
             << QString();
 
 
@@ -170,10 +201,8 @@ void ProjectExplorerTest::testLinuxIccOutputParsers_data()
             << QString() << QString::fromLatin1("\n")
             << (Tasks()
                 << CompileTask(Task::Error,
-                           "function \"AClass::privatefunc\" (declared at line 4 of \"main.h\") is inaccessible\n"
-                           "main.cpp(53): error #308: function \"AClass::privatefunc\" (declared at line 4 of \"main.h\") is inaccessible\n"
-                           "      b.privatefunc();",
-                           FilePath::fromUserInput("main.cpp"), 53))
+                               "function \"AClass::privatefunc\" (declared at line 4 of \"main.h\") is inaccessible\nb.privatefunc();",
+                               FilePath::fromUserInput("main.cpp"), 53))
             << QString();
 
     QTest::newRow("simple warning")
@@ -185,14 +214,12 @@ void ProjectExplorerTest::testLinuxIccOutputParsers_data()
             << QString() << QString::fromLatin1("\n")
             << (Tasks()
                 << CompileTask(Task::Warning,
-                           "use of \"=\" where \"==\" may have been intended\n"
-                           "main.cpp(41): warning #187: use of \"=\" where \"==\" may have been intended\n"
-                           "      while (a = true)",
-                           FilePath::fromUserInput("main.cpp"), 41))
+                               "use of \"=\" where \"==\" may have been intended\nwhile (a = true)",
+                               FilePath::fromUserInput("main.cpp"), 41))
             << QString();
 }
 
-void ProjectExplorerTest::testLinuxIccOutputParsers()
+void ProjectExplorerPlugin::testLinuxIccOutputParsers()
 {
     OutputParserTester testbench;
     testbench.setLineParsers(LinuxIccParser::iccParserSuite());
@@ -208,6 +235,4 @@ void ProjectExplorerTest::testLinuxIccOutputParsers()
                           outputLines);
 }
 
-} // ProjectExplorer::Internal
-
-#endif // WITH_TESTS
+#endif

@@ -1,14 +1,37 @@
-// Copyright (C) 2016 Lorenz Haas
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Lorenz Haas
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 // Tested with version 2.01, 2.02, 2.02.1, 2.03 and 2.04
 
 #include "artisticstyle.h"
 
+#include "artisticstyleconstants.h"
+#include "artisticstyleoptionspage.h"
+
 #include "../beautifierconstants.h"
-#include "../beautifiertool.h"
-#include "../beautifiertr.h"
-#include "../configurationpanel.h"
+#include "../beautifierplugin.h"
 
 #include <coreplugin/actionmanager/actioncontainer.h>
 #include <coreplugin/actionmanager/actionmanager.h>
@@ -16,7 +39,6 @@
 #include <coreplugin/coreconstants.h>
 #include <coreplugin/editormanager/editormanager.h>
 #include <coreplugin/editormanager/ieditor.h>
-#include <coreplugin/icore.h>
 #include <coreplugin/idocument.h>
 
 #include <projectexplorer/project.h>
@@ -27,344 +49,121 @@
 
 #include <utils/fileutils.h>
 #include <utils/hostosinfo.h>
-#include <utils/layoutbuilder.h>
-#include <utils/pathchooser.h>
-#include <utils/qtcprocess.h>
 #include <utils/stringutils.h>
 
 #include <QAction>
-#include <QApplication>
-#include <QDateTime>
-#include <QFile>
-#include <QGroupBox>
 #include <QMenu>
-#include <QRegularExpression>
 #include <QVersionNumber>
-#include <QXmlStreamWriter>
 
 using namespace TextEditor;
-using namespace Utils;
 
-namespace Beautifier::Internal {
+namespace Beautifier {
+namespace Internal {
 
-// Settings
-
-static QString asDisplayName() { return Tr::tr("Artistic Style"); }
-
-const char SETTINGS_NAME[]            = "artisticstyle";
-
-class ArtisticStyleSettings final : public AbstractSettings
+ArtisticStyle::ArtisticStyle()
 {
-public:
-    ArtisticStyleSettings()
-        : AbstractSettings(SETTINGS_NAME, ".astyle")
-    {
-        setVersionRegExp(QRegularExpression("([2-9]{1})\\.([0-9]{1,2})(\\.[1-9]{1})?$"));
-        command.setLabelText(Tr::tr("Artistic Style command:"));
-        command.setDefaultValue("astyle");
-        command.setPromptDialogTitle(BeautifierTool::msgCommandPromptDialogTitle(asDisplayName()));
+    Core::ActionContainer *menu = Core::ActionManager::createMenu("ArtisticStyle.Menu");
+    menu->menu()->setTitle(tr("&Artistic Style"));
 
-        useOtherFiles.setSettingsKey("useOtherFiles");
-        useOtherFiles.setLabelText(Tr::tr("Use file *.astylerc defined in project files"));
-        useOtherFiles.setDefaultValue(true);
+    m_formatFile = new QAction(BeautifierPlugin::msgFormatCurrentFile(), this);
+    menu->addAction(Core::ActionManager::registerAction(m_formatFile, "ArtisticStyle.FormatFile"));
+    connect(m_formatFile, &QAction::triggered, this, &ArtisticStyle::formatFile);
 
-        useSpecificConfigFile.setSettingsKey("useSpecificConfigFile");
-        useSpecificConfigFile.setLabelText(Tr::tr("Use specific config file:"));
+    Core::ActionManager::actionContainer(Constants::MENU_ID)->addMenu(menu);
 
-        specificConfigFile.setSettingsKey("specificConfigFile");
-        specificConfigFile.setExpectedKind(PathChooser::File);
-        specificConfigFile.setPromptDialogFilter(Tr::tr("AStyle (*.astylerc)"));
-
-        useHomeFile.setSettingsKey("useHomeFile");
-        useHomeFile.setLabelText(Tr::tr("Use file .astylerc or astylerc in HOME").
-                                 replace("HOME", QDir::toNativeSeparators(QDir::home().absolutePath())));
-
-        useCustomStyle.setSettingsKey("useCustomStyle");
-        useCustomStyle.setLabelText(Tr::tr("Use customized style:"));
-
-        customStyle.setSettingsKey("customStyle");
-
-        documentationFilePath =
-            Core::ICore::userResourcePath(Beautifier::Constants::SETTINGS_DIRNAME)
-                .pathAppended(Beautifier::Constants::DOCUMENTATION_DIRNAME)
-                .pathAppended(SETTINGS_NAME)
-                .stringAppended(".xml");
-
-        read();
-    }
-
-    void createDocumentationFile() const final
-    {
-        Process process;
-        process.setCommand({command(), {"-h"}});
-        using namespace std::chrono_literals;
-        process.runBlocking(2s);
-        if (process.result() != ProcessResult::FinishedWithSuccess)
-            return;
-
-        if (!documentationFilePath.exists())
-            documentationFilePath.parentDir().ensureWritableDir();
-
-        QFile file(documentationFilePath.toFSPathString());
-        if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text))
-            return;
-
-        bool contextWritten = false;
-        QXmlStreamWriter stream(&file);
-        stream.setAutoFormatting(true);
-        stream.writeStartDocument("1.0", true);
-        stream.writeComment("Created " + QDateTime::currentDateTime().toString(Qt::ISODate));
-        stream.writeStartElement(Constants::DOCUMENTATION_XMLROOT);
-
-        // astyle writes its output to 'error'...
-        const QStringList lines = process.cleanedStdErr().split(QLatin1Char('\n'));
-        QStringList keys;
-        QStringList docu;
-        for (QString line : lines) {
-            line = line.trimmed();
-            if ((line.startsWith("--") && !line.startsWith("---")) || line.startsWith("OR ")) {
-                const QStringList rawKeys = line.split(" OR ", Qt::SkipEmptyParts);
-                for (QString k : rawKeys) {
-                    k = k.trimmed();
-                    k.remove('#');
-                    keys << k;
-                    if (k.startsWith("--"))
-                        keys << k.right(k.size() - 2);
-                }
-            } else {
-                if (line.isEmpty()) {
-                    if (!keys.isEmpty()) {
-                        // Write entry
-                        stream.writeStartElement(Constants::DOCUMENTATION_XMLENTRY);
-                        stream.writeStartElement(Constants::DOCUMENTATION_XMLKEYS);
-                        for (const QString &key : std::as_const(keys))
-                            stream.writeTextElement(Constants::DOCUMENTATION_XMLKEY, key);
-                        stream.writeEndElement();
-                        const QString text = "<p><span class=\"option\">"
-                                             + keys.filter(QRegularExpression("^\\-")).join(", ") + "</span></p><p>"
-                                             + (docu.join(' ').toHtmlEscaped()) + "</p>";
-                        stream.writeTextElement(Constants::DOCUMENTATION_XMLDOC, text);
-                        stream.writeEndElement();
-                        contextWritten = true;
-                    }
-                    keys.clear();
-                    docu.clear();
-                } else if (!keys.isEmpty()) {
-                    docu << line;
-                }
-            }
-        }
-
-        stream.writeEndElement();
-        stream.writeEndDocument();
-
-        // An empty file causes error messages and a contextless file preventing this function to run
-        // again in order to generate the documentation successfully. Thus delete the file.
-        if (!contextWritten) {
-            file.close();
-            file.remove();
-        }
-    }
-
-    BoolAspect useOtherFiles{this};
-    BoolAspect useSpecificConfigFile{this};
-    FilePathAspect specificConfigFile{this};
-    BoolAspect useHomeFile{this};
-    BoolAspect useCustomStyle{this};
-    StringAspect customStyle{this};
-};
-
-static ArtisticStyleSettings &settings()
-{
-    static ArtisticStyleSettings theSettings;
-    return theSettings;
+    connect(&m_settings, &ArtisticStyleSettings::supportedMimeTypesChanged,
+            [this] { updateActions(Core::EditorManager::currentEditor()); });
 }
 
-// ArtisticStyleSettingsPage
-
-class ArtisticStyleSettingsPageWidget : public Core::IOptionsPageWidget
+QString ArtisticStyle::id() const
 {
-public:
-    ArtisticStyleSettingsPageWidget()
-    {
-        QGroupBox *options = nullptr;
+    return QLatin1String(Constants::ARTISTICSTYLE_DISPLAY_NAME);
+}
 
-        auto configurations = new ConfigurationPanel(this);
-        configurations->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-        configurations->setSettings(&settings());
-        configurations->setCurrentConfiguration(settings().customStyle());
-
-        using namespace Layouting;
-
-        ArtisticStyleSettings &s = settings();
-
-        Column {
-            Group {
-                title(Tr::tr("Configuration")),
-                Form {
-                    s.command, br,
-                    s.supportedMimeTypes
-                }
-            },
-            Group {
-                title(Tr::tr("Options")),
-                bindTo(&options),
-                Column {
-                    s.useOtherFiles,
-                    Row { s.useSpecificConfigFile, s.specificConfigFile },
-                    s.useHomeFile,
-                    Row { s.useCustomStyle, configurations },
-                }
-            },
-            st
-        }.attachTo(this);
-
-        setOnApply([&s, configurations] {
-            s.customStyle.setValue(configurations->currentConfiguration());
-            s.apply();
-            s.save();
-        });
-        setOnCancel([&s] { s.cancel(); });
-
-        s.read();
-
-        connect(s.command.pathChooser(), &PathChooser::validChanged, options, &QWidget::setEnabled);
-        options->setEnabled(s.command.pathChooser()->isValid());
-    }
-};
-
-// ArtisticStyle
-
-class ArtisticStyle final : public BeautifierTool
+void ArtisticStyle::updateActions(Core::IEditor *editor)
 {
-public:
-    ArtisticStyle()
-    {
-        const Id menuId = "ArtisticStyle.Menu";
-        Core::MenuBuilder(menuId)
-            .setTitle(Tr::tr("&Artistic Style"))
-            .addToContainer(Constants::MENU_ID);
+    m_formatFile->setEnabled(editor && m_settings.isApplicable(editor->document()));
+}
 
-        Core::ActionBuilder(this, "ArtisticStyle.FormatFile")
-            .setText(msgFormatCurrentFile())
-            .bindContextAction(&m_formatFile)
-            .addToContainer(menuId)
-            .addOnTriggered(this, &ArtisticStyle::formatFile);
-
-        settings().supportedMimeTypes.addOnChanged(this, [this] {
-            updateActions(Core::EditorManager::currentEditor());
-        });
+void ArtisticStyle::formatFile()
+{
+    const QString cfgFileName = configurationFile();
+    if (cfgFileName.isEmpty()) {
+        BeautifierPlugin::showError(BeautifierPlugin::msgCannotGetConfigurationFile(
+                                        tr(Constants::ARTISTICSTYLE_DISPLAY_NAME)));
+    } else {
+        formatCurrentFile(command(cfgFileName));
     }
+}
 
-    QString id() const final
-    {
-        return "Artistic Style";
-    }
+QString ArtisticStyle::configurationFile() const
+{
+    if (m_settings.useCustomStyle())
+        return m_settings.styleFileName(m_settings.customStyle());
 
-    void updateActions(Core::IEditor *editor) final
-    {
-        m_formatFile->setEnabled(editor && settings().isApplicable(editor->document()));
-    }
-
-    Command textCommand() const final
-    {
-        const FilePath cfgFile = configurationFile();
-        return cfgFile.isEmpty() ? Command() : textCommand(cfgFile.toFSPathString());
-    }
-
-    bool isApplicable(const Core::IDocument *document) const final
-    {
-        return settings().isApplicable(document);
-    }
-
-    void formatFile()
-    {
-        const FilePath cfgFileName = configurationFile();
-        if (cfgFileName.isEmpty())
-            showError(BeautifierTool::msgCannotGetConfigurationFile(asDisplayName()));
-        else
-            formatCurrentFile(textCommand(cfgFileName.toFSPathString()));
-    }
-
-    FilePath configurationFile() const
-    {
-        if (settings().useCustomStyle())
-            return settings().styleFileName(settings().customStyle());
-
-        if (settings().useOtherFiles()) {
-            if (const ProjectExplorer::Project *project
+    if (m_settings.useOtherFiles()) {
+        if (const ProjectExplorer::Project *project
                 = ProjectExplorer::ProjectTree::currentProject()) {
-                const FilePaths astyleRcfiles = project->files(
-                    [](const ProjectExplorer::Node *n) { return n->filePath().endsWith(".astylerc"); });
-                for (const FilePath &file : astyleRcfiles) {
-                    if (file.isReadableFile())
-                        return file;
-                }
+            const Utils::FilePaths astyleRcfiles = project->files(
+                [](const ProjectExplorer::Node *n) { return n->filePath().endsWith(".astylerc"); });
+            for (const Utils::FilePath &file : astyleRcfiles) {
+                const QFileInfo fi = file.toFileInfo();
+                if (fi.isReadable())
+                    return file.toString();
             }
         }
-
-        if (settings().useSpecificConfigFile()) {
-            const FilePath file = settings().specificConfigFile();
-            if (file.exists())
-                return file;
-        }
-
-        if (settings().useHomeFile()) {
-            const FilePath homeDirectory = FileUtils::homePath();
-            FilePath file = homeDirectory / ".astylerc";
-            if (file.exists())
-                return file;
-            file = homeDirectory / "astylerc";
-            if (file.exists())
-                return file;
-        }
-
-        return {};
     }
 
-    Command textCommand(const QString &cfgFile) const
-    {
-        Command cmd;
-        cmd.setExecutable(settings().command());
-        cmd.addOption("-q");
-        cmd.addOption("--options=" + cfgFile);
-
-        const QVersionNumber version = settings().version();
-        if (version > QVersionNumber(2, 3)) {
-            cmd.setProcessing(Command::PipeProcessing);
-            if (version == QVersionNumber(2, 4))
-                cmd.setPipeAddsNewline(true);
-            cmd.setReturnsCRLF(Utils::HostOsInfo::isWindowsHost());
-            cmd.addOption("-z2");
-        } else {
-            cmd.addOption("%file");
-        }
-
-        return cmd;
+    if (m_settings.useSpecificConfigFile()) {
+        const Utils::FilePath file = m_settings.specificConfigFile();
+        if (file.exists())
+            return file.toUserOutput();
     }
 
-    QAction *m_formatFile = nullptr;
-};
-
-//  ArtisticStyleSettingsPage
-
-class ArtisticStyleSettingsPage final : public Core::IOptionsPage
-{
-public:
-    ArtisticStyleSettingsPage()
-    {
-        setId("ArtisticStyle");
-        setDisplayName(asDisplayName());
-        setCategory(Constants::OPTION_CATEGORY);
-        setWidgetCreator([] { return new ArtisticStyleSettingsPageWidget; });
+    if (m_settings.useHomeFile()) {
+        const QDir homeDirectory = QDir::home();
+        QString file = homeDirectory.filePath(".astylerc");
+        if (QFile::exists(file))
+            return file;
+        file = homeDirectory.filePath("astylerc");
+        if (QFile::exists(file))
+            return file;
     }
-};
 
-const ArtisticStyleSettingsPage settingsPage;
-
-void setupArtisticStyle()
-{
-    static ArtisticStyle theArtisticStyle;
+    return QString();
 }
 
-} // Beautifier::Internal
+Command ArtisticStyle::command() const
+{
+    const QString cfgFile = configurationFile();
+    return cfgFile.isEmpty() ? Command() : command(cfgFile);
+}
+
+bool ArtisticStyle::isApplicable(const Core::IDocument *document) const
+{
+    return m_settings.isApplicable(document);
+}
+
+Command ArtisticStyle::command(const QString &cfgFile) const
+{
+    Command command;
+    command.setExecutable(m_settings.command().toString());
+    command.addOption("-q");
+    command.addOption("--options=" + cfgFile);
+
+    const QVersionNumber version = m_settings.version();
+    if (version > QVersionNumber(2, 3)) {
+        command.setProcessing(Command::PipeProcessing);
+        if (version == QVersionNumber(2, 4))
+            command.setPipeAddsNewline(true);
+        command.setReturnsCRLF(Utils::HostOsInfo::isWindowsHost());
+        command.addOption("-z2");
+    } else {
+        command.addOption("%file");
+    }
+
+    return command;
+}
+
+} // namespace Internal
+} // namespace Beautifier

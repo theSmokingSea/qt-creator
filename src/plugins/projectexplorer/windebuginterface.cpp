@@ -1,12 +1,33 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "windebuginterface.h"
 
 #ifdef Q_OS_WIN
 
 #include <utils/qtcassert.h>
-#include <utils/threadutils.h>
 #include <QCoreApplication>
 #include <qt_windows.h>
 
@@ -147,32 +168,31 @@ void WinDebugInterface::emitReadySignal()
 void WinDebugInterface::dispatchDebugOutput()
 {
     // Called in the thread this object was created in, not in the WinDebugInterfaceThread.
-    QTC_ASSERT(Utils::isMainThread(), return);
+    QTC_ASSERT(QThread::currentThread() == QCoreApplication::instance()->thread(), return);
 
     static size_t maxMessagesToSend = 100;
-    std::map<qint64, QList<QString>> output;
+    std::vector<std::pair<qint64, QString>> output;
     bool hasMoreOutput = false;
 
     m_outputMutex.lock();
     for (auto &entry : m_debugOutput) {
-        auto it = entry.second.begin();
-        for (; it != entry.second.end(); ++it) {
-            output[entry.first].push_back(*it);
-            if (output.size() >= maxMessagesToSend)
-                break;
-        }
-        if (it != entry.second.begin())
-            it = entry.second.erase(entry.second.begin(), it);
-        if (it != entry.second.end()) {
+        std::vector<QString> &src = entry.second;
+        if (src.empty())
+            continue;
+        QString dst;
+        size_t n = std::min(maxMessagesToSend, src.size());
+        for (size_t i = 0; i < n; ++i)
+            dst += src.at(i);
+        src.erase(src.begin(), std::next(src.begin(), n));
+        if (!src.empty())
             hasMoreOutput = true;
-            break;
-        }
+        output.emplace_back(entry.first, std::move(dst));
     }
     if (!hasMoreOutput)
         m_readySignalEmitted = false;
     m_outputMutex.unlock();
 
-    for (const auto &p : std::as_const(output))
+    for (const auto &p : qAsConst(output))
         emit debugOutput(p.first, p.second);
     if (hasMoreOutput)
         emit _q_debugOutputReady();

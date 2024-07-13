@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "profileeditor.h"
 
@@ -7,21 +29,18 @@
 #include "profilehighlighter.h"
 #include "profilehoverhandler.h"
 #include "qmakenodes.h"
+#include "qmakeproject.h"
 #include "qmakeprojectmanagerconstants.h"
 
-#include <coreplugin/coreplugintr.h>
-
+#include <coreplugin/fileiconprovider.h>
 #include <extensionsystem/pluginmanager.h>
-
+#include <qtsupport/qtsupportconstants.h>
 #include <projectexplorer/buildconfiguration.h>
 #include <projectexplorer/projectexplorerconstants.h>
-#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/target.h>
-
+#include <projectexplorer/session.h>
+#include <texteditor/texteditoractionhandler.h>
 #include <texteditor/textdocument.h>
-
-#include <utils/fsengine/fileiconprovider.h>
-#include <utils/mimeconstants.h>
 #include <utils/qtcassert.h>
 #include <utils/theme/theme.h>
 
@@ -43,7 +62,7 @@ class ProFileEditorWidget : public TextEditorWidget
 {
 private:
     void findLinkAt(const QTextCursor &,
-                    const LinkHandler &processLinkCallback,
+                    const Utils::LinkHandler &processLinkCallback,
                     bool resolveTarget = true,
                     bool inNextSplit = false) override;
     void contextMenuEvent(QContextMenuEvent *) override;
@@ -67,7 +86,7 @@ QString ProFileEditorWidget::checkForPrfFile(const QString &baseName) const
     const QmakePriFileNode *projectNode = nullptr;
 
     // FIXME: Remove this check once project nodes are fully "static".
-    for (const Project * const project : ProjectManager::projects()) {
+    for (const Project * const project : SessionManager::projects()) {
         static const auto isParsing = [](const Project *project) {
             for (const Target * const t : project->targets()) {
                 for (const BuildConfiguration * const bc : t->buildConfigurations()) {
@@ -115,22 +134,23 @@ void ProFileEditorWidget::findLinkAt(const QTextCursor &cursor,
     int line = 0;
     int column = 0;
     convertPosition(cursor.position(), &line, &column);
+    const int positionInBlock = column - 1;
 
     const QString block = cursor.block().text();
 
     // check if the current position is commented out
     const int hashPos = block.indexOf(QLatin1Char('#'));
-    if (hashPos >= 0 && hashPos < column)
+    if (hashPos >= 0 && hashPos < positionInBlock)
         return processLinkCallback(link);
 
     // find the beginning of a filename
     QString buffer;
-    int beginPos = column - 1;
-    int endPos = column;
+    int beginPos = positionInBlock - 1;
+    int endPos = positionInBlock;
 
     // Check is cursor is somewhere on $${PWD}:
-    const int chunkStart = std::max(0, column - 7);
-    const int chunkLength = 14 + std::min(0, column - 7);
+    const int chunkStart = std::max(0, positionInBlock - 7);
+    const int chunkLength = 14 + std::min(0, positionInBlock - 7);
     QString chunk = block.mid(chunkStart, chunkLength);
 
     const QString curlyPwd = "$${PWD}";
@@ -140,18 +160,18 @@ void ProFileEditorWidget::findLinkAt(const QTextCursor &cursor,
     bool doBackwardScan = true;
 
     if (posCurlyPwd >= 0) {
-        const int end = chunkStart + posCurlyPwd + curlyPwd.size();
+        const int end = chunkStart + posCurlyPwd + curlyPwd.count();
         const int start = chunkStart + posCurlyPwd;
-        if (start <= column && end >= column) {
+        if (start <= positionInBlock && end >= positionInBlock) {
             buffer = pwd;
             beginPos = chunkStart + posCurlyPwd - 1;
             endPos = end;
             doBackwardScan = false;
         }
     } else if (posPwd >= 0) {
-        const int end = chunkStart + posPwd + pwd.size();
+        const int end = chunkStart + posPwd + pwd.count();
         const int start = chunkStart + posPwd;
-        if (start <= column && end >= column) {
+        if (start <= positionInBlock && end >= positionInBlock) {
             buffer = pwd;
             beginPos = start - 1;
             endPos = end;
@@ -171,19 +191,19 @@ void ProFileEditorWidget::findLinkAt(const QTextCursor &cursor,
 
     if (doBackwardScan
             && beginPos > 0
-            && block.mid(beginPos - 1, pwd.size()) == pwd
-            && (block.at(beginPos + pwd.size() - 1) == '/' || block.at(beginPos + pwd.size() - 1) == '\\')) {
+            && block.mid(beginPos - 1, pwd.count()) == pwd
+            && (block.at(beginPos + pwd.count() - 1) == '/' || block.at(beginPos + pwd.count() - 1) == '\\')) {
         buffer.prepend("$$");
         beginPos -= 2;
     } else if (doBackwardScan
-               && beginPos >= curlyPwd.size() - 1
-               && block.mid(beginPos - curlyPwd.size() + 1, curlyPwd.size()) == curlyPwd) {
+               && beginPos >= curlyPwd.count() - 1
+               && block.mid(beginPos - curlyPwd.count() + 1, curlyPwd.count()) == curlyPwd) {
         buffer.prepend(pwd);
-        beginPos -= curlyPwd.size();
+        beginPos -= curlyPwd.count();
     }
 
     // find the end of a filename
-    while (endPos < block.size()) {
+    while (endPos < block.count()) {
         QChar c = block.at(endPos);
         if (isValidFileNameChar(c)) {
             buffer.append(c);
@@ -209,7 +229,7 @@ void ProFileEditorWidget::findLinkAt(const QTextCursor &cursor,
     QDir dir(textDocument()->filePath().toFileInfo().absolutePath());
     QString fileName = dir.filePath(buffer);
     QFileInfo fi(fileName);
-    if (HostOsInfo::isWindowsHost() && fileName.startsWith("//")) {
+    if (Utils::HostOsInfo::isWindowsHost() && fileName.startsWith("//")) {
         // Windows network paths are not supported here since checking for their existence can
         // lock the gui thread. See: QTCREATORBUG-26579
     } else if (fi.exists()) {
@@ -221,13 +241,13 @@ void ProFileEditorWidget::findLinkAt(const QTextCursor &cursor,
             else
                 return processLinkCallback(link);
         }
-        link.targetFilePath = FilePath::fromString(QDir::cleanPath(fileName));
+        link.targetFilePath = Utils::FilePath::fromString(QDir::cleanPath(fileName));
     } else {
-        link.targetFilePath = FilePath::fromString(checkForPrfFile(buffer));
+        link.targetFilePath = Utils::FilePath::fromString(checkForPrfFile(buffer));
     }
     if (!link.targetFilePath.isEmpty()) {
-        link.linkTextStart = cursor.position() - column + beginPos + 1;
-        link.linkTextEnd = cursor.position() - column + endPos;
+        link.linkTextStart = cursor.position() - positionInBlock + beginPos + 1;
+        link.linkTextEnd = cursor.position() - positionInBlock + endPos;
     }
     processLinkCallback(link);
 }
@@ -241,7 +261,7 @@ static TextDocument *createProFileDocument()
 {
     auto doc = new TextDocument;
     doc->setId(Constants::PROFILE_EDITOR_ID);
-    doc->setMimeType(Utils::Constants::PROFILE_MIMETYPE);
+    doc->setMimeType(QLatin1String(Constants::PROFILE_MIMETYPE));
     // qmake project files do not support UTF8-BOM
     // If the BOM would be added qmake would fail and Qt Creator couldn't parse the project file
     doc->setSupportsUtf8Bom(false);
@@ -254,15 +274,14 @@ static TextDocument *createProFileDocument()
 
 ProFileEditorFactory::ProFileEditorFactory()
 {
-    using namespace Utils::Constants;
     setId(Constants::PROFILE_EDITOR_ID);
-    setDisplayName(::Core::Tr::tr(Constants::PROFILE_EDITOR_DISPLAY_NAME));
-    addMimeType(PROFILE_MIMETYPE);
-    addMimeType(PROINCLUDEFILE_MIMETYPE);
-    addMimeType(PROFEATUREFILE_MIMETYPE);
-    addMimeType(PROCONFIGURATIONFILE_MIMETYPE);
-    addMimeType(PROCACHEFILE_MIMETYPE);
-    addMimeType(PROSTASHFILE_MIMETYPE);
+    setDisplayName(QCoreApplication::translate("OpenWith::Editors", Constants::PROFILE_EDITOR_DISPLAY_NAME));
+    addMimeType(Constants::PROFILE_MIMETYPE);
+    addMimeType(Constants::PROINCLUDEFILE_MIMETYPE);
+    addMimeType(Constants::PROFEATUREFILE_MIMETYPE);
+    addMimeType(Constants::PROCONFIGURATIONFILE_MIMETYPE);
+    addMimeType(Constants::PROCACHEFILE_MIMETYPE);
+    addMimeType(Constants::PROSTASHFILE_MIMETYPE);
 
     setDocumentCreator(createProFileDocument);
     setEditorWidgetCreator([]() { return new ProFileEditorWidget; });
@@ -271,19 +290,19 @@ ProFileEditorFactory::ProFileEditorFactory()
     completionAssistProvider->setDynamicCompletionFunction(&TextEditor::pathComplete);
     setCompletionAssistProvider(completionAssistProvider);
 
-    setCommentDefinition(CommentDefinition::HashStyle);
-    setOptionalActionMask(OptionalActions::UnCommentSelection
-                | OptionalActions::JumpToFileUnderCursor);
+    setCommentDefinition(Utils::CommentDefinition::HashStyle);
+    setEditorActionHandlers(TextEditorActionHandler::UnCommentSelection
+                | TextEditorActionHandler::JumpToFileUnderCursor);
 
     addHoverHandler(new ProFileHoverHandler);
     setSyntaxHighlighterCreator([]() { return new ProFileHighlighter; });
 
     const QString defaultOverlay = QLatin1String(ProjectExplorer::Constants::FILEOVERLAY_QT);
-    FileIconProvider::registerIconOverlayForSuffix(
+    Core::FileIconProvider::registerIconOverlayForSuffix(
                 creatorTheme()->imageFile(Theme::IconOverlayPro, defaultOverlay), "pro");
-    FileIconProvider::registerIconOverlayForSuffix(
+    Core::FileIconProvider::registerIconOverlayForSuffix(
                 creatorTheme()->imageFile(Theme::IconOverlayPri, defaultOverlay), "pri");
-    FileIconProvider::registerIconOverlayForSuffix(
+    Core::FileIconProvider::registerIconOverlayForSuffix(
                 creatorTheme()->imageFile(Theme::IconOverlayPrf, defaultOverlay), "prf");
 }
 

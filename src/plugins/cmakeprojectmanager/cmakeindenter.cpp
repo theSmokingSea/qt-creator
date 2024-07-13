@@ -1,24 +1,36 @@
-// Copyright (C) 2016 Jan Dalheimer <jan@dalheimer.de>
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jan Dalheimer <jan@dalheimer.de>
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "cmakeindenter.h"
 
-namespace CMakeProjectManager::Internal {
+namespace CMakeProjectManager {
+namespace Internal {
 
-class CMakeIndenter final : public TextEditor::TextIndenter
-{
-public:
-    explicit CMakeIndenter(QTextDocument *doc)
-        : TextEditor::TextIndenter(doc)
-    {}
-
-    bool isElectricCharacter(const QChar &ch) const final;
-
-    int indentFor(const QTextBlock &block,
-                  const TextEditor::TabSettings &tabSettings,
-                  int cursorPositionInEditor = -1) final;
-};
-
+CMakeIndenter::CMakeIndenter(QTextDocument *doc)
+    : TextEditor::TextIndenter(doc)
+{}
 
 bool CMakeIndenter::isElectricCharacter(const QChar &ch) const
 {
@@ -55,7 +67,6 @@ static bool lineContainsFunction(const QString &line, const QString &function)
     }
     return false;
 }
-
 static bool lineStartsBlock(const QString &line)
 {
     return lineContainsFunction(line, QStringLiteral("function")) ||
@@ -64,10 +75,8 @@ static bool lineStartsBlock(const QString &line)
             lineContainsFunction(line, QStringLiteral("while")) ||
             lineContainsFunction(line, QStringLiteral("if")) ||
             lineContainsFunction(line, QStringLiteral("elseif")) ||
-            lineContainsFunction(line, QStringLiteral("else")) ||
-            lineContainsFunction(line, QStringLiteral("block"));
+            lineContainsFunction(line, QStringLiteral("else"));
 }
-
 static bool lineEndsBlock(const QString &line)
 {
     return lineContainsFunction(line, QStringLiteral("endfunction")) ||
@@ -76,10 +85,8 @@ static bool lineEndsBlock(const QString &line)
             lineContainsFunction(line, QStringLiteral("endwhile")) ||
             lineContainsFunction(line, QStringLiteral("endif")) ||
             lineContainsFunction(line, QStringLiteral("elseif")) ||
-            lineContainsFunction(line, QStringLiteral("else")) ||
-            lineContainsFunction(line, QStringLiteral("endblock"));
+            lineContainsFunction(line, QStringLiteral("else"));
 }
-
 static bool lineIsEmpty(const QString &line)
 {
     for (const QChar &c : line) {
@@ -126,9 +133,7 @@ int CMakeIndenter::indentFor(const QTextBlock &block,
     return qMax(0, indentation);
 }
 
-TextEditor::Indenter *createCMakeIndenter(QTextDocument *doc)
-{
-    return new CMakeIndenter(doc);
-}
+} // namespace Internal
+} // namespace CMakeProjectManager
 
-} // CMakeProjectManager::Internal
+

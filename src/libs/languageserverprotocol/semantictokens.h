@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #pragma once
 
@@ -125,7 +147,7 @@ public:
      * A server can then instead of computing all semantic tokens again simply
      * send a delta.
      */
-    std::optional<QString> resultId() const { return optionalValue<QString>(resultIdKey); }
+    Utils::optional<QString> resultId() const { return optionalValue<QString>(resultIdKey); }
     void setResultId(const QString &resultId) { insert(resultIdKey, resultId); }
     void clearResultId() { remove(resultIdKey); }
 
@@ -142,7 +164,7 @@ public:
 };
 
 class LANGUAGESERVERPROTOCOL_EXPORT SemanticTokensResult
-    : public std::variant<SemanticTokens, std::nullptr_t>
+    : public Utils::variant<SemanticTokens, std::nullptr_t>
 {
 public:
     using variant::variant;
@@ -169,7 +191,7 @@ public:
     int deleteCount() const { return typedValue<int>(deleteCountKey); }
     void setDeleteCount(int deleteCount) { insert(deleteCountKey, deleteCount); }
 
-    std::optional<QList<int>> data() const { return optionalArray<int>(dataKey); }
+    Utils::optional<QList<int>> data() const { return optionalArray<int>(dataKey); }
     void setData(const QList<int> &value) { insertArray(dataKey, value); }
     void clearData() { remove(dataKey); }
 
@@ -193,7 +215,7 @@ public:
 };
 
 class LANGUAGESERVERPROTOCOL_EXPORT SemanticTokensDeltaResult
-    : public std::variant<SemanticTokens, SemanticTokensDelta, std::nullptr_t>
+    : public Utils::variant<SemanticTokens, SemanticTokensDelta, std::nullptr_t>
 {
 public:
     using variant::variant;

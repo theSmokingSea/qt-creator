@@ -1,5 +1,5 @@
-if (NOT TARGET Qt::Help)
-  # Do not built without Qt::Help being available
+if (NOT TARGET Qt5::Help)
+  # Do not built without Qt5::Help being available
   return()
 endif()
 
@@ -12,7 +12,7 @@ if (isMultiConfig)
 endif()
 
 add_qtc_library(shared_help STATIC
-  DEPENDS Utils Core PUBLIC Qt::Help Qt::PrintSupport Qt::Widgets
+  DEPENDS Utils Core PUBLIC Qt5::Help Qt5::PrintSupport Qt5::Widgets
   PUBLIC_INCLUDES
     "${PLUGIN_SOURCE_DIR}/help"
     "${PLUGIN_SOURCE_DIR}"
@@ -20,9 +20,16 @@ add_qtc_library(shared_help STATIC
     "${CMAKE_CURRENT_BINARY_DIR}/"
     "${CMAKE_CURRENT_LIST_DIR}"
   SOURCES
+    bookmarkdialog.ui
     bookmarkmanager.cpp bookmarkmanager.h
     contentwindow.cpp contentwindow.h
+    filternamedialog.cpp filternamedialog.h filternamedialog.ui
     helpicons.h
     indexwindow.cpp indexwindow.h
-    topicchooser.cpp topicchooser.h
+    topicchooser.cpp topicchooser.h topicchooser.ui
+)
+
+extend_qtc_library(shared_help
+  CONDITION Qt5_VERSION VERSION_GREATER_EQUAL 5.15.0
+  DEFINES HELP_NEW_FILTER_ENGINE
 )

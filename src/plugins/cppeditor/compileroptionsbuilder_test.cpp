@@ -1,5 +1,27 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "compileroptionsbuilder_test.h"
 
@@ -35,18 +57,14 @@ public:
         rpp.setQtVersion(Utils::QtMajorVersion::Qt5);
         rpp.setHeaderPaths(headerPaths);
         rpp.setConfigFileName(projectConfigFile);
-        ToolchainInfo tcInfo;
+        ToolChainInfo tcInfo;
         tcInfo.type = toolchainType;
+        tcInfo.wordWidth = 64;
         tcInfo.targetTriple = targetTriple;
-        tcInfo.abi = Abi::fromString(targetTriple);
-        if (!tcInfo.abi.isValid()) {
-            tcInfo.abi = Abi(Abi::X86Architecture, Abi::DarwinOS, Abi::FreeBsdFlavor,
-                             Abi::MachOFormat, 64);
-        }
-        tcInfo.isMsvc2015Toolchain = isMsvc2015;
+        tcInfo.isMsvc2015ToolChain = isMsvc2015;
         tcInfo.extraCodeModelFlags = extraFlags;
         tcInfo.macroInspectionRunner = [this](const QStringList &) {
-            return Toolchain::MacroInspectionReport{toolchainMacros, languageVersion};
+            return ToolChain::MacroInspectionReport{toolchainMacros, languageVersion};
         };
         RawProjectPartFlags rppFlags;
         rppFlags.commandLineFlags = flags;
@@ -85,7 +103,7 @@ public:
     QStringList extraFlags;
     bool isMsvc2015 = false;
 
-    std::optional<CompilerOptionsBuilder> compilerOptionsBuilder;
+    Utils::optional<CompilerOptionsBuilder> compilerOptionsBuilder;
 
 private:
     ProjectPart::ConstPtr projectPart;
@@ -196,7 +214,7 @@ void CompilerOptionsBuilderTest::testHeaderPathOptionsOrder()
 
     QCOMPARE(compilerOptionsBuilder.options(),
              (QStringList{"-nostdinc", "-nostdinc++", "-I" + t.toNative("/tmp/path"),
-                          "-isystem", t.toNative("/tmp/system_path"), "-isystem", t.toNative("/dummy"),
+                         "-I" + t.toNative("/tmp/system_path"), "-isystem", t.toNative("/dummy"),
                           "-isystem", t.toNative("/tmp/builtin_path")}));
 }
 
@@ -212,9 +230,9 @@ void CompilerOptionsBuilderTest::testHeaderPathOptionsOrderMsvc()
 
     QCOMPARE(compilerOptionsBuilder.options(),
              (QStringList{"-nostdinc", "-nostdinc++", "-I" + t.toNative("/tmp/path"),
-                          "/clang:-isystem", "/clang:" + t.toNative("/tmp/system_path"),
-                          "/clang:-isystem", "/clang:" + t.toNative("/dummy"),
-                          "/clang:-isystem", "/clang:" + t.toNative("/tmp/builtin_path")}));
+                            "-I" + t.toNative("/tmp/system_path"), "/clang:-isystem",
+                          "/clang:" + t.toNative("/dummy"), "/clang:-isystem",
+                          "/clang:" + t.toNative("/tmp/builtin_path")}));
 }
 
 void CompilerOptionsBuilderTest::testUseSystemHeader()
@@ -239,7 +257,7 @@ void CompilerOptionsBuilderTest::testNoClangHeadersPath()
     t.compilerOptionsBuilder->addHeaderPathOptions();
 
     QCOMPARE(t.compilerOptionsBuilder->options(),
-             (QStringList{"-I" + t.toNative("/tmp/path"), "-isystem", t.toNative("/tmp/system_path")}));
+             (QStringList{"-I" + t.toNative("/tmp/path"), "-I" + t.toNative("/tmp/system_path")}));
 }
 
 void CompilerOptionsBuilderTest::testClangHeadersAndCppIncludePathsOrderMacOs()
@@ -260,7 +278,7 @@ void CompilerOptionsBuilderTest::testClangHeadersAndCppIncludePathsOrderMacOs()
 
     QCOMPARE(compilerOptionsBuilder.options(),
              (QStringList{"-nostdinc", "-nostdinc++", "-I" + t.toNative("/tmp/path"),
-                          "-isystem", t.toNative("/tmp/system_path"),
+                          "-I" + t.toNative("/tmp/system_path"),
                           "-isystem", t.toNative("/usr/include/c++/4.2.1"),
                           "-isystem", t.toNative("/usr/include/c++/4.2.1/backward"),
                           "-isystem", t.toNative("/usr/local/include"),
@@ -281,8 +299,6 @@ void CompilerOptionsBuilderTest::testClangHeadersAndCppIncludePathsOrderLinux()
         t.builtIn("/usr/local/include"),
         t.builtIn("/usr/lib/gcc/x86_64-linux-gnu/4.8/include"),
         t.builtIn("/usr/include/x86_64-linux-gnu"),
-        t.builtIn("/usr/lib64/clang/16/include"),
-        t.builtIn("/usr/lib/clang/15.0.7/include"),
         t.builtIn("/usr/include")};
     CompilerOptionsBuilder compilerOptionsBuilder(t.finalize(), UseSystemHeader::No,
                 UseTweakedHeaderPaths::Yes, UseLanguageDefines::No, UseBuildSystemWarnings::No,
@@ -595,11 +611,10 @@ void CompilerOptionsBuilderTest::testBuildAllOptions()
              (QStringList{"-nostdinc", "-nostdinc++", "-arch", "x86_64", "-fsyntax-only", "-m64",
                           "--target=x86_64-apple-darwin10", "-x", "c++", "-std=c++17",
                           "-DprojectFoo=projectBar",
-                          "-DQT_ANNOTATE_FUNCTION(x)=__attribute__((annotate(#x)))",
                           wrappedQtHeadersPath,         // contains -I already
                           wrappedQtCoreHeadersPath,     // contains -I already
                           "-I" + t.toNative("/tmp/path"),
-                          "-isystem", t.toNative("/tmp/system_path"),
+                          "-I" + t.toNative("/tmp/system_path"),
                           "-isystem", t.toNative("/dummy"),
                           "-isystem", t.toNative("/tmp/builtin_path")}));
 }
@@ -624,11 +639,10 @@ void CompilerOptionsBuilderTest::testBuildAllOptionsMsvc()
                           "-D__FUNCSIG__=\"void __cdecl someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580(void)\"",
                           "-D__FUNCTION__=\"someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580\"",
                           "-D__FUNCDNAME__=\"?someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580@@YAXXZ\"",
-                          "-DQT_ANNOTATE_FUNCTION(x)=__attribute__((annotate(#x)))",
                           wrappedQtHeadersPath,         // contains -I already
                           wrappedQtCoreHeadersPath,     // contains -I already
                           "-I" + t.toNative("/tmp/path"),
-                          "/clang:-isystem", "/clang:" + t.toNative("/tmp/system_path"),
+                          "-I" + t.toNative("/tmp/system_path"),
                           "/clang:-isystem", "/clang:" + t.toNative("/dummy"),
                           "/clang:-isystem", "/clang:" + t.toNative("/tmp/builtin_path")}));
 }
@@ -655,11 +669,10 @@ void CompilerOptionsBuilderTest::testBuildAllOptionsMsvcWithExceptions()
                           "-D__FUNCSIG__=\"void __cdecl someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580(void)\"",
                           "-D__FUNCTION__=\"someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580\"",
                           "-D__FUNCDNAME__=\"?someLegalAndLongishFunctionNameThatWorksAroundQTCREATORBUG-24580@@YAXXZ\"",
-                          "-DQT_ANNOTATE_FUNCTION(x)=__attribute__((annotate(#x)))",
                           wrappedQtHeadersPath,             // contains -I already
                           wrappedQtCoreHeadersPath,         // contains -I already
                           "-I" + t.toNative("/tmp/path"),
-                          "/clang:-isystem", "/clang:" + t.toNative("/tmp/system_path"),
+                          "-I" + t.toNative("/tmp/system_path"),
                           "/clang:-isystem", "/clang:" + t.toNative("/dummy"),
                           "/clang:-isystem", "/clang:" + t.toNative("/tmp/builtin_path")}));
 }

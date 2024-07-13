@@ -1,32 +1,84 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "productlistmodel.h"
 
+#include "marketplaceplugin.h"
+
 #include <utils/algorithm.h>
+#include <utils/executeondestruction.h>
 #include <utils/networkaccessmanager.h>
 #include <utils/qtcassert.h>
 
-#include <QApplication>
 #include <QDesktopServices>
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QLabel>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPixmapCache>
 #include <QRegularExpression>
-#include <QScopeGuard>
+#include <QScrollArea>
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
 
-using namespace Core;
-
 namespace Marketplace {
 namespace Internal {
+
+/**
+ * @brief AllProductsModel does not own its items. Using this model only to display
+ * the same items stored inside other models without the need to duplicate the items.
+ */
+class AllProductsModel : public ProductListModel
+{
+public:
+    explicit AllProductsModel(QObject *parent) : ProductListModel(parent) {}
+    ~AllProductsModel() override { m_items.clear(); }
+};
+
+class ProductGridView : public Core::GridView
+{
+public:
+    ProductGridView(QWidget *parent) : Core::GridView(parent) {}
+
+    bool hasHeightForWidth() const override
+    {
+        return true;
+    }
+
+    int heightForWidth(int width) const override
+    {
+        const int columnCount = width / Core::ListItemDelegate::GridItemWidth;
+        const int rowCount = (model()->rowCount() + columnCount - 1) / columnCount;
+        return rowCount * Core::ListItemDelegate::GridItemHeight;
+    }
+};
 
 class ProductItemDelegate : public Core::ListItemDelegate
 {
@@ -39,6 +91,23 @@ public:
         QDesktopServices::openUrl(url);
     }
 };
+
+ProductListModel::ProductListModel(QObject *parent)
+    : Core::ListModel(parent)
+{
+}
+
+void ProductListModel::appendItems(const QList<Core::ListItem *> &items)
+{
+    beginInsertRows(QModelIndex(), m_items.size(), m_items.size() + items.size());
+    m_items.append(items);
+    endInsertRows();
+}
+
+const QList<Core::ListItem *> ProductListModel::items() const
+{
+    return m_items;
+}
 
 static const QNetworkRequest constructRequest(const QString &collection)
 {
@@ -54,14 +123,12 @@ static const QNetworkRequest constructRequest(const QString &collection)
 static const QString plainTextFromHtml(const QString &original)
 {
     QString plainText(original);
-    static const QRegularExpression breakReturn("<\\s*br/?\\s*>",
-                                                QRegularExpression::CaseInsensitiveOption);
-    static const QRegularExpression allTags("<[^>]*>");
-    static const QRegularExpression moreThan2NewLines("\n{3,}");
-    plainText.replace(breakReturn, "\n"); // "translate" <br/> into newline
-    plainText.remove(allTags);            // remove all tags
+    QRegularExpression breakReturn("<\\s*br/?\\s*>", QRegularExpression::CaseInsensitiveOption);
+
+    plainText.replace(breakReturn, "\n");                       // "translate" <br/> into newline
+    plainText.remove(QRegularExpression("<[^>]*>"));            // remove all tags
     plainText = plainText.trimmed();
-    plainText.replace(moreThan2NewLines, "\n\n"); // consolidate some newlines
+    plainText.replace(QRegularExpression("\n{3,}"), "\n\n");    // consolidate some newlines
 
     // FIXME the description text is usually too long and needs to get elided sensibly
     return (plainText.length() > 157) ? plainText.left(157).append("...") : plainText;
@@ -77,22 +144,37 @@ static int priority(const QString &collection)
 }
 
 SectionedProducts::SectionedProducts(QWidget *parent)
-    : SectionedGridView(parent)
+    : QStackedWidget(parent)
+    , m_allProductsView(new Core::GridView(this))
+    , m_filteredAllProductsModel(new Core::ListModelFilter(new AllProductsModel(this), this))
     , m_productDelegate(new ProductItemDelegate)
 {
-    setItemDelegate(m_productDelegate);
-    setPixmapFunction([this](const QString &url) -> QPixmap {
-        queueImageForDownload(url);
-        return {};
-    });
-    connect(m_productDelegate,
-            &ProductItemDelegate::tagClicked,
-            this,
-            &SectionedProducts::onTagClicked);
+    auto area = new QScrollArea(this);
+    area->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    area->setVerticalScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    area->setFrameShape(QFrame::NoFrame);
+    area->setWidgetResizable(true);
+
+    auto sectionedView = new QWidget;
+    auto layout = new QVBoxLayout;
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->addStretch();
+    sectionedView->setLayout(layout);
+    area->setWidget(sectionedView);
+
+    addWidget(area);
+
+    m_allProductsView->setItemDelegate(m_productDelegate);
+    m_allProductsView->setModel(m_filteredAllProductsModel);
+    addWidget(m_allProductsView);
+
+    connect(m_productDelegate, &ProductItemDelegate::tagClicked,
+            this, &SectionedProducts::onTagClicked);
 }
 
 SectionedProducts::~SectionedProducts()
 {
+    qDeleteAll(m_gridViews);
     delete m_productDelegate;
 }
 
@@ -104,10 +186,17 @@ void SectionedProducts::updateCollections()
             this, [this, reply]() { onFetchCollectionsFinished(reply); });
 }
 
+QPixmap ProductListModel::fetchPixmapAndUpdatePixmapCache(const QString &url) const
+{
+    if (auto sectionedProducts = qobject_cast<SectionedProducts *>(parent()))
+        sectionedProducts->queueImageForDownload(url);
+    return QPixmap();
+}
+
 void SectionedProducts::onFetchCollectionsFinished(QNetworkReply *reply)
 {
     QTC_ASSERT(reply, return);
-    const QScopeGuard cleanup([reply] { reply->deleteLater(); });
+    Utils::ExecuteOnDestruction replyDeleter([reply]() { reply->deleteLater(); });
 
     if (reply->error() == QNetworkReply::NoError) {
         const QJsonDocument doc = QJsonDocument::fromJson(reply->readAll());
@@ -141,7 +230,7 @@ void SectionedProducts::onFetchSingleCollectionFinished(QNetworkReply *reply)
     emit toggleProgressIndicator(false);
 
     QTC_ASSERT(reply, return);
-    const QScopeGuard cleanup([reply] { reply->deleteLater(); });
+    Utils::ExecuteOnDestruction replyDeleter([reply]() { reply->deleteLater(); });
 
     QList<Core::ListItem *> productsForCollection;
     if (reply->error() == QNetworkReply::NoError) {
@@ -172,8 +261,7 @@ void SectionedProducts::onFetchSingleCollectionFinished(QNetworkReply *reply)
             product->description = plainTextFromHtml(obj.value("body_html").toString());
 
             product->handle = handle;
-            const QJsonArray tags = obj.value("tags").toArray();
-            for (const auto &val : tags)
+            for (auto val : obj.value("tags").toArray())
                 product->tags.append(val.toString());
 
             const auto images = obj.value("images").toArray();
@@ -220,15 +308,12 @@ void SectionedProducts::queueImageForDownload(const QString &url)
         fetchNextImage();
 }
 
-static void updateModelIndexesForUrl(ListModel *model, const QString &url)
+void SectionedProducts::setSearchString(const QString &searchString)
 {
-    const QList<ListItem *> items = model->items();
-    for (int row = 0, end = items.size(); row < end; ++row) {
-        if (items.at(row)->imageUrl == url) {
-            const QModelIndex index = model->index(row);
-            emit model->dataChanged(index, index, {ListModel::ItemImageRole, Qt::DisplayRole});
-        }
-    }
+    int view = searchString.isEmpty() ? 0  // sectioned view
+                                      : 1; // search view
+    setCurrentIndex(view);
+    m_filteredAllProductsModel->setSearchString(searchString);
 }
 
 void SectionedProducts::fetchNextImage()
@@ -238,14 +323,14 @@ void SectionedProducts::fetchNextImage()
         return;
     }
 
-    const auto it = m_pendingImages.constBegin();
+    const auto it = m_pendingImages.begin();
     const QString nextUrl = *it;
     m_pendingImages.erase(it);
 
     if (QPixmapCache::find(nextUrl, nullptr)) {
         // this image is already cached it might have been added while downloading
-        for (ListModel *model : std::as_const(m_productModels))
-            updateModelIndexesForUrl(model, nextUrl);
+        for (ProductListModel *model : qAsConst(m_productModels))
+            model->updateModelIndexesForUrl(nextUrl);
         fetchNextImage();
         return;
     }
@@ -259,7 +344,7 @@ void SectionedProducts::fetchNextImage()
 void SectionedProducts::onImageDownloadFinished(QNetworkReply *reply)
 {
     QTC_ASSERT(reply, return);
-    const QScopeGuard cleanup([reply] { reply->deleteLater(); });
+    Utils::ExecuteOnDestruction replyDeleter([reply]() { reply->deleteLater(); });
 
     if (reply->error() == QNetworkReply::NoError) {
         const QByteArray data = reply->readAll();
@@ -268,14 +353,10 @@ void SectionedProducts::onImageDownloadFinished(QNetworkReply *reply)
         const QString imageFormat = QFileInfo(imageUrl.fileName()).suffix();
         if (pixmap.loadFromData(data, imageFormat.toLatin1())) {
             const QString url = imageUrl.toString();
-            const int dpr = qApp->devicePixelRatio();
-            pixmap = pixmap.scaled(WelcomePageHelpers::WelcomeThumbnailSize * dpr,
-                                   Qt::KeepAspectRatio,
-                                   Qt::SmoothTransformation);
-            pixmap.setDevicePixelRatio(dpr);
-            QPixmapCache::insert(url, pixmap);
-            for (ListModel *model : std::as_const(m_productModels))
-                updateModelIndexesForUrl(model, url);
+            QPixmapCache::insert(url, pixmap.scaled(ProductListModel::defaultImageSize,
+                                                    Qt::KeepAspectRatio, Qt::SmoothTransformation));
+            for (ProductListModel *model : qAsConst(m_productModels))
+                model->updateModelIndexesForUrl(url);
         }
     } // handle error not needed - it's okay'ish to have no images as long as the rest works
 
@@ -285,7 +366,33 @@ void SectionedProducts::onImageDownloadFinished(QNetworkReply *reply)
 void SectionedProducts::addNewSection(const Section &section, const QList<Core::ListItem *> &items)
 {
     QTC_ASSERT(!items.isEmpty(), return);
-    m_productModels.append(addSection(section, items));
+    ProductListModel *productModel = new ProductListModel(this);
+    productModel->appendItems(items);
+    auto filteredModel = new Core::ListModelFilter(productModel, this);
+    auto gridView = new ProductGridView(this);
+    gridView->setItemDelegate(m_productDelegate);
+    gridView->setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    gridView->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+    gridView->setModel(filteredModel);
+
+    m_productModels.insert(section, productModel);
+    const auto it = m_gridViews.insert(section, gridView);
+
+    auto sectionLabel = new QLabel(section.name);
+    sectionLabel->setContentsMargins(0, Core::WelcomePageHelpers::ItemGap, 0, 0);
+    sectionLabel->setFont(Core::WelcomePageHelpers::brandFont());
+    auto scrollArea = qobject_cast<QScrollArea *>(widget(0));
+    auto vbox = qobject_cast<QVBoxLayout *>(scrollArea->widget()->layout());
+
+    // insert new section depending on its priority, but before the last (stretch) item
+    int position = std::distance(m_gridViews.begin(), it) * 2; // a section has a label and a grid
+    QTC_ASSERT(position <= vbox->count() - 1, position = vbox->count() - 1);
+    vbox->insertWidget(position, sectionLabel);
+    vbox->insertWidget(position + 1, gridView);
+
+    // add the items also to the all products model to be able to search correctly
+    auto allProducts = static_cast<ProductListModel *>(m_filteredAllProductsModel->sourceModel());
+    allProducts->appendItems(items);
 }
 
 void SectionedProducts::onTagClicked(const QString &tag)
@@ -297,9 +404,17 @@ void SectionedProducts::onTagClicked(const QString &tag)
 QList<Core::ListItem *> SectionedProducts::items()
 {
     QList<Core::ListItem *> result;
-    for (const ListModel *model : std::as_const(m_productModels))
+    for (const ProductListModel *model : qAsConst(m_productModels))
         result.append(model->items());
     return result;
+}
+
+void ProductListModel::updateModelIndexesForUrl(const QString &url)
+{
+    for (int row = 0, end = m_items.size(); row < end; ++row) {
+        if (m_items.at(row)->imageUrl == url)
+            emit dataChanged(index(row), index(row), {ItemImageRole, Qt::DisplayRole});
+    }
 }
 
 } // namespace Internal

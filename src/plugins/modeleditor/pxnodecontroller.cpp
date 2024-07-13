@@ -1,20 +1,40 @@
-// Copyright (C) 2016 Jochen Becher
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Jochen Becher
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "pxnodecontroller.h"
 
-#include "classviewcontroller.h"
+#include "pxnodeutilities.h"
 #include "componentviewcontroller.h"
-#include "modeleditortr.h"
+#include "classviewcontroller.h"
 #include "modelutilities.h"
 #include "packageviewcontroller.h"
-#include "pxnodeutilities.h"
 
 #include "qmt/model/mpackage.h"
 #include "qmt/model/mclass.h"
 #include "qmt/model/mcomponent.h"
 #include "qmt/model/mdiagram.h"
-#include "qmt/model/mitem.h"
 #include "qmt/model/mcanvasdiagram.h"
 #include "qmt/controller/namecontroller.h"
 #include "qmt/controller/undocontroller.h"
@@ -30,8 +50,6 @@
 #include <QMenu>
 #include <QQueue>
 
-using Utils::FilePath;
-
 namespace ModelEditor {
 namespace Internal {
 
@@ -46,10 +64,7 @@ public:
         TYPE_ADD_PACKAGE_AND_DIAGRAM,
         TYPE_ADD_PACKAGE_MODEL,
         TYPE_ADD_COMPONENT_MODEL,
-        TYPE_ADD_CLASS_MODEL,
-        TYPE_ADD_PACKAGE_LINK,
-        TYPE_ADD_DIAGRAM_LINK,
-        TYPE_ADD_DOCUMENT_LINK,
+        TYPE_ADD_CLASS_MODEL
     };
 
 public:
@@ -59,17 +74,6 @@ public:
           elementName(elementName),
           type(type),
           index(index)
-    {
-    }
-
-    MenuAction(const QString &text, const QString &elementName, Type type, const QString &stereotype,
-               const QString &filePath, QObject *parent)
-        : QAction(text, parent),
-          elementName(elementName),
-          type(type),
-          index(-1),
-          stereotype(stereotype),
-          filePath(filePath)
     {
     }
 
@@ -85,8 +89,7 @@ public:
     int type;
     int index;
     QString className;
-    QString stereotype;
-    QString filePath;
+    QString packageStereotype;
 };
 
 class PxNodeController::PxNodeControllerPrivate
@@ -146,54 +149,51 @@ void PxNodeController::addFileSystemEntry(const QString &filePath, int line, int
 {
     QMT_ASSERT(diagram, return);
 
-    QString elementName = qmt::NameController::convertFileNameToElementName(FilePath::fromString(filePath));
+    QString elementName = qmt::NameController::convertFileNameToElementName(filePath);
 
     QFileInfo fileInfo(filePath);
     if (fileInfo.exists() && fileInfo.isFile()) {
         auto menu = new QMenu;
-        menu->addAction(new MenuAction(Tr::tr("Add Component %1").arg(elementName), elementName,
+        menu->addAction(new MenuAction(tr("Add Component %1").arg(elementName), elementName,
                                        MenuAction::TYPE_ADD_COMPONENT, menu));
         const QStringList classNames = Utils::toList(
-            d->classViewController->findClassDeclarations(
-                        FilePath::fromString(filePath), line, column));
+            d->classViewController->findClassDeclarations(filePath, line, column));
         if (!classNames.empty()) {
             menu->addSeparator();
             int index = 0;
             for (const QString &className : classNames) {
-                auto action = new MenuAction(Tr::tr("Add Class %1").arg(className), elementName,
+                auto action = new MenuAction(tr("Add Class %1").arg(className), elementName,
                                              MenuAction::TYPE_ADD_CLASS, index, menu);
                 action->className = className;
                 menu->addAction(action);
                 ++index;
             }
         }
-        menu->addSeparator();
-        QString fileName = fileInfo.fileName();
-        menu->addAction(new MenuAction(Tr::tr("Add Package Link to %1").arg(fileName), fileName,
-                                       MenuAction::TYPE_ADD_PACKAGE_LINK, "package", filePath, menu));
-        menu->addAction(new MenuAction(Tr::tr("Add Diagram Link to %1").arg(fileName), fileName,
-                                       MenuAction::TYPE_ADD_DIAGRAM_LINK, "diagram", filePath, menu));
-        menu->addAction(new MenuAction(Tr::tr("Add Document Link to %1").arg(fileName), fileName,
-                                       MenuAction::TYPE_ADD_DOCUMENT_LINK, "document", filePath, menu));
         connect(menu, &QMenu::aboutToHide, menu, &QMenu::deleteLater);
-        connect(menu, &QMenu::triggered, this, [this, filePath, topMostElementAtPos, pos, diagram](
-                                                   QAction *action) {
+        connect(menu, &QMenu::triggered, this, [=](QAction *action) {
             // TODO potential risk if topMostElementAtPos or diagram is deleted in between
             onMenuActionTriggered(static_cast<MenuAction *>(action), filePath, topMostElementAtPos,
                                   pos, diagram);
         });
         menu->popup(QCursor::pos());
     } else if (fileInfo.exists() && fileInfo.isDir()) {
+        // ignore line and column
+        QString stereotype;
         auto menu = new QMenu;
-        menu->addAction(new MenuAction(Tr::tr("Add Package %1").arg(elementName), elementName,
-                                       MenuAction::TYPE_ADD_PACKAGE, menu));
-        menu->addAction(new MenuAction(Tr::tr("Add Package and Diagram %1").arg(elementName), elementName,
-                                       MenuAction::TYPE_ADD_PACKAGE_AND_DIAGRAM, menu));
-        menu->addAction(new MenuAction(Tr::tr("Add Component Model"), elementName,
-                                       MenuAction::TYPE_ADD_COMPONENT_MODEL, menu));
+        auto action = new MenuAction(tr("Add Package %1").arg(elementName), elementName,
+                                     MenuAction::TYPE_ADD_PACKAGE, menu);
+        action->packageStereotype = stereotype;
+        menu->addAction(action);
+        action = new MenuAction(tr("Add Package and Diagram %1").arg(elementName), elementName,
+                                MenuAction::TYPE_ADD_PACKAGE_AND_DIAGRAM, menu);
+        action->packageStereotype = stereotype;
+        menu->addAction(action);
+        action = new MenuAction(tr("Add Component Model"), elementName,
+                                MenuAction::TYPE_ADD_COMPONENT_MODEL, menu);
+        action->packageStereotype = stereotype;
+        menu->addAction(action);
         connect(menu, &QMenu::aboutToHide, menu, &QMenu::deleteLater);
-        connect(menu, &QMenu::triggered, this, [this, filePath, topMostElementAtPos, pos, diagram](
-                                                   QAction *action) {
+        connect(menu, &QMenu::triggered, this, [=](QAction *action) {
             onMenuActionTriggered(static_cast<MenuAction *>(action), filePath, topMostElementAtPos,
                                   pos, diagram);
         });
@@ -212,7 +212,7 @@ qmt::MDiagram *PxNodeController::findDiagramForExplorerNode(const ProjectExplore
         return nullptr;
 
     QStringList relativeElements = qmt::NameController::buildElementsPath(
-        FilePath::fromString(d->pxnodeUtilities->calcRelativePath(node, d->anchorFolder)), false);
+                d->pxnodeUtilities->calcRelativePath(node, d->anchorFolder), false);
 
     QQueue<qmt::MPackage *> roots;
     roots.append(d->diagramSceneController->modelController()->rootPackage());
@@ -277,7 +277,6 @@ void PxNodeController::onMenuActionTriggered(PxNodeController::MenuAction *actio
 {
     qmt::MObject *newObject = nullptr;
     qmt::MDiagram *newDiagramInObject = nullptr;
-    bool dropInCurrentDiagram = false;
 
     switch (action->type) {
     case MenuAction::TYPE_ADD_COMPONENT:
@@ -303,8 +302,8 @@ void PxNodeController::onMenuActionTriggered(PxNodeController::MenuAction *actio
             auto package = new qmt::MPackage();
             package->setFlags(qmt::MElement::ReverseEngineered);
             package->setName(action->elementName);
-            if (!action->stereotype.isEmpty())
-                package->setStereotypes({action->stereotype});
+            if (!action->packageStereotype.isEmpty())
+                package->setStereotypes({action->packageStereotype});
             newObject = package;
             if (action->type == MenuAction::TYPE_ADD_PACKAGE_AND_DIAGRAM) {
                 auto diagram = new qmt::MCanvasDiagram();
@@ -318,11 +317,11 @@ void PxNodeController::onMenuActionTriggered(PxNodeController::MenuAction *actio
         auto package = new qmt::MPackage();
         package->setFlags(qmt::MElement::ReverseEngineered);
         package->setName(action->elementName);
-        if (!action->stereotype.isEmpty())
-            package->setStereotypes({action->stereotype});
-        d->diagramSceneController->modelController()->undoController()->beginMergeSequence(Tr::tr("Create Component Model"));
+        if (!action->packageStereotype.isEmpty())
+            package->setStereotypes({action->packageStereotype});
+        d->diagramSceneController->modelController()->undoController()->beginMergeSequence(tr("Create Component Model"));
         QStringList relativeElements = qmt::NameController::buildElementsPath(
-            FilePath::fromString(d->pxnodeUtilities->calcRelativePath(filePath, d->anchorFolder)), true);
+                    d->pxnodeUtilities->calcRelativePath(filePath, d->anchorFolder), true);
         if (qmt::MObject *existingObject = d->pxnodeUtilities->findSameObject(relativeElements, package)) {
             delete package;
             package = dynamic_cast<qmt::MPackage *>(existingObject);
@@ -338,55 +337,34 @@ void PxNodeController::onMenuActionTriggered(PxNodeController::MenuAction *actio
         d->diagramSceneController->modelController()->undoController()->endMergeSequence();
         break;
     }
-    case MenuAction::TYPE_ADD_PACKAGE_LINK:
-    case MenuAction::TYPE_ADD_DIAGRAM_LINK:
-    case MenuAction::TYPE_ADD_DOCUMENT_LINK:
-    {
-        auto item = new qmt::MItem();
-        item->setName(action->elementName);
-        item->setVariety(action->stereotype);
-        item->setVarietyEditable(false);
-        FilePath filePath = FilePath::fromString(action->filePath);
-        item->setLinkedFileName(filePath.relativePathFrom(FilePath::fromString(d->anchorFolder)));
-        newObject = item;
-        dropInCurrentDiagram = true;
-        break;
-    }
     }
 
     if (newObject) {
-        d->diagramSceneController->modelController()->undoController()->beginMergeSequence(Tr::tr("Drop Node"));
-        if (dropInCurrentDiagram) {
-            auto *parentPackage = dynamic_cast<qmt::MPackage *>(diagram->owner());
-            if (parentPackage)
-                d->diagramSceneController->dropNewModelElement(newObject, parentPackage, pos, diagram);
+        d->diagramSceneController->modelController()->undoController()->beginMergeSequence(tr("Drop Node"));
+        qmt::MObject *parentForDiagram = nullptr;
+        QStringList relativeElements = qmt::NameController::buildElementsPath(
+                    d->pxnodeUtilities->calcRelativePath(filePath, d->anchorFolder),
+                    dynamic_cast<qmt::MPackage *>(newObject) != nullptr);
+        if (qmt::MObject *existingObject = d->pxnodeUtilities->findSameObject(relativeElements, newObject)) {
+            delete newObject;
+            newObject = nullptr;
+            d->diagramSceneController->addExistingModelElement(existingObject->uid(), pos, diagram);
+            parentForDiagram = existingObject;
         } else {
-            qmt::MObject *parentForDiagram = nullptr;
-            QStringList relativeElements = qmt::NameController::buildElementsPath(
-                FilePath::fromString(
-                    d->pxnodeUtilities->calcRelativePath(filePath, d->anchorFolder)),
-                dynamic_cast<qmt::MPackage *>(newObject) != nullptr);
-            if (qmt::MObject *existingObject = d->pxnodeUtilities->findSameObject(relativeElements, newObject)) {
-                delete newObject;
-                newObject = nullptr;
-                d->diagramSceneController->addExistingModelElement(existingObject->uid(), pos, diagram);
-                parentForDiagram = existingObject;
-            } else {
-                qmt::MPackage *requestedRootPackage = d->diagramSceneController->findSuitableParentPackage(topMostElementAtPos, diagram);
-                qmt::MPackage *bestParentPackage = d->pxnodeUtilities->createBestMatchingPackagePath(requestedRootPackage, relativeElements);
-                d->diagramSceneController->dropNewModelElement(newObject, bestParentPackage, pos, diagram);
-                parentForDiagram = newObject;
-            }
+            qmt::MPackage *requestedRootPackage = d->diagramSceneController->findSuitableParentPackage(topMostElementAtPos, diagram);
+            qmt::MPackage *bestParentPackage = d->pxnodeUtilities->createBestMatchingPackagePath(requestedRootPackage, relativeElements);
+            d->diagramSceneController->dropNewModelElement(newObject, bestParentPackage, pos, diagram);
+            parentForDiagram = newObject;
+        }
 
-            // if requested and not existing then create new diagram in package
-            if (newDiagramInObject) {
-                auto package = dynamic_cast<qmt::MPackage *>(parentForDiagram);
-                QMT_ASSERT(package, return);
-                if (d->diagramSceneController->findDiagramBySearchId(package, newDiagramInObject->name()))
-                    delete newDiagramInObject;
-                else
-                    d->diagramSceneController->modelController()->addObject(package, newDiagramInObject);
-            }
+        // if requested and not existing then create new diagram in package
+        if (newDiagramInObject) {
+            auto package = dynamic_cast<qmt::MPackage *>(parentForDiagram);
+            QMT_ASSERT(package, return);
+            if (d->diagramSceneController->findDiagramBySearchId(package, newDiagramInObject->name()))
+                delete newDiagramInObject;
+            else
+                d->diagramSceneController->modelController()->addObject(package, newDiagramInObject);
         }
         d->diagramSceneController->modelController()->undoController()->endMergeSequence();
     }

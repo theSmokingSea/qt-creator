@@ -1,23 +1,41 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "TypeOfExpression.h"
 
 #include "LookupContext.h"
 #include "ResolveExpression.h"
-#include "pp-engine.h"
+#include "pp.h"
 
 #include <cplusplus/AST.h>
 #include <cplusplus/Symbol.h>
 #include <cplusplus/TranslationUnit.h>
 
-#include <utils/algorithm.h>
-
 #include <QSet>
 
-using namespace Utils;
-
-namespace CPlusPlus {
+using namespace CPlusPlus;
 
 TypeOfExpression::TypeOfExpression():
     m_ast(nullptr),
@@ -27,21 +45,21 @@ TypeOfExpression::TypeOfExpression():
 }
 
 void TypeOfExpression::init(Document::Ptr thisDocument, const Snapshot &snapshot,
-                            std::shared_ptr<CreateBindings> bindings,
+                            QSharedPointer<CreateBindings> bindings,
                             const QSet<const Declaration *> &autoDeclarationsBeingResolved)
 {
     m_thisDocument = thisDocument;
     m_snapshot = snapshot;
     m_ast = nullptr;
     m_scope = nullptr;
-    m_lookupContext = {};
+    m_lookupContext = LookupContext();
 
-    Q_ASSERT(!m_bindings);
+    Q_ASSERT(m_bindings.isNull());
     m_bindings = bindings;
-    if (!m_bindings)
-        m_bindings.reset(new CreateBindings(thisDocument, snapshot));
+    if (m_bindings.isNull())
+        m_bindings = QSharedPointer<CreateBindings>(new CreateBindings(thisDocument, snapshot));
 
-    m_environment.reset();
+    m_environment.clear();
     m_autoDeclarationsBeingResolved = autoDeclarationsBeingResolved;
 }
 
@@ -84,7 +102,7 @@ QList<LookupItem> TypeOfExpression::operator()(ExpressionAST *expression,
 
     m_documents.append(document);
     m_lookupContext = LookupContext(document, m_thisDocument, m_snapshot, m_bindings);
-    Q_ASSERT(m_bindings);
+    Q_ASSERT(!m_bindings.isNull());
     m_lookupContext.setExpandTemplates(m_expandTemplates);
 
     ResolveExpression resolve(m_lookupContext, m_autoDeclarationsBeingResolved);
@@ -101,7 +119,7 @@ QList<LookupItem> TypeOfExpression::reference(ExpressionAST *expression,
 
     m_documents.append(document);
     m_lookupContext = LookupContext(document, m_thisDocument, m_snapshot, m_bindings);
-    Q_ASSERT(m_bindings);
+    Q_ASSERT(!m_bindings.isNull());
     m_lookupContext.setExpandTemplates(m_expandTemplates);
 
     ResolveExpression resolve(m_lookupContext, m_autoDeclarationsBeingResolved);
@@ -136,12 +154,15 @@ ExpressionAST *TypeOfExpression::expressionAST() const
 void TypeOfExpression::processEnvironment(Document::Ptr doc, Environment *env,
                                           QSet<QString> *processed) const
 {
-    if (doc && Utils::insert(*processed, doc->filePath().path())) {
+    if (doc && ! processed->contains(doc->fileName())) {
+        processed->insert(doc->fileName());
+
         const QList<Document::Include> includes = doc->resolvedIncludes();
         for (const Document::Include &incl : includes)
             processEnvironment(m_snapshot.document(incl.resolvedFileName()), env, processed);
 
-        for (const Macro &macro : doc->definedMacros())
+        const QList<Macro> macros = doc->definedMacros();
+        for (const Macro &macro : macros)
             env->bind(macro);
     }
 }
@@ -156,12 +177,14 @@ QByteArray TypeOfExpression::preprocessedExpression(const QByteArray &utf8code) 
 
         QSet<QString> processed;
         processEnvironment(m_thisDocument, env, &processed);
-        m_environment.reset(env);
+        m_environment = QSharedPointer<Environment>(env);
     }
 
-    Preprocessor preproc(nullptr, m_environment.get());
-    return preproc.run(Utils::FilePath::fromParts({}, {}, u"<expression>"), utf8code);
+    Preprocessor preproc(nullptr, m_environment.data());
+    return preproc.run(QLatin1String("<expression>"), utf8code);
 }
+
+namespace CPlusPlus {
 
 ExpressionAST *extractExpressionAST(Document::Ptr doc)
 {
@@ -174,10 +197,10 @@ ExpressionAST *extractExpressionAST(Document::Ptr doc)
 Document::Ptr documentForExpression(const QByteArray &utf8code)
 {
     // create the expression's AST.
-    Document::Ptr doc = Document::create(FilePath::fromPathPart(u"<completion>"));
+    Document::Ptr doc = Document::create(QLatin1String("<completion>"));
     doc->setUtf8Source(utf8code);
     doc->parse(Document::ParseExpression);
     return doc;
 }
 
-} // CPlusPlus
+} // namespace CPlusPlus

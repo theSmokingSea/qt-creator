@@ -1,5 +1,27 @@
-// Copyright (C) 2021 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2021 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 import QtQuick 2.15
 import HelperWidgets 2.0
@@ -16,7 +38,7 @@ Section {
     SectionLayout {
         PropertyLabel {
             text: qsTr("Interactive")
-            tooltip: qsTr("Toggles if the flickable supports drag and flick actions.")
+            tooltip: qsTr("Allows users to drag or flick a flickable component.")
         }
 
         SecondColumnLayout {
@@ -32,7 +54,6 @@ Section {
 
         PropertyLabel {
             text: qsTr("Flick direction")
-            tooltip: qsTr("Sets which directions the view can be flicked.")
             blockedByTemplate: !backendValues.flickableDirection.isAvailable
         }
 
@@ -52,7 +73,7 @@ Section {
 
         PropertyLabel {
             text: qsTr("Behavior")
-            tooltip: qsTr("Sets how the flickable behaves when it is dragged beyond its boundaries.")
+            tooltip: qsTr("Whether the surface may be dragged beyond the Flickable's boundaries, or overshoot the Flickable's boundaries when flicked.")
             blockedByTemplate: !backendValues.boundsBehavior.isAvailable
         }
 
@@ -72,7 +93,7 @@ Section {
 
         PropertyLabel {
             text: qsTr("Movement")
-            tooltip: qsTr("Sets if the edges of the flickable should be soft or hard.")
+            tooltip: qsTr("Whether the Flickable will give a feeling that the edges of the view are soft, rather than a hard physical boundary.")
             blockedByTemplate: !backendValues.boundsMovement.isAvailable
         }
 
@@ -92,7 +113,7 @@ Section {
 
         PropertyLabel {
             text: qsTr("Max. velocity")
-            tooltip: qsTr("Sets how fast an item can be flicked.")
+            tooltip: qsTr("Maximum flick velocity")
         }
 
         SecondColumnLayout {
@@ -110,7 +131,7 @@ Section {
 
         PropertyLabel {
             text: qsTr("Deceleration")
-            tooltip: qsTr("Sets the rate by which a flick should slow down.")
+            tooltip: qsTr("Flick deceleration")
             blockedByTemplate: !backendValues.flickDeceleration.isAvailable
         }
 
@@ -130,7 +151,7 @@ Section {
 
         PropertyLabel {
             text: qsTr("Press delay")
-            tooltip: qsTr("Sets the time to delay delivering a press to children of the flickable in milliseconds.")
+            tooltip: qsTr("Time to delay delivering a press to children of the Flickable in milliseconds.")
             blockedByTemplate: !backendValues.pressDelay.isAvailable
         }
 
@@ -150,7 +171,7 @@ Section {
 
         PropertyLabel {
             text: qsTr("Pixel aligned")
-            tooltip: qsTr("Toggles if the component is being moved by complete pixel length.")
+            tooltip: qsTr("Sets the alignment of contentX and contentY to pixels (true) or subpixels (false).")
             blockedByTemplate: !backendValues.pixelAligned.isAvailable
         }
 
@@ -168,7 +189,9 @@ Section {
 
         PropertyLabel {
             text: qsTr("Synchronous drag")
-            tooltip: qsTr("Toggles if the content should move instantly or not when the mouse or touchpoint is dragged to a new position.")
+            tooltip: qsTr("If set to true, then when the mouse or touchpoint moves far enough to begin dragging\n"
+                          + "the content, the content will jump, such that the content pixel which was under the\n"
+                          + "cursor or touchpoint when pressed remains under that point.")
             blockedByTemplate: !backendValues.synchronousDrag.isAvailable
         }
 

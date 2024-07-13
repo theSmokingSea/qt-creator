@@ -41,9 +41,9 @@ public:
      * @param offset offset of match
      * @param captures captures of the match
      */
-    explicit MatchResult(const int offset, QStringList &&captures)
+    explicit MatchResult(const int offset, const QStringList &captures)
         : m_offset(offset)
-        , m_captures(std::move(captures))
+        , m_captures(captures)
     {
     }
 
@@ -69,7 +69,7 @@ public:
      * Captures of the match.
      * @return captured text of this match
      */
-    QStringList &captures()
+    const QStringList &captures() const
     {
         return m_captures;
     }

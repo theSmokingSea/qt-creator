@@ -1,33 +1,51 @@
-// Copyright (C) 2019 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2019 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "rawprojectpart.h"
 
 #include "abi.h"
 #include "buildconfiguration.h"
-#include "buildsystem.h"
-#include "kitaspects.h"
+#include "kitinformation.h"
 #include "project.h"
 #include "target.h"
-
-// #include <ios/iosconstants.h>
 
 #include <utils/algorithm.h>
 
 namespace ProjectExplorer {
 
-RawProjectPartFlags::RawProjectPartFlags(const Toolchain *toolChain,
+RawProjectPartFlags::RawProjectPartFlags(const ToolChain *toolChain,
                                          const QStringList &commandLineFlags,
-                                         const Utils::FilePath &includeFileBaseDir)
+                                         const QString &includeFileBaseDir)
 {
     // Keep the following cheap/non-blocking for the ui thread. Expensive
-    // operations are encapsulated in ToolchainInfo as "runners".
+    // operations are encapsulated in ToolChainInfo as "runners".
     this->commandLineFlags = commandLineFlags;
     if (toolChain) {
         warningFlags = toolChain->warningFlags(commandLineFlags);
         languageExtensions = toolChain->languageExtensions(commandLineFlags);
-        includedFiles = Utils::transform(toolChain->includedFiles(commandLineFlags, includeFileBaseDir),
-                                         &Utils::FilePath::toFSPathString);
+        includedFiles = toolChain->includedFiles(commandLineFlags, includeFileBaseDir);
     }
 }
 
@@ -45,10 +63,9 @@ void RawProjectPart::setFiles(const QStringList &files,
     this->getMimeType = getMimeType;
 }
 
-static QString trimTrailingSlashes(const QString &path)
-{
+static QString trimTrailingSlashes(const QString &path) {
     QString p = path;
-    while (p.endsWith('/') && p.size() > 1) {
+    while (p.endsWith('/') && p.count() > 1) {
         p.chop(1);
     }
     return p;
@@ -142,8 +159,8 @@ KitInfo::KitInfo(Kit *kit)
 {
     // Toolchains
     if (kit) {
-        cToolchain = ToolchainKitAspect::cToolchain(kit);
-        cxxToolchain = ToolchainKitAspect::cxxToolchain(kit);
+        cToolChain = ToolChainKitAspect::cToolChain(kit);
+        cxxToolChain = ToolChainKitAspect::cxxToolChain(kit);
     }
 
     // Sysroot
@@ -155,15 +172,15 @@ bool KitInfo::isValid() const
     return kit;
 }
 
-ToolchainInfo::ToolchainInfo(const Toolchain *toolChain,
+ToolChainInfo::ToolChainInfo(const ToolChain *toolChain,
                              const Utils::FilePath &sysRootPath,
                              const Utils::Environment &env)
 {
     if (toolChain) {
         // Keep the following cheap/non-blocking for the ui thread...
         type = toolChain->typeId();
-        isMsvc2015Toolchain = toolChain->targetAbi().osFlavor() == Abi::WindowsMsvc2015Flavor;
-        abi = toolChain->targetAbi();
+        isMsvc2015ToolChain = toolChain->targetAbi().osFlavor() == Abi::WindowsMsvc2015Flavor;
+        wordWidth = toolChain->targetAbi().wordWidth();
         targetTriple = toolChain->effectiveCodeModelTargetTriple();
         targetTripleIsAuthoritative = !toolChain->explicitCodeModelTargetTriple().isEmpty();
         extraCodeModelFlags = toolChain->extraCodeModelFlags();
@@ -178,12 +195,6 @@ ToolchainInfo::ToolchainInfo(const Toolchain *toolChain,
     }
 }
 
-static CppSettingsRetriever g_cppSettingsRetriever;
-void provideCppSettingsRetriever(const CppSettingsRetriever &retriever)
-{
-    g_cppSettingsRetriever = retriever;
-}
-
 ProjectUpdateInfo::ProjectUpdateInfo(Project *project,
                                      const KitInfo &kitInfo,
                                      const Utils::Environment &env,
@@ -191,41 +202,15 @@ ProjectUpdateInfo::ProjectUpdateInfo(Project *project,
                                      const RppGenerator &rppGenerator)
     : rawProjectParts(rawProjectParts)
     , rppGenerator(rppGenerator)
-    , cToolchainInfo(ToolchainInfo(kitInfo.cToolchain, kitInfo.sysRootPath, env))
-    , cxxToolchainInfo(ToolchainInfo(kitInfo.cxxToolchain, kitInfo.sysRootPath, env))
+    , cToolChainInfo(ToolChainInfo(kitInfo.cToolChain, kitInfo.sysRootPath, env))
+    , cxxToolChainInfo(ToolChainInfo(kitInfo.cxxToolChain, kitInfo.sysRootPath, env))
 {
-    if (g_cppSettingsRetriever)
-        cppSettings = g_cppSettingsRetriever(project);
     if (project) {
         projectName = project->displayName();
         projectFilePath = project->projectFilePath();
         if (project->activeTarget() && project->activeTarget()->activeBuildConfiguration())
             buildRoot = project->activeTarget()->activeBuildConfiguration()->buildDirectory();
     }
-}
-
-// We do not get the -target flag from qmake or cmake on macOS; see QTCREATORBUG-28278.
-void addTargetFlagForIos(QStringList &cFlags, QStringList &cxxFlags, const BuildSystem *bs,
-                         const std::function<QString ()> &getDeploymentTarget)
-{
-    // const Utils::Id deviceType = DeviceTypeKitAspect::deviceTypeId(bs->target()->kit());
-    // if (deviceType != Ios::Constants::IOS_DEVICE_TYPE
-    //         && deviceType != Ios::Constants::IOS_SIMULATOR_TYPE) {
-    //     return;
-    // }
-    // const bool isSim = deviceType == Ios::Constants::IOS_SIMULATOR_TYPE;
-    // QString targetTriple(QLatin1String(isSim ? "x86_64" : "arm64"));
-    // targetTriple.append("-apple-ios").append(getDeploymentTarget());
-    // if (isSim)
-    //     targetTriple.append("-simulator");
-    // const auto addTargetFlag = [&targetTriple](QStringList &flags) {
-    //     if (!flags.contains("-target") && !Utils::contains(flags,
-    //                 [](const QString &flag) { return flag.startsWith("--target="); })) {
-    //         flags << "-target" << targetTriple;
-    //     }
-    // };
-    // addTargetFlag(cxxFlags);
-    // addTargetFlag(cFlags);
 }
 
 } // namespace ProjectExplorer

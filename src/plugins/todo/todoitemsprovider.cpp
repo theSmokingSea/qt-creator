@@ -1,9 +1,30 @@
-// Copyright (C) 2016 Dmitry Savchenko
-// Copyright (C) 2016 Vasiliy Sorokin
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 Dmitry Savchenko
+** Copyright (C) 2016 Vasiliy Sorokin
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "todoitemsprovider.h"
-
 #include "constants.h"
 #include "cpptodoitemsscanner.h"
 #include "qmljstodoitemsscanner.h"
@@ -14,9 +35,9 @@
 #include <coreplugin/idocument.h>
 
 #include <projectexplorer/projectexplorer.h>
-#include <projectexplorer/projectmanager.h>
 #include <projectexplorer/projectnodes.h>
 #include <projectexplorer/projecttree.h>
+#include <projectexplorer/session.h>
 
 #include <utils/algorithm.h>
 
@@ -26,11 +47,12 @@
 using namespace ProjectExplorer;
 using namespace Utils;
 
-namespace Todo::Internal {
+namespace Todo {
+namespace Internal {
 
-TodoItemsProvider::TodoItemsProvider(QObject *parent) :
+TodoItemsProvider::TodoItemsProvider(Settings settings, QObject *parent) :
     QObject(parent),
-    m_settings(todoSettings())
+    m_settings(settings)
 {
     setupItemsModel();
     setupStartupProjectBinding();
@@ -44,14 +66,14 @@ TodoItemsModel *TodoItemsProvider::todoItemsModel()
     return m_itemsModel;
 }
 
-void TodoItemsProvider::settingsChanged()
+void TodoItemsProvider::settingsChanged(const Settings &newSettings)
 {
-    if (todoSettings().keywords != m_settings.keywords) {
-        for (TodoItemsScanner *scanner : std::as_const(m_scanners))
-            scanner->setParams(todoSettings().keywords);
+    if (newSettings.keywords != m_settings.keywords) {
+        foreach (TodoItemsScanner *scanner, m_scanners)
+            scanner->setParams(newSettings.keywords);
     }
 
-    m_settings = todoSettings();
+    m_settings = newSettings;
 
     updateList();
 }
@@ -68,8 +90,8 @@ void TodoItemsProvider::updateList()
 
     // Show only items of the current file if any
     if (m_settings.scanningScope == ScanningScopeCurrentFile) {
-        if (auto currentEditor = Core::EditorManager::currentEditor())
-            m_itemsList = m_itemsHash.value(currentEditor->document()->filePath());
+        if (m_currentEditor)
+            m_itemsList = m_itemsHash.value(m_currentEditor->document()->filePath());
     // Show only items of the current sub-project
     } else if (m_settings.scanningScope == ScanningScopeSubProject) {
         if (m_startupProject)
@@ -92,7 +114,7 @@ void TodoItemsProvider::createScanners()
     if (QmlJS::ModelManagerInterface::instance())
         m_scanners << new QmlJsTodoItemsScanner(m_settings.keywords, this);
 
-    for (TodoItemsScanner *scanner : std::as_const(m_scanners)) {
+    foreach (TodoItemsScanner *scanner, m_scanners) {
         connect(scanner, &TodoItemsScanner::itemsFetched, this,
             &TodoItemsProvider::itemsFetched, Qt::QueuedConnection);
     }
@@ -163,8 +185,9 @@ void TodoItemsProvider::projectsFilesChanged()
     updateList();
 }
 
-void TodoItemsProvider::currentEditorChanged()
+void TodoItemsProvider::currentEditorChanged(Core::IEditor *editor)
 {
+    m_currentEditor = editor;
     if (m_settings.scanningScope == ScanningScopeCurrentFile
             || m_settings.scanningScope == ScanningScopeSubProject) {
         updateList();
@@ -181,8 +204,8 @@ void TodoItemsProvider::updateListTimeoutElapsed()
 
 void TodoItemsProvider::setupStartupProjectBinding()
 {
-    m_startupProject = ProjectManager::startupProject();
-    connect(ProjectManager::instance(), &ProjectManager::startupProjectChanged,
+    m_startupProject = SessionManager::startupProject();
+    connect(SessionManager::instance(), &SessionManager::startupProjectChanged,
         this, &TodoItemsProvider::startupProjectChanged);
     connect(ProjectExplorerPlugin::instance(), &ProjectExplorerPlugin::fileListChanged,
             this, &TodoItemsProvider::projectsFilesChanged);
@@ -190,6 +213,7 @@ void TodoItemsProvider::setupStartupProjectBinding()
 
 void TodoItemsProvider::setupCurrentEditorBinding()
 {
+    m_currentEditor = Core::EditorManager::currentEditor();
     connect(Core::EditorManager::instance(), &Core::EditorManager::currentEditorChanged,
         this, &TodoItemsProvider::currentEditorChanged);
 }
@@ -208,16 +232,5 @@ void TodoItemsProvider::setupItemsModel()
     m_itemsModel->setTodoItemsList(&m_itemsList);
 }
 
-static TodoItemsProvider *s_instance = nullptr;
-
-TodoItemsProvider &todoItemsProvider()
-{
-    return *s_instance;
 }
-
-void setupTodoItemsProvider(QObject *guard)
-{
-    s_instance = new TodoItemsProvider(guard);
 }
-
-} // Internal

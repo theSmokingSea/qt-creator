@@ -1,14 +1,35 @@
-// Copyright (C) 2016 The Qt Company Ltd.
-// SPDX-License-Identifier: LicenseRef-Qt-Commercial OR GPL-3.0-only WITH Qt-GPL-exception-1.0
+/****************************************************************************
+**
+** Copyright (C) 2016 The Qt Company Ltd.
+** Contact: https://www.qt.io/licensing/
+**
+** This file is part of Qt Creator.
+**
+** Commercial License Usage
+** Licensees holding valid commercial Qt licenses may use this file in
+** accordance with the commercial license agreement provided with the
+** Software or, alternatively, in accordance with the terms contained in
+** a written agreement between you and The Qt Company. For licensing terms
+** and conditions see https://www.qt.io/terms-conditions. For further
+** information use the contact form at https://www.qt.io/contact-us.
+**
+** GNU General Public License Usage
+** Alternatively, this file may be used under the terms of the GNU
+** General Public License version 3 as published by the Free Software
+** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
+** included in the packaging of this file. Please review the following
+** information to ensure the GNU General Public License requirements will
+** be met: https://www.gnu.org/licenses/gpl-3.0.html.
+**
+****************************************************************************/
 
 #include "diffeditordocument.h"
 #include "diffeditorconstants.h"
 #include "diffeditorcontroller.h"
-#include "diffeditortr.h"
+#include "diffutils.h"
 
 #include <utils/fileutils.h>
 #include <utils/qtcassert.h>
-#include <utils/stringutils.h>
 
 #include <coreplugin/dialogs/codecselector.h>
 #include <coreplugin/editormanager/editormanager.h>
@@ -19,11 +40,12 @@
 #include <QDir>
 #include <QMenu>
 #include <QTextCodec>
+#include <QUuid>
 
-using namespace Core;
 using namespace Utils;
 
-namespace DiffEditor::Internal {
+namespace DiffEditor {
+namespace Internal {
 
 DiffEditorDocument::DiffEditorDocument() :
     Core::BaseTextDocument()
@@ -58,14 +80,14 @@ DiffEditorController *DiffEditorDocument::controller() const
 
 static void appendRow(ChunkData *chunk, const RowData &row)
 {
-    const bool isSeparator = row.line[LeftSide].textLineType == TextLineData::Separator
-            && row.line[RightSide].textLineType == TextLineData::Separator;
+    const bool isSeparator = row.leftLine.textLineType == TextLineData::Separator
+            && row.rightLine.textLineType == TextLineData::Separator;
     if (!isSeparator)
         chunk->rows.append(row);
 }
 
-ChunkData DiffEditorDocument::filterChunk(const ChunkData &data, const ChunkSelection &selection,
-                                          PatchAction patchAction)
+ChunkData DiffEditorDocument::filterChunk(const ChunkData &data,
+                                          const ChunkSelection &selection, bool revert)
 {
     if (selection.isNull())
         return data;
@@ -74,8 +96,8 @@ ChunkData DiffEditorDocument::filterChunk(const ChunkData &data, const ChunkSele
     chunk.rows.clear();
     for (int i = 0; i < data.rows.count(); ++i) {
         RowData row = data.rows[i];
-        const bool isLeftSelected = selection.selection[LeftSide].contains(i);
-        const bool isRightSelected = selection.selection[RightSide].contains(i);
+        const bool isLeftSelected = selection.leftSelection.contains(i);
+        const bool isRightSelected = selection.rightSelection.contains(i);
 
         if (isLeftSelected || isRightSelected) {
             if (row.equal || (isLeftSelected && isRightSelected)) {
@@ -83,30 +105,30 @@ ChunkData DiffEditorDocument::filterChunk(const ChunkData &data, const ChunkSele
             } else if (isLeftSelected) {
                 RowData newRow = row;
 
-                row.line[RightSide] = TextLineData(TextLineData::Separator);
+                row.rightLine = TextLineData(TextLineData::Separator);
                 appendRow(&chunk, row);
 
-                if (patchAction == PatchAction::Revert) {
-                    newRow.line[LeftSide] = newRow.line[RightSide];
+                if (revert) {
+                    newRow.leftLine = newRow.rightLine;
                     newRow.equal = true;
                     appendRow(&chunk, newRow);
                 }
             } else { // isRightSelected
-                if (patchAction == PatchAction::Apply) {
+                if (!revert) {
                     RowData newRow = row;
-                    newRow.line[RightSide] = newRow.line[LeftSide];
+                    newRow.rightLine = newRow.leftLine;
                     newRow.equal = true;
                     appendRow(&chunk, newRow);
                 }
 
-                row.line[LeftSide] = TextLineData(TextLineData::Separator);
+                row.leftLine = TextLineData(TextLineData::Separator);
                 appendRow(&chunk, row);
             }
         } else {
-            if (patchAction == PatchAction::Apply)
-                row.line[RightSide] = row.line[LeftSide];
+            if (revert)
+                row.leftLine = row.rightLine;
             else
-                row.line[LeftSide] = row.line[RightSide];
+                row.rightLine = row.leftLine;
             row.equal = true;
             appendRow(&chunk, row);
         }
@@ -116,32 +138,46 @@ ChunkData DiffEditorDocument::filterChunk(const ChunkData &data, const ChunkSele
 }
 
 QString DiffEditorDocument::makePatch(int fileIndex, int chunkIndex,
-                                      const ChunkSelection &selection, PatchAction patchAction,
-                                      bool addPrefix, const QString &overriddenFileName) const
+                                      const ChunkSelection &selection,
+                                      bool revert, bool addPrefix,
+                                      const QString &overriddenFileName) const
 {
-    if (fileIndex < 0 || chunkIndex < 0 || fileIndex >= m_diffFiles.count())
-        return {};
+    if (fileIndex < 0 || chunkIndex < 0)
+        return QString();
+
+    if (fileIndex >= m_diffFiles.count())
+        return QString();
 
     const FileData &fileData = m_diffFiles.at(fileIndex);
     if (chunkIndex >= fileData.chunks.count())
-        return {};
+        return QString();
 
-    const ChunkData chunkData = filterChunk(fileData.chunks.at(chunkIndex), selection, patchAction);
+    const ChunkData chunkData = filterChunk(fileData.chunks.at(chunkIndex), selection, revert);
     const bool lastChunk = (chunkIndex == fileData.chunks.count() - 1);
 
     const QString fileName = !overriddenFileName.isEmpty()
-            ? overriddenFileName : patchAction == PatchAction::Apply
-              ? fileData.fileInfo[LeftSide].fileName : fileData.fileInfo[RightSide].fileName;
+            ? overriddenFileName : revert
+              ? fileData.rightFileInfo.fileName
+              : fileData.leftFileInfo.fileName;
 
-    const QString leftFileName = addPrefix ? QString("a/") + fileName : fileName;
-    const QString rightFileName = addPrefix ? QString("b/") + fileName : fileName;
-    return DiffUtils::makePatch(chunkData, leftFileName, rightFileName,
+    QString leftPrefix, rightPrefix;
+    if (addPrefix) {
+        leftPrefix = "a/";
+        rightPrefix = "b/";
+    }
+    return DiffUtils::makePatch(chunkData,
+                                leftPrefix + fileName,
+                                rightPrefix + fileName,
                                 lastChunk && fileData.lastChunkAtTheEndOfFile);
 }
 
-void DiffEditorDocument::setDiffFiles(const QList<FileData> &data)
+void DiffEditorDocument::setDiffFiles(const QList<FileData> &data, const FilePath &directory,
+                                      const QString &startupFile)
 {
     m_diffFiles = data;
+    if (!directory.isEmpty())
+        m_baseDirectory = directory;
+    m_startupFile = startupFile;
     emit documentChanged();
 }
 
@@ -150,19 +186,14 @@ QList<FileData> DiffEditorDocument::diffFiles() const
     return m_diffFiles;
 }
 
-FilePath DiffEditorDocument::workingDirectory() const
+FilePath DiffEditorDocument::baseDirectory() const
 {
-    return m_workingDirectory;
+    return m_baseDirectory;
 }
 
-void DiffEditorDocument::setWorkingDirectory(const FilePath &directory)
+void DiffEditorDocument::setBaseDirectory(const FilePath &directory)
 {
-    m_workingDirectory = directory;
-}
-
-void DiffEditorDocument::setStartupFile(const QString &startupFile)
-{
-    m_startupFile = startupFile;
+    m_baseDirectory = directory;
 }
 
 QString DiffEditorDocument::startupFile() const
@@ -224,8 +255,8 @@ bool DiffEditorDocument::setContents(const QByteArray &contents)
 
 FilePath DiffEditorDocument::fallbackSaveAsPath() const
 {
-    if (!m_workingDirectory.isEmpty())
-        return m_workingDirectory;
+    if (!m_baseDirectory.isEmpty())
+        return m_baseDirectory;
     return FileUtils::homePath();
 }
 
@@ -234,7 +265,7 @@ bool DiffEditorDocument::isSaveAsAllowed() const
     return state() == LoadOK;
 }
 
-bool DiffEditorDocument::saveImpl(QString *errorString, const FilePath &filePath, bool autoSave)
+bool DiffEditorDocument::save(QString *errorString, const FilePath &filePath, bool autoSave)
 {
     Q_UNUSED(errorString)
     Q_UNUSED(autoSave)
@@ -248,12 +279,12 @@ bool DiffEditorDocument::saveImpl(QString *errorString, const FilePath &filePath
         return false;
 
     setController(nullptr);
-    setDescription({});
+    setDescription(QString());
     Core::EditorManager::clearUniqueId(this);
 
     setTemporary(false);
     setFilePath(filePath.absoluteFilePath());
-    setPreferredDisplayName({});
+    setPreferredDisplayName(QString());
     emit temporaryStateChanged();
 
     return true;
@@ -289,18 +320,17 @@ Core::IDocument::OpenResult DiffEditorDocument::open(QString *errorString, const
         return OpenResult::ReadError;
     }
 
-    const std::optional<QList<FileData>> fileDataList = DiffUtils::readPatch(patch);
-    bool ok = fileDataList.has_value();
+    bool ok = false;
+    QList<FileData> fileDataList = DiffUtils::readPatch(patch, &ok);
     if (!ok) {
-        *errorString = Tr::tr("Could not parse patch file \"%1\". "
-                              "The content is not of unified diff format.")
+        *errorString = tr("Could not parse patch file \"%1\". "
+                          "The content is not of unified diff format.")
                 .arg(filePath.toUserOutput());
     } else {
         setTemporary(false);
         emit temporaryStateChanged();
         setFilePath(filePath.absoluteFilePath());
-        setWorkingDirectory(filePath.absoluteFilePath());
-        setDiffFiles(*fileDataList);
+        setDiffFiles(fileDataList, filePath.absoluteFilePath());
     }
     endReload(ok);
     if (!ok && readResult == TextFileFormat::ReadEncodingError)
@@ -310,17 +340,17 @@ Core::IDocument::OpenResult DiffEditorDocument::open(QString *errorString, const
 
 bool DiffEditorDocument::selectEncoding()
 {
-    const CodecSelectorResult result = askForCodec(Core::ICore::dialogParent(), this);
-    switch (result.action) {
-    case CodecSelectorResult::Reload: {
-        setCodec(result.codec);
+    Core::CodecSelector codecSelector(Core::ICore::dialogParent(), this);
+    switch (codecSelector.exec()) {
+    case Core::CodecSelector::Reload: {
+        setCodec(codecSelector.selectedCodec());
         QString errorMessage;
         return reload(&errorMessage, Core::IDocument::FlagReload, Core::IDocument::TypeContents);
     }
-    case CodecSelectorResult::Save:
-        setCodec(result.codec);
+    case Core::CodecSelector::Save:
+        setCodec(codecSelector.selectedCodec());
         return Core::EditorManager::saveDocument(this);
-    case CodecSelectorResult::Cancel:
+    case Core::CodecSelector::Cancel:
         break;
     }
     return false;
@@ -344,11 +374,11 @@ QString DiffEditorDocument::fallbackSaveAsFileName() const
 // ### fixme: git-specific handling should be done in the git plugin:
 // Remove unexpanded branches and follows-tag, clear indentation
 // and create E-mail
-static QString formatGitDescription(const QString &description)
+static void formatGitDescription(QString *description)
 {
     QString result;
-    result.reserve(description.size());
-    const auto descriptionList = description.split('\n');
+    result.reserve(description->size());
+    const auto descriptionList = description->split('\n');
     for (QString line : descriptionList) {
         if (line.startsWith("commit ") || line.startsWith("Branches: <Expand>"))
             continue;
@@ -360,13 +390,23 @@ static QString formatGitDescription(const QString &description)
         result.append(line);
         result.append('\n');
     }
-    return result;
+    *description = result;
 }
 
 QString DiffEditorDocument::plainText() const
 {
-    return Utils::joinStrings({formatGitDescription(description()),
-                               DiffUtils::makePatch(diffFiles())}, '\n');
+    QString result = description();
+    const int formattingOptions = DiffUtils::GitFormat;
+    if (formattingOptions & DiffUtils::GitFormat)
+        formatGitDescription(&result);
+
+    const QString diff = DiffUtils::makePatch(diffFiles(), formattingOptions);
+    if (!diff.isEmpty()) {
+        if (!result.isEmpty())
+            result += '\n';
+        result += diff;
+    }
+    return result;
 }
 
 void DiffEditorDocument::beginReload()
@@ -375,8 +415,8 @@ void DiffEditorDocument::beginReload()
     m_state = Reloading;
     emit changed();
     QSignalBlocker blocker(this);
-    setDiffFiles({});
-    setDescription({});
+    setDiffFiles(QList<FileData>(), {});
+    setDescription(QString());
 }
 
 void DiffEditorDocument::endReload(bool success)
@@ -386,4 +426,5 @@ void DiffEditorDocument::endReload(bool success)
     emit reloadFinished(success);
 }
 
-} // namespace DiffEditor::Internal
+} // namespace Internal
+} // namespace DiffEditor

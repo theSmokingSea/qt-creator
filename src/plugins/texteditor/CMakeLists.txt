@@ -5,7 +5,7 @@ else()
 endif()
 
 add_qtc_plugin(TextEditor
-  DEPENDS Qt::Concurrent Qt::Network Qt::PrintSupport Qt::Xml
+  DEPENDS Qt5::Concurrent Qt5::Network Qt5::PrintSupport Qt5::Xml
   PUBLIC_DEPENDS ${KSYNTAXHIGHLIGHTING_TARGET}
   PLUGIN_DEPENDS Core
   SOURCES
@@ -14,18 +14,14 @@ add_qtc_plugin(TextEditor
     basehoverhandler.cpp basehoverhandler.h
     behaviorsettings.cpp behaviorsettings.h
     behaviorsettingspage.cpp behaviorsettingspage.h
-    behaviorsettingswidget.cpp behaviorsettingswidget.h
+    behaviorsettingswidget.cpp behaviorsettingswidget.h behaviorsettingswidget.ui
     blockrange.h
-    bookmark.cpp bookmark.h
-    bookmarkfilter.cpp bookmarkfilter.h
-    bookmarkmanager.cpp bookmarkmanager.h
     circularclipboard.cpp circularclipboard.h
     circularclipboardassist.cpp circularclipboardassist.h
     codeassist/assistenums.h
     codeassist/assistinterface.cpp codeassist/assistinterface.h
     codeassist/assistproposalitem.cpp codeassist/assistproposalitem.h
     codeassist/assistproposaliteminterface.h
-    codeassist/asyncprocessor.cpp codeassist/asyncprocessor.h
     codeassist/codeassistant.cpp codeassist/codeassistant.h
     codeassist/completionassistprovider.cpp codeassist/completionassistprovider.h
     codeassist/documentcontentcompletion.cpp codeassist/documentcontentcompletion.h
@@ -41,39 +37,38 @@ add_qtc_plugin(TextEditor
     codeassist/iassistprovider.cpp codeassist/iassistprovider.h
     codeassist/ifunctionhintproposalmodel.cpp codeassist/ifunctionhintproposalmodel.h
     codeassist/keywordscompletionassist.cpp codeassist/keywordscompletionassist.h
-    codecchooser.cpp codecchooser.h
+    codeassist/runner.cpp codeassist/runner.h
+    codeassist/textdocumentmanipulator.cpp codeassist/textdocumentmanipulator.h
+    codeassist/textdocumentmanipulatorinterface.h
     codestyleeditor.cpp codestyleeditor.h
     codestylepool.cpp codestylepool.h
-    codestyleselectorwidget.cpp codestyleselectorwidget.h
+    codestyleselectorwidget.cpp codestyleselectorwidget.h codestyleselectorwidget.ui
     colorpreviewhoverhandler.cpp colorpreviewhoverhandler.h
     colorscheme.cpp colorscheme.h
-    colorschemeedit.cpp colorschemeedit.h
+    colorschemeedit.cpp colorschemeedit.h colorschemeedit.ui
     command.cpp command.h
     commentssettings.cpp commentssettings.h
     completionsettings.cpp completionsettings.h
-    completionsettingspage.cpp completionsettingspage.h
+    completionsettingspage.cpp completionsettingspage.h completionsettingspage.ui
     displaysettings.cpp displaysettings.h
-    displaysettingspage.cpp displaysettingspage.h
+    displaysettingspage.cpp displaysettingspage.h displaysettingspage.ui
     extraencodingsettings.cpp extraencodingsettings.h
     findincurrentfile.cpp findincurrentfile.h
     findinfiles.cpp findinfiles.h
     findinopenfiles.cpp findinopenfiles.h
     fontsettings.cpp fontsettings.h
-    fontsettingspage.cpp fontsettingspage.h
+    fontsettingspage.cpp fontsettingspage.h fontsettingspage.ui
     formatter.h
     formattexteditor.cpp formattexteditor.h
     highlighter.cpp highlighter.h
-    highlighterhelper.cpp highlighterhelper.h
     highlightersettings.cpp highlightersettings.h
-    highlightersettingspage.cpp highlightersettingspage.h
+    highlightersettingspage.cpp highlightersettingspage.h highlightersettingspage.ui
     icodestylepreferences.cpp icodestylepreferences.h
     icodestylepreferencesfactory.cpp icodestylepreferencesfactory.h
     indenter.h
     ioutlinewidget.h
-    jsoneditor.cpp jsoneditor.h
     linenumberfilter.cpp linenumberfilter.h
     marginsettings.cpp marginsettings.h
-    markdowneditor.cpp markdowneditor.h
     outlinefactory.cpp outlinefactory.h
     plaintexteditorfactory.cpp plaintexteditorfactory.h
     quickfix.cpp quickfix.h
@@ -90,35 +85,30 @@ add_qtc_plugin(TextEditor
     snippets/snippetparser.cpp snippets/snippetparser.h
     snippets/snippetprovider.cpp snippets/snippetprovider.h
     snippets/snippetscollection.cpp snippets/snippetscollection.h
-    snippets/snippetssettingspage.cpp snippets/snippetssettingspage.h
+    snippets/snippetssettings.cpp snippets/snippetssettings.h
+    snippets/snippetssettingspage.cpp snippets/snippetssettingspage.h snippets/snippetssettingspage.ui
     storagesettings.cpp storagesettings.h
     syntaxhighlighter.cpp syntaxhighlighter.h
     tabsettings.cpp tabsettings.h
-    tabsettingswidget.cpp tabsettingswidget.h
+    tabsettingswidget.cpp tabsettingswidget.h tabsettingswidget.ui
     textdocument.cpp textdocument.h
     textdocumentlayout.cpp textdocumentlayout.h
     texteditor.cpp texteditor.h
     texteditor.qrc
     texteditor_global.h
-    texteditortr.h
+    texteditor_p.h
+    texteditoractionhandler.cpp texteditoractionhandler.h
     texteditorconstants.cpp texteditorconstants.h
     texteditoroverlay.cpp texteditoroverlay.h
-    texteditorplugin.cpp
+    texteditorplugin.cpp texteditorplugin.h
     texteditorsettings.cpp texteditorsettings.h
     textindenter.cpp textindenter.h
     textmark.cpp textmark.h
     textstyles.h
-    typehierarchy.cpp typehierarchy.h
     typingsettings.cpp typingsettings.h
 )
 
 extend_qtc_plugin(TextEditor
   CONDITION WITH_TESTS
-  SOURCES
-    codeassist/codeassist_test.cpp
-    codeassist/codeassist_test.h
-    highlighter_test.cpp
-    highlighter_test.h
-    texteditor_test.cpp
-    texteditor_test.h
+  SOURCES texteditor_test.cpp
 )
