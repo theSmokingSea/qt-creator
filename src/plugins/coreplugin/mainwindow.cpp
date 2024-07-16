@@ -246,6 +246,16 @@ void MainWindow::addPreCloseListener(const std::function<bool ()> &listener)
 
 MainWindow::~MainWindow()
 {
+
+    Id id("");
+    QMap<quintptr, QString> value =  id.print();
+    for(auto v=value.begin();v!=value.end();++v ){
+        Command * command=  ActionManager::command(v.value().toStdString().c_str());
+        if(command){
+            qDebug() << command->action()->text();
+        }
+    }
+
     // explicitly delete window support, because that calls methods from ICore that call methods
     // from mainwindow, so mainwindow still needs to be alive
     delete m_windowSupport;
@@ -418,8 +428,8 @@ void MainWindow::registerDefaultContainers()
 {
     ActionContainer *menubar = ActionManager::createMenuBar(Constants::MENU_BAR);
 
-    if (!HostOsInfo::isMacHost()) // System menu bar on Mac
-        setMenuBar(menubar->menuBar());
+    setMenuBar(menubar->menuBar());
+
     menubar->appendGroup(Constants::G_FILE);
     menubar->appendGroup(Constants::G_EDIT);
     menubar->appendGroup(Constants::G_VIEW);
@@ -850,6 +860,8 @@ void MainWindow::registerDefaultActions()
         cmd = ActionManager::registerAction(tmpaction, "QtCreator.Help.Sep.About");
         mhelp->addAction(cmd, Constants::G_HELP_ABOUT);
     }
+
+
 }
 
 void MainWindow::registerModeSelectorStyleActions()

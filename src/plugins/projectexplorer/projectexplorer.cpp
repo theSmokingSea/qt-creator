@@ -997,7 +997,7 @@ bool ProjectExplorerPlugin::initialize(const QStringList &arguments, QString *er
     // debug menu
     ActionContainer *mdebug =
         ActionManager::createMenu(Constants::M_DEBUG);
-    mdebug->menu()->setTitle(tr("&Debug"));
+    mdebug->menu()->setTitle(tr("&Debugad"));
     if (!hideDebugMenu())
         menubar->addMenu(mdebug, Core::Constants::G_VIEW);
 

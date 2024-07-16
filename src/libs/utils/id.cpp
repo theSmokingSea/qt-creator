@@ -1,28 +1,3 @@
-/****************************************************************************
-**
-** Copyright (C) 2020 The Qt Company Ltd.
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of Qt Creator.
-**
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 3 as published by the Free Software
-** Foundation with exceptions as appearing in the file LICENSE.GPL3-EXCEPT
-** included in the packaging of this file. Please review the following
-** information to ensure the GNU General Public License requirements will
-** be met: https://www.gnu.org/licenses/gpl-3.0.html.
-**
-****************************************************************************/
-
 #include "id.h"
 
 #include "algorithm.h"
@@ -41,18 +16,12 @@ namespace Utils {
     \inheaderfile utils/id.h
     \inmodule QtCreator
 
-    \brief The Id class encapsulates an identifier that is unique
-    within a specific running \QC process.
+    \brief Id类封装了在特定运行的\QC进程中唯一的标识符。
 
-    \c{Utils::Id} is used as facility to identify objects of interest
-    in a more typesafe and faster manner than a plain QString or
-    QByteArray would provide.
+    \c{Utils::Id} 用于更类型安全和更快速地识别感兴趣的对象， 比直接使用QString或QByteArray更高效。
 
-    An id is associated with a plain 7-bit-clean ASCII name used
-    for display and persistency.
-
+    标识符与用于显示和持久化的纯7位ASCII名称相关联。
 */
-
 class StringHolder
 {
 public:
@@ -102,6 +71,18 @@ struct IdCache : public QHash<StringHolder, quintptr>
 static QHash<quintptr, StringHolder> stringFromId;
 static IdCache idFromString;
 
+QMap<quintptr, QString> Id:: print(){
+    qDebug() << "Id:";
+    QMap<quintptr, QString> a;
+    for(auto id: stringFromId){
+       // qDebug() << id.h << id.str ;
+        a.insert(id.h, QString::fromUtf8(id.str));
+    }
+    qDebug() << "Id end";
+    return a;
+}
+
+
 static quintptr theId(const char *str, int n = 0)
 {
     static quintptr firstUnusedId = 10 * 1000 * 1000;
@@ -124,20 +105,12 @@ static quintptr theId(const QByteArray &ba)
 
 /*!
     \fn Utils::Id::Id(quintptr uid)
-    \internal
-
-    Constructs an id given \a UID.
-
-    The UID is an integer value that is unique within the running
-    \QC process.
-
+    构造一个给定 UID 的 id。
+    UID 是在运行的进程中唯一的整数值。
 */
 
 /*!
-    Constructs an id given its associated \a name. The internal
-    representation will be unspecified, but consistent within a
-    \QC process.
-
+    构造一个给定其关联的name 的 id。内部表示将是不确定的，但在进程中是一致的。
 */
 Id::Id(const char *name)
     : m_id(theId(name, 0))

@@ -757,6 +757,7 @@ int main(int argc, char **argv)
     }
 
     PluginManager::checkForProblematicPlugins();
+    // TODO load plugins
     PluginManager::loadPlugins();
     if (coreplugin->hasError()) {
         displayError(msgCoreLoadFailure(coreplugin->errorString()));

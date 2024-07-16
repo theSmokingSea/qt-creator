@@ -271,6 +271,7 @@ void TextEditorActionHandlerPrivate::createActions()
     m_modifyingActions << registerAction(CIRCULAR_PASTE,
         [] (TextEditorWidget *w) { w->circularPaste(); }, false, tr("Paste from Clipboard History"),
         QKeySequence(tr("Ctrl+Shift+V")), G_EDIT_COPYPASTE, editMenu);
+
     m_modifyingActions << registerAction(NO_FORMAT_PASTE,
         [] (TextEditorWidget *w) { w->pasteWithoutFormat(); }, false, tr("Paste Without Formatting"),
         QKeySequence(Core::useMacShortcuts ? tr("Ctrl+Alt+Shift+V") : QString()), G_EDIT_COPYPASTE, editMenu);
